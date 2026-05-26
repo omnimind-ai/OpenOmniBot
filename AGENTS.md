@@ -39,6 +39,13 @@ OmnibotApp is an AI-powered intelligent robot assistant application for Android.
 ./gradlew installDevelopDebug
 ```
 
+### Device Install Rule
+When the user asks to "install to device" or "安装到设备上", use the canonical script:
+```bash
+bash scripts/install-dev.sh --skip-build
+```
+Run without `--skip-build` when a fresh APK is required. The script defaults to the first USB device, supports `--device <serial>`, and launches `cn.com.omnimind.bot.debug` after install.
+
 ### Flutter Commands (for ui/ module)
 ```bash
 cd ui

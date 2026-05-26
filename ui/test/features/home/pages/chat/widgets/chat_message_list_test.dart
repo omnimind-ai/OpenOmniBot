@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/home/pages/chat/chat_page_models.dart';
+import 'package:ui/features/home/pages/chat/widgets/chat_empty_greeting.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_tool_activity_card.dart';
 import 'package:ui/features/home/pages/chat/widgets/chat_widgets.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/deep_thinking_card.dart';
@@ -52,9 +53,7 @@ void main() {
         .setMockMethodCallHandler(assistCoreChannel, null);
   });
 
-  testWidgets('empty chat state offsets with bottom overlay inset', (
-    tester,
-  ) async {
+  testWidgets('empty chat state follows main greeting layout', (tester) async {
     await tester.pumpWidget(
       _buildLocalizedApp(
         child: ChatMessageList(
@@ -68,12 +67,8 @@ void main() {
 
     await tester.pump();
 
-    final animatedPadding = tester.widget<AnimatedPadding>(
-      find.byType(AnimatedPadding),
-    );
-
-    expect(animatedPadding.padding, const EdgeInsets.only(bottom: 128));
-    expect(find.text('有什么可以帮助你的？'), findsOneWidget);
+    expect(find.byType(AnimatedPadding), findsNothing);
+    expect(find.byType(ChatEmptyGreeting), findsOneWidget);
   });
 
   testWidgets(
@@ -1039,48 +1034,17 @@ void main() {
     expect(tester.getSize(vlmSurface).width, lessThan(400 * 0.9));
     _expectUniformProcessText(tester, vlmSurface);
 
+    expect(find.text('2 步'), findsOneWidget);
+    expect(find.textContaining('设置按钮'), findsNothing);
+
     await tester.tap(vlmSurface);
     await tester.pumpAndSettle();
-    expect(find.textContaining('设置按钮'), findsWidgets);
+    expect(find.text('暂无步骤数据'), findsOneWidget);
+    expect(find.textContaining('没有工具调用'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'multi-step VLM activity expands from header instead of opening old detail',
-    (tester) async {
-      final controller = ScrollController();
-      final messages = _buildVlmProcessRunMessages(includeThinking: false);
-
-      await tester.pumpWidget(
-        _buildLocalizedApp(
-          child: SizedBox(
-            width: 400,
-            height: 560,
-            child: ChatMessageList(
-              messages: messages,
-              scrollController: controller,
-              onBeforeTaskExecute: () async {},
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(
-        find.byKey(const ValueKey('agent-run-summary-task-vlm')),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 320));
-
-      expect(find.byType(AgentToolActivityCard), findsOneWidget);
-      expect(find.text('视觉执行'), findsOneWidget);
-      expect(find.textContaining('设置按钮'), findsWidgets);
-      expect(find.text('工具调用历史'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('multi-step VLM card keeps full RunLog as explicit action', (
+  testWidgets('multi-step VLM activity stays collapsed and opens full runlog', (
     tester,
   ) async {
     final controller = ScrollController();
@@ -1106,8 +1070,53 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.byType(AgentToolActivityCard), findsOneWidget);
-    expect(find.text('查看完整 RunLog'), findsOneWidget);
-    expect(find.textContaining('设置按钮'), findsWidgets);
+    expect(find.text('视觉执行'), findsOneWidget);
+    expect(find.text('2 步'), findsOneWidget);
+    expect(find.textContaining('设置按钮'), findsNothing);
+    expect(find.text('工具调用历史'), findsNothing);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey(
+          'agent-tool-activity-compact-surface-task-vlm-vlm-activity',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无步骤数据'), findsOneWidget);
+    expect(find.textContaining('没有工具调用'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('multi-step VLM card opens full RunLog from one click', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildVlmProcessRunMessages(includeThinking: false);
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 560,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-vlm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.byType(AgentToolActivityCard), findsOneWidget);
+    expect(find.text('查看完整 RunLog'), findsNothing);
+    expect(find.textContaining('设置按钮'), findsNothing);
 
     final surface = find.byKey(
       const ValueKey(
@@ -1115,11 +1124,10 @@ void main() {
       ),
     );
     await tester.tap(surface);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('hello'), findsWidgets);
-    expect(find.text('暂无步骤数据'), findsNothing);
+    expect(find.text('暂无步骤数据'), findsOneWidget);
+    expect(find.textContaining('没有工具调用'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

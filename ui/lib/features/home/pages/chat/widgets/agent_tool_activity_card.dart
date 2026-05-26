@@ -31,47 +31,29 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
   static const double _compactMaxWidthFactor = 0.76;
   static const double _compactMaxWidth = 360;
   static const double _compactMinWidth = 148;
-  static const double _readableCompactMaxWidthFactor = 0.96;
-  static const double _compactRadius = 8;
-  static const double _compactAccentWidth = 3;
+  static const double _compactRadius = 999;
   static const double _processFontSize = 12;
-
-  late bool _expanded = widget.initiallyExpanded;
-
-  @override
-  void didUpdateWidget(covariant AgentToolActivityCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.initiallyExpanded && widget.initiallyExpanded) {
-      _expanded = true;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final statusColor = resolveAgentToolStatusColor(widget.activity.status);
-    final activityColor = AgentToolCardPolicy.activityColor(
-      widget.activity.kind,
-    );
     if (widget.compactSurface) {
-      final needsReadableTimeline =
-          widget.activity.kind == AgentToolActivityKind.vlm &&
-          widget.activity.stepCount > 1;
       final compactBackgroundColor = context.isDarkTheme
           ? Color.alphaBlend(
-              activityColor.withValues(
-                alpha: needsReadableTimeline ? 0.06 : 0.08,
+              statusColor.withValues(
+                alpha: widget.activity.isRunning ? 0.11 : 0.09,
               ),
-              palette.surfacePrimary,
+              palette.surfaceSecondary,
             )
-          : activityColor.withValues(
-              alpha: needsReadableTimeline ? 0.038 : 0.055,
-            );
+          : statusColor.withValues(alpha: 0.08);
       final compactBorderColor = context.isDarkTheme
-          ? Color.lerp(palette.borderSubtle, activityColor, 0.30)!
-          : activityColor.withValues(
-              alpha: needsReadableTimeline ? 0.11 : 0.16,
-            );
+          ? Color.lerp(
+              palette.borderSubtle,
+              statusColor,
+              0.18,
+            )!.withValues(alpha: 0.92)
+          : Colors.transparent;
       return Align(
         alignment: Alignment.centerLeft,
         child: LayoutBuilder(
@@ -79,19 +61,15 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
             final availableWidth = constraints.maxWidth.isFinite
                 ? constraints.maxWidth
                 : MediaQuery.of(context).size.width;
-            final maxWidth = needsReadableTimeline
-                ? (availableWidth * _readableCompactMaxWidthFactor)
-                      .clamp(_compactMinWidth, availableWidth)
-                      .toDouble()
-                : (availableWidth * _compactMaxWidthFactor)
-                      .clamp(_compactMinWidth, _compactMaxWidth)
-                      .toDouble();
+            final maxWidth = (availableWidth * _compactMaxWidthFactor)
+                .clamp(_compactMinWidth, _compactMaxWidth)
+                .toDouble();
             return ConstrainedBox(
               key: ValueKey(
                 'agent-tool-activity-compact-surface-${widget.activity.id}',
               ),
               constraints: BoxConstraints(
-                minWidth: needsReadableTimeline ? maxWidth : _compactMinWidth,
+                minWidth: _compactMinWidth,
                 maxWidth: maxWidth,
               ),
               child: Padding(
@@ -107,8 +85,6 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
                       border: Border.all(color: compactBorderColor),
                     ),
                     padding: EdgeInsets.zero,
-                    showExpandedSteps: false,
-                    accentColor: activityColor,
                   ),
                 ),
               ),
@@ -147,7 +123,6 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
                 context,
                 borderRadius: BorderRadius.circular(12),
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                showExpandedSteps: false,
               ),
             ),
           ),
@@ -161,101 +136,32 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
     required BorderRadius borderRadius,
     required EdgeInsets padding,
     BoxDecoration? decoration,
-    required bool showExpandedSteps,
-    Color? accentColor,
   }) {
     final content = Padding(
       padding: padding,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ActivityHeader(
-            activity: widget.activity,
-            expanded: showExpandedSteps || _expanded,
-            compact: widget.compactSurface,
-            onOpenRunLog: _hasActivityRunLog(widget.activity)
-                ? () => _openActivityRunLog(context, widget.activity)
-                : null,
-          ),
-          _buildDetailSection(showExpandedSteps: showExpandedSteps),
-        ],
+        children: [_ActivityHeader(activity: widget.activity)],
       ),
     );
 
     final child = decoration == null
         ? content
-        : DecoratedBox(
-            decoration: decoration,
-            child: accentColor == null
-                ? content
-                : ClipRRect(
-                    borderRadius: borderRadius,
-                    child: IntrinsicHeight(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Container(
-                            width: _compactAccentWidth,
-                            color: accentColor,
-                          ),
-                          Flexible(
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(9, 7, 8, 7),
-                              child: content,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-          );
+        : DecoratedBox(decoration: decoration, child: content);
     return InkWell(
       borderRadius: borderRadius,
-      onTap: showExpandedSteps ? null : _handleSurfaceTap,
+      onTap: _handleSurfaceTap,
       child: child,
     );
   }
 
-  Widget _buildDetailSection({required bool showExpandedSteps}) {
-    if (showExpandedSteps) {
-      return _ActivityStepList(activity: widget.activity, compact: true);
-    }
-    if (widget.compactSurface) {
-      return _expanded
-          ? _ActivityStepList(activity: widget.activity, compact: true)
-          : const SizedBox.shrink();
-    }
-    return AnimatedCrossFade(
-      firstChild: const SizedBox.shrink(),
-      secondChild: _ActivityStepList(activity: widget.activity),
-      crossFadeState: _expanded
-          ? CrossFadeState.showSecond
-          : CrossFadeState.showFirst,
-      duration: const Duration(milliseconds: 180),
-      sizeCurve: Curves.easeOutCubic,
-      firstCurve: Curves.easeOutCubic,
-      secondCurve: Curves.easeOutCubic,
-    );
-  }
-
-  void _toggleExpanded() {
-    setState(() {
-      _expanded = !_expanded;
-    });
-    widget.onLayoutChanged?.call();
-  }
-
   void _handleSurfaceTap() {
-    if (widget.compactSurface &&
-        widget.activity.kind == AgentToolActivityKind.vlm &&
-        widget.activity.stepCount == 1 &&
-        _hasActivityRunLog(widget.activity)) {
+    if (_hasActivityRunLog(widget.activity)) {
       unawaited(_openActivityRunLog(context, widget.activity));
       return;
     }
-    if (widget.compactSurface && widget.activity.stepCount == 1) {
+    if (widget.activity.stepCount == 1) {
       final step = widget.activity.steps.single;
       unawaited(
         _openActivityStepDetail(
@@ -267,28 +173,19 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
       );
       return;
     }
-    _toggleExpanded();
+    unawaited(_openActivityStepsSheet(context, widget.activity));
   }
 }
 
 class _ActivityHeader extends StatelessWidget {
-  const _ActivityHeader({
-    required this.activity,
-    required this.expanded,
-    this.compact = false,
-    this.onOpenRunLog,
-  });
+  const _ActivityHeader({required this.activity});
 
   final AgentToolActivity activity;
-  final bool expanded;
-  final bool compact;
-  final VoidCallback? onOpenRunLog;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final statusColor = resolveAgentToolStatusColor(activity.status);
-    final activityColor = AgentToolCardPolicy.activityColor(activity.kind);
     final locale = Localizations.localeOf(context);
     final statusLabel = resolveAgentToolStatusLabel(<String, dynamic>{
       'status': activity.status,
@@ -299,155 +196,61 @@ class _ActivityHeader extends StatelessWidget {
       activity.kind,
       status: activity.status,
     );
-    final title = _activityTitle(
+    final explicitTitle = _explicitSingleStepTitle(context, activity);
+    final effectiveTitle = explicitTitle.isEmpty ? label : explicitTitle;
+    final tagLabel = _activityTagLabel(
+      context,
       activity,
-      expanded: expanded,
-      compact: compact,
+      statusLabel: statusLabel,
     );
+    final tagBackgroundColor = context.isDarkTheme
+        ? Color.alphaBlend(
+            statusColor.withValues(alpha: 0.14),
+            palette.surfaceElevated,
+          )
+        : Colors.white.withValues(alpha: 0.78);
+    final tagTextColor = context.isDarkTheme
+        ? Color.lerp(palette.textSecondary, statusColor, 0.38)!
+        : statusColor;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _ActivityStatusIcon(activity: activity),
         const SizedBox(width: 8),
         Flexible(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      compact
-                          ? label
-                          : '$label · ${activity.stepCount} ${_stepUnit(context, activity.stepCount)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: context.isDarkTheme
-                            ? Color.lerp(
-                                palette.textSecondary,
-                                activityColor,
-                                0.34,
-                              )
-                            : Color.lerp(Colors.black54, activityColor, 0.45),
-                        fontSize: _AgentToolActivityCardState._processFontSize,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0,
-                        height: 1.1,
-                      ),
-                    ),
-                  ),
-                  if (compact && activity.stepCount > 1) ...[
-                    const SizedBox(width: 5),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: activityColor.withValues(
-                          alpha: context.isDarkTheme ? 0.16 : 0.10,
-                        ),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${activity.stepCount}',
-                        maxLines: 1,
-                        style: TextStyle(
-                          color: context.isDarkTheme
-                              ? Color.lerp(
-                                  palette.textSecondary,
-                                  activityColor,
-                                  0.42,
-                                )
-                              : activityColor,
-                          fontSize:
-                              _AgentToolActivityCardState._processFontSize,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              if (compact &&
-                  onOpenRunLog != null &&
-                  activity.kind == AgentToolActivityKind.vlm)
-                Padding(
-                  padding: const EdgeInsets.only(top: 5),
-                  child: _RunLogInlineButton(onTap: onOpenRunLog!),
-                ),
-              if (title.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    compact
-                        ? _localizedActivityText(context, title)
-                        : '${_activityTitlePrefix(context)} · ${_localizedActivityText(context, title)}',
-                    maxLines: compact ? 2 : 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: context.isDarkTheme
-                          ? palette.textPrimary
-                          : Colors.black87,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0,
-                      height: 1.15,
-                    ),
-                  ),
-                ),
-            ],
+          child: Text(
+            effectiveTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: context.isDarkTheme ? palette.textPrimary : Colors.black87,
+              fontSize: _AgentToolActivityCardState._processFontSize,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0,
+              height: 1.15,
+            ),
           ),
         ),
-        if (compact &&
-            onOpenRunLog != null &&
-            activity.kind != AgentToolActivityKind.vlm) ...[
-          const SizedBox(width: 6),
-          _RunLogIconButton(onTap: onOpenRunLog!),
-        ],
-        if (!compact) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-            decoration: BoxDecoration(
-              color: context.isDarkTheme
-                  ? Color.alphaBlend(
-                      statusColor.withValues(alpha: 0.14),
-                      palette.surfaceElevated,
-                    )
-                  : Colors.white.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              statusLabel,
-              style: TextStyle(
-                color: context.isDarkTheme
-                    ? Color.lerp(palette.textSecondary, statusColor, 0.38)
-                    : statusColor,
-                fontSize: _AgentToolActivityCardState._processFontSize,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0,
-                height: 1,
-              ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: BoxDecoration(
+            color: tagBackgroundColor,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            tagLabel,
+            style: TextStyle(
+              color: tagTextColor,
+              fontSize: _AgentToolActivityCardState._processFontSize,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+              height: 1,
             ),
           ),
-          const SizedBox(width: 6),
-          AnimatedRotation(
-            turns: expanded ? 0 : -0.25,
-            duration: const Duration(milliseconds: 180),
-            child: Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 16,
-              color: palette.textSecondary,
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -461,18 +264,21 @@ class _ActivityStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = resolveAgentToolStatusColor(activity.status);
-    final activityColor = AgentToolCardPolicy.activityColor(activity.kind);
     final toolType = AgentToolCardPolicy.toolTypeForKind(activity.kind);
     final iconColor = context.isDarkTheme
-        ? Color.lerp(context.omniPalette.textSecondary, activityColor, 0.48)!
-        : activityColor;
-    final ringColor = activity.isRunning ? statusColor : activityColor;
+        ? Color.lerp(context.omniPalette.textSecondary, statusColor, 0.38)!
+        : statusColor;
     return Container(
       width: 18,
       height: 18,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: ringColor.withValues(alpha: context.isDarkTheme ? 0.18 : 0.13),
+        color: context.isDarkTheme
+            ? Color.alphaBlend(
+                statusColor.withValues(alpha: 0.14),
+                context.omniPalette.surfaceElevated,
+              )
+            : statusColor.withValues(alpha: 0.12),
       ),
       child: Center(
         child: activity.isRunning
@@ -494,88 +300,15 @@ class _ActivityStatusIcon extends StatelessWidget {
   }
 }
 
-class _RunLogInlineButton extends StatelessWidget {
-  const _RunLogInlineButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final locale = Localizations.localeOf(context);
-    final label = AppTextLocalizer.choose(
-      zh: '查看完整 RunLog',
-      en: 'View full RunLog',
-      locale: locale,
-    );
-    return Tooltip(
-      message: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(0, 2, 8, 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.route_rounded, size: 13, color: palette.textSecondary),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.textSecondary,
-                  fontSize: _AgentToolActivityCardState._processFontSize,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0,
-                  height: 1.1,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RunLogIconButton extends StatelessWidget {
-  const _RunLogIconButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: AppTextLocalizer.choose(
-        zh: '查看完整 RunLog',
-        en: 'View full RunLog',
-        locale: Localizations.localeOf(context),
-      ),
-      child: InkResponse(
-        onTap: onTap,
-        radius: 16,
-        child: Icon(
-          Icons.route_rounded,
-          size: 15,
-          color: context.omniPalette.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
 class _ActivityStepList extends StatelessWidget {
-  const _ActivityStepList({required this.activity, this.compact = false});
+  const _ActivityStepList({required this.activity});
 
   final AgentToolActivity activity;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(top: compact ? 6 : 10),
+      padding: const EdgeInsets.only(top: 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -584,7 +317,6 @@ class _ActivityStepList extends StatelessWidget {
               step: activity.steps[index],
               runLogId: _resolveActivityRunLogId(activity),
               showConnector: index < activity.steps.length - 1,
-              compact: compact,
             ),
         ],
       ),
@@ -597,13 +329,11 @@ class _ActivityStepRow extends StatelessWidget {
     required this.step,
     required this.runLogId,
     required this.showConnector,
-    this.compact = false,
   });
 
   final AgentToolActivityStep step;
   final String runLogId;
   final bool showConnector;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -611,7 +341,6 @@ class _ActivityStepRow extends StatelessWidget {
     final statusColor = resolveAgentToolStatusColor(step.status);
     final title = _stepTitle(context, step);
     final subtitle = _stepSubtitle(context, step);
-    final preview = compact ? _stepPreview(context, step) : '';
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -626,7 +355,7 @@ class _ActivityStepRow extends StatelessWidget {
         );
       },
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: compact ? 2 : 3),
+        padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -661,7 +390,7 @@ class _ActivityStepRow extends StatelessWidget {
                     step.isRetry
                         ? '${AppTextLocalizer.choose(zh: '重试', en: 'Retry', locale: Localizations.localeOf(context))} · $title'
                         : title,
-                    maxLines: compact ? 2 : 1,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.textPrimary,
@@ -676,27 +405,10 @@ class _ActivityStepRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         subtitle,
-                        maxLines: compact ? 2 : 1,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.textSecondary,
-                          fontSize:
-                              _AgentToolActivityCardState._processFontSize,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0,
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                  if (preview.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        preview,
-                        maxLines: compact ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.textTertiary,
                           fontSize:
                               _AgentToolActivityCardState._processFontSize,
                           fontWeight: FontWeight.w500,
@@ -787,28 +499,38 @@ String _stepUnit(BuildContext context, int count) {
   );
 }
 
-String _activityTitlePrefix(BuildContext context) {
-  return AppTextLocalizer.choose(
-    zh: '目标',
-    en: 'Target',
-    locale: Localizations.localeOf(context),
-  );
+String _activityTagLabel(
+  BuildContext context,
+  AgentToolActivity activity, {
+  required String statusLabel,
+}) {
+  if (activity.stepCount > 1) {
+    return '${activity.stepCount} ${_stepUnit(context, activity.stepCount)}';
+  }
+  if (activity.isRunning) {
+    return _activityLabel(context, activity.kind, status: activity.status);
+  }
+  return statusLabel;
 }
 
-String _activityTitle(
-  AgentToolActivity activity, {
-  required bool expanded,
-  required bool compact,
-}) {
-  if (expanded && (compact || activity.stepCount > 1)) {
+String _explicitSingleStepTitle(
+  BuildContext context,
+  AgentToolActivity activity,
+) {
+  if (activity.stepCount != 1 || activity.kind == AgentToolActivityKind.vlm) {
     return '';
   }
-  final title = activity.title.trim();
-  if (title.isEmpty ||
-      title == AgentToolCardPolicy.activityKindLabel(activity.kind)) {
+  final cardData =
+      activity.steps.single.message.cardData ?? const <String, dynamic>{};
+  final title = AgentToolCardPolicy.firstNonBlank(<Object?>[
+    cardData['toolTitle'],
+    cardData['tool_title'],
+    cardData['displayName'],
+  ]);
+  if (title.isEmpty || AgentToolCardPolicy.isPlaceholderText(title)) {
     return '';
   }
-  return title;
+  return _localizedActivityText(context, title);
 }
 
 String _localizedActivityText(BuildContext context, String value) {
@@ -917,32 +639,6 @@ String _stepSubtitle(BuildContext context, AgentToolActivityStep step) {
   return '$action · $target';
 }
 
-String _stepPreview(BuildContext context, AgentToolActivityStep step) {
-  final cardData = step.message.cardData ?? const <String, dynamic>{};
-  final preview = resolveAgentToolPreview(
-    cardData,
-    locale: Localizations.localeOf(context),
-  ).trim();
-  final title = _stepTitle(context, step).trim();
-  final subtitle = _stepSubtitle(context, step).trim();
-  if (preview.isEmpty ||
-      preview == title ||
-      preview == subtitle ||
-      AgentToolCardPolicy.isPlaceholderText(preview)) {
-    return '';
-  }
-  final action = _localizedActionText(context, step.action).trim();
-  if (action.isNotEmpty && title.isNotEmpty) {
-    final compactPreview = preview.replaceAll(RegExp(r'\s+'), ' ');
-    if (compactPreview == '$action $title' ||
-        compactPreview == '$action$title' ||
-        compactPreview == '$action · $title') {
-      return '';
-    }
-  }
-  return preview;
-}
-
 String _localizedActionText(BuildContext context, String value) {
   final locale = Localizations.localeOf(context);
   switch (value.trim()) {
@@ -1018,6 +714,71 @@ Future<void> _openActivityStepDetail(
     );
   }
   return showAgentToolDetailSheet(context, cardData: cardData);
+}
+
+Future<void> _openActivityStepsSheet(
+  BuildContext context,
+  AgentToolActivity activity,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) {
+      final palette = sheetContext.omniPalette;
+      return DraggableScrollableSheet(
+        initialChildSize: 0.46,
+        minChildSize: 0.28,
+        maxChildSize: 0.88,
+        expand: false,
+        builder: (context, scrollController) {
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.surfacePrimary,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
+              ),
+              border: Border(top: BorderSide(color: palette.borderSubtle)),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: palette.borderSubtle,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _activityLabel(
+                    context,
+                    activity.kind,
+                    status: activity.status,
+                  ),
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _ActivityStepList(activity: activity),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 Future<void> _openActivityRunLog(
