@@ -201,32 +201,53 @@ Guidelines:
 ## Real Device Startup
 
 Before judging live VLM or Function behavior on `emulator-5556`, normalize the
-runtime with:
+runtime with the dedicated one-click entrypoint:
 
 ```bash
-OOB_MCP_TOKEN=<token> scripts/start-oob-vlm-device.sh --device emulator-5556
+OOB_MCP_TOKEN=<token> scripts/start-oob-5556.sh
 ```
 
-Use this script instead of hand-editing Accessibility settings. It performs the
-runtime-only startup sequence: stops known UiAutomation conflicts on the
-dedicated OOB test emulator, clears and rebinds OOB Accessibility, launches OOB,
-forwards `127.0.0.1:28999` to device port `8899`, and probes MCP when a token is
-provided. It also leaves a short settle window after MCP is reachable so the
-native Accessibility bridge can finish initializing. If it reports
-`startup_error=ui_automation_present`, stop the external runner that owns
-UiAutomation or reboot the emulator before blaming VLM logic. If it reports
-`startup_error=enabled_but_not_bound`, rerun the script so OOB Accessibility is
-re-written from a clean secure setting. If the first immediate VLM call still
-returns "please enable accessibility", wait a few seconds or rerun the script;
-that means Android reported the service as bound before the in-process bridge
-became available.
+Use this instead of hand-editing Accessibility settings. It builds the standard
+debug APK, installs it on `emulator-5556`, stops known UiAutomation conflicts,
+clears and rebinds OOB Accessibility, launches OOB, forwards
+`127.0.0.1:28999` to device port `8899`, and probes MCP when a token is
+provided. Pass `--skip-build` to reuse the last APK, or `--skip-install` when
+only rebinding/restarting the runtime.
+
+Startup error summary:
+
+- `startup_error=ui_automation_present`: another runner owns UiAutomation.
+  Stop Mobilerun/Appium/AndroidWorld ownership or reboot the emulator before
+  blaming VLM logic.
+- `startup_error=enabled_but_not_bound`: Android lists OOB Accessibility as
+  enabled but not bound. Rerun the one-click script so the secure setting is
+  rewritten from a clean state.
+- `startup_error=accessibility_not_bound`: OOB Accessibility did not bind
+  inside the wait budget. Rerun with `--wait-seconds 30` or inspect
+  `dumpsys accessibility`.
+- `startup_error=mcp_auth_failed`: the token belongs to a different OOB
+  instance/device. Copy the token from the target emulator and rerun with
+  `OOB_MCP_TOKEN`.
+- `startup_error=mcp_unreachable`: the app process, adb forward, or MCP server
+  is not reachable.
+- `startup_error=app_not_running`: OOB launched then exited or did not start.
+  Reinstall and inspect logcat for a startup crash.
+
+If the first immediate VLM call still returns "please enable accessibility",
+wait a few seconds or rerun the script; that means Android reported the service
+as bound before the in-process bridge became available.
 
 For `emulator-5554`, do not stop Mobilerun/AndroidWorld services unless the
-validation explicitly targets OOB on that device. Use:
+validation explicitly targets OOB on that device. When validating OOB on 5554,
+use a separate forwarded host port and preserve existing Accessibility services:
 
 ```bash
-scripts/start-oob-vlm-device.sh --device emulator-5554 --no-stop-conflicts
+OOB_MCP_TOKEN=<token> scripts/start-oob-vlm-device.sh --device emulator-5554 --host-port 28998 --no-stop-conflicts --preserve-accessibility
 ```
+
+`emulator-5556` defaults to clean OOB rebinding. Non-5556 devices default to
+preserving existing Accessibility services so AndroidWorld/Mobilerun setup is
+not removed unless `--clean-accessibility` is explicitly passed.
 
 ## First-Step AndroidWorld Rules
 
@@ -327,10 +348,14 @@ Recommended agent workflow:
 When submitting a conversation through `agent_run` only to create, inspect,
 convert, or explicitly run reusable instructions, pass
 `toolProfile="function_management"`. That profile exposes only the Function,
-RunLog, app lookup, and VLM task tools needed for this workflow, which avoids
+RunLog, app lookup, and VLM task tools needed for this workflow, including
+`oob_function_list/get/register/guard_check/run/delete/clear`. This avoids
 sending the full general Agent tool catalog to the model. For even tighter
 validation, pass `allowedTools` with the exact tool names needed for that turn.
-Do not use the focused profile for unrelated general Agent tasks.
+Do not use the focused profile for unrelated general Agent tasks. Use
+`oob_function_clear(confirm=true)` only when the user explicitly asks to clear
+all reusable instructions; otherwise delete temporary validation Functions one
+by one.
 
 MCP `agent_run` uses `userMessage` as the prompt field; do not send `message`.
 Example wrapper:

@@ -41,6 +41,7 @@ data class AgentToolExposurePolicy(
             "oob_function_guard_check",
             "oob_function_run",
             "oob_function_delete",
+            "oob_function_clear",
             "oob_run_log_list",
             "oob_run_log_get",
             "oob_run_log_convert",

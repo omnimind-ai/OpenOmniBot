@@ -609,6 +609,7 @@ object AgentSystemPrompt {
                 - Function 召回只是候选；默认不要自动执行。只有用户明确要求执行或你已经明确选择某个 Function 时，才调用 `oob_function_run`。
                 - 执行前需要检查风险或参数时调用 `oob_function_guard_check`。
                 - 需要从历史执行固化指令时，先 `oob_run_log_list` / `oob_run_log_get`，再 `oob_run_log_convert`。
+                - 删除单条复用指令用 `oob_function_delete`；清空全部复用指令必须在用户明确要求清空时调用 `oob_function_clear(confirm=true)`。
                 - 需要包名时调用 `context_apps_query`。
                 - 需要真实手机屏幕自动化时调用 `vlm_task`，并保持 `allowOmniFlowFunctionAutoExecute=false`，除非用户明确要求 strict direct replay。
                 - 工具返回失败时，基于错误简短说明，不要编造已完成。
@@ -630,6 +631,7 @@ object AgentSystemPrompt {
                 - Function recall is candidate-only by default. Do not auto-run a Function unless the user explicitly asks to execute it or you explicitly select one.
                 - Use `oob_function_guard_check` before execution when risk or parameters need checking.
                 - To turn a prior execution into a Function, use `oob_run_log_list` / `oob_run_log_get`, then `oob_run_log_convert`.
+                - Use `oob_function_delete` to remove one reusable instruction. Use `oob_function_clear(confirm=true)` only when the user explicitly asks to clear all reusable instructions.
                 - Use `context_apps_query` when an app package name is needed.
                 - Use `vlm_task` only for real phone-screen automation, and keep `allowOmniFlowFunctionAutoExecute=false` unless the user explicitly requests strict direct replay.
                 - If a tool fails, report the error briefly; do not claim completion.

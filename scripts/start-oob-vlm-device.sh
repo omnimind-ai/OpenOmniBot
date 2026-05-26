@@ -9,6 +9,10 @@
 #   packages on the dedicated OOB device before binding OOB.
 # - MCP was not restored after the app was killed or reinstalled. Fix: launch OOB,
 #   set adb forward, and optionally probe /mcp/list_tools with OOB_MCP_TOKEN.
+# - The wrong MCP token is used for the target device. Fix: copy the token from
+#   the OOB instance running on that exact emulator and pass OOB_MCP_TOKEN.
+# - OOB launches but the process exits immediately. Fix: reinstall the debug APK
+#   and inspect logcat for the app crash before testing VLM logic.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,12 +21,14 @@ cd "$ROOT_DIR"
 DEVICE_SERIAL="${OOB_DEVICE:-emulator-5556}"
 PACKAGE_NAME="${OOB_PACKAGE_NAME:-cn.com.omnimind.bot.debug}"
 ACCESSIBILITY_SERVICE="${OOB_ACCESSIBILITY_SERVICE:-com.google.android.accessibility.selecttospeak.SelectToSpeakService}"
+ACCESSIBILITY_LABEL="${OOB_ACCESSIBILITY_LABEL:-Omnibot}"
 HOST_PORT="${OOB_MCP_HOST_PORT:-28999}"
 DEVICE_PORT="${OOB_MCP_DEVICE_PORT:-8899}"
 MCP_TOKEN="${OOB_MCP_TOKEN:-}"
 WAIT_SECONDS="${OOB_START_WAIT_SECONDS:-12}"
 SETTLE_SECONDS="${OOB_START_SETTLE_SECONDS:-3}"
 STOP_CONFLICTS="${OOB_STOP_CONFLICTS:-auto}"
+PRESERVE_ACCESSIBILITY="${OOB_PRESERVE_ACCESSIBILITY:-auto}"
 INSTALL_APK=""
 LAUNCH_APP=1
 ENABLE_ACCESSIBILITY=1
@@ -36,12 +42,15 @@ Usage:
 Options:
   --device <serial>        Target adb serial. Default: $OOB_DEVICE or emulator-5556.
   --package <name>         OOB package name. Default: cn.com.omnimind.bot.debug.
+  --accessibility-label <s> Label shown in dumpsys for the service. Default: Omnibot.
   --install <apk>          Install an APK before startup checks.
   --host-port <port>       Local forwarded MCP port. Default: 28999.
   --device-port <port>     Device MCP port. Default: 8899.
   --token <token>          MCP bearer token. Same as OOB_MCP_TOKEN.
   --stop-conflicts         Force-stop known UiAutomation conflict packages.
   --no-stop-conflicts      Do not force-stop conflict packages.
+  --preserve-accessibility Append OOB to existing enabled services.
+  --clean-accessibility    Clear existing services before enabling OOB.
   --no-accessibility       Do not rebind OOB Accessibility.
   --no-launch              Do not launch the OOB app.
   --wait-seconds <n>       Wait budget for binding/MCP startup. Default: 12.
@@ -72,6 +81,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --package=*)
       PACKAGE_NAME="${1#--package=}"
+      ;;
+    --accessibility-label)
+      [[ $# -lt 2 ]] && { echo "--accessibility-label requires a value" >&2; exit 1; }
+      ACCESSIBILITY_LABEL="$2"
+      shift
+      ;;
+    --accessibility-label=*)
+      ACCESSIBILITY_LABEL="${1#--accessibility-label=}"
       ;;
     --install)
       [[ $# -lt 2 ]] && { echo "--install requires an APK path" >&2; exit 1; }
@@ -110,6 +127,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-stop-conflicts)
       STOP_CONFLICTS=0
+      ;;
+    --preserve-accessibility)
+      PRESERVE_ACCESSIBILITY=1
+      ;;
+    --clean-accessibility)
+      PRESERVE_ACCESSIBILITY=0
       ;;
     --no-accessibility)
       ENABLE_ACCESSIBILITY=0
@@ -158,6 +181,13 @@ log() {
   printf '[oob-start] %s\n' "$*"
 }
 
+startup_error() {
+  local code="$1"
+  local hint="$2"
+  log "startup_error=${code}"
+  log "startup_hint=${hint}"
+}
+
 adb_shell() {
   "${ADB[@]}" shell "$@" 2>/dev/null | tr -d '\r'
 }
@@ -179,6 +209,16 @@ should_stop_conflicts() {
   [[ "$DEVICE_SERIAL" == "emulator-5556" ]]
 }
 
+should_preserve_accessibility() {
+  if [[ "$PRESERVE_ACCESSIBILITY" == "1" || "$PRESERVE_ACCESSIBILITY" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$PRESERVE_ACCESSIBILITY" == "0" || "$PRESERVE_ACCESSIBILITY" == "false" ]]; then
+    return 1
+  fi
+  [[ "$DEVICE_SERIAL" != "emulator-5556" ]]
+}
+
 accessibility_dump() {
   "${ADB[@]}" shell dumpsys accessibility 2>/dev/null | tr -d '\r'
 }
@@ -186,9 +226,33 @@ accessibility_dump() {
 accessibility_bound() {
   local dump="$1"
   grep -Fq 'Bound services:{Service' <<<"$dump" &&
-    grep -Fq "Enabled services:{{${PACKAGE_NAME}/${ACCESSIBILITY_SERVICE}}}" <<<"$dump" &&
+    grep -Fq "Service[label=${ACCESSIBILITY_LABEL}" <<<"$dump" &&
+    grep -Fq "${PACKAGE_NAME}/${ACCESSIBILITY_SERVICE}" <<<"$dump" &&
     grep -Fq "[${PACKAGE_NAME}]" <<<"$dump" &&
     ! grep -q 'Bound services:{}' <<<"$dump"
+}
+
+enabled_accessibility_value_with_oob() {
+  local current="$1"
+  if [[ "$current" == "null" || -z "$current" ]]; then
+    printf '%s' "$COMPONENT"
+    return
+  fi
+  IFS=':' read -r -a services <<<"$current"
+  local filtered=()
+  local found=0
+  for service in "${services[@]}"; do
+    [[ -z "$service" || "$service" == "null" ]] && continue
+    if [[ "$service" == "$COMPONENT" ]]; then
+      found=1
+    fi
+    filtered+=("$service")
+  done
+  if [[ "$found" -eq 0 ]]; then
+    filtered+=("$COMPONENT")
+  fi
+  local IFS=':'
+  printf '%s' "${filtered[*]}"
 }
 
 has_ui_automation() {
@@ -211,11 +275,17 @@ wait_for_accessibility() {
     now="$(date +%s)"
     if (( now - started >= WAIT_SECONDS )); then
       log "accessibility_not_ready"
+      local emitted_error=0
       if has_ui_automation "$dump"; then
-        log "startup_error=ui_automation_present"
+        startup_error "ui_automation_present" "UiAutomation is active on this device; stop Mobilerun/Appium/AndroidWorld ownership or reboot the emulator, then rerun this script."
+        emitted_error=1
       fi
       if grep -q 'Bound services:{}' <<<"$dump"; then
-        log "startup_error=enabled_but_not_bound"
+        startup_error "enabled_but_not_bound" "Android lists OOB Accessibility as enabled but not bound; rerun with clean rebinding or use the dedicated 5556 one-click script."
+        emitted_error=1
+      fi
+      if [[ "$emitted_error" -eq 0 ]]; then
+        startup_error "accessibility_not_bound" "OOB Accessibility did not bind within the wait budget; rerun with a longer --wait-seconds or inspect dumpsys accessibility."
       fi
       print_accessibility_summary
       return 1
@@ -231,32 +301,49 @@ probe_mcp() {
     log "probe_command=OOB_MCP_TOKEN=<token> $0 --device $DEVICE_SERIAL --no-accessibility --no-launch"
     return 0
   fi
-  local started now response count last_error
+  local started now response body status count last_error
   started="$(date +%s)"
   while true; do
-    response="$(curl --noproxy '*' -sS -m 4 \
+    response="$(curl --noproxy '*' -sS -m 4 -w $'\n%{http_code}' \
       -H "Authorization: Bearer ${MCP_TOKEN}" \
       -H 'Content-Type: application/json' \
       -d '{}' "http://127.0.0.1:${HOST_PORT}/mcp/list_tools" 2>&1)" || {
         last_error="$response"
         now="$(date +%s)"
         if (( now - started >= WAIT_SECONDS )); then
-          log "startup_error=mcp_unreachable"
+          startup_error "mcp_unreachable" "The local MCP probe could not reach 127.0.0.1:${HOST_PORT}; verify adb forward and that the OOB app process is alive."
           printf '%s\n' "$last_error" >&2
           return 1
         fi
         sleep 1
         continue
       }
-    count="$(count_mcp_tools "$response")"
+    status="${response##*$'\n'}"
+    body="${response%$'\n'$status}"
+    if [[ "$status" == "401" || "$status" == "403" ]]; then
+      startup_error "mcp_auth_failed" "The MCP token does not match this OOB instance; copy the token from the target emulator and rerun with OOB_MCP_TOKEN or --token."
+      printf '%s\n' "$body" >&2
+      return 1
+    fi
+    if [[ "$status" != "200" ]]; then
+      now="$(date +%s)"
+      if (( now - started >= WAIT_SECONDS )); then
+        startup_error "mcp_http_${status}" "The MCP server answered with HTTP ${status}; inspect OOB logs or rerun after launching the app."
+        printf '%s\n' "$body" >&2
+        return 1
+      fi
+      sleep 1
+      continue
+    fi
+    count="$(count_mcp_tools "$body")"
     if [[ "$count" != "0" ]]; then
       log "mcp_tools=${count}"
       return 0
     fi
     now="$(date +%s)"
     if (( now - started >= WAIT_SECONDS )); then
-      log "startup_error=mcp_probe_unexpected_payload"
-      printf '%s\n' "$response" >&2
+      startup_error "mcp_probe_unexpected_payload" "MCP responded but did not return a non-empty tool list; check that the app initialized the MCP server."
+      printf '%s\n' "$body" >&2
       return 1
     fi
     sleep 1
@@ -307,12 +394,19 @@ fi
 
 if [[ "$ENABLE_ACCESSIBILITY" -eq 1 ]]; then
   log "rebinding_accessibility=${COMPONENT}"
-  "${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true
-  "${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 0 >/dev/null 2>&1 || true
-  sleep 1
   "${ADB[@]}" shell appops set "$PACKAGE_NAME" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 || true
   "${ADB[@]}" shell appops set "$PACKAGE_NAME" ACCESS_RESTRICTED_SETTINGS allow >/dev/null 2>&1 || true
-  "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$COMPONENT"
+  if should_preserve_accessibility; then
+    log "accessibility_mode=preserve_existing"
+    current_services="$("${ADB[@]}" shell settings --user 0 get secure enabled_accessibility_services 2>/dev/null | tr -d '\r')"
+    "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$(enabled_accessibility_value_with_oob "$current_services")"
+  else
+    log "accessibility_mode=clean_rebind"
+    "${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true
+    "${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 0 >/dev/null 2>&1 || true
+    sleep 1
+    "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$COMPONENT"
+  fi
   "${ADB[@]}" shell settings --user 0 put secure accessibility_enabled 1
 fi
 
@@ -331,7 +425,7 @@ log "forward=tcp:${HOST_PORT}->tcp:${DEVICE_PORT}"
 "${ADB[@]}" forward "tcp:${HOST_PORT}" "tcp:${DEVICE_PORT}"
 
 if ! adb_shell pidof "$PACKAGE_NAME" >/dev/null; then
-  log "startup_error=app_not_running"
+  startup_error "app_not_running" "OOB is not running after launch; reinstall the debug APK and inspect logcat for startup crashes."
   exit 1
 fi
 

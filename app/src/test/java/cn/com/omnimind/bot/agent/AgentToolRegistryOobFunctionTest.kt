@@ -65,6 +65,7 @@ class AgentToolRegistryOobFunctionTest {
                 AgentToolExposurePolicy.FUNCTION_MANAGEMENT_TOOLS,
                 toolNames,
             )
+            assertTrue(toolNames.contains("oob_function_clear"))
             assertFalse(toolNames.contains("web_search"))
             assertFalse(toolNames.contains("terminal_execute"))
             assertFalse(toolNames.contains("workbench_project_create"))

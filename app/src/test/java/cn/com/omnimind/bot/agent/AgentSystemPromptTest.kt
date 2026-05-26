@@ -130,6 +130,7 @@ class AgentSystemPromptTest {
 
         assertTrue(prompt.contains("复用指令管理执行器"))
         assertTrue(prompt.contains("oob_function_register"))
+        assertTrue(prompt.contains("oob_function_clear(confirm=true)"))
         assertTrue(prompt.contains("allowOmniFlowFunctionAutoExecute=false"))
         assertFalse(prompt.contains("已安装 skills"))
         assertFalse(prompt.contains("Workspace 记忆上下文"))
