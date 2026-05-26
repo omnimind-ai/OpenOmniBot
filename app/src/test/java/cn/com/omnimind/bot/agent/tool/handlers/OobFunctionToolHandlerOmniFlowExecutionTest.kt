@@ -295,6 +295,56 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
+    fun `invalid omniflow step refetches current page before failing`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingBackend(
+            currentXml = CURRENT_PAGE_XML,
+            currentPackage = "com.example.current",
+            currentActivity = "CurrentActivity",
+        )
+        try {
+            val spec = functionSpec(
+                functionId = "invalid_click_refreshes_page",
+                steps = listOf(
+                    mapOf(
+                        "id" to "bad_click",
+                        "title" to "Bad click",
+                        "kind" to "omniflow_action",
+                        "executor" to "omniflow",
+                        "model_free" to true,
+                        "scriptable" to true,
+                        "tool" to "click",
+                        "callable_tool" to "click",
+                        "args" to mapOf("y" to 240),
+                    )
+                ),
+            )
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = "invalid_click_refreshes_page",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(false, run["success"])
+                assertEquals(0, backend.clickCount)
+                assertTrue(backend.currentXmlReadCount >= 1)
+                val step = stepResults(run).single()
+                assertEquals(false, step["success"])
+                val recovery = step["recovery"] as? Map<*, *>
+                assertNotNull(recovery)
+                assertEquals(true, recovery?.get("refetched_current_page"))
+                assertEquals("com.example.current", recovery?.get("effective_package"))
+                assertEquals("CurrentActivity", recovery?.get("activity_name"))
+                assertEquals(CURRENT_PAGE_XML, recovery?.get("observation_xml"))
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `legacy provider-owned agent call_function spec is executed locally`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -687,6 +737,48 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         override fun currentActivityName(): String? = null
     }
 
+    private class RecordingBackend(
+        private val currentXml: String,
+        private val currentPackage: String,
+        private val currentActivity: String,
+    ) : OmniflowActionBackend {
+        var clickCount = 0
+            private set
+        var currentXmlReadCount = 0
+            private set
+
+        override fun isReady(): Boolean = true
+
+        override suspend fun click(x: Float, y: Float) {
+            clickCount += 1
+        }
+
+        override suspend fun longPress(x: Float, y: Float, durationMs: Long) = Unit
+
+        override suspend fun scroll(
+            x: Float,
+            y: Float,
+            direction: ScrollDirection,
+            distance: Float,
+            durationMs: Long,
+        ) = Unit
+
+        override suspend fun inputTextToFocusedNode(text: String) = Unit
+
+        override suspend fun launchApplication(packageName: String) = Unit
+
+        override suspend fun pressHotKey(key: String) = Unit
+
+        override fun currentXml(): String? {
+            currentXmlReadCount += 1
+            return currentXml
+        }
+
+        override fun currentPackageName(): String? = currentPackage
+
+        override fun currentActivityName(): String? = currentActivity
+    }
+
     private class InMemoryPrefs : SharedPreferences {
         private val values = linkedMapOf<String, Any?>()
 
@@ -880,5 +972,10 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         override val reasoningEffort: String? = null
         override val terminalEnvironment: Map<String, String> = emptyMap()
         override val runControl = NoOpAgentRunControl
+    }
+
+    private companion object {
+        private const val CURRENT_PAGE_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[10,20][200,80]\" text=\"Current\" package=\"com.example.current\" class=\"android.widget.TextView\"/></hierarchy>"
     }
 }

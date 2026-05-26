@@ -182,6 +182,9 @@ class VLMOperationService(
     }
 
     private suspend fun ensureTaskActive(stage: String) {
+        if ((deviceOperator as? VLMOperationTask)?.isCancellationRequested == true) {
+            throw CancellationException("任务已取消: $stage")
+        }
         currentCoroutineContext().ensureActive()
     }
 
@@ -1058,6 +1061,7 @@ class VLMOperationService(
                 )
                 println("Execute action: ${finalStep.action.name}, result=${finalStep.result ?: "OK"}")
 
+                val actionSucceeded = finalStep.result?.startsWith("执行失败") != true
                 if (finalStep.result?.contains("不支持的操作类型") == true) {
                     parseFailureCount++
                     onStepCompleted(
@@ -1076,7 +1080,12 @@ class VLMOperationService(
                 }
 
                 parseFailureCount = 0
-                onStepCompleted(stepIndex, finalStep, true, null)
+                onStepCompleted(
+                    stepIndex,
+                    finalStep,
+                    actionSucceeded,
+                    if (actionSucceeded) null else finalStep.result
+                )
                 sceneTurn?.let { completedTurn ->
                     conversationState.appendRound(
                         vlmClient.buildConversationRound(

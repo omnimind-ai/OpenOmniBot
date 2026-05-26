@@ -82,6 +82,7 @@ object VlmToolCoordinator {
     private const val FINAL_STATE_SETTLE_MS = 1_200L
     private const val FINAL_STATE_OBSERVE_ATTEMPTS = 4
     private const val FINAL_STATE_OBSERVE_INTERVAL_MS = 350L
+    private const val MAX_RECALL_RECOVERY_XML_CHARS = 6000
     internal const val FINAL_STATE_MISMATCH_ERROR_CODE = "OOB_FINAL_STATE_MISMATCH"
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -210,10 +211,11 @@ object VlmToolCoordinator {
             McpTaskManager.scheduleTaskCleanup(taskId, scope)
             return@withContext outcome
         }
+        val executionRequest = taskState.vlmRequest ?: augmentedRequest
 
         val startResult = startVlmTaskInternal(
             context,
-            augmentedRequest,
+            executionRequest,
             taskId,
             taskState,
             scope,
@@ -255,8 +257,8 @@ object VlmToolCoordinator {
             taskId = taskId,
             goal = request.goal,
             progressReporter = progressReporter,
-            waitTimeoutMs = request.waitTimeoutMs,
-            targetPackageName = augmentedRequest.packageName
+            waitTimeoutMs = executionRequest.waitTimeoutMs,
+            targetPackageName = executionRequest.packageName
         )
     }
 
@@ -359,9 +361,10 @@ object VlmToolCoordinator {
                     McpTaskManager.scheduleTaskCleanup(taskId, scope)
                     return@withContext outcome
                 }
+                val executionRequest = taskState.vlmRequest ?: augmentedRequest
                 val startResult = startVlmTaskInternal(
                     context,
-                    augmentedRequest,
+                    executionRequest,
                     taskId,
                     taskState,
                     scope,
@@ -394,8 +397,8 @@ object VlmToolCoordinator {
                     taskId = taskId,
                     goal = taskState.goal,
                     progressReporter = progressReporter,
-                    waitTimeoutMs = request.waitTimeoutMs,
-                    targetPackageName = augmentedRequest.packageName
+                    waitTimeoutMs = executionRequest.waitTimeoutMs,
+                    targetPackageName = executionRequest.packageName
                 )
             }
             delay(McpTaskManager.POLL_INTERVAL_MS)
@@ -948,9 +951,22 @@ object VlmToolCoordinator {
         }
         val success = result["success"] == true && result["fallback"] != true
         if (!success) {
+            val fallbackGuidance = buildRecallFallbackGuidance(
+                functionId = functionId,
+                segmentStartStepIndex = recallGuidance.directHitStartStepIndex,
+                result = result
+            )
+            if (fallbackGuidance.isNotBlank()) {
+                val currentRequest = taskState.vlmRequest ?: VlmTaskRequest(
+                    goal = goal,
+                    needSummary = taskState.needSummary
+                )
+                taskState.vlmRequest = currentRequest.withRecallGuidance(fallbackGuidance)
+            }
             taskState.executionRoute = "vlm_with_omniflow_recall_fallback:${recallGuidance.decision}"
             taskState.addChatMessage(
-                "[SYSTEM] OmniFlow recall hit $functionId could not complete locally; continuing with VLM. reason=${recallFallbackReason(result)}"
+                "[SYSTEM] OmniFlow recall hit $functionId could not complete locally; continuing with VLM. " +
+                    "reason=${recallFallbackReason(result)}; latest page recovery injected=${fallbackGuidance.isNotBlank()}"
             )
             taskState.markStateChanged()
             emitProgress(
@@ -962,6 +978,7 @@ object VlmToolCoordinator {
                     "summary" to "召回 Function 未能本地完成，继续视觉执行",
                     "functionId" to functionId,
                     "omniflowRecallResult" to result,
+                    "omniflowRecallFallbackGuidanceInjected" to fallbackGuidance.isNotBlank(),
                 )
             )
             return null
@@ -1022,6 +1039,107 @@ object VlmToolCoordinator {
             callFunction = callFunction,
         )
     }
+
+    private fun buildRecallFallbackGuidance(
+        functionId: String,
+        segmentStartStepIndex: Int,
+        result: Map<String, Any?>,
+    ): String {
+        val failedStep = findFailedRecallStep(result)
+        val recovery = findRecoveryPayload(result)
+        val packageName = firstNonBlank(recovery?.get("effective_package"), recovery?.get("package_name"))
+        val activityName = firstNonBlank(recovery?.get("activity_name"))
+        val xml = recovery?.get("observation_xml")
+            ?.toString()
+            ?.trim()
+            ?.take(MAX_RECALL_RECOVERY_XML_CHARS)
+            .orEmpty()
+        val reason = recallFallbackReason(result)
+        return buildString {
+            append("OmniFlow 本地重放未完成，下一步必须回到 VLM 视觉执行。")
+            append("\n失败 Function：").append(functionId)
+            if (segmentStartStepIndex > 0) {
+                append("\n失败段起点 step_index：").append(segmentStartStepIndex)
+            }
+            append("\n失败原因：").append(reason)
+            if (failedStep != null) {
+                append("\n失败步骤：")
+                append(firstNonBlank(failedStep["step_id"], failedStep["index"], failedStep["tool"]).ifBlank { "unknown" })
+                firstNonBlank(failedStep["tool"]).takeIf { it.isNotBlank() }?.let {
+                    append(" tool=").append(it)
+                }
+                firstNonBlank(failedStep["summary"], failedStep["error_message"], failedStep["omniflow_fail_reason"])
+                    .takeIf { it.isNotBlank() }
+                    ?.let { append(" summary=").append(it.take(500)) }
+            }
+            if (packageName.isNotBlank()) append("\n失败后重新获取的当前包名：").append(packageName)
+            if (activityName.isNotBlank()) append("\n失败后重新获取的 Activity：").append(activityName)
+            if (xml.isNotBlank()) {
+                append("\n失败后重新获取的当前页面 XML（截断）：\n")
+                append(xml)
+            }
+            append("\n请基于最新截图和最新 Accessibility tree 重新判断下一步，不要复用失败重放里的旧坐标、旧页面或旧节点。")
+        }
+    }
+
+    private fun findFailedRecallStep(result: Map<String, Any?>): Map<String, Any?>? =
+        findFailedStepInAny(result)
+
+    private fun findFailedStepInAny(raw: Any?): Map<String, Any?>? {
+        val map = mapValue(raw)
+        if (map.isEmpty()) return null
+        val nested = listOf("step_results", "steps", "path")
+            .asSequence()
+            .flatMap { key -> listValue(map[key]).asReversed().asSequence() }
+            .mapNotNull { findFailedStepInAny(it) }
+            .firstOrNull()
+        if (nested != null) return nested
+        listOf("oob_result", "result", "nested_run")
+            .asSequence()
+            .mapNotNull { key -> findFailedStepInAny(map[key]) }
+            .firstOrNull()
+            ?.let { return it }
+        return map.takeIf { it["success"] == false }
+    }
+
+    private fun findRecoveryPayload(result: Map<String, Any?>): Map<String, Any?>? {
+        val failedStepRecovery = mapValue(findFailedRecallStep(result)?.get("recovery"))
+            .takeIf { it.isNotEmpty() }
+        if (failedStepRecovery != null) return failedStepRecovery
+        return findRecoveryInAny(result)
+    }
+
+    private fun findRecoveryInAny(raw: Any?): Map<String, Any?>? {
+        val map = mapValue(raw)
+        if (map.isEmpty()) return null
+        mapValue(map["recovery"]).takeIf { it.isNotEmpty() }?.let { return it }
+        listOf("step_results", "steps", "path")
+            .asSequence()
+            .flatMap { key -> listValue(map[key]).asReversed().asSequence() }
+            .mapNotNull { findRecoveryInAny(it) }
+            .firstOrNull()
+            ?.let { return it }
+        return listOf("oob_result", "result", "nested_run")
+            .asSequence()
+            .mapNotNull { key -> findRecoveryInAny(map[key]) }
+            .firstOrNull()
+    }
+
+    private fun mapValue(raw: Any?): Map<String, Any?> =
+        (raw as? Map<*, *>)?.entries
+            ?.associate { (key, value) -> key.toString() to value }
+            ?: emptyMap()
+
+    private fun listValue(raw: Any?): List<Any?> =
+        when (raw) {
+            is List<*> -> raw
+            else -> emptyList()
+        }
+
+    private fun firstNonBlank(vararg values: Any?): String =
+        values.firstNotNullOfOrNull { value ->
+            value?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.orEmpty()
 
     private fun recallFallbackReason(result: Map<String, Any?>): String =
         listOf(

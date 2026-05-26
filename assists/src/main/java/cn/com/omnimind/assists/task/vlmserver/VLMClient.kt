@@ -196,6 +196,7 @@ class VLMClient(
             is OpenAppAction -> "open_app ${action.packageName}"
             is PressHomeAction -> "press_home"
             is PressBackAction -> "press_back"
+            is GetStateAction -> "get_state ${action.reason.take(MAX_HISTORY_ACTION_CHARS)}"
             is FinishedAction -> "finished"
             is RequireUserChoiceAction -> "require_user_choice"
             is RequireUserConfirmationAction -> "require_user_confirmation"
@@ -492,6 +493,9 @@ class VLMClient(
             )
             "press_home" -> PressHomeAction()
             "press_back" -> PressBackAction()
+            "get_state" -> GetStateAction(
+                reason = optionalString(args, "reason").orEmpty()
+            )
             "hot_key" -> HotKeyAction(
                 key = requireString(args, "key").uppercase()
             )
@@ -620,6 +624,7 @@ class VLMClient(
         "open_app",
         "press_home",
         "press_back",
+        "get_state",
         "hot_key",
         "finished",
         "info",

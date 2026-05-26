@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 视觉模型执行任务
@@ -39,6 +40,9 @@ open class VLMOperationTask(
     private val Tag = "VLMOperationTask"
     private companion object {
         private const val SUMMARY_GENERATION_TIMEOUT_MS = 20_000L
+        private const val MAX_MANUAL_TRACE_MEMORY_ACTIONS = 12
+        private const val MAX_MANUAL_TRACE_PARAM_CHARS = 240
+        private const val MAX_MANUAL_TRACE_XML_CHARS = 6000
     }
 
     private lateinit var vlmOperationService: VLMOperationService
@@ -61,6 +65,7 @@ open class VLMOperationTask(
     private lateinit var streamClient: VLMStreamClient
 
     private var taskContext: Context? = null
+    private val terminalFinalized = AtomicBoolean(false)
 
     // INFO动作等待通道：用于挂起任务等待用户回复
     private val userInputChannel = Channel<String>(Channel.Factory.UNLIMITED)
@@ -156,6 +161,7 @@ open class VLMOperationTask(
 
         OmniLog.d(Tag, "等待用户完成操作并点击继续...")
         val userConfirmation = userInputChannel.receive()
+        throwIfCancellationRequested("info_action")
         OmniLog.d(Tag, "收到用户确认：$userConfirmation")
 
         AccessibilityController.hideKeyboard()
@@ -179,6 +185,7 @@ open class VLMOperationTask(
      * 检查并处理用户暂停请求（VLMOperationService每步执行前调用）
      */
     private suspend fun checkAndHandlePause() {
+        throwIfCancellationRequested("pause_check")
         if (pauseRequested) {
             OmniLog.d(Tag, "检测到用户暂停请求，进入暂停状态")
             pauseRequested = false // 重置标志
@@ -205,6 +212,7 @@ open class VLMOperationTask(
         val recorderStarted = recorder?.start() == true
         val manualTraceResult = try {
             userPauseChannel.receive() // 阻塞等待用户点击继续
+            throwIfCancellationRequested("user_pause")
             recorder?.stop()
         } catch (e: Exception) {
             recorder?.stop()
@@ -256,6 +264,57 @@ open class VLMOperationTask(
         }
     }
 
+    private fun throwIfCancellationRequested(stage: String) {
+        if (isCancellationRequested) {
+            throw CancellationException("任务已取消: $stage")
+        }
+    }
+
+    private fun unblockWaitingReceivers() {
+        userInputChannel.trySend("任务已取消")
+        userPauseChannel.trySend(Unit)
+        summarySheetReadyChannel.trySend(Unit)
+    }
+
+    private fun cancelRunningJob(message: String) {
+        val cause = CancellationException(message)
+        runCatching { taskJob.cancel(cause) }
+        runCatching { taskScope.cancel(cause) }
+    }
+
+    private fun finalizeCancellationAsync(message: String = "任务已取消") {
+        val context = taskContext
+        val runId = id
+        if (!terminalFinalized.compareAndSet(false, true)) return
+        cancelScope.launch {
+            if (context != null && runId.isNotBlank()) {
+                InternalRunLogStore.finishRun(
+                    context = context,
+                    runId = runId,
+                    success = false,
+                    doneReason = "cancelled",
+                    errorMessage = message
+                )
+            }
+            notifyTerminalResult(
+                VlmTaskTerminalResult(
+                    status = VlmTaskTerminalStatus.CANCELLED,
+                    message = message,
+                    errorMessage = message,
+                    needSummary = needSummary || hasSummaryIntent(goal)
+                )
+            )
+            onTaskStop(TaskFinishType.CANCEL, message)
+            onTaskDestroy()
+        }
+    }
+
+    private suspend fun finalizeTerminalOnce(block: suspend () -> Unit) {
+        if (terminalFinalized.compareAndSet(false, true)) {
+            block()
+        }
+    }
+
     private fun extractFinishedContent(report: TaskExecutionReport): String {
         val finishedStep = report.executionTrace.lastOrNull { it.action is FinishedAction }
         val fromResult = finishedStep?.result?.trim().orEmpty()
@@ -299,10 +358,53 @@ open class VLMOperationTask(
             buildManualRunLogCard(manualTraceCardSeq, action)
         }
         InternalRunLogStore.appendCards(context, id, cards)
-        if (result.summary.isNotBlank() && this::vlmOperationService.isInitialized) {
-            vlmOperationService.addExternalMemory(result.summary)
+        if (this::vlmOperationService.isInitialized) {
+            val memory = buildManualTraceMemory(result)
+            if (memory.isNotBlank()) {
+                vlmOperationService.addExternalMemory(memory)
+                vlmOperationService.addPriorityEvent(
+                    message = memory,
+                    eventType = "human_takeover",
+                    suggestCompletion = false
+                )
+            }
         }
         OmniLog.d(Tag, "已记录人工接管轨迹：${result.actionCount}步")
+    }
+
+    private fun buildManualTraceMemory(result: ManualVlmTraceResult): String {
+        if (result.actions.isEmpty()) return result.summary
+        val actions = result.actions.take(MAX_MANUAL_TRACE_MEMORY_ACTIONS)
+        val actionLines = actions.mapIndexed { index, action ->
+            val params = action.params.entries
+                .joinToString(", ") { (key, value) -> "$key=$value" }
+                .take(MAX_MANUAL_TRACE_PARAM_CHARS)
+            buildString {
+                append("${index + 1}. ${action.actionName}: ")
+                append(action.summary.ifBlank { action.title })
+                if (params.isNotBlank()) append(" ($params)")
+                action.packageName?.takeIf { it.isNotBlank() }?.let { append(" package=$it") }
+            }
+        }
+        val omitted = result.actions.size - actions.size
+        val finalAction = result.actions.lastOrNull()
+        val finalPage = finalAction?.afterXml?.trim().orEmpty()
+        return buildString {
+            appendLine(result.summary.ifBlank {
+                "用户在接管期间手动完成了 ${result.actionCount} 步操作。请基于当前屏幕继续执行原任务。"
+            })
+            appendLine("人工接管动作明细：")
+            actionLines.forEach { appendLine(it) }
+            if (omitted > 0) appendLine("... 另有 $omitted 步人工动作已记录在 RunLog。")
+            finalAction?.packageName?.takeIf { it.isNotBlank() }?.let {
+                appendLine("接管结束包名：$it")
+            }
+            if (finalPage.isNotBlank()) {
+                appendLine("接管结束页面 XML（截断）：")
+                appendLine(finalPage.take(MAX_MANUAL_TRACE_XML_CHARS))
+            }
+            append("下一步必须以当前截图和最新 Accessibility tree 为准，不要回退到接管前的页面。")
+        }.trim()
     }
 
     private fun buildManualRunLogCard(
@@ -614,6 +716,7 @@ open class VLMOperationTask(
             is OpenAppAction -> "打开应用"
             is PressHomeAction -> "返回桌面"
             is PressBackAction -> "返回"
+            is GetStateAction -> "刷新页面状态"
             is WaitAction -> "旧版停留"
             is RecordAction -> "记录信息"
             is FinishedAction -> "完成任务"
@@ -657,6 +760,7 @@ open class VLMOperationTask(
             is OpenAppAction -> linkedMapOf("package_name" to action.packageName)
             is PressHomeAction -> emptyMap()
             is PressBackAction -> emptyMap()
+            is GetStateAction -> linkedMapOf("reason" to action.reason)
             is WaitAction -> emptyMap()
             is RecordAction -> linkedMapOf("content" to action.content)
             is FinishedAction -> linkedMapOf("content" to action.content)
@@ -749,6 +853,7 @@ open class VLMOperationTask(
                     )
                 }
                 OmniLog.d(Tag, "VLM Operation Task Finished: $taskExecutionReport")
+                throwIfCancellationRequested("task_report_ready")
                 val finishType = when {
                     taskExecutionReport.success -> TaskFinishType.FINISH
                     else -> TaskFinishType.ERROR
@@ -770,99 +875,101 @@ open class VLMOperationTask(
                 }
                 appendInternalRunLog(context, taskExecutionReport)
 
-                if (taskExecutionReport.success) {
-                    notifyTerminalResult(
-                        VlmTaskTerminalResult(
-                            status = VlmTaskTerminalStatus.FINISHED,
-                            message = extractFinishedContent(taskExecutionReport),
-                            finishedContent = extractFinishedContent(taskExecutionReport),
-                            summaryText = summaryResult.summaryText,
-                            needSummary = shouldSummary,
-                            feedback = taskExecutionReport.feedback,
-                            summaryUnavailable = summaryResult.summaryUnavailable
+                finalizeTerminalOnce {
+                    if (taskExecutionReport.success) {
+                        notifyTerminalResult(
+                            VlmTaskTerminalResult(
+                                status = VlmTaskTerminalStatus.FINISHED,
+                                message = extractFinishedContent(taskExecutionReport),
+                                finishedContent = extractFinishedContent(taskExecutionReport),
+                                summaryText = summaryResult.summaryText,
+                                needSummary = shouldSummary,
+                                feedback = taskExecutionReport.feedback,
+                                summaryUnavailable = summaryResult.summaryUnavailable
+                            )
                         )
+                    } else {
+                        val errorMessage = finishMessage.ifBlank { "任务执行失败" }
+                        notifyTerminalResult(
+                            VlmTaskTerminalResult(
+                                status = VlmTaskTerminalStatus.ERROR,
+                                message = errorMessage,
+                                finishedContent = null,
+                                summaryText = summaryResult.summaryText,
+                                errorMessage = errorMessage,
+                                needSummary = shouldSummary,
+                                feedback = taskExecutionReport.feedback,
+                                summaryUnavailable = summaryResult.summaryUnavailable
+                            )
+                        )
+                    }
+                    onTaskStop(finishType, finishMessage)
+                    onTaskDestroy()
+                }
+            } catch (e: PrivacyBlockedException) {
+                finalizeTerminalOnce {
+                    InternalRunLogStore.finishRun(
+                        context = context,
+                        runId = id,
+                        success = false,
+                        doneReason = "error",
+                        errorMessage = e.message ?: "应用未授权，已被隐私设置限制"
                     )
-                } else {
-                    val errorMessage = finishMessage.ifBlank { "任务执行失败" }
                     notifyTerminalResult(
                         VlmTaskTerminalResult(
                             status = VlmTaskTerminalStatus.ERROR,
-                            message = errorMessage,
-                            finishedContent = null,
-                            summaryText = summaryResult.summaryText,
-                            errorMessage = errorMessage,
-                            needSummary = shouldSummary,
-                            feedback = taskExecutionReport.feedback,
-                            summaryUnavailable = summaryResult.summaryUnavailable
+                            message = e.message ?: "应用未授权，已被隐私设置限制",
+                            errorMessage = e.message ?: "应用未授权，已被隐私设置限制",
+                            needSummary = needSummary || hasSummaryIntent(goal)
                         )
                     )
+                    onTaskStop(TaskFinishType.ERROR, e.message ?: "应用未授权，已被隐私设置限制")
+                    onTaskDestroy()
                 }
-                onTaskStop(finishType, finishMessage)
-                onTaskDestroy()
-            } catch (e: PrivacyBlockedException) {
-                InternalRunLogStore.finishRun(
-                    context = context,
-                    runId = id,
-                    success = false,
-                    doneReason = "error",
-                    errorMessage = e.message ?: "应用未授权，已被隐私设置限制"
-                )
-                notifyTerminalResult(
-                    VlmTaskTerminalResult(
-                        status = VlmTaskTerminalStatus.ERROR,
-                        message = e.message ?: "应用未授权，已被隐私设置限制",
-                        errorMessage = e.message ?: "应用未授权，已被隐私设置限制",
-                        needSummary = needSummary || hasSummaryIntent(goal)
-                    )
-                )
-                onTaskStop(TaskFinishType.ERROR, e.message ?: "应用未授权，已被隐私设置限制")
-                onTaskDestroy()
             } catch (e: Http429Exception) {
-                InternalRunLogStore.finishRun(
-                    context = context,
-                    runId = id,
-                    success = false,
-                    doneReason = "error",
-                    errorMessage = e.message ?: "请求过于频繁"
-                )
-                notifyTerminalResult(
-                    VlmTaskTerminalResult(
-                        status = VlmTaskTerminalStatus.ERROR,
-                        message = e.message ?: "请求过于频繁",
-                        errorMessage = e.message ?: "请求过于频繁",
-                        needSummary = needSummary || hasSummaryIntent(goal)
+                finalizeTerminalOnce {
+                    InternalRunLogStore.finishRun(
+                        context = context,
+                        runId = id,
+                        success = false,
+                        doneReason = "error",
+                        errorMessage = e.message ?: "请求过于频繁"
                     )
-                )
-                onTaskStop(TaskFinishType.ERROR, e.message)
-                onTaskDestroy()
+                    notifyTerminalResult(
+                        VlmTaskTerminalResult(
+                            status = VlmTaskTerminalStatus.ERROR,
+                            message = e.message ?: "请求过于频繁",
+                            errorMessage = e.message ?: "请求过于频繁",
+                            needSummary = needSummary || hasSummaryIntent(goal)
+                        )
+                    )
+                    onTaskStop(TaskFinishType.ERROR, e.message)
+                    onTaskDestroy()
+                }
             } catch (e: CancellationException) {
                 OmniLog.i(Tag, "VLM Operation Task cancelled")
-                InternalRunLogStore.finishRun(
-                    context = context,
-                    runId = id,
-                    success = false,
-                    doneReason = "cancelled",
-                    errorMessage = e.message
-                )
+                finalizeCancellationAsync(e.message ?: "任务已取消")
             } catch (e: Exception) {
                 OmniLog.e(Tag, "VLM Operation Task Error: ${e.message}")
-                InternalRunLogStore.finishRun(
-                    context = context,
-                    runId = id,
-                    success = false,
-                    doneReason = "error",
-                    errorMessage = e.message ?: "任务执行异常"
-                )
-                notifyTerminalResult(
-                    VlmTaskTerminalResult(
-                        status = VlmTaskTerminalStatus.ERROR,
-                        message = e.message ?: "任务执行异常",
-                        errorMessage = e.message ?: "任务执行异常",
-                        needSummary = needSummary || hasSummaryIntent(goal)
+                finalizeTerminalOnce {
+                    InternalRunLogStore.finishRun(
+                        context = context,
+                        runId = id,
+                        success = false,
+                        doneReason = "error",
+                        errorMessage = e.message ?: "任务执行异常"
                     )
-                )
-                onTaskStop(TaskFinishType.ERROR, e.message ?: "任务执行异常")
-                onTaskDestroy()
+                    notifyTerminalResult(
+                        VlmTaskTerminalResult(
+                            status = VlmTaskTerminalStatus.ERROR,
+                            message = e.message ?: "任务执行异常",
+                            errorMessage = e.message ?: "任务执行异常",
+                            needSummary = needSummary || hasSummaryIntent(goal)
+                        )
+                    )
+                    onTaskStop(TaskFinishType.ERROR, e.message ?: "任务执行异常")
+                    onTaskDestroy()
+                }
             }
 
         }
@@ -914,6 +1021,8 @@ open class VLMOperationTask(
             } catch (e: PrivacyBlockedException) {
                 onTaskStop(TaskFinishType.ERROR, e.message ?: "应用未授权，已被隐私设置限制")
                 onTaskDestroy()
+            } catch (e: CancellationException) {
+                finalizeCancellationAsync(e.message ?: "任务已取消")
             } catch (e: Exception) {
                 onTaskStop(TaskFinishType.ERROR, e.message ?: "任务执行异常")
                 onTaskDestroy()
@@ -1139,6 +1248,7 @@ $goal
                 // 1. 等待主聊天页面准备就绪的回调
                 OmniLog.d(Tag, "等待主聊天页面准备就绪通知...")
                 summarySheetReadyChannel.receive()
+                throwIfCancellationRequested("summary_sheet_ready")
                 OmniLog.d(Tag, "主聊天页面已准备就绪，开始推送总结...")
 
                 // 2. 先推送"总结开始"消息，让前端显示"总结中"状态
@@ -1302,52 +1412,25 @@ $goal
     fun finishTask() {
         OmniLog.d(Tag, "Finishing VLM Operation Task")
         isCancellationRequested = true
-        taskContext?.let { context ->
-            InternalRunLogStore.finishRun(
-                context = context,
-                runId = id,
-                success = false,
-                doneReason = "cancelled",
-                errorMessage = "任务已取消"
-            )
-        }
-        notifyTerminalResult(
-            VlmTaskTerminalResult(
-                status = VlmTaskTerminalStatus.CANCELLED,
-                message = "任务已取消",
-                needSummary = needSummary || hasSummaryIntent(goal)
-            )
-        )
-        super.finishTask {
-        }
-        taskScope.cancel()
+        unblockWaitingReceivers()
+        cancelRunningJob("任务已取消")
+        finalizeCancellationAsync("任务已取消")
     }
 
     fun cancelTask() {
         OmniLog.d(Tag, "Cancelling VLM Operation Task - cancelling taskScope immediately")
         isCancellationRequested = true
-        taskContext?.let { context ->
-            InternalRunLogStore.finishRun(
-                context = context,
-                runId = id,
-                success = false,
-                doneReason = "cancelled",
-                errorMessage = "任务已取消"
-            )
-        }
-        notifyTerminalResult(
-            VlmTaskTerminalResult(
-                status = VlmTaskTerminalStatus.CANCELLED,
-                message = "任务已取消",
-                needSummary = needSummary || hasSummaryIntent(goal)
-            )
-        )
-        taskScope.cancel("Task cancelled by user")
+        unblockWaitingReceivers()
+        cancelRunningJob("任务已取消")
+        finalizeCancellationAsync("任务已取消")
     }
 
     override suspend fun onTaskDestroy() {
         AccessibilityController.Companion.restoreKeyboard()
-        onTaskFinishListener.invoke()
+        if (this::onTaskFinishListener.isInitialized) {
+            runCatching { onTaskFinishListener.invoke() }
+                .onFailure { OmniLog.e(Tag, "onTaskFinishListener failed: ${it.message}") }
+        }
         super.onTaskDestroy()
     }
 

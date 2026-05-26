@@ -19,6 +19,9 @@ object OmniflowStepExecutor {
         val meta: Map<String, Any?> = emptyMap(),
     )
 
+    suspend fun currentPageSnapshotForRecovery(reason: String? = null): Map<String, Any?> =
+        recoverySnapshotMap(readBackendSnapshot(), reason)
+
     fun isOmniflowStep(step: Map<String, Any?>): Boolean {
         val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
         val modelFree = step["model_free"] == true ||
@@ -612,6 +615,21 @@ object OmniflowStepExecutor {
             activityName = activityName,
         )
     }
+
+    private fun recoverySnapshotMap(
+        snapshot: BackendSnapshot,
+        reason: String?,
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "refetched_current_page" to true,
+        "reason" to reason?.trim()?.takeIf { it.isNotEmpty() },
+        "captured_at_ms" to System.currentTimeMillis(),
+        "package_name" to snapshot.rawPackage.takeIf { it.isNotBlank() },
+        "effective_package" to snapshot.effectivePackage().takeIf { it.isNotBlank() },
+        "activity_name" to snapshot.activityName.takeIf { it.isNotBlank() },
+        "has_observation_xml" to snapshot.xml.isNotBlank(),
+        "observation_xml_length" to snapshot.xml.length,
+        "observation_xml" to snapshot.xml.takeIf { it.isNotBlank() },
+    ).filterValues { it != null }
 
     private data class PostconditionObservation(
         val xml: String,

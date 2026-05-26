@@ -210,6 +210,30 @@ object VLMToolDefinitions {
             promptGuide = t(locale, "- press_back(): 返回上一级。", "- press_back(): Go back one level.")
         ),
         ToolSpec(
+            name = "get_state",
+            description = t(
+                locale,
+                "不执行 UI 操作，只重新获取当前页面状态、包名和 Accessibility tree。",
+                "Do not perform a UI action; refresh the current page state, package name, and Accessibility tree."
+            ),
+            parameters = objectSchema(
+                properties = linkedMapOf(
+                    "reason" to stringSchema(
+                        t(
+                            locale,
+                            "为什么需要重新获取状态，例如上一步操作失败、页面无变化或当前页面不确定。",
+                            "Why state refresh is needed, such as previous action failed, page did not change, or current page is uncertain."
+                        )
+                    )
+                )
+            ),
+            promptGuide = t(
+                locale,
+                "- get_state(reason?): 当上一步操作失败、操作不合法、页面无变化或当前页面不确定时调用；它只刷新状态，不点击、不滑动、不输入。",
+                "- get_state(reason?): Call when the previous action failed, was invalid, the page did not change, or the current page is uncertain; it only refreshes state and does not tap, swipe, or type."
+            )
+        ),
+        ToolSpec(
             name = "hot_key",
             description = t(locale, "发送一个受支持的快捷键。", "Send a supported hot key."),
             parameters = objectSchema(

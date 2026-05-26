@@ -130,6 +130,14 @@ class ActionExecutor(
                 deviceOperator.goBack()
             }
 
+            is GetStateAction -> {
+                OperationResult(
+                    success = true,
+                    message = action.reason.ifBlank { "已重新获取当前页面状态" },
+                    data = null
+                )
+            }
+
             is RecordAction -> {
                 // 特殊处理：记录动作不调用设备，返回成功结果
                 OperationResult(
@@ -210,6 +218,7 @@ class ActionExecutor(
             is PressHomeAction,
             is PressBackAction,
             is HotKeyAction -> true
+            is GetStateAction -> false
             else -> false
         }
 

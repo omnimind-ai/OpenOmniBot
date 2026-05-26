@@ -585,9 +585,7 @@ void main() {
     final scheduledTopBefore = tester.getTopLeft(find.text('定时任务')).dy;
     final pinnedTopBefore = tester.getTopLeft(find.text('置顶会话')).dy;
     final historyDateLeft = tester.getTopLeft(find.text(historyDateLabel)).dx;
-    final conversationTitleLeft = tester.getTopLeft(
-      find.text('普通会话 0'),
-    ).dx;
+    final conversationTitleLeft = tester.getTopLeft(find.text('普通会话 0')).dx;
 
     expect(tester.getTopLeft(find.text('定时任务')).dx, historyDateLeft);
     expect(tester.getTopLeft(find.text('置顶会话')).dx, historyDateLeft);
@@ -876,9 +874,7 @@ void main() {
 
     await tester.tap(
       find.byKey(
-        const ValueKey<String>(
-          'home-drawer-scheduled-parent-toggle-normal:1',
-        ),
+        const ValueKey<String>('home-drawer-scheduled-parent-toggle-normal:1'),
       ),
     );
     await tester.pumpAndSettle();

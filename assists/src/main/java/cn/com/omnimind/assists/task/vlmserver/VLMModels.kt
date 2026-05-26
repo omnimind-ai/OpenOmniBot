@@ -107,6 +107,13 @@ data class WaitAction(
 ) : UIAction()
 
 @Serializable
+@SerialName("get_state")
+data class GetStateAction(
+    override val name: String = "get_state",
+    val reason: String = ""
+) : UIAction()
+
+@Serializable
 @SerialName("record")
 data class RecordAction(
     override val name: String = "record",
