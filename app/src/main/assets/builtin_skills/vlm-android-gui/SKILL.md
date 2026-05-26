@@ -714,6 +714,23 @@ For replay:
    `block`.
 3. Report whether local replay ran and whether model/VLM fallback was needed.
 
+During RunLog conversion, preserve real human/device actions and drop only
+general startup-bridge noise. A transient startup bridge is an early automatic
+click where the source page is a compact prompt/overlay-like page, the clicked
+target text is absent from the source page, the post-action page matches the
+next concrete step's source page, and the next page contains the target. This
+keeps reusable commands from replaying stale first-launch prompts while still
+preserving manual takeover cards (`compile_kind=manual_recording` or
+`source=human_takeover`). Inspect
+`transient_startup_bridge_dropped_count` in the converted Function source when
+debugging replay, but do not show that internal field in user-facing UI.
+
+If direct replay fails an `open_app` postcondition with
+`current_package=""`, verify the live foreground activity and UIAutomator XML
+before blaming the Function. A foreground target app plus blank replay package
+means the native runner did not obtain a valid Accessibility snapshot in its
+postcondition read; rerun on the latest APK and inspect `step_results`.
+
 ## Output Requirements
 
 When the task finishes, report:

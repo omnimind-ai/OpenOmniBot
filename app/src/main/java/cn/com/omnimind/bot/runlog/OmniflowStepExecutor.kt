@@ -1,7 +1,9 @@
 package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.StringReader
@@ -190,7 +192,13 @@ object OmniflowStepExecutor {
         }
     }
 
-    fun remapStepArgs(step: Map<String, Any?>): StepArgsResult {
+    fun remapStepArgs(step: Map<String, Any?>): StepArgsResult =
+        remapStepArgsInternal(step, currentXmlOverride = null)
+
+    private fun remapStepArgsInternal(
+        step: Map<String, Any?>,
+        currentXmlOverride: String?,
+    ): StepArgsResult {
         val rawArgs = step["args"]
         val args = (rawArgs as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to v }
             ?: return StepArgsResult(rawArgs)
@@ -219,7 +227,7 @@ object OmniflowStepExecutor {
                 meta = mapOf("applied" to false, "reason" to "missing_source_xml", "algorithm" to "anchor_projection")
             )
         }
-        val currentXml = readCurrentXmlForCoordinateRemap()
+        val currentXml = currentXmlOverride ?: readCurrentXmlForCoordinateRemapDirect()
         if (currentXml.isEmpty()) {
             return StepArgsResult(
                 args,
@@ -234,13 +242,13 @@ object OmniflowStepExecutor {
     }
 
     private suspend fun remapStepArgsWithRetries(step: Map<String, Any?>): StepArgsResult {
-        var last = remapStepArgs(step)
+        var last = remapStepArgsForExecution(step)
         if (!shouldRetryCoordinateRemap(last)) {
             return last
         }
         repeat(COORDINATE_REMAP_XML_READ_ATTEMPTS - 1) {
             delay(COORDINATE_REMAP_XML_RETRY_DELAY_MS)
-            last = remapStepArgs(step)
+            last = remapStepArgsForExecution(step)
             if (!shouldRetryCoordinateRemap(last)) {
                 return last
             }
@@ -248,12 +256,14 @@ object OmniflowStepExecutor {
         return last
     }
 
-    private fun readCurrentXmlForCoordinateRemap(): String {
-        runCatching { OmniflowActionRuntime.backend.isReady() }
-        return runCatching {
-            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
-        }.getOrDefault("")
-    }
+    private suspend fun remapStepArgsForExecution(step: Map<String, Any?>): StepArgsResult =
+        remapStepArgsInternal(step, currentXmlOverride = readCurrentXmlForCoordinateRemap())
+
+    private suspend fun readCurrentXmlForCoordinateRemap(): String =
+        readBackendSnapshot().xml
+
+    private fun readCurrentXmlForCoordinateRemapDirect(): String =
+        readBackendSnapshotDirect().xml
 
     private fun shouldRetryCoordinateRemap(result: StepArgsResult): Boolean =
         result.meta["applied"] == false &&
@@ -359,18 +369,8 @@ object OmniflowStepExecutor {
         }
     }
 
-    private fun effectiveCurrentPackage(): String {
-        val currentXml = runCatching {
-            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
-        }.getOrDefault("")
-        val rawPackage = runCatching {
-            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-        }.getOrDefault("")
-        val activityName = runCatching {
-            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
-        }.getOrDefault("")
-        return RunLogPagePackageInference.effectivePackage(rawPackage, currentXml, activityName)
-    }
+    private suspend fun effectiveCurrentPackage(): String =
+        readBackendSnapshot().effectivePackage()
 
     private suspend fun verifyPostcondition(
         step: Map<String, Any?>,
@@ -451,7 +451,7 @@ object OmniflowStepExecutor {
         ).filterValues { it != null }
     }
 
-    private fun preActionSatisfiedPostcondition(
+    private suspend fun preActionSatisfiedPostcondition(
         step: Map<String, Any?>,
         action: String,
     ): Map<String, Any?>? {
@@ -531,13 +531,7 @@ object OmniflowStepExecutor {
         if (expectedPackage.isEmpty()) return emptyMap()
         var lastPackage = ""
         repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
-            runCatching { OmniflowActionRuntime.backend.isReady() }
-            lastPackage = runCatching {
-                val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
-                val rawPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-                val activityName = OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
-                RunLogPagePackageInference.effectivePackage(rawPackage, currentXml, activityName)
-            }.getOrDefault(lastPackage)
+            lastPackage = readBackendSnapshot().effectivePackage().ifBlank { lastPackage }
             val packageMatchMode = packageMatchMode(expectedPackage, lastPackage)
             if (packageMatchMode != null) {
                 return linkedMapOf(
@@ -582,6 +576,43 @@ object OmniflowStepExecutor {
         return expectedSystem && currentSystem
     }
 
+    private data class BackendSnapshot(
+        val xml: String,
+        val rawPackage: String,
+        val activityName: String,
+    ) {
+        fun effectivePackage(): String =
+            RunLogPagePackageInference.effectivePackage(rawPackage, xml, activityName)
+    }
+
+    private suspend fun readBackendSnapshot(): BackendSnapshot {
+        return runCatching {
+            withContext(Dispatchers.Main.immediate) {
+                readBackendSnapshotDirect()
+            }
+        }.getOrElse {
+            readBackendSnapshotDirect()
+        }
+    }
+
+    private fun readBackendSnapshotDirect(): BackendSnapshot {
+        runCatching { OmniflowActionRuntime.backend.isReady() }
+        val currentXml = runCatching {
+            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
+        }.getOrDefault("")
+        val rawPackage = runCatching {
+            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        }.getOrDefault("")
+        val activityName = runCatching {
+            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+        }.getOrDefault("")
+        return BackendSnapshot(
+            xml = currentXml,
+            rawPackage = rawPackage,
+            activityName = activityName,
+        )
+    }
+
     private data class PostconditionObservation(
         val xml: String,
         val packageName: String,
@@ -589,26 +620,14 @@ object OmniflowStepExecutor {
         val packageMatchMode: String?,
     )
 
-    private fun readCurrentObservationSnapshot(
+    private suspend fun readCurrentObservationSnapshot(
         expectedXml: String,
         expectedPackage: String,
     ): PostconditionObservation? {
-        runCatching { OmniflowActionRuntime.backend.isReady() }
-        val currentXml = runCatching {
-            OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
-        }.getOrDefault("")
+        val snapshot = readBackendSnapshot()
+        val currentXml = snapshot.xml
         if (currentXml.isEmpty()) return null
-        val rawPackage = runCatching {
-            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-        }.getOrDefault("")
-        val activityName = runCatching {
-            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
-        }.getOrDefault("")
-        val currentPackage = RunLogPagePackageInference.effectivePackage(
-            rawPackage,
-            currentXml,
-            activityName,
-        )
+        val currentPackage = snapshot.effectivePackage()
         return PostconditionObservation(
             xml = currentXml,
             packageName = currentPackage,
@@ -650,22 +669,10 @@ object OmniflowStepExecutor {
             packageMatchMode = null,
         )
         repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
-            runCatching { OmniflowActionRuntime.backend.isReady() }
-            val currentXml = runCatching {
-                OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
-            }.getOrDefault("")
+            val snapshot = readBackendSnapshot()
+            val currentXml = snapshot.xml
             if (currentXml.isNotEmpty()) {
-                val rawPackage = runCatching {
-                    OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-                }.getOrDefault("")
-                val activityName = runCatching {
-                    OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
-                }.getOrDefault("")
-                val currentPackage = RunLogPagePackageInference.effectivePackage(
-                    rawPackage,
-                    currentXml,
-                    activityName,
-                )
+                val currentPackage = snapshot.effectivePackage()
                 val score = pageSimilarityScore(expectedXml, currentXml)
                 val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)
                 val observation = PostconditionObservation(

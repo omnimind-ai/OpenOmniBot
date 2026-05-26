@@ -11,13 +11,15 @@ object RunLogReusableFunctionCompiler {
 
     fun compile(record: InternalRunLogRecord): Map<String, Any?>? {
         val replayableCards = record.cards.filter(::isSuccessfulCard)
-        val hasRecordedReplayStep = replayableCards.any(::hasRecordedReplayStep)
-        val rawSteps = replayableCards
+        val compileCards = dropTransientStartupBridgeCards(replayableCards)
+        val droppedStartupBridgeCount = replayableCards.size - compileCards.size
+        val hasRecordedReplayStep = compileCards.any(::hasRecordedReplayStep)
+        val rawSteps = compileCards
             .mapIndexedNotNull { index, card ->
                 cardToStep(
                     card = card,
                     skipPerceptionTools = hasRecordedReplayStep,
-                    nextReplayableCard = replayableCards.getOrNull(index + 1),
+                    nextReplayableCard = compileCards.getOrNull(index + 1),
                 )
             }
         val stepsWithStart = prepareInitialOpenAppStep(
@@ -53,6 +55,8 @@ object RunLogReusableFunctionCompiler {
                 "tool_name" to record.toolName,
                 "card_count" to record.cards.size,
                 "replayable_card_count" to replayableCards.size,
+                "compiled_replayable_card_count" to compileCards.size,
+                "transient_startup_bridge_dropped_count" to droppedStartupBridgeCount,
                 "converted_at" to now,
                 "converter" to "native_run_log_reusable_function_builder",
                 "parameter_inference" to linkedMapOf(
@@ -276,6 +280,164 @@ object RunLogReusableFunctionCompiler {
         }
         val args = asMap(extractArgs(card))
         return androidPrivilegedReplayAction(args) != null
+    }
+
+    private fun dropTransientStartupBridgeCards(
+        replayableCards: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (replayableCards.size < 2) return replayableCards
+        val output = mutableListOf<Map<String, Any?>>()
+        var concreteActionIndex = 0
+        replayableCards.forEachIndexed { index, card ->
+            val isConcrete = hasRecordedReplayStep(card)
+            if (isConcrete &&
+                shouldDropTransientStartupBridgeCard(
+                    cards = replayableCards,
+                    cardIndex = index,
+                    concreteActionIndex = concreteActionIndex,
+                )
+            ) {
+                concreteActionIndex += 1
+                return@forEachIndexed
+            }
+            output += card
+            if (isConcrete) {
+                concreteActionIndex += 1
+            }
+        }
+        return output
+    }
+
+    private fun shouldDropTransientStartupBridgeCard(
+        cards: List<Map<String, Any?>>,
+        cardIndex: Int,
+        concreteActionIndex: Int,
+    ): Boolean {
+        if (concreteActionIndex > 1) return false
+        val card = cards[cardIndex]
+        if (isManualRecordingCard(card)) return false
+        val action = replayActionForCard(card) ?: return false
+        if (action != "click") return false
+
+        val args = jsonSafeMap(extractArgs(card))
+        val target = firstNonBlank(
+            args["target_description"],
+            args["targetDescription"],
+            args["label"],
+            asMap(card["header"])["title"],
+            card["title"],
+            card["summary"],
+        )
+        if (target.isBlank()) return false
+
+        val sourceXml = observationXml(beforeObservationForCard(card))
+        val afterXml = observationXml(afterObservationForCard(card))
+        if (sourceXml.isBlank() || afterXml.isBlank()) return false
+
+        val nextCard = cards.asSequence()
+            .drop(cardIndex + 1)
+            .firstOrNull(::hasRecordedReplayStep)
+            ?: return false
+        val nextBeforeXml = observationXml(beforeObservationForCard(nextCard))
+        if (nextBeforeXml.isBlank()) return false
+
+        if (!pagesAreSameTransition(afterXml, nextBeforeXml)) return false
+        if (xmlContainsTarget(sourceXml, target)) return false
+        if (!xmlContainsTarget(afterXml, target) && !xmlContainsTarget(nextBeforeXml, target)) {
+            return false
+        }
+        if (!hasCompatibleTransitionPackage(card, nextCard, afterXml, nextBeforeXml)) return false
+        return isTransientStartupSource(sourceXml, nextBeforeXml)
+    }
+
+    private fun isManualRecordingCard(card: Map<String, Any?>): Boolean {
+        return firstNonBlank(card["compile_kind"], card["compileKind"]) == "manual_recording" ||
+            firstNonBlank(card["source"], asMap(card["header"])["source"]) == "human_takeover"
+    }
+
+    private fun replayActionForCard(card: Map<String, Any?>): String? {
+        val toolName = toolNameForCard(card)
+        val normalizedToolName = RunLogReplayPolicy.normalizeToolName(toolName)
+        val args = jsonSafeMap(extractArgs(card))
+        return if (normalizedToolName == "android_privileged_action") {
+            androidPrivilegedReplayAction(args)
+        } else {
+            RunLogReplayPolicy.omniflowActionForToolName(toolName)
+        }
+    }
+
+    private fun afterObservationForCard(card: Map<String, Any?>): Map<String, Any?> {
+        return asMap(card["after"])
+            .ifEmpty { asMap(card["observation_after_act"]) }
+            .ifEmpty { asMap(card["after_observation"]) }
+    }
+
+    private fun observationXml(observation: Map<String, Any?>): String {
+        return firstNonBlank(
+            observation["observation_xml"],
+            observation["observationXml"],
+            observation["xml"],
+            observation["page"],
+        )
+    }
+
+    private fun pagesAreSameTransition(firstXml: String, secondXml: String): Boolean {
+        if (firstXml == secondXml) return true
+        val firstVector = OobPageVectorSet.encode(firstXml) ?: return false
+        val secondVector = OobPageVectorSet.encode(secondXml) ?: return false
+        return OobPageVectorSet.cosine(firstVector.vector, secondVector.vector) >=
+            TRANSIENT_BRIDGE_SAME_PAGE_SCORE
+    }
+
+    private fun xmlContainsTarget(xml: String, target: String): Boolean {
+        val tokens = meaningfulTargetTokens(target)
+        if (tokens.isEmpty()) return false
+        val haystack = xml.lowercase()
+        return tokens.any { token -> haystack.contains(token) }
+    }
+
+    private fun meaningfulTargetTokens(target: String): List<String> {
+        return target
+            .lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .map { it.trim() }
+            .filter { token ->
+                token.length >= 3 && token !in GENERIC_TARGET_TOKENS
+            }
+            .distinct()
+    }
+
+    private fun hasCompatibleTransitionPackage(
+        card: Map<String, Any?>,
+        nextCard: Map<String, Any?>,
+        afterXml: String,
+        nextBeforeXml: String,
+    ): Boolean {
+        val afterObservation = afterObservationForCard(card)
+        val nextBefore = beforeObservationForCard(nextCard)
+        val afterPackage = RunLogPagePackageInference.effectivePackage(
+            firstNonBlank(afterObservation["package_name"], afterObservation["packageName"]),
+            afterXml,
+        )
+        val nextPackage = RunLogPagePackageInference.effectivePackage(
+            firstNonBlank(nextBefore["package_name"], nextBefore["packageName"]),
+            nextBeforeXml,
+        )
+        return afterPackage.isBlank() ||
+            nextPackage.isBlank() ||
+            afterPackage == nextPackage
+    }
+
+    private fun isTransientStartupSource(sourceXml: String, nextSourceXml: String): Boolean {
+        val sourceVector = OobPageVectorSet.encode(sourceXml) ?: return false
+        val nextVector = OobPageVectorSet.encode(nextSourceXml) ?: return false
+        val sourceStrength = observationStrength(sourceVector)
+        val nextStrength = observationStrength(nextVector)
+        val compactPromptLike = sourceVector.elementCount <= TRANSIENT_BRIDGE_SOURCE_MAX_ELEMENTS &&
+            sourceVector.displayTextCount <= TRANSIENT_BRIDGE_SOURCE_MAX_TEXTS &&
+            sourceVector.actionableCount <= TRANSIENT_BRIDGE_SOURCE_MAX_ACTIONABLES
+        val nextIsRicher = nextStrength >= sourceStrength + TRANSIENT_BRIDGE_MIN_STRENGTH_GAIN
+        return compactPromptLike && nextIsRicher
     }
 
     private fun cardToStep(
@@ -924,4 +1086,32 @@ object RunLogReusableFunctionCompiler {
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
     private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+""")
     private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
+    private const val TRANSIENT_BRIDGE_SAME_PAGE_SCORE = 0.92f
+    private const val TRANSIENT_BRIDGE_SOURCE_MAX_ELEMENTS = 8
+    private const val TRANSIENT_BRIDGE_SOURCE_MAX_TEXTS = 3
+    private const val TRANSIENT_BRIDGE_SOURCE_MAX_ACTIONABLES = 3
+    private const val TRANSIENT_BRIDGE_MIN_STRENGTH_GAIN = 8
+    private val GENERIC_TARGET_TOKENS = setOf(
+        "click",
+        "clicked",
+        "tap",
+        "tapped",
+        "press",
+        "button",
+        "tab",
+        "view",
+        "viewgroup",
+        "textview",
+        "imageview",
+        "imagebutton",
+        "layout",
+        "frame",
+        "item",
+        "row",
+        "list",
+        "menu",
+        "icon",
+        "the",
+        "and",
+    )
 }

@@ -276,6 +276,88 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `transient startup bridge click is dropped before stable app step`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "open_app",
+                    mapOf("package_name" to "com.google.android.deskclock"),
+                    afterXml = CLOCK_TIMER_XML,
+                    afterPackage = "com.google.android.deskclock",
+                    title = "打开 Clock",
+                ),
+                card(
+                    "click",
+                    mapOf("target_description" to "Stopwatch tab", "x" to 349, "y" to 1192),
+                    beforeXml = CLOCK_BEDTIME_PROMPT_XML,
+                    afterXml = CLOCK_TIMER_XML,
+                    beforePackage = "com.google.android.deskclock",
+                    afterPackage = "com.google.android.deskclock",
+                    title = "点击 Stopwatch tab",
+                ),
+                card(
+                    "click",
+                    mapOf("target_description" to "Stopwatch", "x" to 503, "y" to 1192),
+                    beforeXml = CLOCK_TIMER_XML,
+                    afterXml = CLOCK_STOPWATCH_XML,
+                    beforePackage = "com.google.android.deskclock",
+                    afterPackage = "com.google.android.deskclock",
+                    title = "点击 Stopwatch",
+                ),
+                card(
+                    "finished",
+                    mapOf("content" to "Stopwatch page visible"),
+                    beforeXml = CLOCK_STOPWATCH_XML,
+                    beforePackage = "com.google.android.deskclock",
+                ),
+            ),
+            runId = "run-clock-transient-bridge",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("open_app", "click", "finished"), steps.map { it["tool"] })
+        assertEquals("Stopwatch", (steps[1]["args"] as Map<*, *>)["target_description"])
+        val source = spec["source"] as Map<*, *>
+        assertEquals(4, source["replayable_card_count"])
+        assertEquals(3, source["compiled_replayable_card_count"])
+        assertEquals(1, source["transient_startup_bridge_dropped_count"])
+    }
+
+    @Test
+    fun `manual transient-like click is preserved`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Stopwatch tab", "x" to 349, "y" to 1192),
+                    beforeXml = CLOCK_BEDTIME_PROMPT_XML,
+                    afterXml = CLOCK_TIMER_XML,
+                    beforePackage = "com.google.android.deskclock",
+                    afterPackage = "com.google.android.deskclock",
+                    title = "人工点击 Stopwatch tab",
+                    compileKind = "manual_recording",
+                    source = "human_takeover",
+                ),
+                card(
+                    "click",
+                    mapOf("target_description" to "Stopwatch", "x" to 503, "y" to 1192),
+                    beforeXml = CLOCK_TIMER_XML,
+                    afterXml = CLOCK_STOPWATCH_XML,
+                    beforePackage = "com.google.android.deskclock",
+                    afterPackage = "com.google.android.deskclock",
+                    title = "点击 Stopwatch",
+                ),
+            ),
+            runId = "run-manual-transient-preserved",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("open_app", "click", "click"), steps.map { it["tool"] })
+        assertEquals("Stopwatch tab", (steps[1]["args"] as Map<*, *>)["target_description"])
+        assertEquals(0, (spec["source"] as Map<*, *>)["transient_startup_bridge_dropped_count"])
+    }
+
+    @Test
     fun `builder infers page package when recorded package disagrees with xml`() {
         val spec = compile(
             listOf(
@@ -778,5 +860,11 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy><node bounds=\"[20,40][1060,140]\" text=\"Search settings\" resource-id=\"com.google.android.settings.intelligence:id/search_action_bar\"/></hierarchy>"
         private const val ANDROID_CRASH_DIALOG_XML =
             "<hierarchy><node class=\"android.widget.FrameLayout\" package=\"android\" bounds=\"[28,952][1052,1513]\"><node text=\"com.google.androidenv.accessibilityforwarder keeps stopping\" class=\"android.widget.TextView\" package=\"android\" bounds=\"[133,1041][947,1159]\"/><node text=\"Close app\" clickable=\"true\" class=\"android.widget.Button\" package=\"android\" bounds=\"[70,1324][1010,1450]\"/></node></hierarchy>"
+        private const val CLOCK_BEDTIME_PROMPT_XML =
+            "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[306,937][696,1072]\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\"><node bounds=\"[306,937][696,1072]\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.view.ViewGroup\"><node bounds=\"[330,970][672,1018]\" text=\"Set a consistent bedtime for better sleep\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node></node></hierarchy>"
+        private const val CLOCK_TIMER_XML =
+            "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1280]\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\"><node bounds=\"[0,176][720,1072]\" package=\"com.google.android.deskclock\" class=\"android.view.ViewGroup\" resource-id=\"com.google.android.deskclock:id/desk_clock_pager\"><node bounds=\"[256,420][464,520]\" text=\"Timer\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\" resource-id=\"com.google.android.deskclock:id/timer_title\"/></node><node bounds=\"[288,1072][432,1232]\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" resource-id=\"com.google.android.deskclock:id/tab_menu_timer\"><node bounds=\"[318,1168][402,1209]\" text=\"Timer\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node><node bounds=\"[432,1072][576,1232]\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" content-desc=\"Stopwatch\" resource-id=\"com.google.android.deskclock:id/tab_menu_stopwatch\"><node bounds=\"[433,1168][575,1209]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node></node></hierarchy>"
+        private const val CLOCK_STOPWATCH_XML =
+            "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1280]\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\"><node bounds=\"[0,176][720,1072]\" package=\"com.google.android.deskclock\" class=\"android.view.ViewGroup\" resource-id=\"com.google.android.deskclock:id/desk_clock_pager\"><node bounds=\"[216,370][504,460]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/><node bounds=\"[300,780][420,900]\" content-desc=\"Start\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.Button\"/></node><node bounds=\"[432,1072][576,1232]\" clickable=\"true\" selected=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" content-desc=\"Stopwatch\" resource-id=\"com.google.android.deskclock:id/tab_menu_stopwatch\"><node bounds=\"[433,1168][575,1209]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node></node></hierarchy>"
     }
 }

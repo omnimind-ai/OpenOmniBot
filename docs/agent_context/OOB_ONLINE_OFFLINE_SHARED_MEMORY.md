@@ -1011,6 +1011,44 @@ Recent validation note:
 - The generated 5554 Function replayed from HOME with `model_used=false`,
   runner `oob_omniflow_replay`, 4/4 successful steps, runner duration 5,706 ms,
   and adb verified the same Display page.
+- 2026-05-26 online VLM Clock task on `emulator-5556` used real OOB access with
+  recall disabled: `run_id=4bb87c95-f9d5-4f07-b7cd-5518d59dbd81`,
+  `success=true`, 2 RunLog cards (`open_app`, `finished`), token total 9,793,
+  convert success, and Function id
+  `debug_4bb87c95_f9d5_4f07_b7cd_5518d59dbd81`. Direct replay from HOME ran
+  with `model_used=false`, `success=true`, runner `oob_omniflow_replay`,
+  2/2 successful steps, and runner duration 2,983 ms. adb verified
+  `topResumedActivity=com.google.android.deskclock/.DeskClock`, the Stopwatch
+  tab selected, title `Stopwatch`, and `content-desc="Start"` visible without
+  starting the stopwatch.
+- 2026-05-26 an older Clock RunLog
+  `f473f91c-6a25-4c23-a602-aa2d7c2cf3ce` was reconverted with the native
+  startup-bridge compiler rule into
+  `debug_f473f91c_clock_transient_fixed`. The converter recorded
+  `transient_startup_bridge_dropped_count=1`, produced replay steps
+  `open_app`, `click`, `finished`, and replay succeeded in 3,217 ms. The
+  remaining `click Stopwatch` step was skipped by replay postcondition because
+  the fresh launch was already on the Stopwatch page. adb verified the same
+  Stopwatch final state. This validates the general conversion rule for
+  first-launch prompt noise, not a target-app-specific special case.
+- The same old Clock RunLog exposed a real replay observation bug after
+  reinstall: the foreground activity and UIAutomator XML were already
+  `com.google.android.deskclock`, but the native runner's `open_app`
+  postcondition read `current_package=""` from background-thread Accessibility
+  snapshots and failed. `OmniflowStepExecutor` now reads replay observations
+  through `Dispatchers.Main.immediate` with the existing direct-read fallback.
+  Revalidation on `emulator-5556` with Function id
+  `debug_f473f91c_clock_transient_fixed_3` passed: converter dropped 1
+  transient startup bridge card, replay produced `open_app`, skipped
+  `click Stopwatch` via `pre_action_postcondition_satisfied`, then `finished`;
+  `replay_success=true`, `model_used=false`, runner duration 3,914 ms, and the
+  `open_app` postcondition reported
+  `current_package=com.google.android.deskclock`.
+- 2026-05-26 a post-task overlay crash was fixed in the cat overlay finish path:
+  if the CatView is already detached, `finish()` now skips `updateViewLayout`
+  and still invokes the animation-end cleanup callback. This addresses observed
+  `View=CatView not attached to window manager` /
+  `BadTokenException token null` crashes after real VLM completion.
 - Do not claim broad AndroidWorld success without a real task run and state
   verification.
 

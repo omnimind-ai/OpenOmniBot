@@ -298,15 +298,32 @@ object DraggableBallInstance {
     fun finish(
         onAnimEnd: () -> Unit = {},
     ) {
-        val targetX = if (getInstance()?.isAttachedToRight == true) {
+        val instance = dragBall ?: getInstance()
+        if (instance == null) {
+            onAnimEnd()
+            return
+        }
+        val targetX = if (instance.isAttachedToRight) {
             (DisplayUtil.getScreenHeight() ?: (0)) - CatView.width.dpToPx() * 2 / 3
         } else {
             0 - CatView.width.dpToPx() / 3
         }
-        getInstance()?.catViewLayoutParams?.x = targetX
-        getInstance()?.getWindowManager()
-            ?.updateViewLayout(getInstance()?.catView, getInstance()?.catViewLayoutParams)
-        getInstance()?.catView?.doFinish(onAnimEnd)
+        instance.catViewLayoutParams.x = targetX
+        if (!instance.catView.isAttachedToWindow) {
+            OmniLog.d(TAG, "finish skipped animation because catView is detached")
+            onAnimEnd()
+            return
+        }
+        try {
+            instance.getWindowManager().updateViewLayout(instance.catView, instance.catViewLayoutParams)
+            instance.catView.doFinish(onAnimEnd)
+        } catch (e: IllegalArgumentException) {
+            OmniLog.e(TAG, "finish updateViewLayout skipped: ${e.message}")
+            onAnimEnd()
+        } catch (e: BadTokenException) {
+            OmniLog.e(TAG, "finish updateViewLayout BadTokenException: ${e.message}")
+            onAnimEnd()
+        }
     }
 
     fun cancelAnimation() {
