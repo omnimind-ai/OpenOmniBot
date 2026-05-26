@@ -302,6 +302,19 @@ sending the full general Agent tool catalog to the model. For even tighter
 validation, pass `allowedTools` with the exact tool names needed for that turn.
 Do not use the focused profile for unrelated general Agent tasks.
 
+MCP `agent_run` uses `userMessage` as the prompt field; do not send `message`.
+Example wrapper:
+
+```json
+{
+  "name": "agent_run",
+  "arguments": {
+    "userMessage": "Register the reusable instruction with oob_function_register, then report functionId and success.",
+    "toolProfile": "function_management"
+  }
+}
+```
+
 Simple registration example:
 
 ```json
