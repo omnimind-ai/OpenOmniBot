@@ -30,7 +30,8 @@ class AgentToolRegistry(
     private val context: Context,
     discoveredServers: List<RemoteMcpDiscoveredServer>,
     conversationMode: String = AgentConversationModePolicy.NORMAL_MODE,
-    dynamicDefinitions: List<JsonObject> = emptyList()
+    dynamicDefinitions: List<JsonObject> = emptyList(),
+    toolExposurePolicy: AgentToolExposurePolicy = AgentToolExposurePolicy.DEFAULT,
 ) : AgentToolCatalog {
     data class RuntimeToolDescriptor(
         val name: String,
@@ -113,8 +114,13 @@ class AgentToolRegistry(
             definitions = runtimeDefinitions,
             projectCapabilityEnabled = projectCapabilityEnabled
         )
-        val filteredDefinitions = AgentConversationModePolicy
+        val conversationFilteredDefinitions = AgentConversationModePolicy
             .filterToolDefinitionsForConversationMode(projectFilteredDefinitions, conversationMode)
+        val allowedToolNames = toolExposurePolicy.effectiveAllowedTools()
+        val filteredDefinitions = filterToolDefinitionsForExposurePolicy(
+            definitions = conversationFilteredDefinitions,
+            allowedToolNames = allowedToolNames,
+        )
 
         val toolsByName = linkedMapOf<String, ChatCompletionTool>()
         filteredDefinitions.forEach { definition ->
@@ -155,13 +161,33 @@ class AgentToolRegistry(
         // Debug dump: full registered tool list to verify which ones the LLM actually receives.
         OmniLog.i(
             tag,
-            "registered_tools count=${toolsForModel.size} " +
+                "registered_tools count=${toolsForModel.size} " +
                 "conversationMode=$conversationMode " +
+                "tool_profile=${toolExposurePolicy.profile.orEmpty()} " +
+                "tool_allowlist_size=${allowedToolNames?.size ?: 0} " +
                 "project_capability=$projectCapabilityEnabled " +
                 "subagent_present=${"subagent_dispatch" in runtimeDescriptors.keys} " +
                 "memory_load_present=${"memory_load" in runtimeDescriptors.keys} " +
                 "names=[${runtimeDescriptors.keys.joinToString(",")}]"
         )
+    }
+
+    private fun filterToolDefinitionsForExposurePolicy(
+        definitions: List<JsonObject>,
+        allowedToolNames: Set<String>?,
+    ): List<JsonObject> {
+        if (allowedToolNames.isNullOrEmpty()) {
+            return definitions
+        }
+        return definitions.filter { definition ->
+            val toolName = (definition["function"] as? JsonObject)
+                ?.get("name")
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.trim()
+                .orEmpty()
+            toolName in allowedToolNames
+        }
     }
 
     private fun filterProjectToolDefinitionsForCapability(

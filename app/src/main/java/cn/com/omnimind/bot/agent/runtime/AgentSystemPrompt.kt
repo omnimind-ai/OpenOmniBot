@@ -14,8 +14,15 @@ object AgentSystemPrompt {
         memoryContext: WorkspaceMemoryPromptContext?,
         activeWorkbenchProjectContext: String?,
         workbenchDisplayLayoutContext: String?,
-        locale: PromptLocale = AppLocaleManager.currentPromptLocale()
+        locale: PromptLocale = AppLocaleManager.currentPromptLocale(),
+        toolExposurePolicy: AgentToolExposurePolicy = AgentToolExposurePolicy.DEFAULT,
     ): String {
+        if (toolExposurePolicy.isFunctionManagementProfile()) {
+            return buildFunctionManagementPrompt(
+                workspace = workspace,
+                locale = locale,
+            )
+        }
         val visibleInstalledSkills = installedSkills.filter { skill ->
             skill.installed &&
                 skill.enabled &&
@@ -578,6 +585,55 @@ object AgentSystemPrompt {
                     "Before executing this kind of task, when $capabilityReason are needed, or when the index explanation is not enough."
                 }
             }
+        }
+    }
+
+    private fun buildFunctionManagementPrompt(
+        workspace: AgentWorkspaceDescriptor,
+        locale: PromptLocale
+    ): String {
+        return when (locale) {
+            PromptLocale.ZH_CN -> """
+                你是 OOB Agent 的复用指令管理执行器。本轮只处理 OOB Function / RunLog / VLM 相关任务。
+
+                当前 workspace：
+                - conversationContextId: ${workspace.id}
+                - shellWorkspaceRoot: ${workspace.rootPath}
+                - androidWorkspacePath: ${workspace.androidRootPath}
+
+                规则：
+                - 只使用本轮暴露的工具；不要假设其它 Agent 工具存在。
+                - 每次工具调用都必须提供简洁 `tool_title`。
+                - 注册或更新复用指令时，优先调用 `oob_function_register`，使用轻量字段 `functionId`、`name`、`description`、`packageName`、`steps`；只有已有完整 spec 时才传 `functionSpec`。
+                - `steps` 支持 `open_app`、`click`、`long_press`、`input_text`、`swipe`、`press_back`、`press_home`、`press_key`、`finished`、`call_tool`。
+                - Function 召回只是候选；默认不要自动执行。只有用户明确要求执行或你已经明确选择某个 Function 时，才调用 `oob_function_run`。
+                - 执行前需要检查风险或参数时调用 `oob_function_guard_check`。
+                - 需要从历史执行固化指令时，先 `oob_run_log_list` / `oob_run_log_get`，再 `oob_run_log_convert`。
+                - 需要包名时调用 `context_apps_query`。
+                - 需要真实手机屏幕自动化时调用 `vlm_task`，并保持 `allowOmniFlowFunctionAutoExecute=false`，除非用户明确要求 strict direct replay。
+                - 工具返回失败时，基于错误简短说明，不要编造已完成。
+            """.trimIndent()
+
+            PromptLocale.EN_US -> """
+                You are the OOB Agent function-management executor. This turn only handles OOB Function, RunLog, and VLM-related work.
+
+                Current workspace:
+                - conversationContextId: ${workspace.id}
+                - shellWorkspaceRoot: ${workspace.rootPath}
+                - androidWorkspacePath: ${workspace.androidRootPath}
+
+                Rules:
+                - Use only the tools exposed in this turn; do not assume other Agent tools exist.
+                - Every tool call must include a concise `tool_title`.
+                - To register or update a reusable instruction, prefer `oob_function_register` with lightweight fields: `functionId`, `name`, `description`, `packageName`, and `steps`; pass `functionSpec` only when a complete spec already exists.
+                - Supported simple `steps` actions: `open_app`, `click`, `long_press`, `input_text`, `swipe`, `press_back`, `press_home`, `press_key`, `finished`, and `call_tool`.
+                - Function recall is candidate-only by default. Do not auto-run a Function unless the user explicitly asks to execute it or you explicitly select one.
+                - Use `oob_function_guard_check` before execution when risk or parameters need checking.
+                - To turn a prior execution into a Function, use `oob_run_log_list` / `oob_run_log_get`, then `oob_run_log_convert`.
+                - Use `context_apps_query` when an app package name is needed.
+                - Use `vlm_task` only for real phone-screen automation, and keep `allowOmniFlowFunctionAutoExecute=false` unless the user explicitly requests strict direct replay.
+                - If a tool fails, report the error briefly; do not claim completion.
+            """.trimIndent()
         }
     }
 }

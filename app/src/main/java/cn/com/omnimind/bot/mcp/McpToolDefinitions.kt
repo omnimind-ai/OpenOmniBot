@@ -270,6 +270,16 @@ BEHAVIOR:
                 "modelOverride" to mapOf(
                     "type" to "object",
                     "description" to "Optional providerProfileId/modelId override in the same shape accepted by WebChat."
+                ),
+                "toolProfile" to mapOf(
+                    "type" to "string",
+                    "enum" to listOf("function_management"),
+                    "description" to "Optional focused tool exposure profile. Use function_management when the Agent only needs to list/register/convert/run OOB reusable Functions; this keeps regular Agent behavior unchanged while reducing tool-schema tokens."
+                ),
+                "allowedTools" to mapOf(
+                    "type" to "array",
+                    "description" to "Optional explicit model tool allowlist for this Agent run. When set, only these tool schemas are exposed to the model.",
+                    "items" to mapOf("type" to "string")
                 )
             ),
             "required" to listOf("userMessage")

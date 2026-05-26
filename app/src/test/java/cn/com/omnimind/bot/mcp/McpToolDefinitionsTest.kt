@@ -106,6 +106,20 @@ class McpToolDefinitionsTest {
     }
 
     @Test
+    fun agentRunToolExposesFocusedToolControls() {
+        val tool = McpToolDefinitions.fixedTools.single {
+            it["name"] == "agent_run"
+        }
+        val schema = tool["inputSchema"] as Map<*, *>
+        val properties = schema["properties"] as Map<*, *>
+
+        assertTrue(properties.containsKey("toolProfile"))
+        assertTrue(properties.containsKey("allowedTools"))
+        val toolProfile = properties["toolProfile"] as Map<*, *>
+        assertEquals(listOf("function_management"), toolProfile["enum"])
+    }
+
+    @Test
     fun oobFunctionRegisterToolExposesSimpleConversationSchema() {
         val tool = McpToolDefinitions.fixedTools.single {
             it["name"] == "oob_function_register"

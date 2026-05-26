@@ -76,6 +76,7 @@ import cn.com.omnimind.bot.agent.AgentRuntimeContextRepository
 import cn.com.omnimind.bot.agent.AgentScheduleToolBridge
 import cn.com.omnimind.bot.agent.AgentRunControl
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
+import cn.com.omnimind.bot.agent.AgentToolExposurePolicy
 import cn.com.omnimind.bot.agent.AgentToolProgressSnapshot
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.LiveAgentBrowserSessionManager
@@ -5457,6 +5458,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val terminalEnvironment = parseTerminalEnvironmentMap(
             call.argument<Map<String, Any?>>("terminalEnvironment")
         )
+        val toolExposurePolicy = AgentToolExposurePolicy.fromRaw(
+            profile = call.argument<String>("toolProfile")
+                ?: call.argument<String>("tool_profile"),
+            allowedTools = call.argument<List<Any?>>("allowedTools")
+                ?: call.argument<List<Any?>>("allowed_tools"),
+        )
         if (taskId.isBlank()) {
             result.error("INVALID_ARGUMENTS", "taskId is empty", null)
             return
@@ -5568,6 +5575,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     reasoningEffort,
                     terminalEnvironment,
                     bridge,
+                    toolExposurePolicy = toolExposurePolicy,
                     runControl = agentRunContext
                 )
             } catch (e: CancellationException) {

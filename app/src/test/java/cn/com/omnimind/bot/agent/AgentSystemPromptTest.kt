@@ -85,6 +85,60 @@ class AgentSystemPromptTest {
     }
 
     @Test
+    fun buildUsesCompactPromptForFunctionManagementProfile() {
+        val prompt = AgentSystemPrompt.build(
+            workspace = AgentWorkspaceDescriptor(
+                id = "conversation-1",
+                rootPath = "/workspace",
+                androidRootPath = "/data/user/0/cn.com.omnimind.bot/workspace",
+                uriRoot = "omnibot://workspace",
+                currentCwd = "/workspace/demo",
+                androidCurrentCwd = "/data/user/0/cn.com.omnimind.bot/workspace/demo",
+                shellRootPath = "/workspace",
+                retentionPolicy = "shared_root"
+            ),
+            installedSkills = listOf(
+                SkillIndexEntry(
+                    id = "oob-project",
+                    name = "oob-project",
+                    description = "Workbench project rules.",
+                    rootPath = "/android/.omnibot/skills/oob-project",
+                    shellRootPath = "/workspace/.omnibot/skills/oob-project",
+                    skillFilePath = "/android/.omnibot/skills/oob-project/SKILL.md",
+                    shellSkillFilePath = "/workspace/.omnibot/skills/oob-project/SKILL.md",
+                    hasScripts = true,
+                    hasReferences = true,
+                    hasAssets = true,
+                    hasEvals = false
+                )
+            ),
+            skillsRootShellPath = "/workspace/.omnibot/skills",
+            skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
+            resolvedSkills = emptyList(),
+            memoryContext = WorkspaceMemoryPromptContext(
+                soul = "long soul",
+                longTermMemory = "long memory",
+                todayShortMemory = "short memory"
+            ),
+            activeWorkbenchProjectContext = "projectId: project-heavy",
+            workbenchDisplayLayoutContext = "Workbench viewport: 412x700dp",
+            locale = PromptLocale.ZH_CN,
+            toolExposurePolicy = AgentToolExposurePolicy(
+                profile = AgentToolExposurePolicy.PROFILE_FUNCTION_MANAGEMENT,
+            )
+        )
+
+        assertTrue(prompt.contains("复用指令管理执行器"))
+        assertTrue(prompt.contains("oob_function_register"))
+        assertTrue(prompt.contains("allowOmniFlowFunctionAutoExecute=false"))
+        assertFalse(prompt.contains("已安装 skills"))
+        assertFalse(prompt.contains("Workspace 记忆上下文"))
+        assertFalse(prompt.contains("OOB Workbench"))
+        assertFalse(prompt.contains("terminal_execute"))
+        assertFalse(prompt.contains("workbench_project_hot_update"))
+    }
+
+    @Test
     fun buildInjectsActiveWorkbenchProjectContext() {
         val prompt = AgentSystemPrompt.build(
             workspace = AgentWorkspaceDescriptor(

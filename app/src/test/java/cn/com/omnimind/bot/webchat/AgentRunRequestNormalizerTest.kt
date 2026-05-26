@@ -85,4 +85,13 @@ class AgentRunRequestNormalizerTest {
         )
         assertTrue(normalized.attachments.single()["fileName"].toString().startsWith("image_"))
     }
+
+    @Test
+    fun `normalize string list drops blanks`() {
+        val normalized = AgentRunRequestNormalizer.normalizeStringList(
+            listOf(" oob_function_register ", "", null, "context_apps_query")
+        )
+
+        assertEquals(listOf("oob_function_register", "context_apps_query"), normalized)
+    }
 }

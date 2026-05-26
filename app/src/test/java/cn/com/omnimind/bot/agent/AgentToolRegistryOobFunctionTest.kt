@@ -49,6 +49,51 @@ class AgentToolRegistryOobFunctionTest {
     }
 
     @Test
+    fun `function management tool profile only exposes focused OOB tools`() {
+        val context = TempFilesContext()
+        try {
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+                toolExposurePolicy = AgentToolExposurePolicy(
+                    profile = AgentToolExposurePolicy.PROFILE_FUNCTION_MANAGEMENT,
+                ),
+            )
+            val toolNames = registry.toolsForModel.map { it.function.name }.toSet()
+
+            assertEquals(
+                AgentToolExposurePolicy.FUNCTION_MANAGEMENT_TOOLS,
+                toolNames,
+            )
+            assertFalse(toolNames.contains("web_search"))
+            assertFalse(toolNames.contains("terminal_execute"))
+            assertFalse(toolNames.contains("workbench_project_create"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `explicit allowed tools override profile allowlist`() {
+        val context = TempFilesContext()
+        try {
+            val registry = AgentToolRegistry(
+                context = context,
+                discoveredServers = emptyList(),
+                toolExposurePolicy = AgentToolExposurePolicy(
+                    profile = AgentToolExposurePolicy.PROFILE_FUNCTION_MANAGEMENT,
+                    allowedTools = setOf("oob_function_register", "context_apps_query"),
+                ),
+            )
+            val toolNames = registry.toolsForModel.map { it.function.name }.toSet()
+
+            assertEquals(setOf("context_apps_query", "oob_function_register"), toolNames)
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `project tools are exposed after activating a project`() {
         val context = TempFilesContext()
         try {

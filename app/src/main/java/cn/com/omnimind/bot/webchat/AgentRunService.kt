@@ -144,6 +144,12 @@ internal object AgentRunRequestNormalizer {
         }
     }
 
+    internal fun normalizeStringList(value: Any?): List<String> {
+        return (value as? List<*>)
+            ?.mapNotNull { item -> item?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
+            ?: emptyList()
+    }
+
     internal fun normalizeListOfMaps(value: Any?): List<Map<String, Any?>> {
         return (value as? List<*>)?.mapNotNull { entry ->
             normalizeMap(entry)
@@ -182,7 +188,11 @@ class AgentRunService(
             "userMessage" to normalizedPayload.userMessage,
             "attachments" to normalizedPayload.attachments,
             "terminalEnvironment" to AgentRunRequestNormalizer.normalizeMap(request["terminalEnvironment"]),
-            "modelOverride" to AgentRunRequestNormalizer.normalizeMap(request["modelOverride"])
+            "modelOverride" to AgentRunRequestNormalizer.normalizeMap(request["modelOverride"]),
+            "toolProfile" to request["toolProfile"]?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+            "allowedTools" to AgentRunRequestNormalizer.normalizeStringList(
+                request["allowedTools"] ?: request["allowed_tools"]
+            )
         )
         invokeManager("createAgentTask", arguments) {
             manager.createAgentTask(it, this)

@@ -294,6 +294,14 @@ Recommended agent workflow:
 5. Use `oob_function_delete` to remove temporary validation Functions and
    detach their UDEG node references.
 
+When submitting a conversation through `agent_run` only to create, inspect,
+convert, or explicitly run reusable instructions, pass
+`toolProfile="function_management"`. That profile exposes only the Function,
+RunLog, app lookup, and VLM task tools needed for this workflow, which avoids
+sending the full general Agent tool catalog to the model. For even tighter
+validation, pass `allowedTools` with the exact tool names needed for that turn.
+Do not use the focused profile for unrelated general Agent tasks.
+
 Simple registration example:
 
 ```json
