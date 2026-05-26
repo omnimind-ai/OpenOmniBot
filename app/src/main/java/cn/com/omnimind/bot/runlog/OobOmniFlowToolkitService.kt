@@ -506,11 +506,21 @@ class OobOmniFlowToolkitService(
     fun getFunction(args: Map<String, Any?>?): Map<String, Any?> {
         val functionId = firstNonBlank(args?.get("functionId"), args?.get("function_id"))
         val spec = replayService.getFunctionSpec(functionId)
-        return spec ?: errorPayload(
-            code = "OOB_FUNCTION_NOT_FOUND",
-            message = "OOB reusable function not found: $functionId",
-            functionId = functionId
-        )
+        if (spec == null) {
+            return errorPayload(
+                code = "OOB_FUNCTION_NOT_FOUND",
+                message = "OOB reusable function not found: $functionId",
+                functionId = functionId
+            )
+        }
+        return linkedMapOf<String, Any?>().apply {
+            putAll(spec)
+            put("success", true)
+            put("function", spec)
+            put("function_id", firstNonBlank(spec["function_id"], functionId))
+            put("summary", functionAgentSummary(spec))
+            put("response_source", "oob_native_function_store")
+        }
     }
 
     fun deleteFunction(args: Map<String, Any?>?): Map<String, Any?> {
@@ -1095,6 +1105,20 @@ class OobOmniFlowToolkitService(
             stepCount = intArg(runPayload["step_count"], defaultValue = 0),
             errorMessage = runPayload["error_message"]?.toString()
         )
+        val stepResults = listArg(runPayload["step_results"])
+        val timing = mapArg(runPayload["timing"])
+        val startedAtMs = longArg(timing["started_at_ms"])
+        val finishedAtMs = longArg(timing["finished_at_ms"])
+        val durationMs = longArg(timing["duration_ms"], timing["runner_duration_ms"])
+            .takeIf { it > 0L }
+            ?: (finishedAtMs - startedAtMs).takeIf { startedAtMs > 0L && finishedAtMs >= startedAtMs }
+            ?: stepResults.sumOf { raw ->
+                longArg(mapArg(raw)["duration_ms"]).coerceAtLeast(0L)
+            }
+        val successStepCount = intArg(
+            runPayload["success_step_count"],
+            defaultValue = stepResults.count { raw -> mapArg(raw)["success"] != false },
+        )
         return linkedMapOf<String, Any?>(
             "success" to (runPayload["success"] == true),
             "run_id" to runPayload["run_id"],
@@ -1102,17 +1126,24 @@ class OobOmniFlowToolkitService(
             "function_id" to functionId,
             "segment_start_step_index" to startStepIndex.takeIf { it > 0 },
             "runner" to runPayload["runner"],
+            "step_count" to intArg(runPayload["step_count"], defaultValue = stepResults.size),
+            "success_step_count" to successStepCount,
+            "actions_executed" to successStepCount,
             "guard_decision" to decision,
             "risk_level" to guard["risk_level"],
             "execution_mode" to executionMode,
-            "step_results" to runPayload["step_results"],
-            "timing" to runPayload["timing"],
+            "step_results" to stepResults,
+            "started_at_ms" to startedAtMs.takeIf { it > 0L },
+            "finished_at_ms" to finishedAtMs.takeIf { it > 0L },
+            "duration_ms" to durationMs,
+            "runner_duration_ms" to durationMs,
+            "timing" to timing,
             "needs_agent" to (runPayload["model_required"] == true),
             "needs_confirmation" to false,
             "error_message" to runPayload["error_message"],
             "guard" to guard,
             "result" to runPayload
-        )
+        ).filterValues { it != null }
     }
 
     fun listRunLogs(args: Map<String, Any?>?): Map<String, Any?> {
@@ -2205,6 +2236,27 @@ class OobOmniFlowToolkitService(
         ).apply { putAll(extras) }
     }
 
+    private fun functionAgentSummary(spec: Map<String, Any?>): Map<String, Any?> {
+        val execution = mapArg(spec["execution"])
+        val steps = listArg(execution["steps"])
+        val parameters = listArg(spec["parameters"])
+        return linkedMapOf(
+            "function_id" to spec["function_id"],
+            "name" to spec["name"],
+            "description" to spec["description"],
+            "step_count" to (execution["step_count"] ?: steps.size),
+            "omniflow_step_count" to execution["omniflow_step_count"],
+            "agent_step_count" to execution["agent_step_count"],
+            "requires_agent_fallback" to execution["requires_agent_fallback"],
+            "parameter_names" to parameters.mapNotNull { raw ->
+                firstNonBlank(mapArg(raw)["name"]).takeIf { it.isNotBlank() }
+            },
+            "step_summaries" to stepSummaries(spec),
+            "source" to spec["source"],
+            "constraints" to spec["constraints"],
+        ).filterValues { it != null }
+    }
+
     private fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> {
         val execution = mapArg(spec["execution"])
         return listArg(execution["steps"]).mapIndexedNotNull { index, rawStep ->
@@ -2457,7 +2509,7 @@ class OobOmniFlowToolkitService(
         return defaultValue
     }
 
-    private fun longArg(vararg values: Any?, defaultValue: Long): Long {
+    private fun longArg(vararg values: Any?, defaultValue: Long = 0L): Long {
         values.forEach { value ->
             when (value) {
                 is Number -> return value.toLong()

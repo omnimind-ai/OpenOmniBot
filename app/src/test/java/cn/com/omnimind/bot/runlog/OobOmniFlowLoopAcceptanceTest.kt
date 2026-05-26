@@ -52,7 +52,10 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(true, register["success"])
             assertEquals("simple", register["registration_input_mode"])
             val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            assertEquals(true, stored["success"])
             assertEquals(functionId, stored["function_id"])
+            assertEquals(functionId, (stored["function"] as? Map<*, *>)?.get("function_id"))
+            assertEquals(functionId, (stored["summary"] as? Map<*, *>)?.get("function_id"))
             val execution = stored["execution"] as? Map<*, *>
             assertEquals(2, (execution?.get("step_count") as Number).toInt())
             assertEquals(false, execution["requires_agent_fallback"])
@@ -138,6 +141,15 @@ class OobOmniFlowLoopAcceptanceTest {
                 val firstCandidate = candidates?.firstOrNull() as? Map<*, *>
                 assertEquals(functionId, firstCandidate?.get("function_id"))
                 assertEquals(null, recall["hit"])
+
+                val run = toolkit.runFunction(mapOf("functionId" to functionId))
+                assertEquals(true, run["success"])
+                assertEquals(2, (run["step_count"] as Number).toInt())
+                assertEquals(2, (run["success_step_count"] as Number).toInt())
+                assertEquals(2, (run["actions_executed"] as Number).toInt())
+                assertTrue((run["duration_ms"] as Number).toLong() >= 0L)
+                assertTrue((run["runner_duration_ms"] as Number).toLong() >= 0L)
+                assertEquals(listOf("com.android.settings"), backend.launchedPackages)
             } finally {
                 context.root.deleteRecursively()
             }
@@ -1035,6 +1047,7 @@ class OobOmniFlowLoopAcceptanceTest {
         override suspend fun launchApplication(packageName: String) {
             launchedPackages += packageName
             currentPackage = packageName
+            currentXml = null
         }
 
         override suspend fun pressHotKey(key: String) {
