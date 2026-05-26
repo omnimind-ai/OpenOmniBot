@@ -369,7 +369,9 @@ probe_mcp() {
   if [[ -z "${MCP_TOKEN// }" ]]; then
     log "mcp_forwarded=http://127.0.0.1:${HOST_PORT}"
     log "mcp_probe_skipped=no_token"
-    log "probe_command=OOB_MCP_TOKEN=<token> $0 --device $DEVICE_SERIAL --no-accessibility --no-launch"
+    local default_probe_command
+    default_probe_command="OOB_MCP_TOKEN=<token> $0 --device $DEVICE_SERIAL --no-accessibility --no-launch"
+    log "probe_command=${OOB_START_PROBE_COMMAND:-$default_probe_command}"
     return 0
   fi
   local started now response body status count last_error

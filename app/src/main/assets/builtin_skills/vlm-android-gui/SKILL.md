@@ -200,19 +200,29 @@ Guidelines:
 
 ## Real Device Startup
 
-Before judging live VLM or Function behavior on `emulator-5556`, normalize the
-runtime with the dedicated one-click entrypoint:
+Before judging live VLM or Function behavior, normalize the runtime with the
+fixed one-click entrypoint:
 
 ```bash
-OOB_MCP_TOKEN=<token> scripts/start-oob-5556.sh
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh
 ```
 
-Use this instead of hand-editing Accessibility settings. It builds the standard
-debug APK, installs it on `emulator-5556`, stops known UiAutomation conflicts,
-clears and rebinds OOB Accessibility, launches OOB, forwards
-`127.0.0.1:28999` to device port `8899`, and probes MCP when a token is
-provided. Pass `--skip-build` to reuse the last APK, or `--skip-install` when
-only rebinding/restarting the runtime.
+Use this instead of hand-editing Accessibility settings. The default profile is
+`oob-5556`: it builds the standard debug APK, installs it on `emulator-5556`,
+stops known UiAutomation conflicts, clears and rebinds OOB Accessibility,
+launches OOB, forwards `127.0.0.1:28999` to device port `8899`, checks stale
+emulator time, and probes MCP when a token is provided. Pass `--skip-build` to
+reuse the last APK, or `--skip-install` when only rebinding/restarting the
+runtime.
+
+For `emulator-5554`, keep AndroidWorld/Mobilerun state intact:
+
+```bash
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5554
+```
+
+The 5554 profile uses host port `28998`, preserves existing Accessibility
+services, and does not stop Mobilerun/AndroidWorld processes.
 
 Startup error summary:
 
@@ -230,6 +240,9 @@ Startup error summary:
   `OOB_MCP_TOKEN`.
 - `startup_error=mcp_unreachable`: the app process, adb forward, or MCP server
   is not reachable.
+- `startup_error=mcp_http_<status>` or
+  `startup_error=mcp_probe_unexpected_payload`: MCP answered but did not return
+  a usable tool list. Inspect OOB logs before testing VLM quality.
 - `startup_error=app_not_running`: OOB launched then exited or did not start.
   Reinstall and inspect logcat for a startup crash.
 - `startup_error=device_clock_stale`: the emulator clock is before the minimum
@@ -237,17 +250,15 @@ Startup error summary:
   `Unacceptable certificate` / `CertificateNotYetValidException`; rerun with
   `--fix-device-clock` or sync the device clock.
 
+The long-term startup runbook is
+`docs/agent_context/OOB_STARTUP_RUNBOOK.md`.
+
 If the first immediate VLM call still returns "please enable accessibility",
 wait a few seconds or rerun the script; that means Android reported the service
 as bound before the in-process bridge became available.
 
 For `emulator-5554`, do not stop Mobilerun/AndroidWorld services unless the
-validation explicitly targets OOB on that device. When validating OOB on 5554,
-use a separate forwarded host port and preserve existing Accessibility services:
-
-```bash
-OOB_MCP_TOKEN=<token> scripts/start-oob-vlm-device.sh --device emulator-5554 --host-port 28998 --no-stop-conflicts --preserve-accessibility
-```
+validation explicitly targets OOB on that device.
 
 `emulator-5556` defaults to clean OOB rebinding. Non-5556 devices default to
 preserving existing Accessibility services so AndroidWorld/Mobilerun setup is

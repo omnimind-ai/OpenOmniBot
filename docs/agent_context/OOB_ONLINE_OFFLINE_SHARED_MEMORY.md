@@ -65,6 +65,21 @@ UI and tests:
   hides raw internal timing keys from normal UI.
 - Focused tests are listed in `docs/agent_context/INDEX.md`.
 
+Startup and device normalization:
+
+- `scripts/oob-start.sh`
+  - stable one-click startup entrypoint for real OOB validation.
+  - default profile `oob-5556`: build/install, clean Accessibility rebind,
+    stop UiAutomation conflicts, forward MCP on host port `28999`, probe MCP.
+  - profile `androidworld-5554`: build/install, preserve existing
+    Accessibility services, do not stop Mobilerun/AndroidWorld, forward MCP on
+    host port `28998`.
+- `scripts/start-oob-vlm-device.sh`
+  - lower-level normalizer that emits `startup_error=<code>` and
+    `startup_hint=<hint>`.
+- `docs/agent_context/OOB_STARTUP_RUNBOOK.md`
+  - durable startup error summary and one-click command reference.
+
 ## Current Invariants
 
 - The online agent still grounds every action on live screenshot/XML. Recall
@@ -1044,6 +1059,9 @@ For a complete local validation pass:
 
 ## Known Failure Modes
 
+- Always start real-device validation through `scripts/oob-start.sh` first. A
+  startup failure with `startup_error=<code>` is an environment/readiness
+  failure, not evidence about online VLM reasoning or replay quality.
 - Missing accessibility means direct replay cannot click/scroll/input and
   returns `OOB_ACCESSIBILITY_REQUIRED`.
 - Missing current XML makes UDEG recall miss with

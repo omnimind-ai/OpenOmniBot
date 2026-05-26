@@ -25,6 +25,9 @@ usage() {
 Usage:
   OOB_MCP_TOKEN=<token> scripts/start-oob-5556.sh
 
+Preferred stable entrypoint:
+  OOB_MCP_TOKEN=<token> scripts/oob-start.sh
+
 Options:
   --device <serial>        Target adb serial. Default: $OOB_DEVICE or emulator-5556.
   --host-port <port>       Local forwarded MCP port. Default: 28999.
