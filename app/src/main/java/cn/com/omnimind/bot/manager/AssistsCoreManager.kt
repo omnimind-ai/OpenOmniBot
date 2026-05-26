@@ -1507,6 +1507,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "context_apps_query" -> AgentToolMeta("builtin", t("查询已安装应用", "Query Installed Apps"))
             "context_time_now" -> AgentToolMeta("builtin", t("查询当前时间", "Query Current Time"))
             "vlm_task" -> AgentToolMeta("vlm", t("视觉执行", "Visual Task"))
+            "call_function", "omniflow.call_function" -> AgentToolMeta(
+                "oob_function",
+                t("复用指令", "Reusable Command")
+            )
+            "call_tool", "oob_tool_call" -> AgentToolMeta("builtin", t("工具调用", "Tool Call"))
             "web_search" -> AgentToolMeta("research", t("网页搜索", "Web Search"))
             "browser_use" -> AgentToolMeta("browser", t("浏览器操作", "Browser Action"))
             "android_privileged_action" -> AgentToolMeta("privileged", t("安卓高级动作", "Android Privileged Action"))
@@ -7390,6 +7395,57 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     AgentConversationHistoryRepository.STATUS_RUNNING
                 }
             val success = normalizedPayload["success"] != false
+            fun payloadMillis(vararg keys: String): Long? {
+                return keys.firstNotNullOfOrNull { key ->
+                    when (val raw = normalizedPayload[key]) {
+                        is Number -> raw.toLong()
+                        is String -> raw.trim().toLongOrNull()
+                        else -> null
+                    }?.takeIf { it > 0L }
+                }
+            }
+            val now = System.currentTimeMillis()
+            val startedAtMillis = payloadMillis("startedAtMs", "started_at_ms")
+                ?: activeToolStartTimes[entryId]
+                ?: now
+            val finishedAtMillis = if (streamKind == "tool_completed") {
+                payloadMillis("finishedAtMs", "finished_at_ms") ?: now
+            } else {
+                null
+            }
+            if (streamKind == "tool_completed") {
+                activeToolStartTimes.remove(entryId)
+            } else {
+                activeToolStartTimes.putIfAbsent(entryId, startedAtMillis)
+            }
+            val toolName = normalizedPayload["toolName"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: normalizedPayload["tool_name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "tool"
+            val argsJson = listOf(
+                normalizedPayload["argsJson"],
+                normalizedPayload["args_json"],
+                normalizedPayload["args"]
+            ).firstNotNullOfOrNull { raw ->
+                raw?.toString()?.takeIf { it.isNotBlank() }
+            }.orEmpty()
+            runCatching {
+                InternalRunLogStore.upsertCard(
+                    context = this@AssistsCoreManager.context,
+                    runId = taskId,
+                    cardId = entryId,
+                    card = buildAgentToolRunLogCard(
+                        entryId = entryId,
+                        toolName = toolName,
+                        argsJson = argsJson,
+                        payload = normalizedPayload,
+                        status = status,
+                        startedAtMillis = startedAtMillis,
+                        finishedAtMillis = finishedAtMillis
+                    )
+                )
+            }.onFailure {
+                OmniLog.w(TAG, "upsert explicit tool card run log failed: ${it.message}")
+            }
             upsertToolEvent(
                 entryId = entryId,
                 roundIndex = roundIndex,

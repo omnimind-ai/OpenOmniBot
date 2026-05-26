@@ -54,11 +54,17 @@ Offline OmniFlow and replay:
 - `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt`
   - deterministic primitive replay executor.
 - `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
-  - materialized Function runner and per-step timing.
+  - materialized Function runner, nested `call_function` tool-card events, and
+    per-step timing.
+- `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
+  - bridges explicit tool cards into chat stream events and `InternalRunLogStore`.
 
 UI and tests:
 
 - `ui/lib/widgets/execution/` normalizes user-facing RunLog/Function cards.
+- `ui/lib/services/agent_tool_card_projection.dart` and
+  `ui/lib/services/agent_tool_card_policy.dart` project streamed tool events
+  into visible cards, including nested reusable-command calls.
 - `ui/lib/features/task/pages/execution_history/command_library_page.dart`
   shows reusable Functions as "复用指令".
 - `ui/lib/features/task/pages/execution_history/function_run_result_sheet.dart`
@@ -67,6 +73,21 @@ UI and tests:
 
 Startup and device normalization:
 
+- `/Users/wuzewen/Projects/Omni/OmniFlow/scripts/start_androidworld_avds.sh`
+  - canonical restart/launch entrypoint for the AndroidWorld AVD pair when
+    both emulator ports must be recreated.
+  - default mapping: `AndroidWorldAvd -> emulator-5554` with gRPC `8554`,
+    `SmallPhone -> emulator-5556` with gRPC `8556`.
+  - it kills existing emulators on those ports before launching replacements,
+    so use it only when restart is intended, not during an active OOB run.
+  - it only starts AVDs. It does not install OOB, bind Accessibility, forward
+    MCP, fix stale clocks, or probe model/tool readiness. Always follow it with
+    `scripts/oob-start.sh --profile 5554` and/or
+    `scripts/oob-start.sh --profile 5556`.
+  - default snapshot mode can restore stale emulator clocks; keep the
+    `oob-start` clock check/fix in the post-boot path. Use
+    `ANDROIDWORLD_USE_SNAPSHOT=0` only when a clean no-snapshot AVD restart is
+    required.
 - `scripts/oob-start.sh`
   - canonical one-click startup entrypoint for real OOB validation.
   - default profile `oob-5556`: build/install, clean Accessibility rebind,
@@ -126,6 +147,11 @@ Startup and device normalization:
 - Raw `duration_ms`, `started_at_ms`, `finished_at_ms`, and `phase_ms` are
   internal observability fields. They are recorded in RunLog/results/tests but
   should not be shown as raw debug labels in normal user-facing UI.
+- `call_function` is a tool call, even when it appears as a nested step inside
+  a reusable Function. It must emit normal `tool_started` / `tool_completed`
+  cards with `toolName=call_function`, `toolType=oob_function`, readable
+  "复用指令" labels, `argsJson.function_id`, and completion status. These cards
+  are shown in the agent UI and persisted into the same agent RunLog.
 
 ## Online Entry Flow
 
@@ -640,6 +666,25 @@ The action duration is currently measured around actual action execution, not
 the whole model step. Token usage is aggregated from OpenAI-compatible stream
 usage and also retained per attempt.
 
+Explicit agent tool cards, including nested `call_function`, use the generic
+agent card schema produced by `AssistsCoreManager.buildAgentToolRunLogCard(...)`:
+
+- `tool_name/toolName`
+- `tool_type/toolType`
+- `tool_call.id/name/arguments`
+- `argsJson`
+- `status`
+- `success`
+- `started_at_ms`
+- `finished_at_ms`
+- `duration_ms`
+- `resultPreviewJson`
+- `rawResultJson`
+- `compile_kind = "agent_tool"`
+
+For reusable-command cards, `toolName=call_function`, `toolType=oob_function`,
+and `argsJson` must include `function_id` plus optional `arguments`.
+
 ## Manual Takeover Recording
 
 Manual takeover is integrated with pause/resume:
@@ -910,9 +955,14 @@ source = oob_native_omniflow_toolkit
    - nested OmniFlow tool/function/graph tools when present
    - delegated agent tool if router/environment are available
    - otherwise returns agent fallback requirement
-6. Records each step result with `started_at_ms`, `finished_at_ms`,
+6. Emits explicit start/complete tool-card events for every nested
+   `call_function` / `call_tool(function_id=...)` step when a callback is
+   present. Missing function id, missing function, missing arguments, recursion,
+   and nested success/failure all produce a completed card instead of silently
+   disappearing into `step_results`.
+7. Records each step result with `started_at_ms`, `finished_at_ms`,
    `duration_ms`.
-7. Returns runner timing:
+8. Returns runner timing:
 
 ```text
 timing.source = oob_function_runner
@@ -1066,6 +1116,25 @@ Recent validation note:
   and still invokes the animation-end cleanup callback. This addresses observed
   `View=CatView not attached to window manager` /
   `BadTokenException token null` crashes after real VLM completion.
+- 2026-05-26 5556 startup after reinstall exposed a clock repair bug:
+  unconditional POSIX date rewrite converted a correct UTC epoch into device
+  local time under `Asia/Shanghai`, creating 28,800 seconds skew. The startup
+  and online-validation clock guard now use host epoch syntax (`date @<epoch>`)
+  and only rewrite when skew/staleness is detected or `--fix-device-clock` is
+  explicit. Revalidation repaired a stale 28,801 second skew to 0 seconds and a
+  follow-up startup with 1 second skew did not attempt another rewrite.
+- 2026-05-26 5556 Function management after reinstall passed through the real
+  installed app path:
+  `AgentToolRegistry -> AgentToolRouter -> WorkbenchToolHandler`. Direct
+  broadcast to `RUN_AGENT_FUNCTION_MANAGEMENT_VALIDATION` registered
+  `debug_agent_function_management_open_settings`, listed it, guard-checked
+  `decision=allow`, and ran replay
+  `omniflow_run_1779794111457_1`. `oob_function_run` succeeded with 2/2 steps,
+  `runner=oob_omniflow_replay`, `model_used=false`,
+  `runner_duration_ms=6755`, and `open_app_package
+  current_package=com.android.settings`. External adb verification showed
+  foreground `com.android.settings/.Settings` and UIAutomator XML package
+  `com.android.settings` on the Settings homepage.
 - Do not claim broad AndroidWorld success without a real task run and state
   verification.
 
@@ -1159,7 +1228,7 @@ For a complete local validation pass:
   started or from an approved direct-device context.
 - Clock hardening:
   `scripts/oob-start.sh --profile 5554 --skip-build --skip-install --wait-seconds 30 --settle-seconds 1`
-  now forces emulator clock sync by default. On the latest run it detected
+  now fixes stale/skewed emulator clocks by default. On the latest run it detected
   `device_clock_preflight_year=2023`, `device_clock_preflight_alarm_year=2023`,
   and `device_clock_preflight_skew_seconds=82408788`, then fixed to
   `device_clock_preflight_year_after_fix=2026` with 1 second skew. The
@@ -1212,11 +1281,12 @@ For a complete local validation pass:
 - Missing current XML makes UDEG recall miss with
   `missing_current_page_for_udeg_page_match`.
 - Stale emulator time breaks online VLM TLS before reasoning starts. The startup
-  script now force-syncs emulator clocks by default, verifies both `date` and
-  `dumpsys alarm nowRTC`, compares epoch skew against host UTC, and re-checks
-  after app launch. Validation scripts that run online model calls keep a
-  clock guard alive during the task because 5554 can be reset by the shared
-  AndroidWorld environment after startup.
+  script now fixes stale/skewed emulator clocks by default, verifies both
+  `date` and `dumpsys alarm nowRTC`, compares epoch skew against host UTC, and
+  re-checks after app launch. It does not rewrite clocks that already match the
+  host epoch; explicit `--fix-device-clock` forces a rewrite. Validation scripts
+  that run online model calls keep a clock guard alive during the task because
+  5554 can be reset by the shared AndroidWorld environment after startup.
 - In preserve-accessibility mode, if OOB appears in `Crashed services`, refresh
   only OOB's component by removing it from `enabled_accessibility_services` and
   adding it back while preserving Mobilerun/AndroidWorld services. Blank

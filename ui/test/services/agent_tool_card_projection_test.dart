@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_tool_card_projection.dart';
+import 'package:ui/services/agent_tool_card_policy.dart';
 
 void main() {
   test('appends terminal output deltas onto the existing tool card', () {
@@ -204,6 +205,65 @@ void main() {
     expect(projection.cardData['rawResultJson'], contains('vlm_step'));
     expect(projection.streamMeta?['parentTaskId'], 'vlm-run-1');
     expect(projection.streamMeta?['entryId'], 'vlm-step-1');
+  });
+
+  test('projects call_function events as reusable command tool cards', () {
+    final messages = <ChatMessageModel>[];
+    final argsJson = jsonEncode(<String, dynamic>{
+      'function_id': 'open_settings',
+      'arguments': <String, dynamic>{'panel': 'bluetooth'},
+    });
+
+    _upsert(
+      messages,
+      _event(
+        kind: AgentStreamEventKind.toolStarted,
+        taskId: 'task-function',
+        seq: 1,
+        raw: <String, dynamic>{
+          'cardId': 'parent-step-1-call-function',
+          'toolCallId': 'parent-step-1-call-function',
+          'toolName': 'call_function',
+          'displayName': '复用指令',
+          'toolType': 'oob_function',
+          'toolTitle': '复用指令：open_settings',
+          'argsJson': argsJson,
+          'status': 'running',
+        },
+      ),
+    );
+    _upsert(
+      messages,
+      _event(
+        kind: AgentStreamEventKind.toolCompleted,
+        taskId: 'task-function',
+        seq: 2,
+        raw: const <String, dynamic>{
+          'cardId': 'parent-step-1-call-function',
+          'toolCallId': 'parent-step-1-call-function',
+          'toolName': 'call_function',
+          'displayName': '复用指令',
+          'toolType': 'oob_function',
+          'toolTitle': '复用指令：open_settings',
+          'summary': '复用指令执行完成：open_settings',
+          'resultPreviewJson': '{"function_id":"open_settings","success":true}',
+          'status': 'success',
+          'success': true,
+        },
+      ),
+    );
+
+    expect(messages, hasLength(1));
+    final card = messages.single.cardData!;
+    expect(card['toolName'], 'call_function');
+    expect(card['toolType'], 'oob_function');
+    expect(card['toolTitle'], '复用指令：open_settings');
+    expect(card['argsJson'], argsJson);
+    expect(card['status'], 'success');
+    expect(
+      AgentToolCardPolicy.activityKindFor(card),
+      AgentToolActivityKind.workbench,
+    );
   });
 
   test('completed card does not keep the default running summary', () {

@@ -986,8 +986,13 @@ class UtgRunLogSummary {
   final String runId;
   final String goal;
   final bool success;
+  final bool runFinished;
+  final bool? runSuccess;
+  final String runStatus;
   final String doneReason;
   final int stepCount;
+  final int? startedAtMs;
+  final int? finishedAtMs;
   final String startedAt;
   final String finishedAt;
   final num? durationMs;
@@ -1011,8 +1016,13 @@ class UtgRunLogSummary {
     required this.runId,
     required this.goal,
     required this.success,
+    required this.runFinished,
+    required this.runSuccess,
+    required this.runStatus,
     required this.doneReason,
     required this.stepCount,
+    required this.startedAtMs,
+    required this.finishedAtMs,
     required this.startedAt,
     required this.finishedAt,
     required this.durationMs,
@@ -1039,10 +1049,26 @@ class UtgRunLogSummary {
       runId: (raw['run_id'] ?? '').toString(),
       goal: (raw['goal'] ?? '').toString(),
       success: raw['success'] == true,
+      runFinished:
+          _parseBool(raw['run_finished'] ?? raw['runFinished']) ??
+          ((raw['finished_at'] ?? raw['finishedAt'] ?? '')
+                  .toString()
+                  .trim()
+                  .isNotEmpty ||
+              raw['finished_at_ms'] != null ||
+              raw['finishedAtMs'] != null),
+      runSuccess: _parseBool(raw['run_success'] ?? raw['runSuccess']),
+      runStatus: (raw['run_status'] ?? raw['runStatus'] ?? '').toString(),
       doneReason: (raw['done_reason'] ?? '').toString(),
       stepCount: raw['step_count'] is num
           ? (raw['step_count'] as num).toInt()
           : int.tryParse((raw['step_count'] ?? '0').toString()) ?? 0,
+      startedAtMs: raw['started_at_ms'] is num
+          ? (raw['started_at_ms'] as num).toInt()
+          : int.tryParse((raw['started_at_ms'] ?? '').toString()),
+      finishedAtMs: raw['finished_at_ms'] is num
+          ? (raw['finished_at_ms'] as num).toInt()
+          : int.tryParse((raw['finished_at_ms'] ?? '').toString()),
       startedAt: (raw['started_at'] ?? '').toString(),
       finishedAt: (raw['finished_at'] ?? '').toString(),
       durationMs: raw['duration_ms'] as num?,
@@ -1079,6 +1105,14 @@ class UtgRunLogSummary {
       ),
     );
   }
+}
+
+bool? _parseBool(dynamic value) {
+  if (value is bool) return value;
+  final text = value?.toString().trim().toLowerCase();
+  if (text == 'true') return true;
+  if (text == 'false') return false;
+  return null;
 }
 
 String _userVisibleExecutionText(String value) {

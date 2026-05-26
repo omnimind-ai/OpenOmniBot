@@ -155,18 +155,19 @@ class _RunLogListItem extends StatelessWidget {
     final palette = context.omniPalette;
     final l10n = context.l10n;
     final title = _titleForRun(context, run);
-    final statusColor = run.success
-        ? _successColor(context)
-        : _errorColor(context);
+    final statusInfo = _runLogStatusInfo(context, run);
     final meta = [
       if (run.stepCount > 0) l10n.runLogTimelineStepCount(run.stepCount),
-      if (run.toolName.trim().isNotEmpty) run.toolName.trim(),
-      if (_routeStatusLabel(context, run.executionStatus).isNotEmpty)
-        _routeStatusLabel(context, run.executionStatus),
       if (_formatDuration(run.durationMs).isNotEmpty)
         _formatDuration(run.durationMs),
       if (run.tokenUsageTotal != null) _formatTokenUsage(run.tokenUsageTotal!),
     ].join(' · ');
+    final detail = _firstNonBlank([
+      run.errorMessage,
+      run.doneReason,
+      _routeStatusLabel(context, run.executionStatus),
+      run.toolName,
+    ]);
 
     return Material(
       color: Colors.transparent,
@@ -188,12 +189,18 @@ class _RunLogListItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width: 8,
-                      height: 8,
-                      margin: const EdgeInsets.only(top: 7),
+                      width: 30,
+                      height: 30,
                       decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
+                        color: statusInfo.color.withValues(
+                          alpha: context.isDarkTheme ? 0.18 : 0.10,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        statusInfo.icon,
+                        size: 17,
+                        color: statusInfo.color,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -210,11 +217,7 @@ class _RunLogListItem extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: palette.textTertiary,
-                      size: 22,
-                    ),
+                    _RunLogStatusChip(info: statusInfo),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -228,6 +231,23 @@ class _RunLogListItem extends StatelessWidget {
                       fontSize: 12,
                     ),
                   ),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: statusInfo.kind == _RunLogStatusKind.failed
+                          ? _errorColor(context)
+                          : palette.textSecondary,
+                      fontSize: 12,
+                      fontWeight: statusInfo.kind == _RunLogStatusKind.failed
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ],
                 if (run.runId.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -243,17 +263,66 @@ class _RunLogListItem extends StatelessWidget {
                 ],
                 if (_timeLabel(run).isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(
-                    _timeLabel(run),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: palette.textTertiary, fontSize: 11),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _timeLabel(run),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.textTertiary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: palette.textTertiary,
+                        size: 18,
+                      ),
+                    ],
                   ),
                 ],
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RunLogStatusChip extends StatelessWidget {
+  const _RunLogStatusChip({required this.info});
+
+  final _RunLogStatusInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: info.color.withValues(alpha: context.isDarkTheme ? 0.16 : 0.09),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(info.icon, size: 13, color: info.color),
+          const SizedBox(width: 4),
+          Text(
+            info.label,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -352,8 +421,8 @@ String _routeSummaryLabel(BuildContext context, String raw) {
 }
 
 String _timeLabel(UtgRunLogSummary run) {
-  final started = _parseDate(run.startedAt);
-  final finished = _parseDate(run.finishedAt);
+  final started = _parseRunDate(run.startedAt, run.startedAtMs);
+  final finished = _parseRunDate(run.finishedAt, run.finishedAtMs);
   if (started == null && finished == null) {
     return '';
   }
@@ -362,6 +431,13 @@ String _timeLabel(UtgRunLogSummary run) {
     return '${formatter.format(started)} - ${formatter.format(finished)}';
   }
   return formatter.format(started ?? finished!);
+}
+
+DateTime? _parseRunDate(String raw, int? epochMs) {
+  if (epochMs != null && epochMs > 0) {
+    return DateTime.fromMillisecondsSinceEpoch(epochMs).toLocal();
+  }
+  return _parseDate(raw);
 }
 
 DateTime? _parseDate(String raw) {
@@ -419,4 +495,66 @@ Color _errorColor(BuildContext context) {
   return context.isDarkTheme
       ? const Color(0xFFFF7A7A)
       : const Color(0xFFE14C4C);
+}
+
+Color _runningColor(BuildContext context) {
+  return context.isDarkTheme
+      ? const Color(0xFFFFD166)
+      : const Color(0xFFE6A700);
+}
+
+enum _RunLogStatusKind { running, success, failed, unknown }
+
+class _RunLogStatusInfo {
+  const _RunLogStatusInfo({
+    required this.kind,
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final _RunLogStatusKind kind;
+  final String label;
+  final Color color;
+  final IconData icon;
+}
+
+_RunLogStatusInfo _runLogStatusInfo(
+  BuildContext context,
+  UtgRunLogSummary run,
+) {
+  final rawStatus = run.runStatus.trim().toLowerCase();
+  if (!run.runFinished ||
+      rawStatus == 'running' ||
+      rawStatus == 'in_progress') {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.running,
+      label: _text(context, '运行中', 'Running'),
+      color: _runningColor(context),
+      icon: Icons.timelapse_rounded,
+    );
+  }
+  final succeeded = run.runSuccess ?? run.success;
+  if (succeeded) {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.success,
+      label: _text(context, '已完成', 'Done'),
+      color: _successColor(context),
+      icon: Icons.check_circle_outline_rounded,
+    );
+  }
+  if (run.runSuccess == false || run.errorMessage.trim().isNotEmpty) {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.failed,
+      label: _text(context, '失败', 'Failed'),
+      color: _errorColor(context),
+      icon: Icons.error_outline_rounded,
+    );
+  }
+  return _RunLogStatusInfo(
+    kind: _RunLogStatusKind.unknown,
+    label: _text(context, '未知', 'Unknown'),
+    color: context.omniPalette.textTertiary,
+    icon: Icons.help_outline_rounded,
+  );
 }

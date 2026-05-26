@@ -694,6 +694,13 @@ String resolveAgentToolTypeLabel(
       );
     case 'workspace':
       return _localizeToolUiText('工作区', locale: locale);
+    case 'oob_function':
+    case 'reusable_function':
+      return AppTextLocalizer.choose(
+        en: 'Reusable command',
+        zh: '复用指令',
+        locale: locale,
+      );
     case 'workbench':
       return AppTextLocalizer.choose(
         en: 'Workbench',
@@ -827,6 +834,9 @@ String _prettifyToolName(String raw) {
     return '';
   }
   final lower = normalized.toLowerCase();
+  if (lower == 'call function' || lower == 'omniflow.call function') {
+    return 'Reusable command';
+  }
   if (lower == 'calltool' || lower == 'call tool') {
     return 'Tool call';
   }
@@ -933,6 +943,14 @@ String _localizeToolUiText(String value, {Locale? locale}) {
       return AppTextLocalizer.choose(
         en: 'Workbench',
         zh: '工作台',
+        locale: locale,
+      );
+    case 'Reusable Command':
+    case 'Reusable command':
+    case '复用指令':
+      return AppTextLocalizer.choose(
+        en: 'Reusable command',
+        zh: '复用指令',
         locale: locale,
       );
     case 'MCP activity':

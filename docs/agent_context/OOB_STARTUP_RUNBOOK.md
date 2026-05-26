@@ -50,6 +50,37 @@ Print the startup error summary without touching a device:
 scripts/oob-start.sh --errors
 ```
 
+## Restarting AndroidWorld AVDs
+
+When both AndroidWorld emulators need to be restarted, use the OmniFlow AVD
+launcher first:
+
+```bash
+bash /Users/wuzewen/Projects/Omni/OmniFlow/scripts/start_androidworld_avds.sh
+```
+
+That script starts:
+
+- `AndroidWorldAvd` on `emulator-5554` with gRPC `8554`
+- `SmallPhone` on `emulator-5556` with gRPC `8556`
+
+It is an AVD launcher, not an OOB readiness script. After the devices boot, run
+the OOB normalizer for each target that will execute online VLM or replay:
+
+```bash
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5554 --skip-build
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5556 --skip-build
+```
+
+Use the AVD launcher only when a restart is intended: it kills existing
+emulators on those ports before launching new ones. The launcher uses snapshots
+by default (`ANDROIDWORLD_USE_SNAPSHOT=1`), so always let `oob-start` perform
+its emulator clock check/fix after boot. For a clean no-snapshot restart:
+
+```bash
+ANDROIDWORLD_USE_SNAPSHOT=0 bash /Users/wuzewen/Projects/Omni/OmniFlow/scripts/start_androidworld_avds.sh
+```
+
 ## Profiles
 
 `oob-5556` is the default profile:
@@ -60,7 +91,7 @@ scripts/oob-start.sh --errors
 - clean-rebinds OOB Accessibility
 - stops known UiAutomation conflicts
 - launches OOB and probes MCP
-- force-syncs emulator time against host UTC, verifies `date` and
+- fixes stale/skewed emulator time against host epoch, verifies `date` and
   `dumpsys alarm nowRTC`, and re-checks after app launch
 
 `androidworld-5554` is the shared profile:
@@ -71,7 +102,7 @@ scripts/oob-start.sh --errors
 - preserves existing Accessibility services
 - does not stop Mobilerun/AndroidWorld processes
 - refreshes only OOB Accessibility
-- force-syncs emulator time against host UTC, verifies `date` and
+- fixes stale/skewed emulator time against host epoch, verifies `date` and
   `dumpsys alarm nowRTC`, and re-checks after app launch
 
 ## Startup Error Summary
@@ -107,8 +138,10 @@ After `ready=1`, these should be true:
 - Device clock is at or after the configured minimum year and within the
   configured host-UTC skew threshold, unless clock fixing was skipped.
 
-On emulator serials, clock sync is forced by default. `--no-fix-device-clock`
-disables mutation and turns stale/skewed time into a startup error.
+On emulator serials, stale/skewed clocks are fixed by default. The script does
+not rewrite a device clock that already matches host epoch; `--fix-device-clock`
+forces a rewrite, and `--no-fix-device-clock` disables mutation and turns
+stale/skewed time into a startup error.
 
 This does not prove VLM task success. For a real task, still verify:
 
@@ -206,7 +239,7 @@ Additional 2026-05-26 evidence:
 - Fast 5554 startup detected a stale shared-emulator clock:
   `device_clock_preflight_year=2023`,
   `device_clock_preflight_alarm_year=2023`,
-  `device_clock_preflight_skew_seconds=82408788`. The forced sync fixed it to
+  `device_clock_preflight_skew_seconds=82408788`. Clock repair fixed it to
   2026 with 1 second skew, and the post-launch check re-fixed it to 0 second
   skew before `ready=1`.
 - Direct adb broadcast to the real installed app for
@@ -219,3 +252,27 @@ Additional 2026-05-26 evidence:
 - After that validation, 5554 again reported `Sun Oct 15 15:34 UTC 2023`.
   This confirms the shared AndroidWorld environment can reset time after OOB
   startup; long online validation should keep the clock guard enabled.
+- 5556 startup after reinstall initially exposed a clock repair bug:
+  preflight skew was already 0 seconds, but an unconditional POSIX date rewrite
+  was interpreted in the device's `Asia/Shanghai` timezone and produced
+  28,800 seconds skew. The startup and online-validation clock repair now use
+  host epoch syntax (`date @<epoch>`) and only rewrite clocks that are stale or
+  explicitly forced. Revalidation on `emulator-5556` with
+  `scripts/oob-start.sh --profile 5556 --skip-build --wait-seconds 45 --settle-seconds 1`
+  repaired a stale 28,801 second skew to 0 seconds, installed the current APK,
+  rebound Accessibility, forwarded MCP on `28999`, and returned `ready=1`.
+- A follow-up
+  `scripts/oob-start.sh --profile 5556 --skip-build --skip-install --wait-seconds 20 --settle-seconds 0`
+  saw preflight skew of 1 second and post-launch skew of 0 seconds without a
+  `device_clock_*_fix=attempt` line, confirming correct clocks are no longer
+  rewritten by default.
+- 5556 Function management after reinstall passed through the real installed
+  app: direct broadcast to
+  `RUN_AGENT_FUNCTION_MANAGEMENT_VALIDATION` registered
+  `debug_agent_function_management_open_settings`, listed it,
+  guard-checked `decision=allow`, and ran it as replay run
+  `omniflow_run_1779794111457_1`. `oob_function_run` succeeded with 2/2 steps,
+  `runner=oob_omniflow_replay`, `model_used=false`, `runner_duration_ms=6755`,
+  and `open_app_package current_package=com.android.settings`. adb externally
+  verified `topResumedActivity=com.android.settings/.Settings` and XML package
+  `com.android.settings` with the Settings homepage visible.

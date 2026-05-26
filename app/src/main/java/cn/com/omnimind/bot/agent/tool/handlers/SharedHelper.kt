@@ -206,7 +206,11 @@ class SharedHelper(
         "已保存指令" to "Command saved",
         "条指令" to "commands",
         "已删除指令" to "Command deleted",
-        "指令不存在" to "Command not found"
+        "指令不存在" to "Command not found",
+        "复用指令" to "Reusable Command",
+        "正在执行复用指令" to "Running reusable command",
+        "复用指令执行完成" to "Reusable command completed",
+        "复用指令执行失败" to "Reusable command failed"
     )
 
     suspend fun ensureRunActive() {

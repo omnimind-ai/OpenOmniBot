@@ -36,6 +36,7 @@ void main() {
                 'run_id': 'run-vlm-only',
                 'run_finished': true,
                 'run_success': true,
+                'run_status': 'success',
                 'done_reason': 'finished',
                 'goal': '识别当前屏幕',
                 'cards': <Map<String, dynamic>>[
@@ -63,6 +64,7 @@ void main() {
               'run_id': 'run-vlm',
               'run_finished': true,
               'run_success': true,
+              'run_status': 'success',
               'done_reason': 'finished',
               'goal': '打开 Settings',
               'token_usage': <String, dynamic>{
@@ -176,17 +178,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('执行步骤'), findsOneWidget);
+    expect(find.text('执行已完成'), findsOneWidget);
     expect(find.text('离线复用流程'), findsOneWidget);
     expect(find.text('RunLog 已收集'), findsOneWidget);
     expect(find.text('可保存为复用指令'), findsOneWidget);
     expect(find.text('本地执行'), findsOneWidget);
     expect(find.text('重放 RunLog'), findsOneWidget);
     expect(find.text('保存复用指令'), findsOneWidget);
-    expect(find.text('1 步'), findsOneWidget);
+    expect(find.text('已完成 · 1 步'), findsOneWidget);
     expect(find.text('Token 消耗'), findsOneWidget);
     expect(_richTextContaining('总计  1.23k'), findsOneWidget);
     expect(_richTextContaining('VLM 调用  2'), findsOneWidget);
-    expect(_richTextContaining('步骤  1'), findsOneWidget);
+    expect(_richTextContaining('步骤  1'), findsAtLeastNWidgets(1));
     expect(_richTextContaining('输入  1.00k'), findsOneWidget);
     expect(_richTextContaining('输出  234'), findsOneWidget);
     expect(find.text('第 1 步'), findsOneWidget);
@@ -259,6 +262,41 @@ void main() {
     expect(find.text('VLM 动作'), findsOneWidget);
     expect(_richTextContaining('执行方式  VLM'), findsOneWidget);
     expect(_richTextContaining('OmniFlow'), findsNothing);
+  });
+
+  testWidgets('Running RunLog surfaces unfinished state and disables save', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(
+              runId: 'run-running',
+              finished: false,
+              success: null,
+            );
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-running', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('执行还在进行中'), findsOneWidget);
+    expect(find.text('运行中 · 1 步'), findsOneWidget);
+    expect(find.text('等待成功结果'), findsOneWidget);
+
+    final saveButton = tester.widget<InkWell>(
+      find
+          .ancestor(of: find.text('保存复用指令'), matching: find.byType(InkWell))
+          .first,
+    );
+    expect(saveButton.onTap, isNull);
   });
 
   testWidgets('RunLog copied transcript hides internal compile schema keys', (
@@ -482,13 +520,20 @@ void main() {
   );
 }
 
-Map<String, dynamic> _runLogTimelinePayload({required String runId}) {
+Map<String, dynamic> _runLogTimelinePayload({
+  required String runId,
+  bool finished = true,
+  bool? success = true,
+}) {
   return <String, dynamic>{
     'success': true,
     'run_id': runId,
-    'run_finished': true,
-    'run_success': true,
-    'done_reason': 'finished',
+    'run_finished': finished,
+    if (success != null) 'run_success': success,
+    'run_status': !finished
+        ? 'running'
+        : (success == false ? 'failed' : 'success'),
+    'done_reason': finished ? (success == false ? 'failed' : 'finished') : '',
     'goal': '打开 Settings',
     'token_usage': <String, dynamic>{
       'prompt_tokens': 1000,

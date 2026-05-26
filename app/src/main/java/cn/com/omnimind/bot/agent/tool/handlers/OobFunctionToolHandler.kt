@@ -798,29 +798,80 @@ class OobFunctionToolHandler(
             step["function_id"],
             step["functionId"],
         )
+        val nestedArguments = nestedFunctionArguments(args)
+        val cardToolName = "call_function"
+        val cardId = nestedFunctionToolCardId(parentToolCallId, toolName, stepId)
+        val cardStartedAtMs = System.currentTimeMillis()
+
+        suspend fun emitStarted() {
+            callback?.onToolCardEvent(
+                "tool_started",
+                functionToolCardPayload(
+                    cardId = cardId,
+                    toolName = cardToolName,
+                    stepTitle = stepTitle,
+                    functionId = functionId,
+                    callableTool = callableTool,
+                    nestedArguments = nestedArguments,
+                    status = "running",
+                    success = null,
+                    summary = reusableCommandRunningSummary(functionId),
+                    progress = stepTitle,
+                    startedAtMs = cardStartedAtMs,
+                    finishedAtMs = null,
+                    result = null,
+                )
+            )
+        }
+
+        suspend fun completeWithCard(result: Map<String, Any?>): Map<String, Any?> {
+            val success = result["success"] != false
+            val finishedAtMs = System.currentTimeMillis()
+            callback?.onToolCardEvent(
+                "tool_completed",
+                functionToolCardPayload(
+                    cardId = cardId,
+                    toolName = cardToolName,
+                    stepTitle = stepTitle,
+                    functionId = functionId,
+                    callableTool = callableTool,
+                    nestedArguments = nestedArguments,
+                    status = if (success) "success" else "error",
+                    success = success,
+                    summary = result["summary"]?.toString()?.takeIf { it.isNotBlank() }
+                        ?: reusableCommandFinishedSummary(functionId, success),
+                    progress = "",
+                    startedAtMs = cardStartedAtMs,
+                    finishedAtMs = finishedAtMs,
+                    result = result,
+                )
+            )
+            return result
+        }
+
+        emitStarted()
         if (functionId.isEmpty()) {
-            return failureStepResult(
+            return completeWithCard(failureStepResult(
                 stepId = stepId,
                 tool = callableTool.ifEmpty { "call_function" },
                 executor = "omniflow_function",
                 summary = "$stepTitle missing function_id",
                 errorCode = "OOB_FUNCTION_ID_MISSING",
-            )
+            ))
         }
         val nestedSpec = getSpec(functionId)
-            ?: return failureStepResult(
+            ?: return completeWithCard(failureStepResult(
                 stepId = stepId,
                 tool = callableTool.ifEmpty { "call_function" },
                 executor = "omniflow_function",
                 summary = "OOB reusable function not found: $functionId",
                 errorCode = "OOB_FUNCTION_NOT_FOUND",
                 extras = mapOf("nested_function_id" to functionId),
-            )
-        val nestedArguments = nestedFunctionArguments(args)
+            ))
         val missing = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
             .missingRequiredArguments(nestedSpec, nestedArguments)
         if (missing.isNotEmpty()) {
-            return failureStepResult(
+            return completeWithCard(failureStepResult(
                 stepId = stepId,
                 tool = callableTool.ifEmpty { "call_function" },
                 executor = "omniflow_function",
@@ -830,7 +881,7 @@ class OobFunctionToolHandler(
                     "nested_function_id" to functionId,
                     "missing_required_arguments" to missing,
                 ),
-            )
+            ))
         }
         val materialized = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
             .materialize(nestedSpec, nestedArguments)
@@ -848,7 +899,7 @@ class OobFunctionToolHandler(
             callStack = callStack,
         )
         val success = nestedRun["success"] == true
-        return linkedMapOf<String, Any?>(
+        return completeWithCard(linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to callableTool.ifEmpty { "call_function" },
             "executor" to "omniflow_function",
@@ -869,6 +920,98 @@ class OobFunctionToolHandler(
                 nestedRun["error_message"]?.toString()?.takeIf { it.isNotBlank() }
                     ?: "$stepTitle failed via local OOB Function: $functionId"
             },
+        ).filterValues { it != null })
+    }
+
+    private fun nestedFunctionToolCardId(
+        parentToolCallId: String?,
+        toolName: String,
+        stepId: String,
+    ): String {
+        val base = safeToolCardIdPart(firstNonBlank(parentToolCallId, toolName, "function"))
+        val step = safeToolCardIdPart(stepId.ifBlank { "step" })
+        return "${base}_${step}_call_function"
+    }
+
+    private fun safeToolCardIdPart(raw: String): String {
+        val normalized = raw.trim().replace(Regex("[^A-Za-z0-9_.:-]"), "_")
+        return normalized.take(96).ifBlank { "function" }
+    }
+
+    private fun reusableCommandRunningSummary(functionId: String): String {
+        return if (functionId.isNotBlank()) {
+            "${helper.localized("正在执行复用指令")}：$functionId"
+        } else {
+            helper.localized("正在执行复用指令")
+        }
+    }
+
+    private fun reusableCommandFinishedSummary(functionId: String, success: Boolean): String {
+        val base = helper.localized(if (success) "复用指令执行完成" else "复用指令执行失败")
+        return if (functionId.isNotBlank()) "$base：$functionId" else base
+    }
+
+    private fun functionToolCardPayload(
+        cardId: String,
+        toolName: String,
+        stepTitle: String,
+        functionId: String,
+        callableTool: String,
+        nestedArguments: Map<String, Any?>,
+        status: String,
+        success: Boolean?,
+        summary: String,
+        progress: String,
+        startedAtMs: Long,
+        finishedAtMs: Long?,
+        result: Map<String, Any?>?,
+    ): Map<String, Any?> {
+        val argsPayload = linkedMapOf<String, Any?>(
+            "function_id" to functionId.takeIf { it.isNotBlank() },
+            "arguments" to nestedArguments.takeIf { it.isNotEmpty() },
+            "source_tool" to callableTool.takeIf { it.isNotBlank() },
+        ).filterValues { it != null }
+        val resultPayload = result?.let {
+            linkedMapOf<String, Any?>(
+                "function_id" to functionId.takeIf { id -> id.isNotBlank() },
+                "nested_run_id" to it["nested_run_id"],
+                "nested_step_count" to it["nested_step_count"],
+                "nested_success_step_count" to it["nested_success_step_count"],
+                "success" to (it["success"] != false),
+                "summary" to it["summary"],
+                "error_code" to it["error_code"],
+            ).filterValues { value -> value != null }
+        }
+        val argsJson = helper.encodeLocalizedPayload(argsPayload)
+        return linkedMapOf<String, Any?>(
+            "cardId" to cardId,
+            "toolCallId" to cardId,
+            "callId" to cardId,
+            "toolName" to toolName,
+            "displayName" to helper.localized("复用指令"),
+            "toolType" to "oob_function",
+            "toolTitle" to if (functionId.isNotBlank()) {
+                "${helper.localized("复用指令")}：$functionId"
+            } else {
+                stepTitle
+            },
+            "summary" to summary,
+            "progress" to progress,
+            "status" to status,
+            "success" to success,
+            "args" to argsJson,
+            "argsJson" to argsJson,
+            "sourceTool" to callableTool,
+            "functionId" to functionId,
+            "function_id" to functionId,
+            "startedAtMs" to startedAtMs,
+            "started_at_ms" to startedAtMs,
+            "finishedAtMs" to finishedAtMs,
+            "finished_at_ms" to finishedAtMs,
+            "durationMs" to finishedAtMs?.let { (it - startedAtMs).coerceAtLeast(0) },
+            "duration_ms" to finishedAtMs?.let { (it - startedAtMs).coerceAtLeast(0) },
+            "resultPreviewJson" to resultPayload?.let { helper.encodeLocalizedPayload(it) }.orEmpty(),
+            "rawResultJson" to result?.let { helper.encodeLocalizedPayload(it) }.orEmpty(),
         ).filterValues { it != null }
     }
 

@@ -261,10 +261,13 @@ object InternalRunLogStore {
             "source" to record.source,
             "tool_name" to record.toolName,
             "operation_description" to record.operationDescription,
+            "started_at_ms" to record.startedAtMs,
+            "finished_at_ms" to record.finishedAtMs,
             "started_at" to formatTime(record.startedAtMs),
             "finished_at" to record.finishedAtMs?.let(::formatTime).orEmpty(),
             "run_finished" to (record.finishedAtMs != null),
             "run_success" to (record.success == true),
+            "run_status" to runStatus(record),
             "duration_ms" to durationMs(record),
             "step_count" to record.cards.size,
             "event_seq" to record.eventSeq,
@@ -286,8 +289,13 @@ object InternalRunLogStore {
             "run_id" to record.runId,
             "goal" to record.goal,
             "success" to (record.success == true),
+            "run_finished" to (record.finishedAtMs != null),
+            "run_success" to (record.success == true),
+            "run_status" to runStatus(record),
             "done_reason" to record.doneReason,
             "step_count" to record.cards.size,
+            "started_at_ms" to record.startedAtMs,
+            "finished_at_ms" to record.finishedAtMs,
             "started_at" to formatTime(record.startedAtMs),
             "finished_at" to record.finishedAtMs?.let(::formatTime).orEmpty(),
             "duration_ms" to durationMs(record),
@@ -305,6 +313,11 @@ object InternalRunLogStore {
                 "goal" to record.goal
             )
         )
+    }
+
+    private fun runStatus(record: InternalRunLogRecord): String {
+        if (record.finishedAtMs == null) return "running"
+        return if (record.success == true) "success" else "failed"
     }
 
     private fun notFoundPayload(runId: String): Map<String, Any?> {

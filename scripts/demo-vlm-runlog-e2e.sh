@@ -195,6 +195,7 @@ CLOCK_GUARD_PID=""
 cleanup() {
   if [[ -n "${CLOCK_GUARD_PID:-}" ]]; then
     kill "$CLOCK_GUARD_PID" >/dev/null 2>&1 || true
+    wait "$CLOCK_GUARD_PID" 2>/dev/null || true
   fi
   rm -f "$LOCAL_VLM_RESULT" "$LOCAL_FUNCTION_RESULT"
 }
@@ -352,12 +353,12 @@ base64_no_wrap() {
 }
 
 sync_device_clock_once() {
-  local stamp
-  stamp="$(date -u +%m%d%H%M%Y.%S)"
+  local epoch
+  epoch="$(date -u +%s)"
   "${ADB[@]}" shell settings put global auto_time 0 >/dev/null 2>&1 || true
   "${ADB[@]}" shell settings put global auto_time_zone 0 >/dev/null 2>&1 || true
-  "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
-    "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1 ||
+  "${ADB[@]}" shell su 0 date "@${epoch}" >/dev/null 2>&1 ||
+    "${ADB[@]}" shell date "@${epoch}" >/dev/null 2>&1 ||
     true
 }
 

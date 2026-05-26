@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
+import cn.com.omnimind.bot.agent.AgentResult
 import cn.com.omnimind.bot.agent.AgentToolExecutor
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceDescriptor
@@ -126,6 +127,70 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             assertEquals(false, step["nested_model_required"])
             val nestedSteps = step["step_results"] as? List<*>
             assertEquals(1, nestedSteps?.size)
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `nested call_function emits explicit tool card events`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val store = WorkspaceFunctionStore(context.root)
+            val child = functionSpec(
+                functionId = "child_finished",
+                steps = listOf(finishedStep("child_step")),
+            )
+            val parent = functionSpec(
+                functionId = "parent_calls_child",
+                steps = listOf(
+                    mapOf(
+                        "id" to "parent_step",
+                        "title" to "Call child",
+                        "kind" to "omniflow_function",
+                        "executor" to "omniflow",
+                        "model_free" to true,
+                        "scriptable" to true,
+                        "tool" to "call_function",
+                        "callable_tool" to "call_function",
+                        "args" to mapOf(
+                            "function_id" to "child_finished",
+                            "arguments" to mapOf("source" to "test"),
+                        ),
+                    )
+                ),
+            )
+            assertTrue(store.register(child)["success"] == true)
+
+            val callback = RecordingToolCardCallback()
+            val run = handler(context, store).runMaterializedFunction(
+                functionId = "parent_calls_child",
+                spec = parent,
+                materializedSpec = OobReusableFunctionStore.materialize(parent, emptyMap()),
+                callback = callback,
+                parentToolCallId = "parent-call",
+                allowAgentFallback = false,
+            )
+
+            assertEquals(true, run["success"])
+            assertEquals(2, callback.toolCardEvents.size)
+            assertEquals("tool_started", callback.toolCardEvents[0].first)
+            assertEquals("tool_completed", callback.toolCardEvents[1].first)
+
+            val start = callback.toolCardEvents[0].second
+            assertEquals("parent-call_parent_step_call_function", start["cardId"])
+            assertEquals("call_function", start["toolName"])
+            assertEquals("oob_function", start["toolType"])
+            assertEquals("running", start["status"])
+            assertTrue(start["argsJson"].toString().contains("child_finished"))
+
+            val complete = callback.toolCardEvents[1].second
+            assertEquals("parent-call_parent_step_call_function", complete["cardId"])
+            assertEquals("call_function", complete["toolName"])
+            assertEquals("success", complete["status"])
+            assertEquals(true, complete["success"])
+            assertTrue(complete["resultPreviewJson"].toString().contains("child_finished"))
+            assertTrue(complete["rawResultJson"].toString().contains("step_results"))
         } finally {
             context.root.deleteRecursively()
         }
@@ -727,6 +792,62 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 success = true,
             )
         }
+    }
+
+    private class RecordingToolCardCallback : AgentCallback {
+        val toolCardEvents = mutableListOf<Pair<String, Map<String, Any?>>>()
+
+        override suspend fun onThinkingStart() = Unit
+
+        override suspend fun onThinkingUpdate(thinking: String) = Unit
+
+        override suspend fun onToolCallStart(
+            toolName: String,
+            toolCallId: String,
+            arguments: JsonObject
+        ) = Unit
+
+        override suspend fun onToolCallProgress(
+            toolName: String,
+            progress: String,
+            extras: Map<String, Any?>
+        ) = Unit
+
+        override suspend fun onToolCallComplete(
+            toolName: String,
+            result: ToolExecutionResult
+        ) = Unit
+
+        override suspend fun onToolCardEvent(kind: String, payload: Map<String, Any?>) {
+            toolCardEvents += kind to payload
+        }
+
+        override suspend fun onChatMessage(message: String) = Unit
+
+        override suspend fun onChatMessage(message: String, isFinal: Boolean) = Unit
+
+        override suspend fun onChatMessage(
+            message: String,
+            isFinal: Boolean,
+            prefillTokensPerSecond: Double?,
+            decodeTokensPerSecond: Double?
+        ) = Unit
+
+        override suspend fun onPromptTokenUsageChanged(
+            latestPromptTokens: Int,
+            promptTokenThreshold: Int?
+        ) = Unit
+
+        override suspend fun onClarifyRequired(
+            question: String,
+            missingFields: List<String>?
+        ) = Unit
+
+        override suspend fun onComplete(result: AgentResult) = Unit
+
+        override suspend fun onError(error: String) = Unit
+
+        override suspend fun onPermissionRequired(missing: List<String>) = Unit
     }
 
     private class FakeEnv(

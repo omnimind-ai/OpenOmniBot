@@ -236,8 +236,12 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     final palette = context.omniPalette;
     final l10n = context.l10n;
     final stepCount = _cards.length;
-    final subtitle = stepCount > 0
-        ? l10n.runLogTimelineStepCount(stepCount)
+    final subtitleParts = <String>[
+      if (_payload.isNotEmpty) _runLogStatusInfo(context, _payload).label,
+      if (stepCount > 0) l10n.runLogTimelineStepCount(stepCount),
+    ].where((item) => item.trim().isNotEmpty).toList(growable: false);
+    final subtitle = subtitleParts.isNotEmpty
+        ? subtitleParts.join(' · ')
         : null;
     final title = l10n.runLogTimelineTitle;
     final convertEligibility = _runLogConvertEligibility(
@@ -344,16 +348,25 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       );
     }
     if (_cards.isEmpty) {
-      return _RunLogTimelineEmptyNotice(
-        icon: Icons.check_circle_outline_rounded,
-        title: l10n.runLogTimelineEmpty,
-        message: _runLogEmptyMessage(context, _payload),
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        children: [
+          _RunLogOverviewCard(payload: _payload, stepCount: 0),
+          const SizedBox(height: 14),
+          _RunLogTimelineEmptyNotice(
+            icon: Icons.check_circle_outline_rounded,
+            title: l10n.runLogTimelineEmpty,
+            message: _runLogEmptyMessage(context, _payload),
+          ),
+        ],
       );
     }
     final tokenSummary = _RunLogTokenUsageAggregate.fromPayload(_payload);
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       children: [
+        _RunLogOverviewCard(payload: _payload, stepCount: _cards.length),
+        const SizedBox(height: 14),
         _RunLogOfflineFlowCard(
           canRegister: _runLogConvertEligibility(
             context,
@@ -689,6 +702,148 @@ class _RunLogTimelineEmptyNotice extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RunLogOverviewCard extends StatelessWidget {
+  const _RunLogOverviewCard({required this.payload, required this.stepCount});
+
+  final Map<String, dynamic> payload;
+  final int stepCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final status = _runLogStatusInfo(context, payload);
+    final goal = _firstNonBlank([
+      payload['goal'],
+      payload['task_goal'],
+      payload['operation_description'],
+      payload['operationDescription'],
+    ]);
+    final error = _firstNonBlank([
+      payload['error_message'],
+      payload['errorMessage'],
+      status.kind == _RunLogStatusKind.failed ? payload['done_reason'] : null,
+      status.kind == _RunLogStatusKind.failed ? payload['doneReason'] : null,
+    ]);
+    final tokenSummary = _RunLogTokenUsageAggregate.fromPayload(payload);
+    final durationMs = _asInt(payload['duration_ms'] ?? payload['durationMs']);
+    final started = _runLogTimeText(context, payload, start: true);
+    final finished = _runLogTimeText(context, payload, start: false);
+    final chips = <MapEntry<String, String>>[
+      MapEntry(_text(context, '步骤', 'Steps'), stepCount.toString()),
+      if (durationMs != null)
+        MapEntry(_text(context, '耗时', 'Duration'), _formatMs(durationMs)),
+      if (tokenSummary.totalTokens != null)
+        MapEntry(
+          _text(context, 'Token', 'Tokens'),
+          _formatTokens(tokenSummary.totalTokens!),
+        ),
+      if (started.isNotEmpty)
+        MapEntry(_text(context, '开始', 'Started'), started),
+      if (finished.isNotEmpty)
+        MapEntry(_text(context, '结束', 'Finished'), finished),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          status.color.withValues(alpha: isDark ? 0.15 : 0.07),
+          isDark ? palette.surfaceSecondary : Colors.white,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: status.color.withValues(alpha: isDark ? 0.34 : 0.20),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: status.color.withValues(alpha: isDark ? 0.20 : 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(status.icon, color: status.color, size: 17),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      status.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    if (goal.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        goal,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textSecondary,
+                          fontSize: 12,
+                          height: 1.32,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: chips
+                  .map(
+                    (entry) =>
+                        _SummaryPill(label: entry.key, value: entry.value),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
+          if (error.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              error,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: status.kind == _RunLogStatusKind.failed
+                    ? _errorColor(context)
+                    : palette.textSecondary,
+                fontSize: 12,
+                height: 1.32,
+                fontWeight: status.kind == _RunLogStatusKind.failed
+                    ? FontWeight.w600
+                    : FontWeight.w400,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -4112,6 +4267,119 @@ Color _warningColor(BuildContext context) {
   return context.isDarkTheme
       ? const Color(0xFFFFD166)
       : const Color(0xFFFFC04D);
+}
+
+Color _runningColor(BuildContext context) {
+  return context.isDarkTheme
+      ? const Color(0xFFFFD166)
+      : const Color(0xFFE6A700);
+}
+
+enum _RunLogStatusKind { running, success, failed, unknown }
+
+class _RunLogStatusInfo {
+  const _RunLogStatusInfo({
+    required this.kind,
+    required this.label,
+    required this.title,
+    required this.color,
+    required this.icon,
+  });
+
+  final _RunLogStatusKind kind;
+  final String label;
+  final String title;
+  final Color color;
+  final IconData icon;
+}
+
+_RunLogStatusInfo _runLogStatusInfo(
+  BuildContext context,
+  Map<String, dynamic> payload,
+) {
+  final rawStatus = _firstNonBlank([
+    payload['run_status'],
+    payload['runStatus'],
+    payload['status'],
+  ]).toLowerCase();
+  final finished = _isRunLogFinished(payload);
+  if (!finished || rawStatus == 'running' || rawStatus == 'in_progress') {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.running,
+      label: _text(context, '运行中', 'Running'),
+      title: _text(context, '执行还在进行中', 'Execution is still running'),
+      color: _runningColor(context),
+      icon: Icons.timelapse_rounded,
+    );
+  }
+  final success = _runLogSuccess(payload);
+  if (success == true) {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.success,
+      label: _text(context, '已完成', 'Done'),
+      title: _text(context, '执行已完成', 'Execution completed'),
+      color: _successColor(context),
+      icon: Icons.check_circle_outline_rounded,
+    );
+  }
+  if (success == false ||
+      _firstNonBlank([
+        payload['error_message'],
+        payload['errorMessage'],
+      ]).isNotEmpty) {
+    return _RunLogStatusInfo(
+      kind: _RunLogStatusKind.failed,
+      label: _text(context, '失败', 'Failed'),
+      title: _text(context, '执行失败', 'Execution failed'),
+      color: _errorColor(context),
+      icon: Icons.error_outline_rounded,
+    );
+  }
+  return _RunLogStatusInfo(
+    kind: _RunLogStatusKind.unknown,
+    label: _text(context, '未知', 'Unknown'),
+    title: _text(context, '执行状态未知', 'Execution status unknown'),
+    color: context.omniPalette.textTertiary,
+    icon: Icons.help_outline_rounded,
+  );
+}
+
+String _runLogTimeText(
+  BuildContext context,
+  Map<String, dynamic> payload, {
+  required bool start,
+}) {
+  final rawText = _firstNonBlank(
+    start
+        ? [payload['started_at'], payload['startedAt']]
+        : [payload['finished_at'], payload['finishedAt']],
+  );
+  final rawMs = _asInt(
+    start
+        ? payload['started_at_ms'] ?? payload['startedAtMs']
+        : payload['finished_at_ms'] ?? payload['finishedAtMs'],
+  );
+  DateTime? value;
+  if (rawMs != null && rawMs > 0) {
+    value = DateTime.fromMillisecondsSinceEpoch(rawMs).toLocal();
+  } else if (rawText.isNotEmpty) {
+    value = DateTime.tryParse(rawText)?.toLocal();
+  }
+  if (value == null) return '';
+  final now = DateTime.now();
+  final sameDay =
+      now.year == value.year &&
+      now.month == value.month &&
+      now.day == value.day;
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  final second = value.second.toString().padLeft(2, '0');
+  if (sameDay) {
+    return '$hour:$minute:$second';
+  }
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '${value.year}/$month/$day $hour:$minute';
 }
 
 enum _RunLogStepSource { vlm, omniflow, route }

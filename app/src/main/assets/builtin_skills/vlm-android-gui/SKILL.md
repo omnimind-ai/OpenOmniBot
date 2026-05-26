@@ -221,6 +221,27 @@ To inspect startup failure meanings without touching a device:
 scripts/oob-start.sh --errors
 ```
 
+When the AndroidWorld emulator pair itself must be restarted, use the OmniFlow
+launcher first:
+
+```bash
+bash /Users/wuzewen/Projects/Omni/OmniFlow/scripts/start_androidworld_avds.sh
+```
+
+This starts `AndroidWorldAvd` on `emulator-5554` and `SmallPhone` on
+`emulator-5556`. It intentionally kills existing emulators on those ports, so
+use it only for restart, not while a validation run is active. It does not make
+OOB ready by itself; after boot, always run:
+
+```bash
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5554 --skip-build
+OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5556 --skip-build
+```
+
+The launcher uses snapshots by default, so stale emulator clocks can come back.
+Let `oob-start` do its clock fix/check after every AVD restart, or launch with
+`ANDROIDWORLD_USE_SNAPSHOT=0` when a clean no-snapshot restart is required.
+
 For `emulator-5554`, keep AndroidWorld/Mobilerun state intact:
 
 ```bash
@@ -281,12 +302,13 @@ validation explicitly targets OOB on that device.
 preserving existing Accessibility services so AndroidWorld/Mobilerun setup is
 not removed unless `--clean-accessibility` is explicitly passed.
 
-For emulator serials, startup now force-syncs the device clock against host UTC
-by default, checks both `date` and `dumpsys alarm nowRTC`, compares epoch skew,
-and re-checks after app launch. This is required for online VLM because 5554 can
-otherwise enter the model request with a 2023 clock and fail TLS before the
-model reasons. Use `--no-fix-device-clock` only when you explicitly want stale
-clock to become a startup error.
+For emulator serials, startup fixes stale/skewed device clocks against host
+epoch by default, checks both `date` and `dumpsys alarm nowRTC`, compares epoch
+skew, and re-checks after app launch. It does not rewrite a clock that already
+matches host epoch. This is required for online VLM because 5554 can otherwise
+enter the model request with a 2023 clock and fail TLS before the model reasons.
+Use `--fix-device-clock` to force a rewrite, or `--no-fix-device-clock` only
+when you explicitly want stale clock to become a startup error.
 
 The 5554 preserve path intentionally removes only OOB's Accessibility component
 from `enabled_accessibility_services`, waits briefly, then appends it back. This
@@ -628,6 +650,11 @@ Rules:
 - Use `tool_name` plus `arguments` for direct tools such as `vlm_task`.
 - Nested reusable command calls are valid only through
   `call_tool(function_id=...)`.
+- Treat nested `call_function` / `call_tool(function_id=...)` as a real tool
+  call. It must produce its own visible tool card with
+  `toolName=call_function`, `toolType=oob_function`, readable "复用指令" text,
+  `argsJson.function_id`, and final success/error status. Do not hide nested
+  reusable-command execution only inside a parent result JSON.
 - If `call_tool` returns `fallback=true` or `needs_agent`, switch to a bounded
   VLM task and report the fallback reason.
 
@@ -639,6 +666,8 @@ verify that the result contains:
 
 - parent step `executor=omniflow_function`
 - `nested_function_id` equal to the expected segment id
+- one streamed `tool_started` and one `tool_completed` card for the
+  `call_function` step
 - nested `step_results` with concrete model-free actions such as `open_app`
 - the same child reusable command succeeds from at least two different current
   pages
@@ -656,6 +685,9 @@ execution`. Keep this contract visible and separate from runtime tests:
 - Reusable command execution results should keep diagnostic timing internal. Persist
   `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings in RunLog
   and test artifacts, but do not expose these fields in user-facing UI.
+- `call_function` cards should appear in the same agent RunLog as other tool
+  cards. Users should see a compact reusable-command card and status; detailed
+  nested `step_results` stay inside the card detail / raw result surfaces.
 - Do not show internal route-building jargon to users. Keep legacy
   route-building field names only as compatibility keys.
 

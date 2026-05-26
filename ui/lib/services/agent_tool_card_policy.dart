@@ -228,6 +228,10 @@ class AgentToolCardPolicy {
       return AgentToolActivityKind.workspace;
     }
     if (toolTypeLower == 'workbench' ||
+        toolTypeLower == 'oob_function' ||
+        toolTypeLower == 'reusable_function' ||
+        toolNameLower == 'call_function' ||
+        toolNameLower == 'omniflow.call_function' ||
         toolNameLower.startsWith('workbench_')) {
       return AgentToolActivityKind.workbench;
     }

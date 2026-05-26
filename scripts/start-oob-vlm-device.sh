@@ -65,7 +65,7 @@ Options:
   --no-accessibility       Do not rebind OOB Accessibility.
   --no-launch              Do not launch the OOB app.
   --no-clock-check         Skip stale emulator clock detection.
-  --fix-device-clock       Force a device clock sync with host UTC via su/date.
+  --fix-device-clock       Force a device clock sync with host epoch via su/date.
   --no-fix-device-clock    Report stale device time without trying to change it.
   --wait-seconds <n>       Wait budget for binding/MCP startup. Default: 12.
   --settle-seconds <n>     Extra delay after MCP probe before ready. Default: 3.
@@ -327,10 +327,7 @@ should_force_clock_sync() {
   if [[ "$FIX_DEVICE_CLOCK" == "1" || "$FIX_DEVICE_CLOCK" == "true" ]]; then
     return 0
   fi
-  if [[ "$FIX_DEVICE_CLOCK" == "0" || "$FIX_DEVICE_CLOCK" == "false" ]]; then
-    return 1
-  fi
-  [[ "$DEVICE_SERIAL" == emulator-* ]]
+  return 1
 }
 
 can_attempt_clock_fix() {
@@ -338,12 +335,12 @@ can_attempt_clock_fix() {
 }
 
 try_fix_device_clock() {
-  local stamp
-  stamp="$(date -u +%m%d%H%M%Y.%S)"
+  local epoch
+  epoch="$(date -u +%s)"
   "${ADB[@]}" shell settings put global auto_time 0 >/dev/null 2>&1 || true
   "${ADB[@]}" shell settings put global auto_time_zone 0 >/dev/null 2>&1 || true
-  "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
-    "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1
+  "${ADB[@]}" shell su 0 date "@${epoch}" >/dev/null 2>&1 ||
+    "${ADB[@]}" shell date "@${epoch}" >/dev/null 2>&1
 }
 
 check_device_clock() {
