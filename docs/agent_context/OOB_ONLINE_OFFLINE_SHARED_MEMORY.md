@@ -1157,6 +1157,32 @@ For a complete local validation pass:
   `adb -s emulator-5554 get-state` still returned `device`. Treat this as a
   validation-shell issue, not an OOB/model failure; rerun after adb is already
   started or from an approved direct-device context.
+- Clock hardening:
+  `scripts/oob-start.sh --profile 5554 --skip-build --skip-install --wait-seconds 30 --settle-seconds 1`
+  now forces emulator clock sync by default. On the latest run it detected
+  `device_clock_preflight_year=2023`, `device_clock_preflight_alarm_year=2023`,
+  and `device_clock_preflight_skew_seconds=82408788`, then fixed to
+  `device_clock_preflight_year_after_fix=2026` with 1 second skew. The
+  `post_launch` check kept the clock at 2026 with 0 second skew before
+  reporting `ready=1`.
+- 5554 AndroidWorld clock reset behavior:
+  after the online Agent validation completed, the shared AndroidWorld emulator
+  reset back to `Sun Oct 15 15:34 UTC 2023` despite `auto_time=0` and
+  `auto_time_zone=0`. Treat this as an external 5554 environment behavior.
+  Long online validation scripts now keep a host-side clock guard alive during
+  the run so later model rounds do not fail TLS after startup.
+- Agent-conversation Function validation after clock fix:
+  direct adb broadcast to
+  `cn.com.omnimind.bot.debug.RUN_AGENT_CONVERSATION_FUNCTION_VALIDATION`
+  succeeded after clock sync. Result:
+  `success=true`, `conversation_id=5`,
+  `task_id=debug-agent-conversation-function-1779792880471`,
+  `function_registered=true`, `run_success=true`, `message_count=6`,
+  Function id `debug_agent_conversation_open_settings`, Function name
+  `Debug agent conversation open settings`, 2 Function steps, replay run
+  `omniflow_run_1697384053385_2`, `actions_executed=2`,
+  `success_step_count=2`, `model_used=false`, and
+  `runner_duration_ms=3306`.
 - Online VLM E2E:
   `bash scripts/demo-vlm-runlog-e2e.sh --device emulator-5554 --startup-profile 5554`
   with goal "open Network & internet settings" passed. Run id
@@ -1186,8 +1212,11 @@ For a complete local validation pass:
 - Missing current XML makes UDEG recall miss with
   `missing_current_page_for_udeg_page_match`.
 - Stale emulator time breaks online VLM TLS before reasoning starts. The startup
-  script detects and attempts to fix clocks older than 2025, and reports
-  `device_clock_stale` if it cannot.
+  script now force-syncs emulator clocks by default, verifies both `date` and
+  `dumpsys alarm nowRTC`, compares epoch skew against host UTC, and re-checks
+  after app launch. Validation scripts that run online model calls keep a
+  clock guard alive during the task because 5554 can be reset by the shared
+  AndroidWorld environment after startup.
 - In preserve-accessibility mode, if OOB appears in `Crashed services`, refresh
   only OOB's component by removing it from `enabled_accessibility_services` and
   adding it back while preserving Mobilerun/AndroidWorld services. Blank

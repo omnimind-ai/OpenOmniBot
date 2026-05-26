@@ -262,9 +262,10 @@ Startup error summary:
 - `startup_error=app_not_running`: OOB launched then exited or did not start.
   Reinstall and inspect logcat for a startup crash.
 - `startup_error=device_clock_stale`: the emulator clock is before the minimum
-  TLS-safe year. Online VLM calls can fail with
+  TLS-safe year or too far from host UTC. Online VLM calls can fail with
   `Unacceptable certificate` / `CertificateNotYetValidException`; rerun with
-  `--fix-device-clock` or sync the device clock.
+  `--fix-device-clock`, check for an external runner resetting time, or sync
+  the device clock.
 
 The long-term startup runbook is
 `docs/agent_context/OOB_STARTUP_RUNBOOK.md`.
@@ -279,6 +280,13 @@ validation explicitly targets OOB on that device.
 `emulator-5556` defaults to clean OOB rebinding. Non-5556 devices default to
 preserving existing Accessibility services so AndroidWorld/Mobilerun setup is
 not removed unless `--clean-accessibility` is explicitly passed.
+
+For emulator serials, startup now force-syncs the device clock against host UTC
+by default, checks both `date` and `dumpsys alarm nowRTC`, compares epoch skew,
+and re-checks after app launch. This is required for online VLM because 5554 can
+otherwise enter the model request with a 2023 clock and fail TLS before the
+model reasons. Use `--no-fix-device-clock` only when you explicitly want stale
+clock to become a startup error.
 
 The 5554 preserve path intentionally removes only OOB's Accessibility component
 from `enabled_accessibility_services`, waits briefly, then appends it back. This
@@ -446,6 +454,11 @@ never reached OOB because the current shell could not start adb. Restart adb
 from an approved device context or rerun after the daemon is alive before
 debugging prompts/tool schemas.
 
+On emulator devices this validation keeps a host-side clock guard alive during
+the online Agent run. Keep it enabled on shared 5554; AndroidWorld can reset the
+device time back to 2023 after startup, and a later model round would otherwise
+fail with a certificate error.
+
 For online VLM plus RunLog conversion and deterministic replay, use:
 
 ```bash
@@ -457,6 +470,7 @@ replay through the installed OOB app. On 5554 it uses `oob-start` preserve mode
 so AndroidWorld/Mobilerun Accessibility services stay enabled. The default
 output is intentionally compact: success, run id, Function id, token totals,
 card/step counts, and replay duration. Use `--raw-json` only for debugging.
+The script also keeps the emulator clock guarded during the online VLM phase.
 
 MCP `agent_run` uses `userMessage` as the prompt field; do not send `message`.
 Example wrapper:

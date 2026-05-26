@@ -60,7 +60,8 @@ scripts/oob-start.sh --errors
 - clean-rebinds OOB Accessibility
 - stops known UiAutomation conflicts
 - launches OOB and probes MCP
-- checks and attempts to fix stale emulator time
+- force-syncs emulator time against host UTC, verifies `date` and
+  `dumpsys alarm nowRTC`, and re-checks after app launch
 
 `androidworld-5554` is the shared profile:
 
@@ -70,7 +71,8 @@ scripts/oob-start.sh --errors
 - preserves existing Accessibility services
 - does not stop Mobilerun/AndroidWorld processes
 - refreshes only OOB Accessibility
-- checks and attempts to fix stale emulator time
+- force-syncs emulator time against host UTC, verifies `date` and
+  `dumpsys alarm nowRTC`, and re-checks after app launch
 
 ## Startup Error Summary
 
@@ -91,7 +93,7 @@ cannot be normalized.
 | `mcp_http_<status>` | MCP answered, but not with a successful tool-list response. | Inspect app logs and the HTTP body printed by the script. |
 | `mcp_probe_unexpected_payload` | MCP responded without a usable non-empty tool list. | Treat this as MCP initialization failure, not VLM quality failure. |
 | `app_not_running` | OOB launched then exited, or did not start. | Reinstall and inspect logcat for startup crashes. |
-| `device_clock_stale` | Device year is older than the TLS-safe threshold. | Rerun with `--fix-device-clock` or manually sync emulator time before online VLM. |
+| `device_clock_stale` | Device year is older than the TLS-safe threshold, or epoch skew from host UTC is too large. | Rerun with `--fix-device-clock`, check whether another runner resets time, or manually sync emulator time before online VLM. |
 
 ## What The Script Guarantees
 
@@ -102,8 +104,11 @@ After `ready=1`, these should be true:
 - No UiAutomation conflict is present on the dedicated 5556 profile.
 - MCP is forwarded to the selected host port.
 - MCP tool list was probed when a token was provided.
-- Device clock is at or after the configured minimum year, unless clock fixing
-  was skipped.
+- Device clock is at or after the configured minimum year and within the
+  configured host-UTC skew threshold, unless clock fixing was skipped.
+
+On emulator serials, clock sync is forced by default. `--no-fix-device-clock`
+disables mutation and turns stale/skewed time into a startup error.
 
 This does not prove VLM task success. For a real task, still verify:
 
@@ -141,6 +146,12 @@ Function can replay on the device. If the script prints
 reach the app. Start adb from an approved direct-device context or rerun after
 the daemon is already alive; do not count that as a model, prompt, or OOB
 runtime failure.
+
+The conversation validation script keeps a host-side clock guard alive on
+emulators during the online Agent run. This is needed on shared 5554 because
+AndroidWorld can reset the device clock back to 2023 after startup; without the
+guard, later model calls can fail with TLS certificate errors even though
+startup originally reported `ready=1`.
 
 For online VLM plus RunLog conversion and replay, use:
 
@@ -189,3 +200,22 @@ On 5554 it preserves AndroidWorld/Mobilerun Accessibility services; on 5556 pass
   latest attempt failed before broadcast because the current restricted shell
   could not start the adb daemon. Direct adb device checks still saw
   `emulator-5554`; rerun this validation from an approved direct-device context.
+
+Additional 2026-05-26 evidence:
+
+- Fast 5554 startup detected a stale shared-emulator clock:
+  `device_clock_preflight_year=2023`,
+  `device_clock_preflight_alarm_year=2023`,
+  `device_clock_preflight_skew_seconds=82408788`. The forced sync fixed it to
+  2026 with 1 second skew, and the post-launch check re-fixed it to 0 second
+  skew before `ready=1`.
+- Direct adb broadcast to the real installed app for
+  `RUN_AGENT_CONVERSATION_FUNCTION_VALIDATION` then passed:
+  `success=true`, `function_registered=true`, `run_success=true`,
+  `message_count=6`, Function id
+  `debug_agent_conversation_open_settings`, replay run
+  `omniflow_run_1697384053385_2`, 2 model-free replay steps, and
+  `runner_duration_ms=3306`.
+- After that validation, 5554 again reported `Sun Oct 15 15:34 UTC 2023`.
+  This confirms the shared AndroidWorld environment can reset time after OOB
+  startup; long online validation should keep the clock guard enabled.

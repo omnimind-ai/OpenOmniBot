@@ -10,6 +10,8 @@ FUNCTION_ID="${OOB_FUNCTION_ID:-debug_agent_conversation_open_settings}"
 PROFILE_ID="${OOB_PROVIDER_PROFILE_ID:-profile-dashscope}"
 MODEL_ID="${OMNIMIND_MODEL:-${OPENAI_MODEL:-qwen-vl-max-latest}}"
 WAIT_SECONDS="${OOB_VALIDATION_WAIT_SECONDS:-240}"
+CLOCK_GUARD="${OOB_CLOCK_GUARD:-auto}"
+CLOCK_GUARD_INTERVAL_SECONDS="${OOB_CLOCK_GUARD_INTERVAL_SECONDS:-5}"
 USER_MESSAGE=""
 RAW_JSON=0
 
@@ -105,15 +107,57 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$WAIT_SECONDS" in (*[!0-9]*|"") echo "--wait-seconds must be numeric" >&2; exit 1;; esac
+case "$CLOCK_GUARD_INTERVAL_SECONDS" in (*[!0-9]*|"") echo "OOB_CLOCK_GUARD_INTERVAL_SECONDS must be numeric" >&2; exit 1;; esac
 
 ADB=(adb -s "$DEVICE_SERIAL")
 ACTION="cn.com.omnimind.bot.debug.RUN_AGENT_CONVERSATION_FUNCTION_VALIDATION"
 RESULT_FILE="files/debug-agent-conversation-function-result.json"
 LOCAL_RESULT="$(mktemp "${TMPDIR:-/tmp}/oob-agent-conversation-function.XXXXXX.json")"
-trap 'rm -f "$LOCAL_RESULT"' EXIT
+CLOCK_GUARD_PID=""
+
+cleanup() {
+  if [[ -n "${CLOCK_GUARD_PID:-}" ]]; then
+    kill "$CLOCK_GUARD_PID" >/dev/null 2>&1 || true
+  fi
+  rm -f "$LOCAL_RESULT"
+}
+trap cleanup EXIT
 
 base64_no_wrap() {
   python3 -c 'import base64, sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))'
+}
+
+sync_device_clock_once() {
+  local stamp
+  stamp="$(date -u +%m%d%H%M%Y.%S)"
+  "${ADB[@]}" shell settings put global auto_time 0 >/dev/null 2>&1 || true
+  "${ADB[@]}" shell settings put global auto_time_zone 0 >/dev/null 2>&1 || true
+  "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
+    "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1 ||
+    true
+}
+
+should_start_clock_guard() {
+  if [[ "$CLOCK_GUARD" == "1" || "$CLOCK_GUARD" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$CLOCK_GUARD" == "0" || "$CLOCK_GUARD" == "false" ]]; then
+    return 1
+  fi
+  [[ "$DEVICE_SERIAL" == emulator-* ]]
+}
+
+start_clock_guard() {
+  should_start_clock_guard || return 0
+  echo "[oob-agent-conversation-function] clock_guard=enabled interval=${CLOCK_GUARD_INTERVAL_SECONDS}s"
+  sync_device_clock_once
+  (
+    while true; do
+      sleep "$CLOCK_GUARD_INTERVAL_SECONDS"
+      sync_device_clock_once
+    done
+  ) &
+  CLOCK_GUARD_PID="$!"
 }
 
 echo "[oob-agent-conversation-function] device=${DEVICE_SERIAL}"
@@ -133,6 +177,7 @@ if ! adb_state_output="$("${ADB[@]}" get-state 2>&1)"; then
   exit 1
 fi
 
+start_clock_guard
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$RESULT_FILE" >/dev/null 2>&1 || true
 
 BROADCAST_ARGS=(

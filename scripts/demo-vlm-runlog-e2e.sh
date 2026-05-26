@@ -18,6 +18,8 @@ API_KEY_ENV="${OMNIMIND_API_KEY_ENV:-DASHSCOPE_API_KEY}"
 SKILL_ID="${OOB_E2E_SKILL_ID:-vlm-android-gui}"
 MAX_STEPS="${OOB_E2E_MAX_STEPS:-10}"
 TIMEOUT_SECONDS="${OOB_E2E_TIMEOUT_SECONDS:-240}"
+CLOCK_GUARD="${OOB_CLOCK_GUARD:-auto}"
+CLOCK_GUARD_INTERVAL_SECONDS="${OOB_CLOCK_GUARD_INTERVAL_SECONDS:-5}"
 CONFIGURE_PROVIDER=1
 DISABLE_RECALL=1
 EXPECT_RECALL=0
@@ -171,6 +173,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+case "$MAX_STEPS" in (*[!0-9]*|"") echo "--max-steps must be numeric" >&2; exit 1;; esac
+case "$TIMEOUT_SECONDS" in (*[!0-9]*|"") echo "--timeout must be numeric" >&2; exit 1;; esac
+case "$CLOCK_GUARD_INTERVAL_SECONDS" in (*[!0-9]*|"") echo "OOB_CLOCK_GUARD_INTERVAL_SECONDS must be numeric" >&2; exit 1;; esac
+
 ADB=(adb -s "$DEVICE_SERIAL")
 if [[ -z "${STARTUP_PROFILE// }" ]]; then
   case "$DEVICE_SERIAL" in
@@ -184,7 +190,15 @@ VLM_RESULT_FILE="files/debug-vlm-runlog-result.json"
 FUNCTION_RESULT_FILE="files/debug-oob-function-run-result.json"
 LOCAL_VLM_RESULT="$(mktemp "${TMPDIR:-/tmp}/oob-vlm-result.XXXXXX.json")"
 LOCAL_FUNCTION_RESULT="$(mktemp "${TMPDIR:-/tmp}/oob-function-result.XXXXXX.json")"
-trap 'rm -f "$LOCAL_VLM_RESULT" "$LOCAL_FUNCTION_RESULT"' EXIT
+CLOCK_GUARD_PID=""
+
+cleanup() {
+  if [[ -n "${CLOCK_GUARD_PID:-}" ]]; then
+    kill "$CLOCK_GUARD_PID" >/dev/null 2>&1 || true
+  fi
+  rm -f "$LOCAL_VLM_RESULT" "$LOCAL_FUNCTION_RESULT"
+}
+trap cleanup EXIT
 
 read_app_file() {
   local path="$1"
@@ -337,6 +351,39 @@ base64_no_wrap() {
   python3 -c 'import base64, sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))'
 }
 
+sync_device_clock_once() {
+  local stamp
+  stamp="$(date -u +%m%d%H%M%Y.%S)"
+  "${ADB[@]}" shell settings put global auto_time 0 >/dev/null 2>&1 || true
+  "${ADB[@]}" shell settings put global auto_time_zone 0 >/dev/null 2>&1 || true
+  "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
+    "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1 ||
+    true
+}
+
+should_start_clock_guard() {
+  if [[ "$CLOCK_GUARD" == "1" || "$CLOCK_GUARD" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$CLOCK_GUARD" == "0" || "$CLOCK_GUARD" == "false" ]]; then
+    return 1
+  fi
+  [[ "$DEVICE_SERIAL" == emulator-* ]]
+}
+
+start_clock_guard() {
+  should_start_clock_guard || return 0
+  echo "clock_guard=enabled interval=${CLOCK_GUARD_INTERVAL_SECONDS}s"
+  sync_device_clock_once
+  (
+    while true; do
+      sleep "$CLOCK_GUARD_INTERVAL_SECONDS"
+      sync_device_clock_once
+    done
+  ) &
+  CLOCK_GUARD_PID="$!"
+}
+
 echo "== OOB VLM runlog E2E demo =="
 echo "device=$DEVICE_SERIAL"
 echo "package=$PACKAGE_NAME"
@@ -369,6 +416,7 @@ scripts/oob-start.sh \
   --skip-install \
   --wait-seconds 30 \
   --settle-seconds 0
+start_clock_guard
 "${ADB[@]}" shell am force-stop "$TARGET_APP_PACKAGE" >/dev/null 2>&1 || true
 "${ADB[@]}" shell am start -a "$START_INTENT_ACTION" >/dev/null
 "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$VLM_RESULT_FILE" "$FUNCTION_RESULT_FILE" 2>/dev/null || true

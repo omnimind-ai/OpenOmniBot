@@ -19,7 +19,7 @@
 #   install compatibility, device storage, and whether the device stayed online.
 # - Emulator clock is stale, which makes model-provider TLS fail with
 #   CertificateNotYetValidException / "Unacceptable certificate". Fix: sync the
-#   device clock before running online VLM.
+#   emulator clock before launching OOB and re-check it before reporting ready.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,6 +39,7 @@ PRESERVE_ACCESSIBILITY="${OOB_PRESERVE_ACCESSIBILITY:-auto}"
 CHECK_DEVICE_CLOCK="${OOB_CHECK_DEVICE_CLOCK:-1}"
 FIX_DEVICE_CLOCK="${OOB_FIX_DEVICE_CLOCK:-auto}"
 CLOCK_MIN_YEAR="${OOB_CLOCK_MIN_YEAR:-2025}"
+CLOCK_MAX_SKEW_SECONDS="${OOB_CLOCK_MAX_SKEW_SECONDS:-600}"
 INSTALL_APK=""
 LAUNCH_APP=1
 ENABLE_ACCESSIBILITY=1
@@ -64,7 +65,7 @@ Options:
   --no-accessibility       Do not rebind OOB Accessibility.
   --no-launch              Do not launch the OOB app.
   --no-clock-check         Skip stale emulator clock detection.
-  --fix-device-clock       Try to sync stale device time with host UTC via su/date.
+  --fix-device-clock       Force a device clock sync with host UTC via su/date.
   --no-fix-device-clock    Report stale device time without trying to change it.
   --wait-seconds <n>       Wait budget for binding/MCP startup. Default: 12.
   --settle-seconds <n>     Extra delay after MCP probe before ready. Default: 3.
@@ -196,6 +197,7 @@ case "$DEVICE_PORT" in (*[!0-9]*|"") echo "--device-port must be numeric" >&2; e
 case "$WAIT_SECONDS" in (*[!0-9]*|"") echo "--wait-seconds must be numeric" >&2; exit 1;; esac
 case "$SETTLE_SECONDS" in (*[!0-9]*|"") echo "--settle-seconds must be numeric" >&2; exit 1;; esac
 case "$CLOCK_MIN_YEAR" in (*[!0-9]*|"") echo "OOB_CLOCK_MIN_YEAR must be numeric" >&2; exit 1;; esac
+case "$CLOCK_MAX_SKEW_SECONDS" in (*[!0-9]*|"") echo "OOB_CLOCK_MAX_SKEW_SECONDS must be numeric" >&2; exit 1;; esac
 
 ADB=(adb -s "$DEVICE_SERIAL")
 COMPONENT="${PACKAGE_NAME}/${ACCESSIBILITY_SERVICE}"
@@ -301,36 +303,126 @@ device_clock_year() {
   adb_shell date +%Y | head -n 1 | tr -cd '0-9'
 }
 
+device_clock_epoch() {
+  adb_shell date +%s | head -n 1 | tr -cd '0-9'
+}
+
+device_alarm_year() {
+  "${ADB[@]}" shell dumpsys alarm 2>/dev/null |
+    sed -n 's/.*nowRTC=[0-9][0-9]*=\([0-9][0-9][0-9][0-9]\)-.*/\1/p' |
+    head -n 1 |
+    tr -cd '0-9'
+}
+
+abs_int() {
+  local value="$1"
+  if (( value < 0 )); then
+    echo $(( -value ))
+  else
+    echo "$value"
+  fi
+}
+
+should_force_clock_sync() {
+  if [[ "$FIX_DEVICE_CLOCK" == "1" || "$FIX_DEVICE_CLOCK" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$FIX_DEVICE_CLOCK" == "0" || "$FIX_DEVICE_CLOCK" == "false" ]]; then
+    return 1
+  fi
+  [[ "$DEVICE_SERIAL" == emulator-* ]]
+}
+
+can_attempt_clock_fix() {
+  [[ "$FIX_DEVICE_CLOCK" == "1" || "$FIX_DEVICE_CLOCK" == "true" || "$FIX_DEVICE_CLOCK" == "auto" ]]
+}
+
 try_fix_device_clock() {
   local stamp
   stamp="$(date -u +%m%d%H%M%Y.%S)"
+  "${ADB[@]}" shell settings put global auto_time 0 >/dev/null 2>&1 || true
+  "${ADB[@]}" shell settings put global auto_time_zone 0 >/dev/null 2>&1 || true
   "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
     "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1
 }
 
 check_device_clock() {
   [[ "$CHECK_DEVICE_CLOCK" == "0" || "$CHECK_DEVICE_CLOCK" == "false" ]] && return 0
-  local year
+  local phase="${1:-preflight}"
+  local year alarm_year epoch host_epoch skew_abs stale needs_fix
   year="$(device_clock_year)"
-  [[ -z "$year" ]] && return 0
-  if (( year >= CLOCK_MIN_YEAR )); then
-    log "device_clock_year=${year}"
-    return 0
+  alarm_year="$(device_alarm_year)"
+  epoch="$(device_clock_epoch)"
+  host_epoch="$(date -u +%s)"
+  stale=0
+  needs_fix=0
+
+  [[ -n "$year" ]] && log "device_clock_${phase}_year=${year}"
+  [[ -n "$alarm_year" ]] && log "device_clock_${phase}_alarm_year=${alarm_year}"
+  if [[ -n "$epoch" ]]; then
+    skew_abs="$(abs_int "$(( epoch - host_epoch ))")"
+    log "device_clock_${phase}_epoch=${epoch}"
+    log "device_clock_${phase}_host_epoch=${host_epoch}"
+    log "device_clock_${phase}_skew_seconds=${skew_abs}"
+    if (( skew_abs > CLOCK_MAX_SKEW_SECONDS )); then
+      stale=1
+    fi
+  fi
+  if [[ -n "$year" ]] && (( year < CLOCK_MIN_YEAR )); then
+    stale=1
+  fi
+  if [[ -n "$alarm_year" ]] && (( alarm_year < CLOCK_MIN_YEAR )); then
+    stale=1
   fi
 
-  log "device_clock_year=${year}"
-  if [[ "$FIX_DEVICE_CLOCK" == "1" || "$FIX_DEVICE_CLOCK" == "true" || "$FIX_DEVICE_CLOCK" == "auto" ]]; then
-    log "device_clock_fix=attempt"
+  if should_force_clock_sync; then
+    needs_fix=1
+    log "device_clock_${phase}_sync=forced"
+  elif [[ "$stale" -eq 1 ]]; then
+    needs_fix=1
+    log "device_clock_${phase}_sync=stale"
+  fi
+
+  if [[ "$needs_fix" -eq 1 ]] && can_attempt_clock_fix; then
+    log "device_clock_${phase}_fix=attempt"
     if try_fix_device_clock; then
       year="$(device_clock_year)"
-      log "device_clock_year_after_fix=${year:-unknown}"
-      if [[ -n "$year" ]] && (( year >= CLOCK_MIN_YEAR )); then
+      alarm_year="$(device_alarm_year)"
+      epoch="$(device_clock_epoch)"
+      host_epoch="$(date -u +%s)"
+      [[ -n "$year" ]] && log "device_clock_${phase}_year_after_fix=${year}"
+      [[ -n "$alarm_year" ]] && log "device_clock_${phase}_alarm_year_after_fix=${alarm_year}"
+      if [[ -n "$epoch" ]]; then
+        skew_abs="$(abs_int "$(( epoch - host_epoch ))")"
+        log "device_clock_${phase}_epoch_after_fix=${epoch}"
+        log "device_clock_${phase}_host_epoch_after_fix=${host_epoch}"
+        log "device_clock_${phase}_skew_seconds_after_fix=${skew_abs}"
+      fi
+      if [[ -n "$year" ]] && (( year >= CLOCK_MIN_YEAR )) &&
+        [[ -n "$alarm_year" ]] && (( alarm_year >= CLOCK_MIN_YEAR )) &&
+        [[ -n "${skew_abs:-}" ]] && (( skew_abs <= CLOCK_MAX_SKEW_SECONDS )); then
         return 0
       fi
     fi
+  elif [[ "$needs_fix" -eq 1 ]]; then
+    log "device_clock_${phase}_fix=disabled"
   fi
 
-  startup_error "device_clock_stale" "Device clock is before ${CLOCK_MIN_YEAR}; online VLM TLS can fail with an unacceptable/not-yet-valid certificate. Sync device time or rerun with --fix-device-clock."
+  stale=0
+  if [[ -n "$year" ]] && (( year < CLOCK_MIN_YEAR )); then
+    stale=1
+  fi
+  if [[ -n "$alarm_year" ]] && (( alarm_year < CLOCK_MIN_YEAR )); then
+    stale=1
+  fi
+  if [[ -n "${skew_abs:-}" ]] && (( skew_abs > CLOCK_MAX_SKEW_SECONDS )); then
+    stale=1
+  fi
+  if [[ "$stale" -eq 0 ]]; then
+    return 0
+  fi
+
+  startup_error "device_clock_stale" "Device clock is before ${CLOCK_MIN_YEAR} or differs from host UTC by more than ${CLOCK_MAX_SKEW_SECONDS}s; online VLM TLS can fail with an unacceptable/not-yet-valid certificate. Sync device time or rerun with --fix-device-clock."
   return 1
 }
 
@@ -450,7 +542,7 @@ except Exception:
 require_device
 log "device=${DEVICE_SERIAL}"
 log "package=${PACKAGE_NAME}"
-check_device_clock
+check_device_clock "preflight"
 
 if [[ -n "$INSTALL_APK" ]]; then
   if [[ ! -f "$INSTALL_APK" ]]; then
@@ -502,6 +594,8 @@ if [[ "$LAUNCH_APP" -eq 1 ]]; then
   log "launching=${PACKAGE_NAME}"
   "${ADB[@]}" shell monkey -p "$PACKAGE_NAME" -c android.intent.category.LAUNCHER 1 >/dev/null
 fi
+
+check_device_clock "post_launch"
 
 if [[ "$ENABLE_ACCESSIBILITY" -eq 1 ]]; then
   wait_for_accessibility
