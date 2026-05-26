@@ -13,6 +13,10 @@
 #   the OOB instance running on that exact emulator and pass OOB_MCP_TOKEN.
 # - OOB launches but the process exits immediately. Fix: reinstall the debug APK
 #   and inspect logcat for the app crash before testing VLM logic.
+# - adb cannot reach the selected emulator/device. Fix: start the emulator or
+#   pass the correct --device serial.
+# - APK install fails before runtime normalization. Fix: check the APK path,
+#   install compatibility, device storage, and whether the device stayed online.
 # - Emulator clock is stale, which makes model-provider TLS fail with
 #   CertificateNotYetValidException / "Unacceptable certificate". Fix: sync the
 #   device clock before running online VLM.
@@ -213,7 +217,7 @@ adb_shell() {
 
 require_device() {
   if ! "${ADB[@]}" get-state >/dev/null 2>&1; then
-    echo "Device is not available: $DEVICE_SERIAL" >&2
+    startup_error "device_unavailable" "adb cannot reach ${DEVICE_SERIAL}; start the emulator/device or pass the correct --device serial."
     exit 1
   fi
 }
@@ -450,11 +454,14 @@ check_device_clock
 
 if [[ -n "$INSTALL_APK" ]]; then
   if [[ ! -f "$INSTALL_APK" ]]; then
-    echo "APK not found: $INSTALL_APK" >&2
+    startup_error "apk_missing" "APK not found: ${INSTALL_APK}; build first or pass --install <apk> with an existing file."
     exit 1
   fi
   log "installing_apk=$INSTALL_APK"
-  "${ADB[@]}" install -r "$INSTALL_APK"
+  if ! "${ADB[@]}" install -r "$INSTALL_APK"; then
+    startup_error "apk_install_failed" "adb install failed on ${DEVICE_SERIAL}; check device state, storage, install compatibility, and APK path."
+    exit 1
+  fi
 fi
 
 if should_stop_conflicts; then

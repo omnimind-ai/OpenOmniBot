@@ -68,15 +68,32 @@ UI and tests:
 Startup and device normalization:
 
 - `scripts/oob-start.sh`
-  - stable one-click startup entrypoint for real OOB validation.
+  - canonical one-click startup entrypoint for real OOB validation.
   - default profile `oob-5556`: build/install, clean Accessibility rebind,
     stop UiAutomation conflicts, forward MCP on host port `28999`, probe MCP.
   - profile `androidworld-5554`: build/install, preserve existing
     Accessibility services, do not stop Mobilerun/AndroidWorld, forward MCP on
     host port `28998`.
+  - `--errors` prints the startup error summary without touching a device.
 - `scripts/start-oob-vlm-device.sh`
   - lower-level normalizer that emits `startup_error=<code>` and
     `startup_hint=<hint>`.
+- `scripts/oob-agent-function-management-validation.sh`
+  - real-device validation for Function management through the agent tool
+    chain: `AgentToolRegistry -> AgentToolRouter -> WorkbenchToolHandler`.
+  - registers, lists, guard-checks, and optionally runs a simple open-app
+    Function on the selected emulator; writes the app-side result to
+    `files/debug-agent-function-management-result.json`.
+  - prints a compact summary by default; use `--raw-json` only for debugging.
+- `scripts/demo-vlm-runlog-e2e.sh`
+  - real-device online VLM validation through the installed app:
+    provider config -> live VLM task -> RunLog -> Function conversion ->
+    deterministic Function replay.
+  - calls `scripts/oob-start.sh` during preparation so 5554 preserves
+    AndroidWorld/Mobilerun Accessibility services and 5556 uses the dedicated
+    clean-rebind path.
+  - prints compact VLM/replay summaries and token totals by default; use
+    `--raw-json` only for debugging.
 - `docs/agent_context/OOB_STARTUP_RUNBOOK.md`
   - durable startup error summary and one-click command reference.
 
@@ -1095,6 +1112,65 @@ For a complete local validation pass:
      `source = human_takeover`
    - confirm VLM receives the manual summary as external memory
 
+## Latest Real-Device Evidence
+
+2026-05-26 on `emulator-5554`:
+
+- Startup: `scripts/oob-start.sh --profile 5554 --skip-build --skip-install`
+  returned `ready=1`, preserved
+  `com.google.androidenv.accessibilityforwarder`, and rebound OOB
+  Accessibility.
+- Rebuild/reinstall startup:
+  `scripts/oob-start.sh --profile 5554 --wait-seconds 30 --settle-seconds 1`
+  rebuilt the developStandard debug APK, installed it, preserved existing
+  AndroidWorld/Mobilerun Accessibility services, rebound OOB Accessibility,
+  forwarded MCP on host port `28998`, and returned `ready=1`.
+- Function management:
+  `scripts/oob-agent-function-management-validation.sh --device emulator-5554`
+  passed through
+  `AgentToolRegistry -> AgentToolRouter -> WorkbenchToolHandler`.
+  It registered `debug_agent_function_management_open_settings`, listed it,
+  guard-checked `decision=allow`, ran it, and verified foreground package
+  `com.android.settings`. `oob_function_run` took 3,539 ms for 2 steps.
+- Latest Function management re-run after reinstall:
+  `scripts/oob-agent-function-management-validation.sh --device emulator-5554 --target-package com.android.settings --wait-seconds 60`
+  passed with `success=true`, `missing_tools=[]`, `unexpected_tools=[]`,
+  `list_contains_function=true`, `guard_decision=allow`, and foreground
+  `com.android.settings`. It saw 40 local Functions and ran
+  `debug_agent_function_management_open_settings` as replay run
+  `omniflow_run_1779792168364_1`; `oob_function_run` took 4,311 ms
+  (`runner_duration_ms=4,305`) for 2 steps.
+- Provider config:
+  `bash scripts/configure-oob-model-provider.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest`
+  succeeded and bound `scene.dispatch.model`, `scene.vlm.operation.primary`,
+  `scene.compactor.context`, and `scene.compactor.context.chat` to
+  `profile-dashscope`.
+- Agent-conversation Function management:
+  `DebugAgentConversationFunctionReceiver` and
+  `scripts/oob-agent-conversation-function-validation.sh` were added so a real
+  in-app Agent conversation can ask the online model to call
+  `oob_function_register/list/guard_check/run/delete` through the focused
+  `function_management` profile. The current attempted run did not reach the
+  app receiver: after the adb daemon was no longer running, invoking the script
+  through a restricted shell failed before broadcast with adb daemon startup
+  `Operation not permitted` / `cannot connect to daemon`, while direct
+  `adb -s emulator-5554 get-state` still returned `device`. Treat this as a
+  validation-shell issue, not an OOB/model failure; rerun after adb is already
+  started or from an approved direct-device context.
+- Online VLM E2E:
+  `bash scripts/demo-vlm-runlog-e2e.sh --device emulator-5554 --startup-profile 5554`
+  with goal "open Network & internet settings" passed. Run id
+  `441baf9b-43ec-4bbb-9a78-da4b37730594`; token usage total `10,994`
+  (`click`: 5,287, `finished`: 5,707); converted Function id
+  `debug_441baf9b_43ec_4bbb_9a78_da4b37730594`.
+  Replay run `omniflow_run_1697384045711_1` executed 3 model-free steps in
+  4,608 ms. External verification showed foreground
+  `com.android.settings/.SubSettings` and XML content-desc
+  `Network & internet`.
+- 5556 was not available in the current adb state. Attempting to start
+  `Medium_Phone_API_36.1` on port 5556 did not reach `adb device`; keep the
+  5556 requirement open until the emulator process is available.
+
 ## Known Failure Modes
 
 - Always start real-device validation through `scripts/oob-start.sh` first. A
@@ -1102,6 +1178,11 @@ For a complete local validation pass:
   failure, not evidence about online VLM reasoning or replay quality.
 - Missing accessibility means direct replay cannot click/scroll/input and
   returns `OOB_ACCESSIBILITY_REQUIRED`.
+- If a validation script reports `validation_error=adb_unavailable` but direct
+  `adb -s <serial> get-state` succeeds in another shell, inspect the embedded
+  adb error. `Operation not permitted` / `cannot connect to daemon` means the
+  current shell cannot start the adb daemon; it is not evidence about Function,
+  VLM, or replay quality.
 - Missing current XML makes UDEG recall miss with
   `missing_current_page_for_udeg_page_match`.
 - Stale emulator time breaks online VLM TLS before reasoning starts. The startup

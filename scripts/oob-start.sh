@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stable one-click startup entrypoint for OOB online VLM / OmniFlow validation.
+# Canonical one-click startup entrypoint for OOB online VLM / OmniFlow validation.
 #
 # Default profile:
 #   - oob-5556: dedicated OOB validation emulator. Build, install, clean-rebind
@@ -57,9 +57,14 @@ Options:
   --fix-device-clock      Force an attempted emulator clock sync.
   --no-fix-device-clock   Report stale device clock without changing it.
   --no-clock-check        Skip stale emulator clock detection.
+  --errors                Print the startup error summary and exit.
   --help                  Show this help.
 
 Startup errors emitted by the underlying runtime script:
+  device_unavailable                adb cannot reach the selected device.
+  build_failed                      Gradle did not build the debug APK.
+  apk_missing                       The APK path does not exist.
+  apk_install_failed                adb install failed on the selected device.
   ui_automation_present             Another runner owns UiAutomation.
   enabled_but_not_bound             Accessibility enabled but OOB is not bound.
   accessibility_not_bound           OOB Accessibility did not bind in time.
@@ -73,6 +78,55 @@ Startup errors emitted by the underlying runtime script:
 Fast paths:
   scripts/oob-start.sh --skip-build
   scripts/oob-start.sh --profile 5554 --skip-build --skip-install
+EOF
+}
+
+print_startup_error_summary() {
+  cat <<'EOF'
+Startup error summary:
+  device_unavailable
+      adb cannot reach the selected device. Start the emulator or pass
+      --device <serial>, then rerun this script.
+  build_failed
+      Gradle failed before device startup. Fix the compile/build error, or use
+      --skip-build only when a valid APK already exists.
+  apk_missing
+      The selected APK path does not exist. Build first or pass --apk <path>.
+  apk_install_failed
+      adb install failed on the selected device. Check device storage, install
+      compatibility, and whether the emulator is still online.
+  ui_automation_present
+      Another runner owns UiAutomation. Stop Mobilerun/Appium/AndroidWorld
+      ownership on the OOB device, or reboot the emulator.
+  enabled_but_not_bound
+      Android secure settings list OOB Accessibility, but the service is not
+      bound. Rerun this canonical one-click script; the 5556 profile cleanly
+      rebinds OOB Accessibility.
+  accessibility_not_bound
+      OOB Accessibility did not bind before timeout. Rerun with
+      --wait-seconds 30 and inspect adb shell dumpsys accessibility.
+  mcp_auth_failed
+      The MCP token belongs to another OOB instance or device. Copy the token
+      from the target emulator and pass OOB_MCP_TOKEN or --token.
+  mcp_unreachable
+      The app process, adb forward, or device MCP server is unavailable.
+      Confirm OOB is running and rerun this script.
+  mcp_http_<status>
+      MCP answered with an unexpected HTTP status. Inspect the HTTP body and
+      app logcat before treating this as a VLM failure.
+  mcp_probe_unexpected_payload
+      MCP responded without a usable non-empty tool list. Treat this as MCP
+      initialization failure.
+  app_not_running
+      OOB launched then exited, or did not start. Reinstall and inspect logcat.
+  device_clock_stale
+      The emulator clock is before the TLS-safe minimum year. Rerun with
+      --fix-device-clock or manually sync device time before online VLM.
+
+Canonical one-click commands:
+  OOB_MCP_TOKEN=<token> scripts/oob-start.sh
+  OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile 5554
+  OOB_MCP_TOKEN=<token> scripts/oob-start.sh --skip-build --skip-install
 EOF
 }
 
@@ -151,8 +205,14 @@ while [[ $# -gt 0 ]]; do
     --fix-device-clock|--no-fix-device-clock|--no-clock-check)
       CLOCK_ARGS+=("$1")
       ;;
+    --errors)
+      print_startup_error_summary
+      exit 0
+      ;;
     --help|-h)
       usage
+      echo
+      print_startup_error_summary
       exit 0
       ;;
     *)
@@ -201,7 +261,13 @@ echo "[oob-start] host_port=${HOST_PORT}"
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "[oob-start] building developStandard debug APK"
-  ./gradlew --no-daemon :app:assembleDevelopStandardDebug "-Ptarget=${FLUTTER_TARGET}" --build-cache
+  if ! ./gradlew --no-daemon :app:assembleDevelopStandardDebug "-Ptarget=${FLUTTER_TARGET}" --build-cache; then
+    echo "[oob-start] startup_error=build_failed" >&2
+    echo "[oob-start] startup_hint=Gradle failed before OOB device startup; fix the build error or rerun with --skip-build only if the APK already exists." >&2
+    echo >&2
+    print_startup_error_summary >&2
+    exit 1
+  fi
 fi
 
 START_ARGS=(
@@ -218,8 +284,10 @@ fi
 
 if [[ "$SKIP_INSTALL" -eq 0 ]]; then
   if [[ ! -f "$APK" ]]; then
-    echo "APK not found: $APK" >&2
-    echo "Run without --skip-build first or pass --apk <path>." >&2
+    echo "[oob-start] startup_error=apk_missing" >&2
+    echo "[oob-start] startup_hint=APK not found: $APK. Run without --skip-build first or pass --apk <path>." >&2
+    echo >&2
+    print_startup_error_summary >&2
     exit 1
   fi
   START_ARGS+=(--install "$APK")
@@ -229,5 +297,13 @@ if [[ -n "${MCP_TOKEN// }" ]]; then
   START_ARGS+=(--token "$MCP_TOKEN")
 fi
 
+set +e
 OOB_START_PROBE_COMMAND="OOB_MCP_TOKEN=<token> scripts/oob-start.sh --profile ${PROFILE_CANONICAL} --device ${DEVICE_SERIAL} --host-port ${HOST_PORT} --skip-build --skip-install" \
   scripts/start-oob-vlm-device.sh "${START_ARGS[@]}"
+status=$?
+set -e
+if [[ "$status" -ne 0 ]]; then
+  echo >&2
+  print_startup_error_summary >&2
+  exit "$status"
+fi

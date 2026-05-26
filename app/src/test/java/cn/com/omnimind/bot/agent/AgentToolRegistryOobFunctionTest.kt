@@ -203,6 +203,12 @@ class AgentToolRegistryOobFunctionTest {
                     put("replacement_text", JsonPrimitive("world"))
                 },
             )
+            registry.validateArguments(
+                functionId,
+                buildJsonObject {
+                    put("replacement_text", JsonPrimitive("world"))
+                },
+            )
 
             val stored = requireNotNull(
                 OobRunLogReplayService(context).getFunctionSpec(functionId)

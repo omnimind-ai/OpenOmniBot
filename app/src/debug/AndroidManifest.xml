@@ -34,6 +34,22 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".debug.DebugAgentFunctionManagementReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_AGENT_FUNCTION_MANAGEMENT_VALIDATION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugAgentConversationFunctionReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.RUN_AGENT_CONVERSATION_FUNCTION_VALIDATION" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".debug.DebugOobRecallReceiver"
             android:enabled="true"
             android:exported="true">

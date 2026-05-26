@@ -201,7 +201,7 @@ Guidelines:
 ## Real Device Startup
 
 Before judging live VLM or Function behavior, normalize the runtime with the
-fixed one-click entrypoint:
+canonical one-click entrypoint:
 
 ```bash
 OOB_MCP_TOKEN=<token> scripts/oob-start.sh
@@ -215,6 +215,12 @@ emulator time, and probes MCP when a token is provided. Pass `--skip-build` to
 reuse the last APK, or `--skip-install` when only rebinding/restarting the
 runtime.
 
+To inspect startup failure meanings without touching a device:
+
+```bash
+scripts/oob-start.sh --errors
+```
+
 For `emulator-5554`, keep AndroidWorld/Mobilerun state intact:
 
 ```bash
@@ -226,6 +232,16 @@ services, and does not stop Mobilerun/AndroidWorld processes.
 
 Startup error summary:
 
+- `startup_error=device_unavailable`: adb cannot reach the selected device.
+  Start the emulator/device, confirm `adb devices -l`, or pass
+  `--device <serial>`.
+- `startup_error=build_failed`: Gradle failed before OOB runtime startup.
+  Fix the compile/build error, or use `--skip-build` only when a valid APK
+  already exists.
+- `startup_error=apk_missing`: the selected APK path does not exist. Build
+  first or pass an explicit APK path.
+- `startup_error=apk_install_failed`: adb install failed. Check device state,
+  storage, install compatibility, and the APK path.
 - `startup_error=ui_automation_present`: another runner owns UiAutomation.
   Stop Mobilerun/Appium/AndroidWorld ownership or reboot the emulator before
   blaming VLM logic.
@@ -397,6 +413,50 @@ Do not use the focused profile for unrelated general Agent tasks. Use
 `oob_function_clear(confirm=true)` only when the user explicitly asks to clear
 all reusable instructions; otherwise delete temporary validation Functions one
 by one.
+
+The device validation path for this workflow must exercise the real agent tool
+chain, not only `OobOmniFlowToolkitService` directly. Use:
+
+```bash
+scripts/oob-agent-function-management-validation.sh --device emulator-5556
+```
+
+This sends a debug broadcast to the installed app and verifies
+`AgentToolRegistry -> AgentToolRouter -> WorkbenchToolHandler` can expose the
+focused profile, register a simple Function, list it, guard-check it, run it on
+the foreground device, and report the real post-run package. For 5554, normalize
+startup first with the shared profile, then pass `--device emulator-5554`.
+The script prints a compact summary by default; use `--raw-json` only when the
+full app-side payload is needed for debugging.
+
+To validate that an online Agent conversation can register and run a Function
+by calling the tools itself, configure the provider and run:
+
+```bash
+bash scripts/configure-oob-model-provider.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest
+scripts/oob-agent-conversation-function-validation.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest
+```
+
+This validation starts a real in-app Agent run through `AgentRunService` with
+`toolProfile=function_management` and the exact Function tool allowlist. The
+model must call the tools; the receiver then checks that the Function exists
+and can replay. If it fails with `validation_error=adb_unavailable` and the adb
+body says `Operation not permitted` or `cannot connect to daemon`, the broadcast
+never reached OOB because the current shell could not start adb. Restart adb
+from an approved device context or rerun after the daemon is alive before
+debugging prompts/tool schemas.
+
+For online VLM plus RunLog conversion and deterministic replay, use:
+
+```bash
+bash scripts/demo-vlm-runlog-e2e.sh --device emulator-5554 --startup-profile 5554 --goal '<non-smoke Android task>'
+```
+
+This runs provider config, live VLM, RunLog collection, conversion, and Function
+replay through the installed OOB app. On 5554 it uses `oob-start` preserve mode
+so AndroidWorld/Mobilerun Accessibility services stay enabled. The default
+output is intentionally compact: success, run id, Function id, token totals,
+card/step counts, and replay duration. Use `--raw-json` only for debugging.
 
 MCP `agent_run` uses `userMessage` as the prompt field; do not send `message`.
 Example wrapper:

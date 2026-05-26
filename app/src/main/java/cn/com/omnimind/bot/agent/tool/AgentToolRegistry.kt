@@ -239,6 +239,11 @@ class AgentToolRegistry(
             ?.filter { it.isNotEmpty() }
             ?: emptyList()
         requiredFields.forEach { field ->
+            // `tool_title` is a presentation hint injected into model schemas so
+            // UI cards have readable labels. It is not part of the execution
+            // contract for most tools; handlers that truly require it validate
+            // it themselves.
+            if (field == "tool_title") return@forEach
             if (arguments[field] == null || arguments[field] is JsonNull) {
                 throw IllegalArgumentException("Tool $toolName missing required argument: $field")
             }
