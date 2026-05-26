@@ -687,7 +687,10 @@ execution.step_count = <count>
 2. Calls `OobUdegNodeStore.upsertFunction(functionId, spec)`.
 3. Registers into `WorkspaceFunctionStore`.
 4. Registers into `OobReusableFunctionStore` SharedPreferences.
-5. Enables OOB Function-as-tool feature flag.
+5. Leaves Function-as-model-tool exposure disabled by default; conversion and
+   registration update the Function stores and UDEG attachments, but the normal
+   online VLM path receives them as context-only candidates unless the caller
+   explicitly runs a Function.
 
 `OobOmniFlowToolkitService.registerFunction(...)` is the public management
 entrypoint used by MCP and in-app agent tools. It first checks for
@@ -968,6 +971,31 @@ Recent validation note:
 - The same APK was started on `emulator-5554` with
   `--no-stop-conflicts --preserve-accessibility --host-port 28998`; startup
   reached `ready=1` without stopping Mobilerun/AndroidWorld services.
+- 2026-05-26 online VLM Display task on `emulator-5556` used real OOB access:
+  `run_id=c7c0c721-eeda-482c-a8a5-78ad12830e8e`,
+  `disable_omniflow_recall=true`, `success=true`, RunLog card count 4,
+  token total 23,209, and convert created
+  `debug_c7c0c721_eeda_482c_a8a5_78ad12830e8e`. adb verified
+  `topResumedActivity=com.android.settings/.SubSettings` and UIAutomator XML
+  contained `content-desc="Display"`, `Brightness`, `Lock display`,
+  `Screen timeout`, and `Dark theme`.
+- The generated 5556 Function replayed from HOME with `model_used=false`,
+  runner `oob_omniflow_replay`, 5/5 successful steps, runner duration
+  10,384 ms, and adb again verified the Display page.
+- 2026-05-26 first 5554 online attempt failed before VLM quality evaluation
+  because the emulator clock was `Sun Oct 15 2023`, producing model-provider
+  TLS `Unacceptable certificate` errors. After syncing device time and refreshing
+  only OOB Accessibility in preserve mode, OOB left `Crashed services` while
+  Mobilerun and the AndroidWorld accessibility forwarder stayed enabled.
+- 2026-05-26 online VLM Display task on `emulator-5554` then passed with real
+  OOB access: `run_id=e8ac3f03-65f7-461d-811f-fe658490e454`,
+  `disable_omniflow_recall=true`, `success=true`, RunLog card count 3,
+  token total 15,680, and convert created
+  `debug_e8ac3f03_65f7_461d_811f_fe658490e454`. adb verified
+  `topResumedActivity=com.android.settings/.SubSettings` and Display page text.
+- The generated 5554 Function replayed from HOME with `model_used=false`,
+  runner `oob_omniflow_replay`, 4/4 successful steps, runner duration 5,706 ms,
+  and adb verified the same Display page.
 - Do not claim broad AndroidWorld success without a real task run and state
   verification.
 
@@ -1020,6 +1048,14 @@ For a complete local validation pass:
   returns `OOB_ACCESSIBILITY_REQUIRED`.
 - Missing current XML makes UDEG recall miss with
   `missing_current_page_for_udeg_page_match`.
+- Stale emulator time breaks online VLM TLS before reasoning starts. The startup
+  script detects and attempts to fix clocks older than 2025, and reports
+  `device_clock_stale` if it cannot.
+- In preserve-accessibility mode, if OOB appears in `Crashed services`, refresh
+  only OOB's component by removing it from `enabled_accessibility_services` and
+  adding it back while preserving Mobilerun/AndroidWorld services. Blank
+  RunLog `before/after.package_name` plus repeated `open_app` is usually an
+  observation-readiness failure, not a prompt-only issue.
 - `open_app` replay can launch the target app before Accessibility XML/package
   snapshots settle. Native verification uses Accessibility package, XML package,
   and activity component package as evidence; a blank `current_package` with a

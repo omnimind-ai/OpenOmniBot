@@ -13,6 +13,9 @@
 #   the OOB instance running on that exact emulator and pass OOB_MCP_TOKEN.
 # - OOB launches but the process exits immediately. Fix: reinstall the debug APK
 #   and inspect logcat for the app crash before testing VLM logic.
+# - Emulator clock is stale, which makes model-provider TLS fail with
+#   CertificateNotYetValidException / "Unacceptable certificate". Fix: sync the
+#   device clock before running online VLM.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,6 +32,9 @@ WAIT_SECONDS="${OOB_START_WAIT_SECONDS:-12}"
 SETTLE_SECONDS="${OOB_START_SETTLE_SECONDS:-3}"
 STOP_CONFLICTS="${OOB_STOP_CONFLICTS:-auto}"
 PRESERVE_ACCESSIBILITY="${OOB_PRESERVE_ACCESSIBILITY:-auto}"
+CHECK_DEVICE_CLOCK="${OOB_CHECK_DEVICE_CLOCK:-1}"
+FIX_DEVICE_CLOCK="${OOB_FIX_DEVICE_CLOCK:-auto}"
+CLOCK_MIN_YEAR="${OOB_CLOCK_MIN_YEAR:-2025}"
 INSTALL_APK=""
 LAUNCH_APP=1
 ENABLE_ACCESSIBILITY=1
@@ -53,6 +59,9 @@ Options:
   --clean-accessibility    Clear existing services before enabling OOB.
   --no-accessibility       Do not rebind OOB Accessibility.
   --no-launch              Do not launch the OOB app.
+  --no-clock-check         Skip stale emulator clock detection.
+  --fix-device-clock       Try to sync stale device time with host UTC via su/date.
+  --no-fix-device-clock    Report stale device time without trying to change it.
   --wait-seconds <n>       Wait budget for binding/MCP startup. Default: 12.
   --settle-seconds <n>     Extra delay after MCP probe before ready. Default: 3.
   --help                   Show this help.
@@ -140,6 +149,15 @@ while [[ $# -gt 0 ]]; do
     --no-launch)
       LAUNCH_APP=0
       ;;
+    --no-clock-check)
+      CHECK_DEVICE_CLOCK=0
+      ;;
+    --fix-device-clock)
+      FIX_DEVICE_CLOCK=1
+      ;;
+    --no-fix-device-clock)
+      FIX_DEVICE_CLOCK=0
+      ;;
     --wait-seconds)
       [[ $# -lt 2 ]] && { echo "--wait-seconds requires a value" >&2; exit 1; }
       WAIT_SECONDS="$2"
@@ -173,6 +191,7 @@ case "$HOST_PORT" in (*[!0-9]*|"") echo "--host-port must be numeric" >&2; exit 
 case "$DEVICE_PORT" in (*[!0-9]*|"") echo "--device-port must be numeric" >&2; exit 1;; esac
 case "$WAIT_SECONDS" in (*[!0-9]*|"") echo "--wait-seconds must be numeric" >&2; exit 1;; esac
 case "$SETTLE_SECONDS" in (*[!0-9]*|"") echo "--settle-seconds must be numeric" >&2; exit 1;; esac
+case "$CLOCK_MIN_YEAR" in (*[!0-9]*|"") echo "OOB_CLOCK_MIN_YEAR must be numeric" >&2; exit 1;; esac
 
 ADB=(adb -s "$DEVICE_SERIAL")
 COMPONENT="${PACKAGE_NAME}/${ACCESSIBILITY_SERVICE}"
@@ -255,8 +274,60 @@ enabled_accessibility_value_with_oob() {
   printf '%s' "${filtered[*]}"
 }
 
+enabled_accessibility_value_without_oob() {
+  local current="$1"
+  if [[ "$current" == "null" || -z "$current" ]]; then
+    return
+  fi
+  IFS=':' read -r -a services <<<"$current"
+  local filtered=()
+  for service in "${services[@]}"; do
+    [[ -z "$service" || "$service" == "null" || "$service" == "$COMPONENT" ]] && continue
+    filtered+=("$service")
+  done
+  local IFS=':'
+  printf '%s' "${filtered[*]}"
+}
+
 has_ui_automation() {
   grep -q 'Ui Automation' <<<"$1"
+}
+
+device_clock_year() {
+  adb_shell date +%Y | head -n 1 | tr -cd '0-9'
+}
+
+try_fix_device_clock() {
+  local stamp
+  stamp="$(date -u +%m%d%H%M%Y.%S)"
+  "${ADB[@]}" shell su 0 date "$stamp" >/dev/null 2>&1 ||
+    "${ADB[@]}" shell date "$stamp" >/dev/null 2>&1
+}
+
+check_device_clock() {
+  [[ "$CHECK_DEVICE_CLOCK" == "0" || "$CHECK_DEVICE_CLOCK" == "false" ]] && return 0
+  local year
+  year="$(device_clock_year)"
+  [[ -z "$year" ]] && return 0
+  if (( year >= CLOCK_MIN_YEAR )); then
+    log "device_clock_year=${year}"
+    return 0
+  fi
+
+  log "device_clock_year=${year}"
+  if [[ "$FIX_DEVICE_CLOCK" == "1" || "$FIX_DEVICE_CLOCK" == "true" || "$FIX_DEVICE_CLOCK" == "auto" ]]; then
+    log "device_clock_fix=attempt"
+    if try_fix_device_clock; then
+      year="$(device_clock_year)"
+      log "device_clock_year_after_fix=${year:-unknown}"
+      if [[ -n "$year" ]] && (( year >= CLOCK_MIN_YEAR )); then
+        return 0
+      fi
+    fi
+  fi
+
+  startup_error "device_clock_stale" "Device clock is before ${CLOCK_MIN_YEAR}; online VLM TLS can fail with an unacceptable/not-yet-valid certificate. Sync device time or rerun with --fix-device-clock."
+  return 1
 }
 
 print_accessibility_summary() {
@@ -373,6 +444,7 @@ except Exception:
 require_device
 log "device=${DEVICE_SERIAL}"
 log "package=${PACKAGE_NAME}"
+check_device_clock
 
 if [[ -n "$INSTALL_APK" ]]; then
   if [[ ! -f "$INSTALL_APK" ]]; then
@@ -399,7 +471,14 @@ if [[ "$ENABLE_ACCESSIBILITY" -eq 1 ]]; then
   if should_preserve_accessibility; then
     log "accessibility_mode=preserve_existing"
     current_services="$("${ADB[@]}" shell settings --user 0 get secure enabled_accessibility_services 2>/dev/null | tr -d '\r')"
-    "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$(enabled_accessibility_value_with_oob "$current_services")"
+    preserved_services="$(enabled_accessibility_value_without_oob "$current_services")"
+    if [[ -n "$preserved_services" ]]; then
+      "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$preserved_services"
+    else
+      "${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true
+    fi
+    sleep 1
+    "${ADB[@]}" shell settings --user 0 put secure enabled_accessibility_services "$(enabled_accessibility_value_with_oob "$preserved_services")"
   else
     log "accessibility_mode=clean_rebind"
     "${ADB[@]}" shell settings --user 0 delete secure enabled_accessibility_services >/dev/null 2>&1 || true

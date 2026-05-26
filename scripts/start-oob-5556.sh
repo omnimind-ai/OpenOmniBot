@@ -44,6 +44,7 @@ Startup failures summarized by the underlying script:
   mcp_auth_failed             Token belongs to a different OOB instance/device.
   mcp_unreachable             adb forward/app process/MCP server is not reachable.
   app_not_running             OOB launched then exited or did not start.
+  device_clock_stale          Device clock is too old for model-provider TLS.
 EOF
 }
 

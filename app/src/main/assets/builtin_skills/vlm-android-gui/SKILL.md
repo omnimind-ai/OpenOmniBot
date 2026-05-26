@@ -232,6 +232,10 @@ Startup error summary:
   is not reachable.
 - `startup_error=app_not_running`: OOB launched then exited or did not start.
   Reinstall and inspect logcat for a startup crash.
+- `startup_error=device_clock_stale`: the emulator clock is before the minimum
+  TLS-safe year. Online VLM calls can fail with
+  `Unacceptable certificate` / `CertificateNotYetValidException`; rerun with
+  `--fix-device-clock` or sync the device clock.
 
 If the first immediate VLM call still returns "please enable accessibility",
 wait a few seconds or rerun the script; that means Android reported the service
@@ -248,6 +252,25 @@ OOB_MCP_TOKEN=<token> scripts/start-oob-vlm-device.sh --device emulator-5554 --h
 `emulator-5556` defaults to clean OOB rebinding. Non-5556 devices default to
 preserving existing Accessibility services so AndroidWorld/Mobilerun setup is
 not removed unless `--clean-accessibility` is explicitly passed.
+
+The 5554 preserve path intentionally removes only OOB's Accessibility component
+from `enabled_accessibility_services`, waits briefly, then appends it back. This
+refreshes OOB when it appears in `Crashed services` while keeping Mobilerun and
+the AndroidWorld accessibility forwarder enabled. If a live VLM RunLog shows
+blank `before.package_name`, blank `after.package_name`, and repeated
+`open_app`/`press_back`, inspect `dumpsys accessibility` before changing the
+prompt: the model is likely acting without XML/page observations.
+
+For real validation, record both the tool result and the actual device state:
+
+```bash
+adb -s emulator-5556 shell dumpsys activity activities | rg 'topResumedActivity|ResumedActivity' -m 3
+adb -s emulator-5556 shell uiautomator dump /sdcard/oob_verify.xml >/dev/null
+adb -s emulator-5556 shell cat /sdcard/oob_verify.xml | rg 'Display|Brightness|target visible text'
+```
+
+Treat the task as verified only when the VLM/Function result and the live
+foreground package/page agree.
 
 ## First-Step AndroidWorld Rules
 

@@ -552,6 +552,70 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `does not convert display scroll into unrelated apps click when display is absent`() {
+        val step = VLMStep(
+            observation = "settings home",
+            thought = "scroll to find Display",
+            action = ScrollAction(
+                targetDescription = "Settings list",
+                x1 = 360f,
+                y1 = 1152f,
+                x2 = 360f,
+                y2 = 384f,
+                duration = 0.6f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "From the Settings home screen, open Display settings, verify the Display page is visible, then finish.",
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = SETTINGS_WITH_APPS_NO_DISPLAY_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        val action = result.step.action as ScrollAction
+        assertEquals("Settings list", action.targetDescription)
+    }
+
+    @Test
+    fun `converts wrong settings top level click into scroll for missing target domain`() {
+        val step = VLMStep(
+            observation = "settings home",
+            thought = "open Apps",
+            action = ClickAction(
+                targetDescription = "Apps Assistant, recent apps, default apps LinearLayout",
+                x = 360f,
+                y = 977f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "From the Settings home screen, open Display settings, verify the Display page is visible, then finish.",
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = SETTINGS_WITH_APPS_NO_DISPLAY_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 1,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("wrong_settings_domain_scroll", result.reason)
+        val action = result.step.action as ScrollAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Display", ignoreCase = true))
+    }
+
+    @Test
     fun `converts repeated ordered apps scroll into settings search click when row is absent`() {
         val step = VLMStep(
             observation = "settings home",
@@ -1823,6 +1887,32 @@ class VLMActionPostProcessorTest {
                   <node clickable="true" focusable="true" bounds="[0,957][720,1133]">
                     <node text="Display" bounds="[144,999][274,1053]" />
                     <node text="Dark theme, font size, brightness" bounds="[144,1053][549,1091]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_WITH_APPS_NO_DISPLAY_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node scrollable="true" bounds="[0,537][720,1232]">
+                  <node clickable="true" focusable="true" bounds="[0,537][720,713]">
+                    <node text="Network &amp; internet" bounds="[144,579][475,633]" />
+                    <node text="Mobile, Wi-Fi, hotspot" bounds="[144,633][412,671]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,713][720,889]">
+                    <node text="Connected devices" bounds="[144,755][482,809]" />
+                    <node text="Bluetooth, pairing" bounds="[144,809][361,847]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,889][720,1065]">
+                    <node text="Apps" bounds="[144,931][235,985]" />
+                    <node text="Assistant, recent apps, default apps" bounds="[144,985][586,1023]" />
+                  </node>
+                  <node clickable="true" focusable="true" bounds="[0,1065][720,1232]">
+                    <node text="Notifications" bounds="[144,1107][373,1161]" />
+                    <node text="Notification history, conversations" bounds="[144,1161][565,1199]" />
                   </node>
                 </node>
               </node>

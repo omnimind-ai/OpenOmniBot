@@ -71,6 +71,13 @@ object VLMActionPostProcessor {
         correctTypeToNumericKeypadClick(step, page)?.let { return it }
         correctTextInputToNarrativeFormFieldTarget(step, context, page)?.let { return it }
 
+        correctPendingSettingsTopLevelTarget(
+            step = step,
+            context = context,
+            currentPackageName = currentPackage,
+            page = page
+        )?.let { return it }
+
         if (step.action is ClickAction) {
             correctRepeatedSystemAnrWait(
                 step = step,
@@ -90,6 +97,14 @@ object VLMActionPostProcessor {
             if (isOrderedGoalClickSatisfied(step, context, page)) {
                 return Result(step = step)
             }
+            correctWrongSettingsTopLevelTarget(
+                step = step,
+                context = context,
+                currentPackageName = currentPackage,
+                page = page,
+                displayWidth = displayWidth,
+                displayHeight = displayHeight
+            )?.let { return it }
             correctSettingsToggleTarget(
                 step = step,
                 context = context,
@@ -104,13 +119,6 @@ object VLMActionPostProcessor {
                 page = page
             )?.let { return it }
         }
-
-        correctPendingSettingsTopLevelTarget(
-            step = step,
-            context = context,
-            currentPackageName = currentPackage,
-            page = page
-        )?.let { return it }
 
         correctSliderEndpointAction(
             step = step,
@@ -428,6 +436,47 @@ object VLMActionPostProcessor {
             action = PressBackAction(),
             reason = "pending_settings_target_go_back"
         )
+    }
+
+    private fun correctWrongSettingsTopLevelTarget(
+        step: VLMStep,
+        context: UIContext,
+        currentPackageName: String,
+        page: PageModel,
+        displayWidth: Int,
+        displayHeight: Int
+    ): Result? {
+        val action = step.action as? ClickAction ?: return null
+        if (!currentPackageName.equals("com.android.settings", ignoreCase = true)) return null
+        val desiredDomain = pendingSettingsDomain(context) ?: return null
+        val actionDomain = settingsDomainForText(stepIntentText(step))
+            ?: settingsDomainForText(action.targetDescription)
+        if (actionDomain == null && !isSettingsTopLevelTarget(action.targetDescription)) return null
+        if (actionDomain == desiredDomain) return null
+        if (page.hasVisibleSettingsDomainTarget(desiredDomain)) return null
+
+        if (page.hasNavigateUp()) {
+            return corrected(
+                step = step,
+                action = PressBackAction(),
+                reason = "wrong_settings_domain_go_back",
+                extraSummary = "Pending settings target: ${settingsDomainFocusText(desiredDomain)}"
+            )
+        }
+
+        page.bestSearchScroll(
+            displayWidth = displayWidth,
+            displayHeight = displayHeight,
+            pendingLabel = settingsDomainFocusText(desiredDomain)
+        )?.let { scroll ->
+            return corrected(
+                step = step,
+                action = scroll,
+                reason = "wrong_settings_domain_scroll",
+                extraSummary = "Pending settings target: ${settingsDomainFocusText(desiredDomain)}"
+            )
+        }
+        return null
     }
 
     private fun correctSettingsToggleTarget(
@@ -872,7 +921,7 @@ object VLMActionPostProcessor {
         if (normalizedGoal.isEmpty()) return null
         val maxArea = nodes.maxOfOrNull { it.bounds.area } ?: return null
         if (preferredSettingsDomain != null) {
-            bestSettingsDomainClickTarget(preferredSettingsDomain, maxArea)?.let { return it }
+            return bestSettingsDomainClickTarget(preferredSettingsDomain, maxArea)
         }
         return nodes
             .asSequence()
@@ -1503,13 +1552,21 @@ object VLMActionPostProcessor {
         if (
             actionDomain != null &&
             actionDomain in overallDomains &&
-            page.hasVisibleSettingsDomainTarget(actionDomain)
+                page.hasVisibleSettingsDomainTarget(actionDomain)
         ) {
             return VisibleGoal(settingsDomainFocusText(actionDomain), actionDomain)
+        }
+        pendingSettingsDomain(context)?.let { domain ->
+            return VisibleGoal(settingsDomainFocusText(domain), domain)
         }
 
         return VisibleGoal(firstNonBlank(context.activeGoal(), context.overallTask), null)
     }
+
+    private fun pendingSettingsDomain(context: UIContext): SettingsDomain? =
+        settingsProgress(context)?.pendingDomain
+            ?: orderedSettingsDomains(context.activeGoal()).singleOrNull()
+            ?: orderedSettingsDomains(context.overallTask).singleOrNull()
 
     private fun settingsProgress(context: UIContext): SettingsProgress? {
         val orderedDomains = orderedSettingsDomains(context.overallTask)
@@ -2304,7 +2361,22 @@ object VLMActionPostProcessor {
         "wi",
         "fi",
         "network",
-        "internet"
+        "internet",
+        "apps",
+        "applications",
+        "notifications",
+        "notification",
+        "display",
+        "brightness",
+        "sound",
+        "volume",
+        "vibration",
+        "battery",
+        "storage",
+        "security",
+        "privacy",
+        "system",
+        "about"
     )
     private val SETTINGS_MUTATION_TERMS = setOf(
         "toggle",
