@@ -366,7 +366,10 @@ object OmniflowStepExecutor {
         val rawPackage = runCatching {
             OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
         }.getOrDefault("")
-        return RunLogPagePackageInference.effectivePackage(rawPackage, currentXml)
+        val activityName = runCatching {
+            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+        }.getOrDefault("")
+        return RunLogPagePackageInference.effectivePackage(rawPackage, currentXml, activityName)
     }
 
     private suspend fun verifyPostcondition(
@@ -532,7 +535,8 @@ object OmniflowStepExecutor {
             lastPackage = runCatching {
                 val currentXml = OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty()
                 val rawPackage = OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-                RunLogPagePackageInference.effectivePackage(rawPackage, currentXml)
+                val activityName = OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+                RunLogPagePackageInference.effectivePackage(rawPackage, currentXml, activityName)
             }.getOrDefault(lastPackage)
             val packageMatchMode = packageMatchMode(expectedPackage, lastPackage)
             if (packageMatchMode != null) {
@@ -597,9 +601,13 @@ object OmniflowStepExecutor {
         val rawPackage = runCatching {
             OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
         }.getOrDefault("")
+        val activityName = runCatching {
+            OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+        }.getOrDefault("")
         val currentPackage = RunLogPagePackageInference.effectivePackage(
             rawPackage,
             currentXml,
+            activityName,
         )
         return PostconditionObservation(
             xml = currentXml,
@@ -650,9 +658,13 @@ object OmniflowStepExecutor {
                 val rawPackage = runCatching {
                     OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
                 }.getOrDefault("")
+                val activityName = runCatching {
+                    OmniflowActionRuntime.backend.currentActivityName()?.trim().orEmpty()
+                }.getOrDefault("")
                 val currentPackage = RunLogPagePackageInference.effectivePackage(
                     rawPackage,
                     currentXml,
+                    activityName,
                 )
                 val score = pageSimilarityScore(expectedXml, currentXml)
                 val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)

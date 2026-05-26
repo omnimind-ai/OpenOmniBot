@@ -315,6 +315,13 @@ external clients can call the same names through MCP:
 - `oob_function_run` or `omniflow.call_tool` with `function_id` to explicitly
   replay a Function after user/agent selection.
 
+When validating direct Function replay, inspect `step_results`, not only the
+top-level `success`. A successful `open_app` replay should include an
+`open_app_package` postcondition with `package_matched=true` and a nonblank
+`current_package`. If the visible foreground activity is correct but
+`current_package` is blank, treat that as a native replay/package-observation
+bug, not a VLM reasoning failure.
+
 `oob_command_save/list/delete/clear` are user-friendly aliases for saving and
 maintaining RunLog-derived reusable instructions. Prefer `oob_function_*` when
 the agent is doing explicit Function registration, inspection, guard checks, or

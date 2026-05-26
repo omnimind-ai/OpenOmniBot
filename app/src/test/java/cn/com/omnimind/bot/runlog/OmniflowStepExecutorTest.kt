@@ -345,6 +345,33 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `execute verifies open app from activity package when xml and package are blank`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = "",
+            afterXml = "",
+            currentPackage = "",
+            currentActivity = "com.android.settings/.Settings",
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "open_app",
+                    "args" to mapOf("package_name" to "com.android.settings"),
+                ),
+                stepId = "step_open_app_activity_package",
+                stepTitle = "open settings",
+            )
+
+            assertEquals(true, result["success"])
+            val postcondition = result["postcondition"] as Map<*, *>
+            assertEquals(true, postcondition["success"])
+            assertEquals(true, postcondition["package_matched"])
+            assertEquals("com.android.settings", postcondition["current_package"])
+        }
+    }
+
+    @Test
     fun `execute passes reset task flag to fresh open app launch`() = runBlocking {
         val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
@@ -539,6 +566,7 @@ class OmniflowStepExecutorTest {
         private val beforeXml: String,
         private val afterXml: String,
         private val currentPackage: String = "com.example",
+        private val currentActivity: String = "ExampleActivity",
         private val missingXmlReadsBeforeAction: Int = 0,
         private val missingXmlReadsAfterAction: Int = 0,
         private val postActionXmls: List<String>? = null,
@@ -618,7 +646,7 @@ class OmniflowStepExecutorTest {
             return currentPackage
         }
 
-        override fun currentActivityName(): String = "ExampleActivity"
+        override fun currentActivityName(): String = currentActivity
     }
 
     companion object {

@@ -956,9 +956,18 @@ Recent validation note:
 
 - A previous simple recall/replay open-app-like path completed around
   2.6s-2.9s plus about 1.2s post-run settle.
-- A later fresh rerun on `emulator-5554` and `emulator-5556` was blocked because
-  OOB accessibility reported unavailable current page XML:
-  `blank_effective_package`.
+- 2026-05-26 direct Function replay on `emulator-5556` passed after adding
+  activity-component package fallback to `open_app` package verification:
+  `codex_open_settings_step_results_*` registered a two-step Function
+  (`open_app com.android.settings`, `finished`), `oob_function_guard_check`
+  returned `allow`, and `oob_function_run` returned `success=true`,
+  `step_count=2`, `success_step_count=2`, `duration_ms=5199`.
+  The `open_app` step postcondition was `open_app_package`,
+  `package_matched=true`, `current_package=com.android.settings`, and adb
+  reported `topResumedActivity=com.android.settings/.Settings`.
+- The same APK was started on `emulator-5554` with
+  `--no-stop-conflicts --preserve-accessibility --host-port 28998`; startup
+  reached `ready=1` without stopping Mobilerun/AndroidWorld services.
 - Do not claim broad AndroidWorld success without a real task run and state
   verification.
 
@@ -1011,6 +1020,11 @@ For a complete local validation pass:
   returns `OOB_ACCESSIBILITY_REQUIRED`.
 - Missing current XML makes UDEG recall miss with
   `missing_current_page_for_udeg_page_match`.
+- `open_app` replay can launch the target app before Accessibility XML/package
+  snapshots settle. Native verification uses Accessibility package, XML package,
+  and activity component package as evidence; a blank `current_package` with a
+  correct foreground activity should be fixed in replay observation, not patched
+  as a target-app-specific workaround.
 - Weak VLM prompts can still finish incorrectly; `finished` is not proof of
   app-state success. Always validate final device state for task claims.
 - Coordinate replay depends on source/current XML quality. Anchor projection
