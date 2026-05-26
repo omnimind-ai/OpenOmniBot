@@ -72,6 +72,16 @@ object VLMActionPostProcessor {
         correctTextInputToNarrativeFormFieldTarget(step, context, page)?.let { return it }
 
         if (step.action is ClickAction) {
+            correctRepeatedSystemAnrWait(
+                step = step,
+                context = context,
+                page = page
+            )?.let { return it }
+            correctOrderedGoalSearchInput(
+                step = step,
+                context = context,
+                page = page
+            )?.let { return it }
             correctOrderedGoalClickTarget(
                 step = step,
                 context = context,
@@ -204,6 +214,56 @@ object VLMActionPostProcessor {
             ),
             reason = "ordered_goal_target",
             extraSummary = "Pending ordered target: ${pendingTarget.label}"
+        )
+    }
+
+    private fun correctRepeatedSystemAnrWait(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Result? {
+        val action = step.action as? ClickAction ?: return null
+        if (!isWaitDialogAction(action)) return null
+        if (!page.hasSystemAnrDialog()) return null
+        val alreadyWaited = context.trace.any { traceStep ->
+            isWaitDialogAction(traceStep.action) &&
+                (
+                    containsSystemAnrText(traceStep.observationXml.orEmpty()) ||
+                        containsSystemAnrText(traceStep.observation)
+                    )
+        }
+        if (!alreadyWaited) return null
+
+        return corrected(
+            step = step,
+            action = AbortAction(
+                value = "Repeated system not-responding dialog after Wait; stopping to avoid an ineffective automation loop."
+            ),
+            reason = "repeated_system_anr_wait",
+            extraSummary = "System not-responding dialog repeated after Wait."
+        )
+    }
+
+    private fun correctOrderedGoalSearchInput(
+        step: VLMStep,
+        context: UIContext,
+        page: PageModel
+    ): Result? {
+        val action = step.action as? ClickAction ?: return null
+        val progress = orderedGoalProgress(context) ?: return null
+        val pendingTarget = progress.pendingTarget ?: return null
+        if (!page.hasFocusedSearchEditable()) return null
+        if (page.bestOrderedGoalClickTarget(pendingTarget) != null) return null
+        if (orderedTargetTextScore(pendingTarget, action.targetDescription) >= MIN_ORDERED_TARGET_ACTION_SCORE) {
+            return null
+        }
+
+        val query = pendingTarget.label.trim().takeIf { it.isNotEmpty() } ?: return null
+        return corrected(
+            step = step,
+            action = TypeAction(content = query),
+            reason = "ordered_goal_search_query",
+            extraSummary = "Typed pending ordered target into focused search field: $query"
         )
     }
 
@@ -953,6 +1013,23 @@ object VLMActionPostProcessor {
     private fun PageModel.hasFocusedEditable(): Boolean =
         nodes.any { it.enabled && it.editable && it.focused }
 
+    private fun PageModel.hasFocusedSearchEditable(): Boolean =
+        focusedEditableNode()?.let { node ->
+            val searchableText = listOf(
+                node.text,
+                node.contentDesc,
+                node.hintText,
+                node.resourceId,
+                node.className
+            ).joinToString(" ").lowercase()
+            SEARCH_FIELD_TERMS.any { term -> searchableText.contains(term) }
+        } == true
+
+    private fun PageModel.hasSystemAnrDialog(): Boolean =
+        nodes.any { node -> containsSystemAnrText(node.label) } &&
+            nodes.any { node -> normalizeText(node.label).startsWith("wait") } &&
+            nodes.any { node -> normalizeText(node.label).startsWith("close app") }
+
     private fun PageModel.focusedEditableNode(): PageNode? =
         nodes.firstOrNull { it.enabled && it.editable && it.focused }
 
@@ -1596,6 +1673,18 @@ object VLMActionPostProcessor {
             }
         }
 
+        while (pendingIndex < targets.size && contextCompletesOrderedTarget(context, targets[pendingIndex])) {
+            pendingIndex++
+        }
+        if (!hasOrderedBacktracking(context.overallTask)) {
+            val furthestContextTarget = targets.indices
+                .drop(pendingIndex + 1)
+                .lastOrNull { index -> contextCompletesOrderedTarget(context, targets[index]) }
+            if (furthestContextTarget != null) {
+                pendingIndex = furthestContextTarget + 1
+            }
+        }
+
         return OrderedGoalProgress(
             targets = targets,
             pendingIndex = pendingIndex,
@@ -1665,6 +1754,27 @@ object VLMActionPostProcessor {
         return orderedTargetTextScore(target, actionText) >= MIN_ORDERED_TARGET_ACTION_SCORE
     }
 
+    private fun contextCompletesOrderedTarget(context: UIContext, target: OrderedGoalTarget): Boolean {
+        val milestoneEvidence = context.completedMilestones
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        if (orderedTargetTextScore(target, milestoneEvidence) >= MIN_ORDERED_TARGET_VISIBLE_SCORE) {
+            return true
+        }
+
+        val narrativeEvidence = listOf(
+            context.runningSummary,
+            context.currentState,
+            context.keyMemory.joinToString(" ")
+        )
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        if (!hasOrderedCompletionMarker(narrativeEvidence) || hasOrderedPendingMarker(narrativeEvidence)) {
+            return false
+        }
+        return orderedTargetTextScore(target, narrativeEvidence) >= MIN_ORDERED_TARGET_VISIBLE_SCORE
+    }
+
     private fun VLMStep.hasOrderedTargetCompletionEvidence(target: OrderedGoalTarget): Boolean {
         val finishedContent = (action as? FinishedAction)?.content.orEmpty()
         val evidence = listOf(observation, summary, finishedContent)
@@ -1719,6 +1829,31 @@ object VLMActionPostProcessor {
         semanticTerms(value)
             .filterNot { it in STOP_WORDS || it in ORDERED_TARGET_STOP_WORDS }
             .distinct()
+
+    private fun hasOrderedBacktracking(goalText: String): Boolean {
+        val normalized = normalizeText(goalText)
+        return ORDERED_BACKTRACKING_TERMS.any { term -> normalized.contains(term) }
+    }
+
+    private fun hasOrderedCompletionMarker(text: String): Boolean {
+        val normalized = normalizeText(text)
+        if (normalized.isBlank()) return false
+        return ORDERED_COMPLETION_MARKERS.any { marker -> normalized.contains(marker) }
+    }
+
+    private fun hasOrderedPendingMarker(text: String): Boolean {
+        val normalized = normalizeText(text)
+        if (normalized.isBlank()) return false
+        return ORDERED_PENDING_MARKERS.any { marker -> normalized.contains(marker) }
+    }
+
+    private fun isWaitDialogAction(action: UIAction): Boolean =
+        action is ClickAction && normalizeText(action.targetDescription) == "wait"
+
+    private fun containsSystemAnrText(text: String): Boolean {
+        val normalized = normalizeText(text)
+        return SYSTEM_ANR_TERMS.any { term -> normalized.contains(term) }
+    }
 
     private fun stepIntentText(step: VLMStep): String =
         listOf(actionSemanticText(step.action), step.thought, step.summary).joinToString(" ")
@@ -2024,6 +2159,20 @@ object VLMActionPostProcessor {
         "滑动",
         "滚动"
     )
+    private val SEARCH_FIELD_TERMS = setOf(
+        "search",
+        "query",
+        "搜索",
+        "查找"
+    )
+    private val SYSTEM_ANR_TERMS = setOf(
+        "isnt responding",
+        "isn t responding",
+        "is not responding",
+        "not responding",
+        "无响应",
+        "没有响应"
+    )
     private val BRIGHTNESS_TERMS = setOf("brightness", "bright", "亮度")
     private val DISPLAY_TERMS = setOf("display", "screen", "显示", "屏幕")
     private val WIFI_NETWORK_TERMS = setOf(
@@ -2240,6 +2389,49 @@ object VLMActionPostProcessor {
         "contains",
         "finish",
         "finished"
+    )
+    private val ORDERED_COMPLETION_MARKERS = setOf(
+        "completed",
+        "complete",
+        "verified",
+        "verify",
+        "visible",
+        "reached",
+        "opened",
+        "navigated",
+        "current screen",
+        "current page",
+        "now at",
+        "已完成",
+        "已验证",
+        "可见",
+        "到达",
+        "打开了",
+        "当前页面"
+    )
+    private val ORDERED_PENDING_MARKERS = setOf(
+        "pending",
+        "not completed",
+        "not complete",
+        "not yet",
+        "need to",
+        "needs to",
+        "next step",
+        "should open",
+        "待完成",
+        "未完成",
+        "下一步",
+        "需要"
+    )
+    private val ORDERED_BACKTRACKING_TERMS = setOf(
+        "go back",
+        "press back",
+        "return to",
+        "back to",
+        "navigate back",
+        "返回",
+        "回到",
+        "后退"
     )
     private const val MIN_TARGET_AREA = 24f * 24f
     private const val MIN_SCROLLABLE_AREA = 120f * 160f

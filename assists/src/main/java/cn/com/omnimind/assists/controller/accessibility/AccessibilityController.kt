@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
@@ -810,15 +811,29 @@ class AccessibilityController() {
 
         //
         suspend fun listInstalledApplications(): HostResponse.Payload.ListInstalledApplicationsPayload {
-            val (packageNames, applicationNames) = actionController!!.listInstalledApplications()
+            val (packageNames, applicationNames) = actionController
+                ?.listInstalledApplications()
+                ?: listInstalledApplicationsFromPackageManager()
             return HostResponse.Payload.ListInstalledApplicationsPayload(
                 packageNames, applicationNames
             )
         }
 
         suspend fun mapInstalledApplications(): Map<String, String> {
-            val (packageNames, applicationNames) = actionController!!.listInstalledApplications()
+            val (packageNames, applicationNames) = actionController
+                ?.listInstalledApplications()
+                ?: listInstalledApplicationsFromPackageManager()
             return packageNames.zip(applicationNames).toMap()
+        }
+
+        private fun listInstalledApplicationsFromPackageManager(): Pair<List<String>, List<String>> {
+            val packageManager = BaseApplication.instance.packageManager
+            val filteredApps = packageManager
+                .getInstalledApplications(PackageManager.GET_META_DATA)
+                .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
+                .sortedBy { it.loadLabel(packageManager).toString() }
+            return filteredApps.map { it.packageName } to
+                filteredApps.map { it.loadLabel(packageManager).toString() }
         }
 
         fun destroy() {

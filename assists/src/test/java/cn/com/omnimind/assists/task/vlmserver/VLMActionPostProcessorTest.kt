@@ -1071,6 +1071,77 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
+    fun `types pending ordered target instead of clicking unrelated focused search result`() {
+        val step = VLMStep(
+            observation = "Settings search results show a recent System result.",
+            thought = "click System",
+            action = ClickAction(
+                targetDescription = "System recent search result",
+                x = 360f,
+                y = 410f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = KEYBOARD_LINEAR_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(systemSettingsStep())
+            ),
+            currentXml = SETTINGS_SEARCH_FOCUSED_WITH_SYSTEM_RESULT_XML,
+            currentPackageName = "com.google.android.settings.intelligence",
+            stepIndex = 2,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("ordered_goal_search_query", result.reason)
+        val action = result.step.action as TypeAction
+        assertEquals("Languages & input", action.content)
+    }
+
+    @Test
+    fun `aborts repeated system not responding wait loop`() {
+        val step = VLMStep(
+            observation = "Omnibot isn't responding dialog with Close app and Wait.",
+            thought = "wait for the app",
+            action = ClickAction(
+                targetDescription = "Wait",
+                x = 360f,
+                y = 740f
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = KEYBOARD_LINEAR_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(
+                    UIStep(
+                        observation = "Omnibot isn't responding dialog.",
+                        thought = "wait once for the app to recover",
+                        action = ClickAction(targetDescription = "Wait", x = 360f, y = 740f),
+                        result = "clicked Wait",
+                        observationXml = SYSTEM_ANR_DIALOG_XML
+                    )
+                )
+            ),
+            currentXml = SYSTEM_ANR_DIALOG_XML,
+            currentPackageName = "android",
+            stepIndex = 2,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("repeated_system_anr_wait", result.reason)
+        assertTrue(result.step.action is AbortAction)
+    }
+
+    @Test
     fun `converts premature finished into back when pending ordered target is not visible`() {
         val step = VLMStep(
             observation = "phone detail page",
@@ -1088,6 +1159,66 @@ class VLMActionPostProcessorTest {
             currentXml = PHONE_APP_DETAIL_XML,
             currentPackageName = "com.google.android.permissioncontroller",
             stepIndex = 5,
+            displayWidth = 1080,
+            displayHeight = 2400
+        )
+
+        assertTrue(result.applied)
+        assertEquals("premature_finished_ordered_target_go_back", result.reason)
+        assertTrue(result.step.action is PressBackAction)
+    }
+
+    @Test
+    fun `allows finished when completed milestones prove linear ordered targets`() {
+        val step = VLMStep(
+            observation = "The On-screen keyboard page is visible.",
+            thought = "the requested keyboard page is verified",
+            action = FinishedAction(content = "The On-screen keyboard page is visible.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = KEYBOARD_LINEAR_VERIFY_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(systemSettingsStep()),
+                completedMilestones = listOf(
+                    "Navigated to System settings",
+                    "Reached Languages & input",
+                    "Opened On-screen keyboard",
+                    "Verified On-screen keyboard page was visible"
+                )
+            ),
+            currentXml = ON_SCREEN_KEYBOARD_PAGE_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 5,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
+    }
+
+    @Test
+    fun `does not let later milestone skip backtracking ordered target`() {
+        val step = VLMStep(
+            observation = "phone detail page",
+            thought = "phone page is visible",
+            action = FinishedAction(content = "The Phone app page is visible.")
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = DEFAULT_APPS_ORDERED_TASK,
+                targetPackageName = "com.android.settings",
+                trace = listOf(appsStep(), defaultAppsStep(), phoneAppStep()),
+                completedMilestones = listOf("Verified the Phone app page is visible")
+            ),
+            currentXml = PHONE_APP_DETAIL_XML,
+            currentPackageName = "com.google.android.permissioncontroller",
+            stepIndex = 3,
             displayWidth = 1080,
             displayHeight = 2400
         )
@@ -1281,6 +1412,9 @@ class VLMActionPostProcessorTest {
         private const val ABOUT_PHONE_VERIFY_TASK =
             "From the Settings home screen, scroll to About phone, open it, verify the About phone page title or Android version is visible, then finish."
 
+        private const val KEYBOARD_LINEAR_VERIFY_TASK =
+            "Open Android Settings, go to System, open Languages & input, open On-screen keyboard, verify the On-screen keyboard page is visible, then finish."
+
         private fun wifiToggleStep(): UIStep =
             UIStep(
                 observation = "internet settings",
@@ -1344,6 +1478,14 @@ class VLMActionPostProcessorTest {
                 thought = "open Network & internet settings",
                 action = ClickAction(targetDescription = "Network & internet option", x = 540f, y = 885.5f),
                 result = "clicked Network & internet"
+            )
+
+        private fun systemSettingsStep(): UIStep =
+            UIStep(
+                observation = "settings home",
+                thought = "go to System",
+                action = ClickAction(targetDescription = "System settings option", x = 360f, y = 1040f),
+                result = "clicked System"
             )
 
         private fun aboutPhoneStep(): UIStep =
@@ -1476,6 +1618,49 @@ class VLMActionPostProcessorTest {
                   <node text="13" enabled="true" bounds="[48,594][88,640]" />
                   <node text="Device identifiers" enabled="true" bounds="[48,718][444,772]" />
                 </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val ON_SCREEN_KEYBOARD_PAGE_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,48][112,160]" />
+                <node text="On-screen keyboard" enabled="true" bounds="[144,88][552,160]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" focusable="true" enabled="true" bounds="[0,180][720,1232]">
+                  <node text="Gboard" enabled="true" bounds="[48,220][240,274]" />
+                  <node text="Google voice typing" enabled="true" bounds="[48,360][420,414]" />
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SETTINGS_SEARCH_FOCUSED_WITH_SYSTEM_RESULT_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node text="" content-desc="Back" class="android.widget.ImageButton" clickable="true" focusable="true" enabled="true" bounds="[0,48][112,160]" />
+                <node text="Search settings" class="android.widget.EditText" clickable="true" focusable="true" focused="true" editable="true" enabled="true" bounds="[112,48][680,160]" />
+                <node class="androidx.recyclerview.widget.RecyclerView" scrollable="true" focusable="true" enabled="true" bounds="[0,180][720,1232]">
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,310][720,460]">
+                    <node text="System" enabled="true" bounds="[144,334][320,388]" />
+                  </node>
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,460][720,610]">
+                    <node text="Storage" enabled="true" bounds="[144,484][330,538]" />
+                  </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val SYSTEM_ANR_DIALOG_XML =
+            """
+            <hierarchy>
+              <node bounds="[18,444][702,836]" package="android">
+                <node text="Omnibot isn't responding" class="android.widget.TextView" resource-id="android:id/alertTitle" enabled="true" bounds="[98,512][622,566]" />
+                <node text="Close app" class="android.widget.Button" resource-id="android:id/aerr_close" enabled="true" clickable="true" focusable="true" bounds="[50,596][670,692]" />
+                <node text="Wait" class="android.widget.Button" resource-id="android:id/aerr_wait" enabled="true" clickable="true" focusable="true" bounds="[50,692][670,788]" />
               </node>
             </hierarchy>
             """

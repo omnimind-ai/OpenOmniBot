@@ -157,7 +157,9 @@ open class AssistsService : AccessibilityService(), LifecycleOwner {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        instance = null
+        if (instance === this) {
+            instance = null
+        }
         runCatching { listeners.forEach { it.onUnbind() } }
         return super.onUnbind(intent)
     }
@@ -168,7 +170,9 @@ open class AssistsService : AccessibilityService(), LifecycleOwner {
 
     override fun onDestroy() {
         super.onDestroy()
-        instance = null
+        if (instance === this) {
+            instance = null
+        }
         dispatcher.onServicePreSuperOnDestroy()
         // 注销屏幕状态监听
         unregisterScreenStateReceiver()

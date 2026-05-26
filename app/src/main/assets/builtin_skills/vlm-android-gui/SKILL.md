@@ -198,6 +198,36 @@ Guidelines:
   call `finished` until A and B were both visited or verified in order.
 - Do not change destructive or privacy-sensitive settings without confirmation.
 
+## Real Device Startup
+
+Before judging live VLM or Function behavior on `emulator-5556`, normalize the
+runtime with:
+
+```bash
+OOB_MCP_TOKEN=<token> scripts/start-oob-vlm-device.sh --device emulator-5556
+```
+
+Use this script instead of hand-editing Accessibility settings. It performs the
+runtime-only startup sequence: stops known UiAutomation conflicts on the
+dedicated OOB test emulator, clears and rebinds OOB Accessibility, launches OOB,
+forwards `127.0.0.1:28999` to device port `8899`, and probes MCP when a token is
+provided. It also leaves a short settle window after MCP is reachable so the
+native Accessibility bridge can finish initializing. If it reports
+`startup_error=ui_automation_present`, stop the external runner that owns
+UiAutomation or reboot the emulator before blaming VLM logic. If it reports
+`startup_error=enabled_but_not_bound`, rerun the script so OOB Accessibility is
+re-written from a clean secure setting. If the first immediate VLM call still
+returns "please enable accessibility", wait a few seconds or rerun the script;
+that means Android reported the service as bound before the in-process bridge
+became available.
+
+For `emulator-5554`, do not stop Mobilerun/AndroidWorld services unless the
+validation explicitly targets OOB on that device. Use:
+
+```bash
+scripts/start-oob-vlm-device.sh --device emulator-5554 --no-stop-conflicts
+```
+
 ## First-Step AndroidWorld Rules
 
 Keep AndroidWorld first-step behavior in this skill guidance. Do not encode

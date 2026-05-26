@@ -241,9 +241,17 @@ object DraggableBallInstance {
         instance.catDialogLayoutView?.finishDoingTask(message)
         catDialogShowInfoView.finishDoingTask()
         instance.catDialogShowInfoViewParams.flags = WindowFlag.SCREEN_UNLOCK_FLAG
-        windowManager.updateViewLayout(
-            instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams
-        )
+        if (catDialogShowInfoView.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(
+                    instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams
+                )
+            } catch (e: IllegalArgumentException) {
+                OmniLog.e(TAG, "finishDoingTask updateViewLayout skipped: ${e.message}")
+            }
+        } else {
+            OmniLog.d(TAG, "finishDoingTask skipped updateViewLayout because showInfoView is detached")
+        }
         instance.load()
         instance.collapseMenu()
     }
