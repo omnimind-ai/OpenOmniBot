@@ -41,6 +41,7 @@ class CatApiImpl : CatApi {
             CompanionOverlaySettings.dismissFloatingUi()
             return
         }
+        DraggableBallInstance.clearTaskCompletionHint()
         doTask.cancel()
         doTask = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         doTask.launch {

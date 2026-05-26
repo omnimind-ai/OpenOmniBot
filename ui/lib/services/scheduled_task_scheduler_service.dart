@@ -224,21 +224,23 @@ class ScheduledTaskSchedulerService {
           if (prompt.isEmpty) {
             throw Exception('SubAgent task missing prompt');
           }
-          var conversationId = int.tryParse(task.subagentConversationId ?? '');
-          if (conversationId == null) {
-            conversationId = await ConversationService.createConversation(
-              title: task.title,
-              mode: ConversationMode.subagent,
-            );
-            if (conversationId != null) {
-              final patchedTask = task.copyWith(
-                subagentConversationId: '$conversationId',
-              );
-              await ScheduledTaskStorageService.updateScheduledTask(
-                patchedTask,
-              );
-            }
-          }
+          final parentConversationId = int.tryParse(
+            task.parentConversationId ?? task.subagentConversationId ?? '',
+          );
+          final rawParentConversationMode =
+              task.parentConversationMode?.trim() ?? '';
+          final parentConversationMode = rawParentConversationMode.isEmpty
+              ? null
+              : ConversationMode.fromStorageValue(rawParentConversationMode);
+          final conversationId = await ConversationService.createConversation(
+            title: task.title,
+            mode: ConversationMode.subagent,
+            parentConversationId: parentConversationId,
+            parentConversationMode: parentConversationId == null
+                ? null
+                : parentConversationMode,
+            scheduledTaskId: task.id,
+          );
           final normalizedConversationId = conversationId;
           if (normalizedConversationId == null) {
             throw Exception('SubAgent conversation create failed');

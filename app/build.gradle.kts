@@ -24,6 +24,8 @@ fun envValue(name: String): String = System.getenv(name)?.trim().orEmpty()
 fun quotedBuildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+fun buildConfigString(value: String): String = quotedBuildConfigString(value)
+
 val defaultModelProviderBaseUrl = prop(
     "OMNIBOT_DEFAULT_MODEL_PROVIDER_BASE_URL",
     prop("OMNIMIND_API_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
@@ -37,6 +39,12 @@ val defaultModelProviderModelId = prop(
     "OMNIBOT_DEFAULT_MODEL_PROVIDER_MODEL_ID",
     prop("OMNIMIND_MODEL", prop("OPENAI_MODEL", "qwen-vl-max-latest"))
 )
+
+val omnibotImageBaseUrl = prop("OMNIBOT_IMAGE_BASE_URL")
+    .ifBlank { "https://cloud.omnimind.com.cn" }
+val omnibotImageModel = prop("OMNIBOT_IMAGE_MODEL")
+    .ifBlank { "gpt-image-2" }
+val omnibotImageApiKey = prop("OMNIBOT_IMAGE_API_KEY")
 
 val flutterWebBuildDir = rootProject.file("ui/build/web")
 val flutterWebAssetsRootDir = layout.buildDirectory.dir("generated/omnibot_assets").get().asFile
@@ -98,7 +106,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 1
-        versionName = "0.5.2.6"
+        versionName = "0.5.2.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
             "String",
@@ -115,6 +123,9 @@ android {
             "DEFAULT_MODEL_PROVIDER_MODEL_ID",
             quotedBuildConfigString(defaultModelProviderModelId)
         )
+        buildConfigField("String", "IMAGE_BASE_URL", buildConfigString(omnibotImageBaseUrl))
+        buildConfigField("String", "IMAGE_MODEL", buildConfigString(omnibotImageModel))
+        buildConfigField("String", "IMAGE_API_KEY", buildConfigString(omnibotImageApiKey))
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))

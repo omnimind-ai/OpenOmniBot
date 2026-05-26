@@ -59,6 +59,8 @@ class WorkspaceScheduledTaskScheduler(
         val packageName: String? = null,
         val goal: String? = null,
         val subagentConversationId: String? = null,
+        val parentConversationId: String? = null,
+        val parentConversationMode: String? = null,
         val subagentPrompt: String? = null,
         val notificationEnabled: Boolean = true
     )
@@ -240,7 +242,7 @@ class WorkspaceScheduledTaskScheduler(
     private fun executeSubagentTask(task: StoredTask): StoredTask {
         val prompt = task.subagentPrompt?.trim().orEmpty()
         require(prompt.isNotEmpty()) { "subagentPrompt is empty" }
-        val conversationId = ensureSubagentConversationId(task)
+        val conversationId = createSubagentRunConversation(task)
         val args = mutableMapOf<String, Any?>(
             "taskId" to "subagent_schedule_${System.currentTimeMillis()}_${task.taskId}",
             "userMessage" to prompt,
@@ -254,7 +256,7 @@ class WorkspaceScheduledTaskScheduler(
             MethodCall("createAgentTask", args),
             NoopResult(task.taskId, "createAgentTask")
         )
-        return task.copy(subagentConversationId = conversationId.toString())
+        return task
     }
 
     private fun executeVlmTask(task: StoredTask) {
@@ -291,18 +293,22 @@ class WorkspaceScheduledTaskScheduler(
         )
     }
 
-    private fun ensureSubagentConversationId(task: StoredTask): Long {
-        val existingId = task.subagentConversationId?.trim()?.toLongOrNull()
-        if (existingId != null && existingId > 0) {
-            return existingId
-        }
+    private fun createSubagentRunConversation(task: StoredTask): Long {
         val now = System.currentTimeMillis()
+        val parentConversationId = task.parentConversationId?.trim()?.toLongOrNull()
+            ?: task.subagentConversationId?.trim()?.toLongOrNull()
+        val parentConversationMode = task.parentConversationMode
+            ?.trim()
+            ?.ifEmpty { null }
         return runBlocking {
             DatabaseHelper.insertConversation(
                 Conversation(
                     id = 0,
                     title = task.title.ifBlank { "SubAgent 定时任务" },
                     mode = SUBAGENT_MODE,
+                    parentConversationId = parentConversationId?.takeIf { it > 0L },
+                    parentConversationMode = parentConversationMode,
+                    scheduledTaskId = task.taskId,
                     summary = null,
                     status = 0,
                     lastMessage = null,
@@ -352,6 +358,14 @@ class WorkspaceScheduledTaskScheduler(
         val subagentConversationId =
             rawTask["subagentConversationId"]?.toString()?.trim()?.ifEmpty { null }
                 ?: existing?.subagentConversationId
+        val parentConversationId =
+            rawTask["parentConversationId"]?.toString()?.trim()?.ifEmpty { null }
+                ?: rawTask["subagentParentConversationId"]?.toString()?.trim()?.ifEmpty { null }
+                ?: existing?.parentConversationId
+        val parentConversationMode =
+            rawTask["parentConversationMode"]?.toString()?.trim()?.ifEmpty { null }
+                ?: rawTask["subagentParentConversationMode"]?.toString()?.trim()?.ifEmpty { null }
+                ?: existing?.parentConversationMode
         val subagentPrompt = rawTask["subagentPrompt"]?.toString()?.trim()?.ifEmpty { null }
             ?: suggestionData?.get("subagentPrompt")?.toString()?.trim()?.ifEmpty { null }
             ?: existing?.subagentPrompt
@@ -372,6 +386,8 @@ class WorkspaceScheduledTaskScheduler(
             packageName = packageName,
             goal = goal,
             subagentConversationId = subagentConversationId,
+            parentConversationId = parentConversationId,
+            parentConversationMode = parentConversationMode,
             subagentPrompt = subagentPrompt,
             notificationEnabled = notificationEnabled
         )
@@ -466,6 +482,8 @@ class WorkspaceScheduledTaskScheduler(
         payload["nextExecutionTime"] = task.nextExecutionTime
         payload["packageName"] = task.packageName ?: ""
         payload["subagentConversationId"] = task.subagentConversationId
+        payload["parentConversationId"] = task.parentConversationId
+        payload["parentConversationMode"] = task.parentConversationMode
         payload["subagentPrompt"] = task.subagentPrompt
         payload["notificationEnabled"] = task.notificationEnabled
         if (task.targetKind == "subagent") {

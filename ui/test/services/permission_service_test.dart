@@ -52,4 +52,13 @@ void main() {
       isTrue,
     );
   });
+
+  test('companion automation only requires overlay permission', () {
+    final specs = PermissionRegistry.getPermissionsByLevel(
+      brand: 'other',
+      level: PermissionLevel.companionAutomation,
+    );
+
+    expect(specs.map((item) => item.id), [kOverlayPermissionId]);
+  });
 }

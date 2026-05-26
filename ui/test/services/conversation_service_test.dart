@@ -42,6 +42,9 @@ void main() {
             'title': args['title'] ?? '新对话',
             'mode': args['mode'] ?? ConversationMode.normal.storageValue,
             'summary': args['summary'],
+            'parentConversationId': args['parentConversationId'],
+            'parentConversationMode': args['parentConversationMode'],
+            'scheduledTaskId': args['scheduledTaskId'],
             'status': 0,
             'lastMessage': null,
             'messageCount': 0,
@@ -307,6 +310,31 @@ void main() {
     );
     expect(created['mode'], ConversationMode.chatOnly.storageValue);
   });
+
+  test(
+    'creates scheduled subagent run conversations with parent metadata',
+    () async {
+      final conversationId = await ConversationService.createConversation(
+        title: '新闻整理',
+        mode: ConversationMode.subagent,
+        parentConversationId: 7,
+        parentConversationMode: ConversationMode.normal,
+        scheduledTaskId: 'schedule-news',
+      );
+
+      expect(conversationId, isNotNull);
+      final created = nativeConversations.singleWhere(
+        (item) => item['id'] == conversationId,
+      );
+      expect(created['mode'], ConversationMode.subagent.storageValue);
+      expect(created['parentConversationId'], 7);
+      expect(
+        created['parentConversationMode'],
+        ConversationMode.normal.storageValue,
+      );
+      expect(created['scheduledTaskId'], 'schedule-news');
+    },
+  );
 
   test(
     'archives codex conversation locally when app-server archive fails',

@@ -96,6 +96,24 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate13To14_addsConversationPinAndScheduleColumns() = runBlocking {
+        createVersion13Database()
+
+        val database = openMigratedDatabase()
+        try {
+            val conversation = database.conversationDao().getById(1L)
+            assertNotNull(conversation)
+            assertEquals("Scheduled seed", conversation!!.title)
+            assertEquals(false, conversation.isPinned)
+            assertNull(conversation.parentConversationId)
+            assertNull(conversation.parentConversationMode)
+            assertNull(conversation.scheduledTaskId)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openMigratedDatabase(): AppDatabase {
         return Room.databaseBuilder(testContext, AppDatabase::class.java, TEST_DB_NAME)
             .allowMainThreadQueries()
@@ -296,6 +314,135 @@ class AppDatabaseMigrationTest {
         } finally {
             database.close()
         }
+    }
+
+    private fun createVersion13Database() {
+        val database = openLegacyDatabase(version = 13)
+        try {
+            createCommonPreConversationTables(database)
+            createVersion13ConversationTables(database)
+            database.execSQL(
+                """
+                INSERT INTO conversations
+                (id, title, mode, isArchived, summary, contextSummary, contextSummaryCutoffEntryDbId,
+                 contextSummaryUpdatedAt, status, lastMessage, messageCount, latestPromptTokens,
+                 promptTokenThreshold, latestPromptTokensUpdatedAt, createdAt, updatedAt)
+                VALUES
+                (1, 'Scheduled seed', 'normal', 0, NULL, NULL, NULL, 0, 0, NULL, 0, 0, 128000, 0, 1000, 1000)
+                """.trimIndent()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createVersion13ConversationTables(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `conversations` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `title` TEXT NOT NULL,
+                `mode` TEXT NOT NULL DEFAULT 'normal',
+                `isArchived` INTEGER NOT NULL DEFAULT 0,
+                `summary` TEXT,
+                `contextSummary` TEXT,
+                `contextSummaryCutoffEntryDbId` INTEGER,
+                `contextSummaryUpdatedAt` INTEGER NOT NULL DEFAULT 0,
+                `status` INTEGER NOT NULL DEFAULT 0,
+                `lastMessage` TEXT,
+                `messageCount` INTEGER NOT NULL DEFAULT 0,
+                `latestPromptTokens` INTEGER NOT NULL DEFAULT 0,
+                `promptTokenThreshold` INTEGER NOT NULL DEFAULT 128000,
+                `latestPromptTokensUpdatedAt` INTEGER NOT NULL DEFAULT 0,
+                `createdAt` INTEGER NOT NULL,
+                `updatedAt` INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `agent_conversation_entries` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `conversationId` INTEGER NOT NULL,
+                `conversationMode` TEXT NOT NULL,
+                `entryId` TEXT NOT NULL,
+                `entryType` TEXT NOT NULL,
+                `status` TEXT NOT NULL,
+                `summary` TEXT NOT NULL,
+                `payloadJson` TEXT NOT NULL,
+                `createdAt` INTEGER NOT NULL,
+                `updatedAt` INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            `index_agent_conversation_entries_conversationId_conversationMode_entryId`
+            ON `agent_conversation_entries` (`conversationId`, `conversationMode`, `entryId`)
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS
+            `index_agent_conversation_entries_conversationId_conversationMode_updatedAt`
+            ON `agent_conversation_entries` (`conversationId`, `conversationMode`, `updatedAt`)
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `token_usage_records` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `conversationId` INTEGER NOT NULL,
+                `isLocal` INTEGER NOT NULL DEFAULT 0,
+                `model` TEXT NOT NULL DEFAULT '',
+                `promptTokens` INTEGER NOT NULL DEFAULT 0,
+                `completionTokens` INTEGER NOT NULL DEFAULT 0,
+                `reasoningTokens` INTEGER NOT NULL DEFAULT 0,
+                `textTokens` INTEGER NOT NULL DEFAULT 0,
+                `cachedTokens` INTEGER NOT NULL DEFAULT 0,
+                `createdAt` INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS `index_token_usage_records_createdAt`
+            ON `token_usage_records` (`createdAt`)
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS `index_token_usage_records_conversationId`
+            ON `token_usage_records` (`conversationId`)
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `codex_thread_bindings` (
+                `conversationId` INTEGER NOT NULL,
+                `threadId` TEXT NOT NULL,
+                `cwd` TEXT NOT NULL,
+                `createdAt` INTEGER NOT NULL,
+                `updatedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`conversationId`)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            `index_codex_thread_bindings_threadId`
+            ON `codex_thread_bindings` (`threadId`)
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS
+            `index_codex_thread_bindings_updatedAt`
+            ON `codex_thread_bindings` (`updatedAt`)
+            """.trimIndent()
+        )
     }
 
     private fun createCommonPreConversationTables(database: SQLiteDatabase) {

@@ -12,6 +12,7 @@ import { WebSocketServer } from 'ws';
 
 const require = createRequire(import.meta.url);
 const qrcode = require('qrcode-terminal');
+const isWindows = process.platform === 'win32';
 
 function printHelp() {
   console.log(`Omnibot Codex Bridge
@@ -149,6 +150,82 @@ const maxReadBytes = Number.parseInt(
 );
 const jsonContentType = 'application/json; charset=utf-8';
 
+function bridgePath() {
+  const candidates = [
+    process.env.PATH || '',
+    process.env.Path || '',
+    process.env.path || '',
+    process.env.npm_config_prefix || '',
+    process.env.NPM_CONFIG_PREFIX || '',
+    process.env.PNPM_HOME || '',
+    process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData/Roaming/npm') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs/nodejs') : '',
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'nodejs') : '',
+    process.execPath ? path.dirname(process.execPath) : '',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    path.join(homeDir, '.npm-global/bin'),
+    path.join(homeDir, '.local/bin'),
+    path.join(homeDir, '.cargo/bin'),
+    path.join(homeDir, '.bun/bin'),
+  ]
+    .flatMap((entry) => entry.split(path.delimiter))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return [...new Set(candidates)].join(path.delimiter);
+}
+
+function bridgePathEntries() {
+  return bridgePath().split(path.delimiter).filter(Boolean);
+}
+
+function bridgeEnv() {
+  const env = { ...process.env, PATH: bridgePath() };
+  if (codexHome) env.CODEX_HOME = codexHome;
+  return env;
+}
+
+function stripOuterQuotes(value) {
+  const normalized = String(value || '').trim();
+  if (
+    normalized.length >= 2 &&
+    ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'")))
+  ) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveCodexCommand() {
+  const raw = stripOuterQuotes(codexBin) || 'codex';
+  const expanded = expandHomePath(raw);
+  const hasPathSeparator = expanded.includes('/') || expanded.includes('\\');
+  if (!isWindows || hasPathSeparator || path.extname(expanded)) {
+    return expanded;
+  }
+  const names = [`${expanded}.cmd`, `${expanded}.exe`, `${expanded}.bat`, expanded];
+  for (const entry of bridgePathEntries()) {
+    for (const name of names) {
+      const candidate = path.join(entry, name);
+      if (await fileExists(candidate)) return candidate;
+    }
+  }
+  return expanded;
+}
+
 function isAuthorized(req, payloadToken = '') {
   if (!token) return true;
   const header = req.headers.authorization || '';
@@ -250,15 +327,31 @@ function quickConnectPayload(bridgeUrl) {
   return payload.toString();
 }
 
-function readCodexVersion() {
+async function readCodexVersion() {
+  const resolvedCodexBin = await resolveCodexCommand();
   return new Promise((resolve) => {
-    execFile(codexBin, ['--version'], { cwd: bridgeCwd, timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ ok: false, error: stderr?.trim() || error.message });
-        return;
+    execFile(
+      resolvedCodexBin,
+      ['--version'],
+      {
+        cwd: bridgeCwd,
+        env: bridgeEnv(),
+        timeout: 5000,
+        shell: isWindows,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({
+            ok: false,
+            error: stderr?.trim() || error.message,
+            resolvedCodexBin,
+          });
+          return;
+        }
+        resolve({ ok: true, version: stdout.trim(), resolvedCodexBin });
       }
-      resolve({ ok: true, version: stdout.trim() });
-    });
+    );
   });
 }
 
@@ -525,9 +618,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const version = await readCodexVersion();
-    sendJson(res, version.ok ? 200 : 503, {
+    sendJson(res, 200, {
       ok: version.ok,
+      ready: version.ok,
       codexVersion: version.version || null,
+      codexBin,
+      resolvedCodexBin: version.resolvedCodexBin || codexBin,
       cwd: bridgeCwd,
       authRequired: Boolean(token),
       error: version.error || null,
@@ -655,12 +751,20 @@ wss.on('connection', async (ws, req) => {
 
   function closeCodex() {
     if (codex && !codex.killed) {
-      codex.kill('SIGTERM');
+      if (isWindows && codex.pid) {
+        const killer = spawn('taskkill', ['/pid', String(codex.pid), '/T', '/F'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        killer.on('error', () => {});
+      } else {
+        codex.kill('SIGTERM');
+      }
     }
     codex = null;
   }
 
-  ws.on('message', (data) => {
+  async function handleMessage(data) {
     let message;
     try {
       message = JSON.parse(data.toString('utf8'));
@@ -682,12 +786,14 @@ wss.on('connection', async (ws, req) => {
       }
       initialized = true;
       const cwd = String(message.cwd || bridgeCwd).trim() || bridgeCwd;
-      const env = { ...process.env };
-      if (codexHome) env.CODEX_HOME = codexHome;
-      codex = spawn(codexBin, ['app-server'], {
+      const env = bridgeEnv();
+      const resolvedCodexBin = await resolveCodexCommand();
+      codex = spawn(resolvedCodexBin, ['app-server'], {
         cwd,
         env,
+        shell: isWindows,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
       codex.stdout.setEncoding('utf8');
       codex.stderr.setEncoding('utf8');
@@ -718,7 +824,7 @@ wss.on('connection', async (ws, req) => {
         send('error', { message: error.message });
         ws.close(1011, 'codex failed');
       });
-      send('hello', { ok: true, cwd });
+      send('hello', { ok: true, cwd, codexBin: resolvedCodexBin });
       return;
     }
 
@@ -734,6 +840,13 @@ wss.on('connection', async (ws, req) => {
     if (message.type === 'close') {
       ws.close(1000, 'client close');
     }
+  }
+
+  ws.on('message', (data) => {
+    handleMessage(data).catch((error) => {
+      send('error', { message: error.message || 'bridge message handling failed' });
+      ws.close(1011, 'bridge failed');
+    });
   });
 
   ws.on('close', closeCodex);
@@ -750,6 +863,13 @@ console.log(`Health check: http://${host}:${port}/health`);
 console.log(`Directory browser: http://${host}:${port}/fs/list`);
 console.log(`File browser API: http://${host}:${port}/fs/read`);
 console.log(`Working directory: ${bridgeCwd}`);
+const startupCodexVersion = await readCodexVersion();
+if (startupCodexVersion.ok) {
+  console.log(`Codex CLI: ${startupCodexVersion.version}`);
+} else {
+  console.log(`Codex CLI check failed: ${startupCodexVersion.error}`);
+  console.log('Install/login Codex CLI or pass --codex-bin /absolute/path/to/codex.');
+}
 if (token) {
   console.log('Token auth: enabled');
   console.log(`Bridge token: ${token}`);

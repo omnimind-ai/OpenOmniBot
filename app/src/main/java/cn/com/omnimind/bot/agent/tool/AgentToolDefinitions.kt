@@ -1447,6 +1447,83 @@ object AgentToolDefinitions {
         }
     }
 
+    val imageGenerateTool: JsonObject = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", "image_generate")
+            put("displayName", "Generate Image")
+            put("toolType", "workspace")
+            put(
+                "description",
+                "Generate one image with the configured OpenAI-compatible image provider and save it as a workspace file. Prefer this over file_write for AI-created raster artwork."
+            )
+            put("postToolRule", "Wait for the generated file result before reading, editing, or packaging it.")
+            putJsonObject("parameters") {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("prompt") {
+                        put("type", "string")
+                        put("description", "Image generation prompt.")
+                    }
+                    putJsonObject("outputPath") {
+                        put("type", "string")
+                        put("description", "Workspace path or omnibot:// URI for the generated image, usually ending in .png or .webp.")
+                    }
+                    putJsonObject("model") {
+                        put("type", "string")
+                        put("description", "Image model id. Defaults to gpt-image-2.")
+                    }
+                    putJsonObject("size") {
+                        put("type", "string")
+                        put("description", "Output size. Defaults to 1024x1024.")
+                        putJsonArray("enum") {
+                            add("auto")
+                            add("1024x1024")
+                            add("1024x1536")
+                            add("1536x1024")
+                        }
+                    }
+                    putJsonObject("quality") {
+                        put("type", "string")
+                        put("description", "Generation quality. Defaults to auto.")
+                        putJsonArray("enum") {
+                            add("auto")
+                            add("low")
+                            add("medium")
+                            add("high")
+                        }
+                    }
+                    putJsonObject("format") {
+                        put("type", "string")
+                        put("description", "Output file format. Defaults to png.")
+                        putJsonArray("enum") {
+                            add("png")
+                            add("webp")
+                            add("jpeg")
+                        }
+                    }
+                    putJsonObject("background") {
+                        put("type", "string")
+                        put("description", "Background handling for models that support it.")
+                        putJsonArray("enum") {
+                            add("auto")
+                            add("transparent")
+                            add("opaque")
+                        }
+                    }
+                    putJsonObject("providerProfileId") {
+                        put("type", "string")
+                        put("description", "Optional provider profile id. Defaults to the currently selected model provider profile.")
+                    }
+                }
+                putJsonArray("required") {
+                    add("prompt")
+                    add("outputPath")
+                }
+            }
+        }
+    }
+
     val fileEditTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
@@ -3155,6 +3232,7 @@ object AgentToolDefinitions {
         browserUseTool,
         fileReadTool,
         fileWriteTool,
+        imageGenerateTool,
         fileEditTool,
         fileListTool,
         fileSearchTool,

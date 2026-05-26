@@ -28,6 +28,8 @@ object ModelProviderConfigStore {
     private val canonicalEndpointSuffixes = listOf(
         "/v1/chat/completions",
         "/chat/completions",
+        "/v1/images/generations",
+        "/images/generations",
         "/v1/models",
         "/models",
         "/v1/messages",

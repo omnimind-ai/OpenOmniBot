@@ -1994,6 +1994,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeDrawerScheduled => 'Scheduled';
 
   @override
+  String get homeDrawerScheduledTasks => 'Scheduled tasks';
+
+  @override
+  String get homeDrawerPinnedConversations => 'Pinned conversations';
+
+  @override
   String get homeDrawerGreeting => 'Hello!';
 
   @override

@@ -8,7 +8,7 @@ import 'package:ui/services/special_permission.dart';
 /// 权限层级枚举
 /// 用于按场景分层检查权限
 enum PermissionLevel {
-  /// 轻量自动化能力：悬浮窗 + 后台运行 + 无障碍
+  /// 陪伴宠物展示：仅需要悬浮窗。任务执行权限在真正执行任务时再检查。
   companionAutomation,
 
   /// 聊天任务执行：全量权限
@@ -182,7 +182,6 @@ class PermissionRegistry {
             description: AppTextLocalizer.choose(en: 'Prevent Omnibot from being killed by system', zh: '防止小万被系统关闭'),
             openMethod: 'openAutoStartSettings',
             applicableLevels: const {
-              PermissionLevel.companionAutomation,
               PermissionLevel.fullExecution,
             },
             customCheckMethod: () async {
@@ -217,8 +216,6 @@ class PermissionRegistry {
   static const Map<PermissionLevel, List<String>> _levelPermissionIds = {
     PermissionLevel.companionAutomation: [
       'overlay',
-      'battery',
-      'accessibility',
     ],
     PermissionLevel.fullExecution: [
       'overlay',

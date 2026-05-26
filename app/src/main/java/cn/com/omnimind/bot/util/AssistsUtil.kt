@@ -63,20 +63,8 @@ class AssistsUtil {
             context: Context,
             onMessagePushListener: OnMessagePushListener
         ) {
-            if (!AssistsCore.isAccessibilityServiceEnabled()) {
-                throw PermissionException("请先开无障碍服务!")
-            }
             if (!Settings.canDrawOverlays(context)) {
                 throw PermissionException("请先开启悬浮窗权限!")
-            }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                if (!ScreenCaptureManager.getInstance().hasPermission()) {
-                    val hasPermission =
-                        ScreenCaptureManager.getInstance().requestScreenCapturePermission()
-                    if (!hasPermission) {
-                        throw PermissionException("请先授予屏幕截图权限!")
-                    }
-                }
             }
             AssistsCore.startTask(TaskParams.CompanionTaskParams {
                 // startForegroundService(context)

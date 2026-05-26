@@ -535,6 +535,8 @@ class _ScheduleTaskSheetState extends State<ScheduleTaskSheet> {
       suggestionId: widget.suggestionId,
       targetKind: targetKind,
       subagentConversationId: _resolvedSubagentConversationId,
+      parentConversationId: widget.existingTask?.parentConversationId,
+      parentConversationMode: widget.existingTask?.parentConversationMode,
       subagentPrompt: targetKind == 'subagent' ? _resolvedSubagentPrompt : null,
       notificationEnabled: _resolvedNotificationEnabled,
       type: _selectedTabIndex == 0

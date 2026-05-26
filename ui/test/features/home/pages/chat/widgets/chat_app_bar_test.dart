@@ -719,7 +719,7 @@ void main() {
     expect(rootSurface.color, appBarContext.omniPalette.pageBackground);
   });
 
-  testWidgets('does not show workspace restore button in the top bar', (
+  testWidgets('shows workspace restore button before the right mode menu', (
     tester,
   ) async {
     var tapCount = 0;
@@ -757,12 +757,16 @@ void main() {
     final modeMenu = find.byKey(
       const ValueKey('chat-app-bar-pure-chat-button'),
     );
+    final workspaceRect = tester.getRect(workspaceButton);
     final islandRect = tester.getRect(island);
     final modeMenuRect = tester.getRect(modeMenu);
 
-    expect(workspaceButton, findsNothing);
-    expect(islandRect.right, lessThanOrEqualTo(modeMenuRect.left));
-    expect(tapCount, 0);
+    expect(workspaceButton, findsOneWidget);
+    expect(islandRect.right, lessThan(workspaceRect.left));
+    expect(workspaceRect.right, lessThanOrEqualTo(modeMenuRect.left));
+
+    await tester.tap(workspaceButton);
+    expect(tapCount, 1);
   });
 
   testWidgets('keeps swapped shortcuts clear of island on narrow screens', (
@@ -991,6 +995,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(codexTapCount, 1);
+  });
+
+  testWidgets('hides update indicator when no update is available', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DefaultAssetBundle(
+          bundle: _SvgTestAssetBundle(),
+          child: Scaffold(
+            body: ChatAppBar(
+              onMenuTap: () {},
+              onCompanionTap: () {},
+              activeMode: ChatSurfaceMode.normal,
+              onModeChanged: (_) {},
+              activeModelId: 'gpt-5.4',
+              displayLayer: ChatIslandDisplayLayer.model,
+              onDisplayLayerChanged: (_) {},
+              onTerminalEnvironmentTap: (_) {},
+              onTerminalTap: () {},
+              onBrowserTap: () {},
+              showAppUpdateIndicator: false,
+              onAppUpdateTap: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('chat-app-update-button')), findsNothing);
   });
 
   testWidgets('tints and enlarges codex icon with theme color when selected', (

@@ -1,6 +1,5 @@
 package cn.com.omnimind.uikit.loader.cat
 
-import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
@@ -42,7 +41,8 @@ import kotlin.math.min
 
 @SuppressLint("ClickableViewAccessibility")
 class DraggableBallLoader(
-    val context: AccessibilityService,
+    val context: Context,
+    val useAccessibilityOverlay: Boolean,
     val catLayoutApi: CatLayoutApi?,
     val menuApi: MenuApi?,
     val catApi: CatApi?,
@@ -123,6 +123,11 @@ class DraggableBallLoader(
      */
     fun load(): Boolean {
         try {
+            val type = if (useAccessibilityOverlay) {
+                "accessibility"
+            } else {
+                "application"
+            }
             if (isAttachedToWindow) {
                 getWindowManager().updateViewLayout(catView, catViewLayoutParams)
                 getWindowManager().updateViewLayout(
@@ -133,17 +138,18 @@ class DraggableBallLoader(
                     catDialogShowInfoView, catDialogShowInfoViewParams
                 )
             } else {
-                if (catDialogShowInfoView.isAttachedToWindow){
+                if (catDialogShowInfoView.isAttachedToWindow) {
                     getWindowManager().updateViewLayout(
                         catDialogShowInfoView, catDialogShowInfoViewParams
                     )
-                }else{
+                } else {
                     getWindowManager().addView(catDialogShowInfoView, catDialogShowInfoViewParams)
 
                 }
                 getWindowManager().addView(catView, catViewLayoutParams)
                 getWindowManager().addView(catDialogLayoutView, catDialogLayoutViewLayoutParams)
                 isAttachedToWindow = true
+                OmniLog.d(TAG, "load: draggable overlays added with $type overlay")
 
                 // 初始状态下隐藏 catDialogShowInfoView，避免拦截底部按钮的触摸事件
                 // 只有在真正需要显示信息时（如 doingTask、pauseTask 等）才会设置为 VISIBLE
@@ -544,7 +550,7 @@ class DraggableBallLoader(
         }
     }
 
-    private fun updateViewLayoutIfAttached(view: View, params: WindowManager.LayoutParams) {
+    fun updateViewLayoutIfAttached(view: View, params: WindowManager.LayoutParams) {
         if (view.isAttachedToWindow) {
             getWindowManager().updateViewLayout(view, params)
         }
@@ -626,6 +632,12 @@ class DraggableBallLoader(
      * 单击展开小猫
      */
     override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+        if (catDialogLayoutView.isPointInsideMessageView(e.rawX, e.rawY) &&
+            DraggableBallInstance.consumeTaskCompletionHintClick()
+        ) {
+            collapseMenu()
+            return true
+        }
         if (catView.getViewState() == DraggableViewState.DOING_TASK) {
             collapseMenu()
             catLayoutApi?.onOpenHomeParam("/home/chat", false)
@@ -661,7 +673,11 @@ class DraggableBallLoader(
     fun getParams(flagsValue: Int): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
             type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                if (useAccessibilityOverlay) {
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                } else {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                }
             } else {
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
             }

@@ -38,7 +38,7 @@ class CancelClickLoader(override val context: AccessibilityService) :
             getInstance()?.cancelIntercepting()
         }
         fun destroyInstance() {
-            getInstance()?.destroy()
+            INSTANCE?.destroy()
             INSTANCE = null
         }
 

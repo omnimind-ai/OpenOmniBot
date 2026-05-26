@@ -71,6 +71,7 @@ class HomeDrawerSearchField extends StatelessWidget {
       child: TextField(
         controller: controller,
         focusNode: focusNode,
+        onTapOutside: (_) => focusNode.unfocus(),
         textInputAction: TextInputAction.search,
         style: TextStyle(
           fontSize: 13,

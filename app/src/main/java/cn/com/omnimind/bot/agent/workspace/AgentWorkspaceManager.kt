@@ -184,7 +184,9 @@ class AgentWorkspaceManager(
         private const val DIR_BROWSER = "browser"
         private const val DIR_SKILLS = "skills"
         private const val DIR_MEMORY = "memory"
+        private const val DIR_PETS = "pets"
         private const val DIR_AGENT = "agent"
+        private const val DIR_BUILTIN_PETS_ASSETS = "builtin_pets"
         private const val FILE_AI_CONFIG = "config.json"
         private const val FILE_SOUL = "SOUL.md"
         private const val FILE_CHAT = "CHAT.md"
@@ -321,6 +323,7 @@ class AgentWorkspaceManager(
     private val browserDir = File(internalDir, DIR_BROWSER)
     private val skillsDir = File(internalDir, DIR_SKILLS)
     private val memoryDir = File(internalDir, DIR_MEMORY)
+    private val petsDir = File(internalDir, DIR_PETS)
     private val agentDir = File(internalDir, DIR_AGENT)
     private val soulFile = File(agentDir, FILE_SOUL)
     private val chatFile = File(agentDir, FILE_CHAT)
@@ -353,6 +356,7 @@ class AgentWorkspaceManager(
             browserDir,
             skillsDir,
             memoryDir,
+            petsDir,
             agentDir,
             shortMemoriesDir,
             memoryIndexDir,
@@ -366,7 +370,61 @@ class AgentWorkspaceManager(
                 directory.mkdirs()
             }
         }
+        ensureBuiltinPets()
         ensureDefaultWorkspaceDocs()
+    }
+
+    private fun ensureBuiltinPets() {
+        val assetManager = context.assets
+        val petIds = runCatching {
+            assetManager.list(DIR_BUILTIN_PETS_ASSETS)?.toList().orEmpty()
+        }.getOrDefault(emptyList())
+        petIds
+            .filter { it.isNotBlank() && !it.startsWith(".") }
+            .forEach { petId ->
+                val assetDir = "$DIR_BUILTIN_PETS_ASSETS/$petId"
+                val assetFiles = runCatching {
+                    assetManager.list(assetDir)?.toList().orEmpty()
+                }.getOrDefault(emptyList())
+                if (assetFiles.isEmpty()) return@forEach
+                val targetDir = File(petsDir, sanitizeSegment(petId))
+                if (!targetDir.exists()) {
+                    targetDir.mkdirs()
+                }
+                assetFiles
+                    .filter(::isSupportedBuiltinPetAsset)
+                    .forEach { fileName ->
+                        val assetPath = "$assetDir/$fileName"
+                        val nestedFiles = runCatching {
+                            assetManager.list(assetPath)?.toList().orEmpty()
+                        }.getOrDefault(emptyList())
+                        if (nestedFiles.isNotEmpty()) return@forEach
+                        val targetFile = File(targetDir, fileName)
+                        runCatching {
+                            assetManager.open(assetPath).use { input ->
+                                if (targetFile.exists() &&
+                                    targetFile.length() == input.available().toLong()
+                                ) {
+                                    return@use
+                                }
+                                targetFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                    }
+            }
+    }
+
+    private fun isSupportedBuiltinPetAsset(fileName: String): Boolean {
+        return fileName == "pet.json" ||
+            fileName == "spritesheet.webp" ||
+            fileName == "spritesheet.png" ||
+            fileName == "current.svg" ||
+            fileName == "current.png" ||
+            fileName == "current.webp" ||
+            fileName == "current.jpg" ||
+            fileName == "current.gif"
     }
 
     private fun ensureDefaultWorkspaceDocs() {
@@ -421,6 +479,11 @@ class AgentWorkspaceManager(
     fun skillsRoot(): File {
         ensureRuntimeDirectories()
         return skillsDir
+    }
+
+    fun petsRoot(): File {
+        ensureRuntimeDirectories()
+        return petsDir
     }
 
     fun buildWorkspaceDescriptor(
@@ -678,6 +741,7 @@ class AgentWorkspaceManager(
             DIR_BROWSER -> browserDir
             DIR_SKILLS -> skillsDir
             DIR_MEMORY -> memoryDir
+            DIR_PETS -> petsDir
             else -> throw IllegalArgumentException("未知 omnibot uri：$uriText")
         }
         var target = base
@@ -701,7 +765,8 @@ class AgentWorkspaceManager(
             isWithin(offloadsDir.canonicalFile, file) ||
             isWithin(browserDir.canonicalFile, file) ||
             isWithin(skillsDir.canonicalFile, file) ||
-            isWithin(memoryDir.canonicalFile, file)
+            isWithin(memoryDir.canonicalFile, file) ||
+            isWithin(petsDir.canonicalFile, file)
     }
 
     private fun isWithinArtifactRoots(file: File): Boolean {
@@ -874,6 +939,7 @@ class AgentWorkspaceManager(
             isWithin(browserDir.canonicalFile, canonical) -> buildUriForBase(DIR_BROWSER, browserDir, canonical)
             isWithin(skillsDir.canonicalFile, canonical) -> buildUriForBase(DIR_SKILLS, skillsDir, canonical)
             isWithin(memoryDir.canonicalFile, canonical) -> buildUriForBase(DIR_MEMORY, memoryDir, canonical)
+            isWithin(petsDir.canonicalFile, canonical) -> buildUriForBase(DIR_PETS, petsDir, canonical)
             isWithin(internalDir.canonicalFile, canonical) -> null
             else -> buildUriForBase(DIR_WORKSPACE, rootDir, canonical)
         }

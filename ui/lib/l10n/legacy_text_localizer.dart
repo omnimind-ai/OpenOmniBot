@@ -8,12 +8,35 @@ class LegacyTextLocalizer {
   static Locale? _activeLocale;
 
   static final Map<String, String> _exactEn = <String, String>{
+    '宠物': 'Pet',
+    '小万': 'Xiaowan',
+    '默认的桌面悬浮窗宠物': 'Default desktop floating pet',
+    '自定义宠物': 'Custom Pet',
+    '已选': 'Selected',
+    '选择': 'Select',
+    '刷新': 'Refresh',
+    '唤起宠物': 'Show Pet',
+    '收起宠物': 'Hide Pet',
+    '宠物列表已刷新': 'Pet list refreshed',
+    '选择宠物失败': 'Failed to select pet',
+    '收起宠物失败': 'Failed to hide pet',
+    '唤起宠物失败，请确认悬浮窗权限已开启':
+        'Failed to show pet. Please make sure overlay permission is enabled',
+    '唤起宠物失败，请先开启无障碍辅助和悬浮窗权限':
+        'Failed to show pet. Please enable accessibility and overlay permissions first',
     '设置': 'Settings',
     '外观设置': 'Appearance',
     '主题模式': 'Theme Mode',
     '本机服务': 'Local Service',
     '地址': 'Address',
     'Token': 'Token',
+    '防止任务运行时屏幕休眠': 'Prevent Screen Sleep During Tasks',
+    '任务运行期间保持屏幕常亮，适用于 Agent、Codex 和纯聊天':
+        'Keep the screen awake while Agent, Codex, or chat tasks run',
+    '任务完成通知': 'Task Completion Notifications',
+    'Agent、Codex 和纯聊天完成后推送提醒':
+        'Notify when Agent, Codex, or chat responses finish',
+    '需要开启通知权限': 'Notification permission is required',
     '未生成': 'Not generated',
     '复制地址': 'Copy Address',
     '复制 Token': 'Copy Token',

@@ -23,4 +23,72 @@ class OverlayService {
       return false;
     }
   }
+
+  static Future<bool> setPetOverlayImagePath(
+    String path, {
+    String selectedId = '',
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<bool>(
+        'setPetOverlayImagePath',
+        {'path': path, 'selectedId': selectedId},
+      );
+      return result == true;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Failed to set pet overlay image: ${e.message}');
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> showPetOverlay() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('showPetOverlay');
+      return result == true;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Failed to show pet overlay: ${e.message}');
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> hidePetOverlay() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('hidePetOverlay');
+      return result == true;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Failed to hide pet overlay: ${e.message}');
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> isPetOverlayShowing() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('isPetOverlayShowing');
+      return result == true;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Failed to query pet overlay state: ${e.message}');
+      }
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> getPetOverlayState() async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getPetOverlayState',
+      );
+      return Map<String, dynamic>.from(result ?? const {});
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Failed to get pet overlay state: ${e.message}');
+      }
+      return const {};
+    }
+  }
 }

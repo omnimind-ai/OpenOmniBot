@@ -83,12 +83,23 @@ class ConversationService {
     required String title,
     String? summary,
     ConversationMode mode = ConversationMode.normal,
+    int? parentConversationId,
+    ConversationMode? parentConversationMode,
+    String? scheduledTaskId,
   }) async {
     try {
-      final result = await _assistCore.invokeMethod<dynamic>(
-        'createConversation',
-        {'title': title, 'summary': summary, 'mode': mode.storageValue},
-      );
+      final result = await _assistCore
+          .invokeMethod<dynamic>('createConversation', {
+            'title': title,
+            'summary': summary,
+            'mode': mode.storageValue,
+            if (parentConversationId != null && parentConversationId > 0)
+              'parentConversationId': parentConversationId,
+            if (parentConversationMode != null)
+              'parentConversationMode': parentConversationMode.storageValue,
+            if (scheduledTaskId != null && scheduledTaskId.trim().isNotEmpty)
+              'scheduledTaskId': scheduledTaskId.trim(),
+          });
       if (result is int) return result;
       if (result is String) return int.tryParse(result);
       return null;

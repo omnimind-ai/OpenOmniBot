@@ -1,6 +1,6 @@
 # Omnibot Codex Bridge
 
-Self-host this small bridge on a Mac or Linux PC that already has the OpenAI Codex CLI installed and logged in. Omnibot connects to the bridge over WebSocket, and the bridge starts `codex app-server` locally on the PC.
+Self-host this small bridge on a Windows, macOS, or Linux PC that already has the OpenAI Codex CLI installed and logged in. Omnibot connects to the bridge over WebSocket, and the bridge starts `codex app-server` locally on the PC.
 
 The bridge also exposes authenticated HTTP helpers used by Omnibot:
 
@@ -19,6 +19,12 @@ Recommended one-shot startup:
 
 ```bash
 npx @thuocean/codex-bridge --cwd "/Users/you/code/project" --token auto
+```
+
+Windows PowerShell example:
+
+```powershell
+npx @thuocean/codex-bridge --cwd "C:\Users\you\code\project" --token auto
 ```
 
 Or install it globally:
@@ -73,3 +79,30 @@ npx @thuocean/codex-bridge --cwd "/Users/you/code/project" --token auto --public
 - `OMNIBOT_BRIDGE_MAX_READ_BYTES`: max file preview payload, default 12 MiB
 - `CODEX_BIN`: Codex executable, default `codex`
 - `CODEX_HOME`: optional Codex config directory override
+
+## Troubleshooting
+
+If Omnibot can reach the bridge but reports that remote Codex is unavailable, open the printed health check URL:
+
+```bash
+curl -H "Authorization: Bearer <token>" http://<pc-lan-ip>:17321/health
+```
+
+`ready: false` usually means the PC cannot run `codex --version`. Install/login the OpenAI Codex CLI on the PC, make sure `codex` is on `PATH`, or start the bridge with an explicit executable:
+
+```bash
+npx @thuocean/codex-bridge --cwd "/Users/you/code/project" --token auto --codex-bin /absolute/path/to/codex
+```
+
+On Windows, npm usually installs command shims as `.cmd` files. If the health check still says `ready: false`, run this in PowerShell:
+
+```powershell
+where.exe codex
+codex --version
+```
+
+Then pass the `.cmd` path printed by `where.exe`:
+
+```powershell
+npx @thuocean/codex-bridge --cwd "C:\Users\you\code\project" --token auto --codex-bin "C:\Users\you\AppData\Roaming\npm\codex.cmd"
+```

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/home_greeting_settings_service.dart';
@@ -16,6 +17,7 @@ import '../utils/agent_run_timeline.dart';
 import '../../command_overlay/widgets/message_bubble.dart';
 import '../../command_overlay/widgets/chat_input_area.dart';
 import 'agent_run_group_message.dart';
+import 'chat_empty_greeting.dart';
 
 const String _kChatAppBarUpdateSparklesAsset =
     'assets/home/chat/update_sparkles.svg';
@@ -26,6 +28,8 @@ const String _kChatAppBarModeMenuClosedIconAsset =
 const String _kChatAppBarModeMenuOpenIconAsset =
     'assets/home/chat/mode_menu_open.svg';
 const String _kChatAppBarPureChatIconAsset = 'assets/home/chat/pure_chat.svg';
+const String _kChatAppBarWorkspaceIconAsset =
+    'assets/home/workspace_folder_icon.svg';
 
 const List<Color> _kDarkChatAccentGradient = <Color>[
   Color(0xFFAA9774),
@@ -142,6 +146,11 @@ class ChatAppBar extends StatelessWidget {
         ? _kChatAppBarPureChatIconAsset
         : _kChatAppBarAgentIconAsset;
     const updateTint = Color(0xFFD4A017);
+    final showWorkspaceButton =
+        showWorkspacePaneButton && onWorkspacePaneTap != null;
+    final showUpdateShortcutButton =
+        showAppUpdateIndicator && onAppUpdateTap != null;
+    const showModeShortcutButton = true;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -160,8 +169,9 @@ class ChatAppBar extends StatelessWidget {
                   leftActionRowWidth +
                   _kChatAppBarAccessoryGap * 2;
               final rightActionCount =
-                  (showAppUpdateIndicator ? 1 : 0) +
-                  (showPureChatToggle ? 1 : 0);
+                  (showUpdateShortcutButton ? 1 : 0) +
+                  (showWorkspaceButton ? 1 : 0) +
+                  (showModeShortcutButton ? 1 : 0);
               final rightReservedSpace =
                   rightActionCount * _kChatAppBarRightActionSlotWidth +
                   _kChatAppBarAccessoryGap;
@@ -268,6 +278,7 @@ class ChatAppBar extends StatelessWidget {
                         visualProfile: visualProfile,
                         showSurfaceLayer: showSurfaceSwitcher,
                         primaryModeIconAsset: primaryModeIconAsset,
+                        onPrimaryModeTap: onPrimaryModeTap,
                       ),
                     ),
                   ),
@@ -276,12 +287,16 @@ class ChatAppBar extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (showAppUpdateIndicator)
+                        if (showUpdateShortcutButton)
                           GestureDetector(
                             key: const ValueKey('chat-app-update-button'),
                             onTap: onAppUpdateTap,
                             child: Tooltip(
-                              message: appUpdateTooltip ?? '发现新版本',
+                              message:
+                                  appUpdateTooltip ??
+                                  (LegacyTextLocalizer.isEnglish
+                                      ? 'Check for updates'
+                                      : '检查更新'),
                               child: Container(
                                 color: Colors.transparent,
                                 padding: const EdgeInsets.all(15),
@@ -297,7 +312,18 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (showPureChatToggle)
+                        if (showWorkspaceButton)
+                          SizedBox(
+                            width: _kChatAppBarRightActionSlotWidth,
+                            height: _kChatAppBarRightActionSlotWidth,
+                            child: Center(
+                              child: _ChatAppBarWorkspaceButton(
+                                iconTint: iconTint,
+                                onTap: onWorkspacePaneTap!,
+                              ),
+                            ),
+                          ),
+                        if (showModeShortcutButton)
                           SizedBox(
                             width: _kChatAppBarRightActionSlotWidth,
                             height: _kChatAppBarRightActionSlotWidth,
@@ -372,8 +398,42 @@ class _ChatAppBarCompanionButton extends StatelessWidget {
                   'assets/home/avatar.svg',
                   width: 20,
                   height: 20,
-                  colorFilter: null,
+                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBarWorkspaceButton extends StatelessWidget {
+  const _ChatAppBarWorkspaceButton({
+    required this.iconTint,
+    required this.onTap,
+  });
+
+  final Color iconTint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: LegacyTextLocalizer.isEnglish ? 'Show workspace' : '显示工作区',
+      child: GestureDetector(
+        key: const ValueKey('chat-app-bar-workspace-pane-button'),
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: _kChatAppBarAccessoryButtonSize,
+          height: _kChatAppBarAccessoryButtonSize,
+          child: Center(
+            child: SvgPicture.asset(
+              _kChatAppBarWorkspaceIconAsset,
+              width: 20,
+              height: 20,
+              colorFilter: ColorFilter.mode(iconTint, BlendMode.srcIn),
+            ),
+          ),
         ),
       ),
     );
@@ -472,7 +532,7 @@ class _ChatAppBarModeShortcutButtonState
   ) {
     final palette = context.omniPalette;
     final selectedColor = palette.accentPrimary;
-    final locale = Localizations.localeOf(context);
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     final canSelectPureChat =
         widget.isCodexSelected ||
         (!widget.isPureChatToggleLocked && widget.onPureChatToggleTap != null);
@@ -485,11 +545,7 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarAgentIconAsset,
-          tooltip: AppTextLocalizer.choose(
-            zh: 'Agent 模式',
-            en: 'Agent mode',
-            locale: locale,
-          ),
+          tooltip: isEnglish ? 'Agent mode' : 'Agent 模式',
           selected: widget.isAgentSelected,
           selectedColor: selectedColor,
           iconTint: widget.iconTint,
@@ -503,11 +559,7 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarCodexIconAsset,
-          tooltip: AppTextLocalizer.choose(
-            zh: 'Codex 模式',
-            en: 'Codex mode',
-            locale: locale,
-          ),
+          tooltip: isEnglish ? 'Codex mode' : 'Codex 模式',
           selected: widget.isCodexSelected,
           selectedColor: selectedColor,
           iconTint: widget.iconTint,
@@ -521,11 +573,7 @@ class _ChatAppBarModeShortcutButtonState
         padding: EdgeInsets.zero,
         child: _ChatAppBarModeShortcutMenuIcon(
           iconAsset: _kChatAppBarPureChatIconAsset,
-          tooltip: AppTextLocalizer.choose(
-            zh: '纯聊天模式',
-            en: 'Pure chat',
-            locale: locale,
-          ),
+          tooltip: isEnglish ? 'Pure chat' : '纯聊天模式',
           selected: widget.isPureChatSelected,
           selectedColor: selectedColor,
           iconSize: 18,
@@ -590,19 +638,11 @@ class _ChatAppBarModeShortcutButtonState
     final effectiveIconColor = _isOpen || hasSelectedMode
         ? selectedColor
         : widget.iconTint;
-    final locale = Localizations.localeOf(context);
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
     return Tooltip(
       message: _isOpen
-          ? AppTextLocalizer.choose(
-              zh: '收起模式菜单',
-              en: 'Close mode menu',
-              locale: locale,
-            )
-          : AppTextLocalizer.choose(
-              zh: '切换聊天模式',
-              en: 'Switch chat mode',
-              locale: locale,
-            ),
+          ? (isEnglish ? 'Close mode menu' : '收起模式菜单')
+          : (isEnglish ? 'Switch chat mode' : '切换聊天模式'),
       child: GestureDetector(
         onTap: _openMenu,
         behavior: HitTestBehavior.opaque,
@@ -677,6 +717,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.showSurfaceLayer = true,
     required this.primaryModeIconAsset,
+    this.onPrimaryModeTap,
   });
 
   final ChatSurfaceMode activeMode;
@@ -696,6 +737,7 @@ class _ChatModeModelSwitcher extends StatefulWidget {
   final AppBackgroundVisualProfile visualProfile;
   final bool showSurfaceLayer;
   final String primaryModeIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   @override
   State<_ChatModeModelSwitcher> createState() => _ChatModeModelSwitcherState();
@@ -729,7 +771,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
   String get _modelLabel {
     final text = (widget.activeModelId ?? '').trim();
     if (text.isEmpty) {
-      return AppTextLocalizer.choose(en: 'No model set', zh: '未设置模型');
+      return LegacyTextLocalizer.isEnglish ? 'No model set' : '未设置模型';
     }
     return text;
   }
@@ -944,6 +986,7 @@ class _ChatModeModelSwitcherState extends State<_ChatModeModelSwitcher> {
                             onInteracted: _handleSliderInteraction,
                             visualProfile: widget.visualProfile,
                             primaryIconAsset: widget.primaryModeIconAsset,
+                            onPrimaryModeTap: widget.onPrimaryModeTap,
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -1052,10 +1095,9 @@ class _ChatToolSlider extends StatelessWidget {
                     key: const ValueKey('chat-island-terminal-button'),
                     isSelected: _isTerminalActive,
                     isEnabled: true,
-                    tooltip: AppTextLocalizer.choose(
-                      en: 'Open terminal',
-                      zh: '打开终端',
-                    ),
+                    tooltip: LegacyTextLocalizer.isEnglish
+                        ? 'Open terminal'
+                        : '打开终端',
                     onTap: onTerminalTap,
                     child: SvgPicture.asset(
                       terminalIconAsset,
@@ -1071,14 +1113,12 @@ class _ChatToolSlider extends StatelessWidget {
                     isSelected: _isBrowserActive,
                     isEnabled: isBrowserEnabled,
                     tooltip: isBrowserEnabled
-                        ? (AppTextLocalizer.choose(
-                            en: 'Open browser for current session',
-                            zh: '打开当前会话浏览器',
-                          ))
-                        : (AppTextLocalizer.choose(
-                            en: 'No browser session available',
-                            zh: '当前会话还没有可用的浏览器会话',
-                          )),
+                        ? (LegacyTextLocalizer.isEnglish
+                              ? 'Open browser for current session'
+                              : '打开当前会话浏览器')
+                        : (LegacyTextLocalizer.isEnglish
+                              ? 'No browser session available'
+                              : '当前会话还没有可用的浏览器会话'),
                     onTap: onBrowserTap,
                     child: SvgPicture.asset(
                       browserIconAsset,
@@ -1102,10 +1142,9 @@ class _ChatToolSlider extends StatelessWidget {
     return Builder(
       builder: (anchorContext) {
         return Tooltip(
-          message: AppTextLocalizer.choose(
-            en: 'Manage terminal environment variables',
-            zh: '管理终端环境变量',
-          ),
+          message: LegacyTextLocalizer.isEnglish
+              ? 'Manage terminal environment variables'
+              : '管理终端环境变量',
           child: InkWell(
             key: const ValueKey('chat-island-terminal-env-button'),
             onTap: () {
@@ -1189,6 +1228,7 @@ class ChatModeSlider extends StatefulWidget {
   final VoidCallback? onInteracted;
   final AppBackgroundVisualProfile visualProfile;
   final String primaryIconAsset;
+  final VoidCallback? onPrimaryModeTap;
 
   const ChatModeSlider({
     super.key,
@@ -1197,6 +1237,7 @@ class ChatModeSlider extends StatefulWidget {
     this.onInteracted,
     this.visualProfile = AppBackgroundVisualProfile.defaultProfile,
     this.primaryIconAsset = _kChatAppBarAgentIconAsset,
+    this.onPrimaryModeTap,
   });
 
   @override
@@ -1236,12 +1277,9 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
     final activeGradient = context.isDarkTheme
         ? _kDarkChatAccentGradient
         : const <Color>[Color(0xFF2DA5F0), Color(0xFF1930D9)];
-    final activeX = kVisibleChatSurfaceModes.length <= 1
-        ? 0.0
-        : -1.0 +
-              (2.0 * _activeVisibleModeIndex) /
-                  (kVisibleChatSurfaceModes.length - 1);
-    final alignment = Alignment(activeX, 0);
+    final alignment = _activeVisibleModeIndex == 0
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onHorizontalDragUpdate: (details) {
@@ -1262,6 +1300,12 @@ class _ChatModeSliderState extends State<ChatModeSlider> {
           0,
           kVisibleChatSurfaceModes.length - 1,
         );
+        if (targetIndex == 0 &&
+            targetIndex == _activeVisibleModeIndex &&
+            widget.onPrimaryModeTap != null) {
+          widget.onPrimaryModeTap?.call();
+          return;
+        }
         widget.onChanged(kVisibleChatSurfaceModes[targetIndex]);
       },
       child: Container(
@@ -2008,71 +2052,85 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     final Widget content;
     if (widget.messages.isEmpty) {
-      content = GestureDetector(
-        onVerticalDragUpdate: (_) {},
-        behavior: HitTestBehavior.opaque,
-        child: Center(
-          child: Text(
-            AppTextLocalizer.choose(
-              zh: '有什么可以帮助你的？',
-              en: 'How can I help you?',
-              locale: Localizations.localeOf(context),
-            ),
-            style: TextStyle(
-              color:
-                  !widget.appearanceConfig.isActive &&
-                      widget.appearanceConfig.chatTextColorMode !=
-                          AppBackgroundTextColorMode.custom
-                  ? context.omniPalette.textSecondary
-                  : widget.visualProfile.secondaryTextColor,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      );
-    } else {
-      String? latestUserMessageId;
-      final messageSource = _observableMessages ?? widget.messages;
-      final timelineEntries = buildAgentRunTimelineEntries(
-        List<ChatMessageModel>.from(messageSource),
-        activeTaskIds: widget.activeAgentTaskIds,
-      );
-      for (final item in messageSource) {
-        if (item.user == 1) {
-          latestUserMessageId = item.id;
-          break;
-        }
+      final usePaletteText =
+          !widget.appearanceConfig.isActive &&
+          widget.appearanceConfig.chatTextColorMode !=
+              AppBackgroundTextColorMode.custom;
+      content = widget.showEmptyGreeting
+          ? GestureDetector(
+              onVerticalDragUpdate: (_) {},
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOutCubic,
+                alignment: widget.liftEmptyGreeting
+                    ? const Alignment(-1, -1)
+                    : const Alignment(0, -0.18),
+                child: ChatEmptyGreeting(
+                  primaryTextColor: usePaletteText
+                      ? context.omniPalette.textPrimary
+                      : widget.visualProfile.primaryTextColor,
+                  secondaryTextColor: usePaletteText
+                      ? context.omniPalette.textSecondary
+                      : widget.visualProfile.secondaryTextColor,
+                  accentColor: context.omniPalette.accentPrimary,
+                  quickPrompts: widget.emptyGreetingQuickPrompts,
+                  pinnedQuickPromptIds:
+                      widget.emptyGreetingPinnedQuickPromptIds,
+                  onQuickPromptSelected: widget.onQuickPromptSelected,
+                  codexWorkspaceName: widget.emptyGreetingCodexWorkspaceName,
+                  onCodexWorkspaceTap: widget.onEmptyGreetingCodexWorkspaceTap,
+                ),
+              ),
+            )
+          : const SizedBox.expand();
+      if (pageBackgroundColor == null) {
+        return content;
       }
-      final listView = ListView.builder(
-        controller: widget.scrollController,
-        reverse: false,
-        physics: const ClampingScrollPhysics(),
-        clipBehavior: Clip.hardEdge,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        itemCount: timelineEntries.length,
-        itemBuilder: (context, index) {
-          final dataIndex = timelineEntries.length - 1 - index;
-          final entry = timelineEntries[dataIndex];
-          final isOldestEntry = dataIndex == timelineEntries.length - 1;
-          final needTopPadding = isOldestEntry && !entry.isUserMessage;
-          return _buildTimelineListRow(
-            messageSource: messageSource,
-            entry: entry,
-            latestUserMessageId: latestUserMessageId,
-            padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
-          );
-        },
-      );
-      content = ClipRect(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleListScrollNotification,
-            child: listView,
-          ),
-        ),
-      );
+      return ColoredBox(color: pageBackgroundColor, child: content);
     }
+
+    String? latestUserMessageId;
+    final messageSource = _observableMessages ?? widget.messages;
+    final timelineEntries = buildAgentRunTimelineEntries(
+      List<ChatMessageModel>.from(messageSource),
+      activeTaskIds: widget.activeAgentTaskIds,
+    );
+    for (final item in messageSource) {
+      if (item.user == 1) {
+        latestUserMessageId = item.id;
+        break;
+      }
+    }
+    Widget listView = ListView.builder(
+      controller: widget.scrollController,
+      reverse: false,
+      physics: const ClampingScrollPhysics(),
+      clipBehavior: Clip.hardEdge,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      itemCount: timelineEntries.length,
+      itemBuilder: (context, index) {
+        final dataIndex = timelineEntries.length - 1 - index;
+        final entry = timelineEntries[dataIndex];
+        final isOldestEntry = dataIndex == timelineEntries.length - 1;
+        final needTopPadding = isOldestEntry && !entry.isUserMessage;
+        return _buildTimelineListRow(
+          messageSource: messageSource,
+          entry: entry,
+          latestUserMessageId: latestUserMessageId,
+          padding: EdgeInsets.only(top: needTopPadding ? 24.0 : 0.0),
+        );
+      },
+    );
+    content = ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleListScrollNotification,
+          child: listView,
+        ),
+      ),
+    );
 
     final paddedContent = AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -2338,6 +2396,7 @@ class ChatInputWrapper extends StatelessWidget {
   final List<ChatInputAttachment> attachments;
   final ValueChanged<String>? onRemoveAttachment;
   final VoidCallback? onTriggerSlashCommand;
+  final Widget? topBanner;
   final String? selectedModelOverrideId;
   final VoidCallback? onClearSelectedModelOverride;
   final double? contextUsageRatio;
@@ -2368,6 +2427,7 @@ class ChatInputWrapper extends StatelessWidget {
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onTriggerSlashCommand,
+    this.topBanner,
     this.selectedModelOverrideId,
     this.onClearSelectedModelOverride,
     this.contextUsageRatio,
@@ -2388,6 +2448,7 @@ class ChatInputWrapper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (topBanner != null) ...[topBanner!, const SizedBox(height: 8)],
           ChatInputArea(
             key: inputAreaKey,
             controller: controller,

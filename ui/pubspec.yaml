@@ -101,7 +101,7 @@ flutter:
     - assets/avatar/
     - assets/home/
     - assets/home/chat/
-    - assets/home/spring_festival/
+    - assets/home/date_header_icons/
     - assets/welcome/
     - assets/common/
     - assets/memory/
@@ -112,7 +112,6 @@ flutter:
     - assets/loading/
     - assets/course/
     - assets/chatbot/
-    - assets/chatbot/meituan-order-drinks/
     - assets/execution_history/
 
   # An image asset can refer to one or more resolution-specific "variants", see

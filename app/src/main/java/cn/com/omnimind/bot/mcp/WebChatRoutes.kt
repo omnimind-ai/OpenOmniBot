@@ -76,7 +76,11 @@ object WebChatRoutes {
                     conversationService.createConversation(
                         title = body["title"]?.toString() ?: "新对话",
                         mode = body["mode"]?.toString() ?: "normal",
-                        summary = body["summary"]?.toString()
+                        summary = body["summary"]?.toString(),
+                        parentConversationId = (body["parentConversationId"] as? Number)
+                            ?.toLong(),
+                        parentConversationMode = body["parentConversationMode"]?.toString(),
+                        scheduledTaskId = body["scheduledTaskId"]?.toString()
                     )
                 )
             }

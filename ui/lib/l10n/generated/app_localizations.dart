@@ -3590,6 +3590,18 @@ abstract class AppLocalizations {
   /// **'定时'**
   String get homeDrawerScheduled;
 
+  /// No description provided for @homeDrawerScheduledTasks.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时任务'**
+  String get homeDrawerScheduledTasks;
+
+  /// No description provided for @homeDrawerPinnedConversations.
+  ///
+  /// In zh, this message translates to:
+  /// **'置顶会话'**
+  String get homeDrawerPinnedConversations;
+
   /// No description provided for @homeDrawerGreeting.
   ///
   /// In zh, this message translates to:

@@ -62,7 +62,7 @@ class ScreenMaskLoader(override val context: Service) :
         }
 
         fun destroyInstance() {
-            getInstance()?.destroy()
+            INSTANCE?.destroy()
             INSTANCE = null
         }
 

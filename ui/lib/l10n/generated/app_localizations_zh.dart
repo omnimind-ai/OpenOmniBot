@@ -1872,6 +1872,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeDrawerScheduled => '定时';
 
   @override
+  String get homeDrawerScheduledTasks => '定时任务';
+
+  @override
+  String get homeDrawerPinnedConversations => '置顶会话';
+
+  @override
   String get homeDrawerGreeting => '你好！';
 
   @override

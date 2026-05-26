@@ -135,10 +135,22 @@ class CatDialogLayoutView @JvmOverloads constructor(
         this.message(message)
     }
 
-    fun message(message: String) {
+    fun message(message: String, keepVisibleUntilClosed: Boolean = false) {
         checkLockAndChangeStatus(DraggableViewState.MESSAGE) {
-            messageView.setMessage(message)
+            messageView.setMessage(message, keepVisibleUntilClosed)
         }
+    }
+
+    fun isPointInsideMessageView(rawX: Float, rawY: Float): Boolean {
+        if (currentState != DraggableViewState.MESSAGE || messageView.visibility != VISIBLE) {
+            return false
+        }
+        val location = IntArray(2)
+        messageView.getLocationOnScreen(location)
+        return rawX >= location[0] &&
+            rawX <= location[0] + messageView.width &&
+            rawY >= location[1] &&
+            rawY <= location[1] + messageView.height
     }
 
     fun showScheduledTip(closeTimer: Long, doTaskTimer: Long) {

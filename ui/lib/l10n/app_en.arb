@@ -685,6 +685,8 @@
   "homeDrawerSearchResults": "Search results",
   "homeDrawerResultCount": "results",
   "homeDrawerScheduled": "Scheduled",
+  "homeDrawerScheduledTasks": "Scheduled tasks",
+  "homeDrawerPinnedConversations": "Pinned conversations",
   "homeDrawerGreeting": "Hello!",
   "homeDrawerWelcome": "Welcome to Omnibot",
   "homeDrawerDawnGreeting": "Late night",

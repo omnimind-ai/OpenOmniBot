@@ -34,6 +34,10 @@ class ConversationModel {
   final int id;
   final ConversationMode mode;
   final bool isArchived;
+  final bool isPinned;
+  final int? parentConversationId;
+  final ConversationMode? parentConversationMode;
+  final String? scheduledTaskId;
   final String title;
   final String? summary;
   final String? contextSummary;
@@ -52,6 +56,10 @@ class ConversationModel {
     required this.id,
     this.mode = ConversationMode.normal,
     this.isArchived = false,
+    this.isPinned = false,
+    this.parentConversationId,
+    this.parentConversationMode,
+    this.scheduledTaskId,
     required this.title,
     this.summary,
     this.contextSummary,
@@ -72,6 +80,14 @@ class ConversationModel {
       id: (json['id'] as num?)?.toInt() ?? 0,
       mode: ConversationMode.fromStorageValue(json['mode'] as String?),
       isArchived: json['isArchived'] as bool? ?? false,
+      isPinned: json['isPinned'] as bool? ?? false,
+      parentConversationId: (json['parentConversationId'] as num?)?.toInt(),
+      parentConversationMode: json['parentConversationMode'] == null
+          ? null
+          : ConversationMode.fromStorageValue(
+              json['parentConversationMode'] as String?,
+            ),
+      scheduledTaskId: json['scheduledTaskId'] as String?,
       title: (json['title'] ?? '').toString(),
       summary: json['summary'] as String?,
       contextSummary: json['contextSummary'] as String?,
@@ -97,6 +113,10 @@ class ConversationModel {
       'id': id,
       'mode': mode.storageValue,
       'isArchived': isArchived,
+      'isPinned': isPinned,
+      'parentConversationId': parentConversationId,
+      'parentConversationMode': parentConversationMode?.storageValue,
+      'scheduledTaskId': scheduledTaskId,
       'title': title,
       'summary': summary,
       'contextSummary': contextSummary,
@@ -117,6 +137,10 @@ class ConversationModel {
     int? id,
     ConversationMode? mode,
     bool? isArchived,
+    bool? isPinned,
+    int? parentConversationId,
+    ConversationMode? parentConversationMode,
+    String? scheduledTaskId,
     String? title,
     String? summary,
     String? contextSummary,
@@ -135,6 +159,11 @@ class ConversationModel {
       id: id ?? this.id,
       mode: mode ?? this.mode,
       isArchived: isArchived ?? this.isArchived,
+      isPinned: isPinned ?? this.isPinned,
+      parentConversationId: parentConversationId ?? this.parentConversationId,
+      parentConversationMode:
+          parentConversationMode ?? this.parentConversationMode,
+      scheduledTaskId: scheduledTaskId ?? this.scheduledTaskId,
       title: title ?? this.title,
       summary: summary ?? this.summary,
       contextSummary: contextSummary ?? this.contextSummary,
@@ -190,6 +219,9 @@ class ConversationModel {
   DateTime get updatedDate => DateTime.fromMillisecondsSinceEpoch(updatedAt);
 
   bool get isActive => status == 0;
+
+  bool get isScheduledChild =>
+      parentConversationId != null && parentConversationId! > 0;
 
   double? get contextUsageRatio {
     if (promptTokenThreshold <= 0) return null;

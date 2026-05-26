@@ -61,6 +61,16 @@
       "hasEvals": false
     },
     {
+      "id": "hatch-pet",
+      "name": "hatch-pet",
+      "description": "Create or update an Omnibot / Xiaowan custom pet from a concept, reference image, or bare company name. Use when the user wants a selectable pet package, animated 8x9 sprite atlas, brand-discovery-driven mascot, or static fallback pet.",
+      "assetPath": "builtin_skills/hatch-pet",
+      "hasScripts": true,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "find-install-skills",
       "name": "find-install-skills",
       "description": "Find and install relevant Omnibot skills. Use when the user asks \"找个 skill\", \"有没有这个功能的 skill\", \"find a skill for X\", \"is there a skill for X\", \"install skill\", \"安装 skill\", \"技能商店\", or wants to extend the agent with an installable workflow.",

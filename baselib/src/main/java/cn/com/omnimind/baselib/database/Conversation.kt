@@ -18,6 +18,18 @@ data class Conversation(
     // 是否已归档
     val isArchived: Boolean = false,
 
+    // 是否置顶
+    val isPinned: Boolean = false,
+
+    // 定时任务子会话对应的主会话
+    val parentConversationId: Long? = null,
+
+    // 定时任务子会话对应的主会话模式
+    val parentConversationMode: String? = null,
+
+    // 触发该子会话的定时任务 ID
+    val scheduledTaskId: String? = null,
+
     // 对话摘要（AI生成，6个字左右）
     val summary: String? = null,
 

@@ -29,8 +29,14 @@ class ScheduledTask {
   /// 目标类型：vlm
   final String targetKind;
 
-  /// subagent 固定线程 conversationId
+  /// 旧版 subagent 固定线程 conversationId，升级后仅作兼容回填
   final String? subagentConversationId;
+
+  /// subagent 定时任务产生所在的主会话
+  final String? parentConversationId;
+
+  /// 主会话模式
+  final String? parentConversationMode;
 
   /// subagent 任务提示词
   final String? subagentPrompt;
@@ -77,6 +83,8 @@ class ScheduledTask {
     required this.suggestionId,
     this.targetKind = 'vlm',
     this.subagentConversationId,
+    this.parentConversationId,
+    this.parentConversationMode,
     this.subagentPrompt,
     this.notificationEnabled = true,
     required this.type,
@@ -93,8 +101,7 @@ class ScheduledTask {
 
   /// 从JSON创建
   factory ScheduledTask.fromJson(Map<String, dynamic> json) {
-    final targetKindFromJson =
-        json['targetKind'] as String? ?? 'vlm';
+    final targetKindFromJson = json['targetKind'] as String? ?? 'vlm';
     final rawSuggestionData = json['suggestionData'] != null
         ? Map<String, dynamic>.from(json['suggestionData'] as Map)
         : <String, dynamic>{};
@@ -107,6 +114,10 @@ class ScheduledTask {
       suggestionId: json['suggestionId'] as String? ?? '',
       targetKind: targetKindFromJson,
       subagentConversationId: json['subagentConversationId'] as String?,
+      parentConversationId:
+          (json['parentConversationId'] ?? json['parentConversationID'])
+              ?.toString(),
+      parentConversationMode: json['parentConversationMode'] as String?,
       subagentPrompt: json['subagentPrompt'] as String?,
       notificationEnabled: json['notificationEnabled'] as bool? ?? true,
       type: ScheduledTaskType.values.firstWhere(
@@ -135,6 +146,8 @@ class ScheduledTask {
       'suggestionId': suggestionId,
       'targetKind': targetKind,
       'subagentConversationId': subagentConversationId,
+      'parentConversationId': parentConversationId,
+      'parentConversationMode': parentConversationMode,
       'subagentPrompt': subagentPrompt,
       'notificationEnabled': notificationEnabled,
       'type': type.name,
@@ -159,6 +172,8 @@ class ScheduledTask {
     String? suggestionId,
     String? targetKind,
     String? subagentConversationId,
+    String? parentConversationId,
+    String? parentConversationMode,
     String? subagentPrompt,
     bool? notificationEnabled,
     ScheduledTaskType? type,
@@ -181,6 +196,9 @@ class ScheduledTask {
       targetKind: targetKind ?? this.targetKind,
       subagentConversationId:
           subagentConversationId ?? this.subagentConversationId,
+      parentConversationId: parentConversationId ?? this.parentConversationId,
+      parentConversationMode:
+          parentConversationMode ?? this.parentConversationMode,
       subagentPrompt: subagentPrompt ?? this.subagentPrompt,
       notificationEnabled: notificationEnabled ?? this.notificationEnabled,
       type: type ?? this.type,

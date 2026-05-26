@@ -36,13 +36,21 @@ class ConversationDomainService(
     suspend fun createConversation(
         title: String,
         mode: String,
-        summary: String? = null
+        summary: String? = null,
+        parentConversationId: Long? = null,
+        parentConversationMode: String? = null,
+        scheduledTaskId: String? = null
     ): Map<String, Any?> {
         val now = System.currentTimeMillis()
         val conversation = Conversation(
             id = 0,
             title = title.ifBlank { "新对话" },
             mode = normalizeConversationMode(mode),
+            parentConversationId = parentConversationId?.takeIf { it > 0L },
+            parentConversationMode = parentConversationMode
+                ?.let(::normalizeConversationMode)
+                ?.takeIf { it.isNotEmpty() },
+            scheduledTaskId = scheduledTaskId?.trim()?.takeIf { it.isNotEmpty() },
             summary = summary,
             status = 0,
             createdAt = now,
@@ -73,6 +81,25 @@ class ConversationDomainService(
                 conversationMap["mode"]?.toString() ?: existing.mode
             ),
             isArchived = conversationMap.readBoolean("isArchived") ?: existing.isArchived,
+            isPinned = conversationMap.readBoolean("isPinned") ?: existing.isPinned,
+            parentConversationId = if (conversationMap.containsKey("parentConversationId")) {
+                conversationMap.readLong("parentConversationId")?.takeIf { it > 0L }
+            } else {
+                existing.parentConversationId
+            },
+            parentConversationMode = if (conversationMap.containsKey("parentConversationMode")) {
+                conversationMap["parentConversationMode"]
+                    ?.toString()
+                    ?.let(::normalizeConversationMode)
+                    ?.takeIf { it.isNotEmpty() }
+            } else {
+                existing.parentConversationMode
+            },
+            scheduledTaskId = if (conversationMap.containsKey("scheduledTaskId")) {
+                conversationMap["scheduledTaskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            } else {
+                existing.scheduledTaskId
+            },
             summary = conversationMap["summary"]?.toString(),
             contextSummary = incomingContextSummary
                 ?.takeIf { it.isNotEmpty() }
@@ -286,6 +313,10 @@ class ConversationDomainService(
             "title" to conversation.title,
             "mode" to conversation.mode,
             "isArchived" to conversation.isArchived,
+            "isPinned" to conversation.isPinned,
+            "parentConversationId" to conversation.parentConversationId,
+            "parentConversationMode" to conversation.parentConversationMode,
+            "scheduledTaskId" to conversation.scheduledTaskId,
             "summary" to conversation.summary,
             "contextSummary" to conversation.contextSummary,
             "contextSummaryCutoffEntryDbId" to conversation.contextSummaryCutoffEntryDbId,

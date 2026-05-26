@@ -17,7 +17,7 @@ import androidx.room.RoomDatabase
         TokenUsageRecord::class,
         CodexThreadBinding::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

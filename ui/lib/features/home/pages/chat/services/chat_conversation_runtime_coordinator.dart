@@ -120,7 +120,9 @@ class ChatConversationRuntimeState {
   ChatConversationRuntimeState({
     required this.conversationId,
     required this.mode,
-  }) : chatIslandDisplayLayer = ChatIslandDisplayLayer.mode;
+  }) : chatIslandDisplayLayer = mode == kChatRuntimeModeNormal
+           ? ChatIslandDisplayLayer.tools
+           : ChatIslandDisplayLayer.mode;
 
   final int conversationId;
   final String mode;
@@ -1850,10 +1852,15 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
   }
 
   void _handleAgentStreamEvent(AgentStreamEvent event) {
-    final binding = _taskBindings[event.taskId];
-    final runtime = _runtimeForTask(event.taskId);
+    var binding = _taskBindings[event.taskId];
+    var runtime = _runtimeForTask(event.taskId);
     if (binding == null || runtime == null) {
-      return;
+      final recovered = _recoverExternalAgentStreamBinding(event);
+      if (recovered == null) {
+        return;
+      }
+      binding = recovered.binding;
+      runtime = recovered.runtime;
     }
 
     final reduceResult = _agentStreamReducer.reduce(
@@ -1939,6 +1946,50 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
         );
         return;
     }
+  }
+
+  ({_TaskBinding binding, ChatConversationRuntimeState runtime})?
+  _recoverExternalAgentStreamBinding(AgentStreamEvent event) {
+    final conversationId = _asPositiveInt(event.raw['conversationId']);
+    if (conversationId == null) {
+      return null;
+    }
+    final runtimeMode = _runtimeModeFromConversationMode(
+      (event.raw['conversationMode'] ?? event.raw['mode'] ?? '').toString(),
+    );
+    final runtime = runtimeFor(
+      conversationId: conversationId,
+      mode: runtimeMode,
+    );
+    if (runtime == null) {
+      return null;
+    }
+    final binding = _TaskBinding(
+      conversationId: conversationId,
+      mode: runtimeMode,
+    );
+    _taskBindings[event.taskId] = binding;
+    runtime.currentDispatchTaskId ??= event.taskId;
+    runtime.lastAgentTaskId = event.taskId;
+    return (binding: binding, runtime: runtime);
+  }
+
+  int? _asPositiveInt(dynamic raw) {
+    final value = switch (raw) {
+      int value => value,
+      num value => value.toInt(),
+      String value => int.tryParse(value.trim()),
+      _ => null,
+    };
+    return value != null && value > 0 ? value : null;
+  }
+
+  String _runtimeModeFromConversationMode(String rawMode) {
+    return switch (ConversationMode.fromStorageValue(rawMode)) {
+      ConversationMode.openclaw => kChatRuntimeModeOpenClaw,
+      ConversationMode.codex => kChatRuntimeModeCodex,
+      _ => kChatRuntimeModeNormal,
+    };
   }
 
   void _syncRuntimeAgentState(

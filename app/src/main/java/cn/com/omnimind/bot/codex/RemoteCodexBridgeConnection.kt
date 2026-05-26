@@ -445,15 +445,16 @@ internal suspend fun probeCodexRemoteBridge(
                 .build()
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
                 if (!response.isSuccessful) {
                     return@withContext CodexRemoteBridgeProbe(
                         ready = false,
                         version = null,
-                        error = "Bridge health check failed: HTTP ${response.code}",
-                        cwd = null
+                        error = json?.stringValue("error")
+                            ?: "Bridge health check failed: HTTP ${response.code}",
+                        cwd = json?.stringValue("cwd")
                     )
                 }
-                val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
                 CodexRemoteBridgeProbe(
                     ready = json?.get("ok")?.asBooleanOrNull() ?: true,
                     version = json?.stringValue("codexVersion") ?: json?.stringValue("version"),

@@ -101,24 +101,23 @@ class UIBaseEventImpl : UIBaseEvent {
         if (!isFloatingUiEnabled()) return
         if (taskUIJob?.isActive == true) {
             withContext(Dispatchers.Main) {
-                ScreenMaskLoader.destroyInstance()
                 DraggableBallInstance.cancelAnimation()
                 taskUIJob?.cancel()
                 DraggableBallInstance.destroy()
-                ScreenMaskLoader.destroyInstance()
-                CancelClickLoader.destroyInstance()
-                FloatingHalfScreenLoader.destroyInstance()
+                destroyAccessibilityOverlays()
             }
         }
         taskUIJob = CoroutineScope(Dispatchers.IO)
         taskUIJob?.launch {
             VibrationUtil.vibrateLight()
             withContext(Dispatchers.Main) {
-                ScreenMaskLoader.loadGoneViewScreenMask()
-                CancelClickLoader.cancelIntercepting()
+                if (AssistsService.isInit()) {
+                    ScreenMaskLoader.loadGoneViewScreenMask()
+                    CancelClickLoader.cancelIntercepting()
+                }
                 DraggableBallInstance.loadBall()
                 if (!CompanionUiState.shouldSuppressStartMessage()) {
-                   message("小万已经开始陪伴啦~")
+                    message("小万已经开始陪伴啦~")
                 }
             }
         }
@@ -139,16 +138,20 @@ class UIBaseEventImpl : UIBaseEvent {
             withContext(Dispatchers.Main) {
                 // 先关闭消息气泡等所有功能视图
                 DraggableBallInstance.collapse()
-                
+
                 DraggableBallInstance.cancelAnimation()
                 DraggableBallInstance.finish() {
                     DraggableBallInstance.destroy()
-                    ScreenMaskLoader.destroyInstance()
-                    CancelClickLoader.destroyInstance()
-                    FloatingHalfScreenLoader.destroyInstance()
+                    destroyAccessibilityOverlays()
                 }
             }
         }
+    }
+
+    private fun destroyAccessibilityOverlays() {
+        ScreenMaskLoader.destroyInstance()
+        CancelClickLoader.destroyInstance()
+        FloatingHalfScreenLoader.destroyInstance()
     }
 
     override suspend fun <T> doAssistsUnlockScreenMask(

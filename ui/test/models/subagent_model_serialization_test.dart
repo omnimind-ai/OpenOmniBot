@@ -21,7 +21,10 @@ void main() {
       ConversationMode.fromStorageValue('subagent'),
       ConversationMode.subagent,
     );
-    expect(ConversationMode.fromStorageValue('SUBAGENT'), ConversationMode.subagent);
+    expect(
+      ConversationMode.fromStorageValue('SUBAGENT'),
+      ConversationMode.subagent,
+    );
   });
 
   test('ScheduledTask keeps subagent fields through json', () {
@@ -34,6 +37,8 @@ void main() {
       suggestionId: 's1',
       targetKind: 'subagent',
       subagentConversationId: '12345',
+      parentConversationId: '7',
+      parentConversationMode: ConversationMode.normal.storageValue,
       subagentPrompt: '每晚整理一下今天的新闻',
       notificationEnabled: true,
       type: ScheduledTaskType.fixedTime,
@@ -52,6 +57,11 @@ void main() {
 
     expect(restored.targetKind, 'subagent');
     expect(restored.subagentConversationId, '12345');
+    expect(restored.parentConversationId, '7');
+    expect(
+      restored.parentConversationMode,
+      ConversationMode.normal.storageValue,
+    );
     expect(restored.subagentPrompt, '每晚整理一下今天的新闻');
     expect(restored.notificationEnabled, true);
     expect(restored.suggestionData?['targetKind'], 'subagent');

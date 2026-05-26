@@ -21,6 +21,7 @@ import cn.com.omnimind.bot.ui.platformview.EmbeddedTerminalPlatformViewFactory
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.SchemeUtil
+import cn.com.omnimind.bot.util.TaskRuntimeSettings
 import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -60,10 +61,14 @@ class MainActivity : FlutterActivity() {
         applyResponsiveOrientation()
         super.onCreate(savedInstanceState)
         CompanionOverlaySettings.init(this)
+        TaskRuntimeSettings.attachActivity(this)
+        TaskRuntimeSettings.consumeTaskCompletionNotificationIntent(this, intent)
+
         if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
             finish()
             return
         }
+
         val channelStart = System.currentTimeMillis()
         channelManager.onCreate(this)
         OmniLog.d(TAG, "MainActivity channelManager.onCreate cost: ${System.currentTimeMillis() - channelStart}ms")
@@ -149,11 +154,15 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        TaskRuntimeSettings.consumeTaskCompletionNotificationIntent(this, intent)
+
         if (QuickLogWidgetActionRouter.consumeInto(this, intent)) {
             finish()
             return
         }
+
         SchemeUtil.pushRoute(intent, channelManager, null)
+
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -184,6 +193,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        TaskRuntimeSettings.attachActivity(this)
+        TaskRuntimeSettings.onActivityResumed(this)
         AppUpdateManager.requestSilentCheckIfDue(this)
 
         try {
@@ -209,10 +220,16 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        TaskRuntimeSettings.detachActivity(this)
         if (isHalfScreenInitialized) {
             halfScreenListenerImpl.onDestroy()
         }
         super.onDestroy()
+    }
+
+    override fun onPause() {
+        TaskRuntimeSettings.onActivityPaused(this)
+        super.onPause()
     }
 
     private fun applyHideFromRecentsSetting() {

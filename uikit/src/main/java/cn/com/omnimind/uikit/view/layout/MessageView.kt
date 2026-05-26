@@ -23,6 +23,7 @@ class MessageView @JvmOverloads constructor(
 
     private var finishView:CoroutineScope? =null;
     private var keepVisible: Boolean = false
+    private var keepVisibleOverride: Boolean = false
     private var customDelayMillis: Long = 4000 // 4秒显示时间
 
     private lateinit var tvTip: TextView
@@ -34,8 +35,9 @@ class MessageView @JvmOverloads constructor(
         setWillNotDraw(false)
     }
 
-    fun setMessage(message: String) {
+    fun setMessage(message: String, keepVisibleOverride: Boolean = false) {
         tvTip.text = message
+        this.keepVisibleOverride = keepVisibleOverride
         keepVisible = message.startsWith("小猫需要你的帮助")
     }
 
@@ -50,7 +52,7 @@ class MessageView @JvmOverloads constructor(
             finishView?.cancel()
         }
         finishView= CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        if (!keepVisible) {
+        if (!keepVisible && !keepVisibleOverride) {
             finishView?.launch {
                 delay(customDelayMillis)
                 withContext(Dispatchers.Main){
@@ -67,6 +69,7 @@ class MessageView @JvmOverloads constructor(
         // 创建向左或向右消失的动画（基于isLeft参数）
         finishView?.cancel()
         keepVisible = false
+        keepVisibleOverride = false
         val targetTranslationX = if (isLeft) -(width.toFloat()+ Constant.CAT_VIEW_LAYOUT_MARGIN) else width.toFloat()+ Constant.CAT_VIEW_LAYOUT_MARGIN
         animate().translationX(targetTranslationX).setDuration(durations)
             .setInterpolator(OvershootInterpolator(1.2f)).withEndAction {

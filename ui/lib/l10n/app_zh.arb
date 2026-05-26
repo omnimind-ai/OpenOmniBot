@@ -685,6 +685,8 @@
   "homeDrawerSearchResults": "搜索结果",
   "homeDrawerResultCount": "条",
   "homeDrawerScheduled": "定时",
+  "homeDrawerScheduledTasks": "定时任务",
+  "homeDrawerPinnedConversations": "置顶会话",
   "homeDrawerGreeting": "你好！",
   "homeDrawerWelcome": "欢迎使用小万",
   "homeDrawerDawnGreeting": "凌晨啦",

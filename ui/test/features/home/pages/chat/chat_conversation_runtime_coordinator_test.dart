@@ -6,6 +6,7 @@ import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_coordinator.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
 import 'package:ui/models/chat_message_model.dart';
+import 'package:ui/models/conversation_model.dart';
 import 'package:ui/services/ai_chat_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 
@@ -406,6 +407,55 @@ void main() {
     expect(runtimeA.messages.first.content?['decodeTokensPerSecond'], 56.7);
     expect(runtimeB.messages, isEmpty);
   });
+
+  test(
+    'adopts scheduled subagent stream events for an opened conversation runtime',
+    () async {
+      const conversationId = 1010;
+      const taskId = 'subagent_schedule_123_schedule-news';
+
+      final runtime = coordinator.ensureRuntime(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeNormal,
+        conversation: ConversationModel(
+          id: conversationId,
+          mode: ConversationMode.subagent,
+          title: '新闻整理',
+          status: 0,
+          messageCount: 0,
+          createdAt: 1000,
+          updatedAt: 1000,
+        ),
+      );
+
+      await emitPlatformEvent('onAgentStreamEvent', <String, dynamic>{
+        'taskId': taskId,
+        'conversationId': conversationId,
+        'conversationMode': ConversationMode.subagent.storageValue,
+        'seq': 1,
+        'kind': 'text_snapshot',
+        'entryId': '$taskId-text',
+        'roundIndex': 1,
+        'text': '定时任务正在整理新闻。',
+      });
+
+      expect(runtime.messages, hasLength(1));
+      expect(runtime.messages.single.id, '$taskId-text');
+      expect(runtime.messages.single.text, '定时任务正在整理新闻。');
+      expect(runtime.isAiResponding, isTrue);
+
+      await emitPlatformEvent('onAgentStreamEvent', <String, dynamic>{
+        'taskId': taskId,
+        'conversationId': conversationId,
+        'conversationMode': ConversationMode.subagent.storageValue,
+        'seq': 2,
+        'kind': 'completed',
+        'success': true,
+      });
+
+      expect(runtime.isAiResponding, isFalse);
+    },
+  );
 
   test('persists codex runtime messages back to native history', () async {
     const conversationId = 2001;
