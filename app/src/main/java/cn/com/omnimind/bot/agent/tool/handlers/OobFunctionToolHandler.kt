@@ -474,6 +474,8 @@ class OobFunctionToolHandler(
             "audit_run_id" to auditRunId,
             "function_id" to (spec["function_id"] ?: functionId),
             "description" to description,
+            "source" to "omniflow_replay",
+            "run_source" to "omniflow_replay",
             "runner" to when {
                 modelRequired -> "oob_function_agent_fallback_required"
                 delegatedToolUsed -> "oob_function_mixed_runner"
@@ -974,6 +976,9 @@ class OobFunctionToolHandler(
         val resultPayload = result?.let {
             linkedMapOf<String, Any?>(
                 "function_id" to functionId.takeIf { id -> id.isNotBlank() },
+                "source" to "omniflow_replay",
+                "run_source" to "omniflow_replay",
+                "runner" to it["runner"],
                 "nested_run_id" to it["nested_run_id"],
                 "nested_step_count" to it["nested_step_count"],
                 "nested_success_step_count" to it["nested_success_step_count"],
@@ -990,6 +995,10 @@ class OobFunctionToolHandler(
             "toolName" to toolName,
             "displayName" to helper.localized("复用指令"),
             "toolType" to "oob_function",
+            "source" to "omniflow_replay",
+            "runSource" to "omniflow_replay",
+            "run_source" to "omniflow_replay",
+            "runner" to (result?.get("runner") ?: "oob_omniflow_replay"),
             "toolTitle" to if (functionId.isNotBlank()) {
                 "${helper.localized("复用指令")}：$functionId"
             } else {
@@ -1457,6 +1466,8 @@ class OobFunctionToolHandler(
             "audit_run_id" to auditRunId,
             "function_id" to (spec["function_id"] ?: functionId),
             "description" to spec["description"]?.toString().orEmpty(),
+            "source" to "omniflow_replay",
+            "run_source" to "omniflow_replay",
             "runner" to "oob_omniflow_replay",
             "step_count" to 0,
             "success_step_count" to 0,

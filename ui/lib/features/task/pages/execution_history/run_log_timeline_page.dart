@@ -740,7 +740,7 @@ class _RunLogOverviewCard extends StatelessWidget {
         MapEntry(_text(context, '耗时', 'Duration'), _formatMs(durationMs)),
       if (tokenSummary.totalTokens != null)
         MapEntry(
-          _text(context, 'Token', 'Tokens'),
+          _text(context, 'VLM Token', 'VLM tokens'),
           _formatTokens(tokenSummary.totalTokens!),
         ),
       if (started.isNotEmpty)
@@ -923,7 +923,7 @@ class _RunLogTokenSummaryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _text(context, 'Token 消耗', 'Token usage'),
+                  _text(context, '在线 VLM 成本', 'Online VLM cost'),
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 13,
@@ -1530,7 +1530,7 @@ class _StepCard extends StatelessWidget {
                                   color: palette.textSecondary,
                                 ),
                               ),
-                            if (snapshot.totalTokens != null) ...[
+                            if (snapshot.tokenUsageIsVlmCost) ...[
                               const SizedBox(width: 6),
                               Text(
                                 _formatTokens(snapshot.totalTokens!),
@@ -1849,13 +1849,13 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                             const SizedBox(height: 10),
                             // Status / route / duration pills
                             _SummaryGrid(snapshot: snapshot),
-                            if (snapshot.tokenUsage.isNotEmpty) ...[
+                            if (snapshot.tokenUsageIsVlmCost) ...[
                               const SizedBox(height: 8),
                               _CollapsibleSection(
                                 title: _text(
                                   context,
-                                  'Token 消耗',
-                                  'Token usage',
+                                  '在线 VLM 成本',
+                                  'Online VLM cost',
                                 ),
                                 copyValue: _prettyJson({
                                   'token_usage': snapshot.tokenUsage,
@@ -3272,9 +3272,9 @@ class _SummaryGrid extends StatelessWidget {
           _text(context, '耗时', 'Duration'),
           _formatMs(snapshot.durationMs!),
         ),
-      if (snapshot.totalTokens != null)
+      if (snapshot.tokenUsageIsVlmCost)
         MapEntry(
-          _text(context, 'Token', 'Tokens'),
+          _text(context, 'VLM Token', 'VLM tokens'),
           snapshot.tokenUsageLabel(context),
         ),
       if (snapshot.packageName.isNotEmpty)
@@ -3850,6 +3850,8 @@ class _RunLogStepSnapshot {
     return toolName;
   }
 
+  bool get tokenUsageIsVlmCost => isVlmStep && totalTokens != null;
+
   String statusLabel(BuildContext context) {
     if (success == null) {
       return _text(context, '未知', 'Unknown');
@@ -3912,7 +3914,7 @@ class _RunLogStepSnapshot {
         'Execution: ${_userVisibleString(compileKind)}',
       if (success != null) 'Success: $success',
       if (durationMs != null) 'Duration: ${_formatMs(durationMs!)}',
-      if (totalTokens != null) 'Token Usage: ${tokenUsageLabelTextOnly()}',
+      if (tokenUsageIsVlmCost) 'VLM Token Usage: ${tokenUsageLabelTextOnly()}',
       if (packageName.isNotEmpty) 'Package: $packageName',
       if (prompt.isNotEmpty) 'Prompt Source: $promptSource',
     ];
@@ -4263,6 +4265,12 @@ Color _vlmColor(BuildContext context) {
       : const Color(0xFFDB2777);
 }
 
+Color _humanColor(BuildContext context) {
+  return context.isDarkTheme
+      ? const Color(0xFFFFB86B)
+      : const Color(0xFFD97706);
+}
+
 Color _warningColor(BuildContext context) {
   return context.isDarkTheme
       ? const Color(0xFFFFD166)
@@ -4382,45 +4390,115 @@ String _runLogTimeText(
   return '${value.year}/$month/$day $hour:$minute';
 }
 
-enum _RunLogStepSource { vlm, omniflow, route }
+enum _RunLogStepSource { agentVlm, human, omniflowReplay, route }
 
 bool _isVlmRunLogStep(_RunLogStepSnapshot snapshot) => snapshot.isVlmStep;
 
-bool _isScriptableReplayStep(_RunLogStepSnapshot snapshot) {
-  final toolName = snapshot.toolName.trim();
-  if (toolName.isEmpty || toolName.toLowerCase() == 'unknown_tool') {
-    return false;
-  }
-  if (RunLogReplayPolicy.shouldSkipTool(toolName) ||
-      RunLogReplayPolicy.isPerceptionTool(toolName) ||
-      RunLogReplayPolicy.isDataFlowTool(toolName) ||
-      RunLogReplayPolicy.isProviderOnlyTool(toolName)) {
-    return false;
-  }
-  return RunLogReplayPolicy.omniflowActionForToolName(toolName) != null ||
-      RunLogReplayPolicy.isOmniflowExecutionTool(toolName);
-}
-
 _RunLogStepSource _runLogStepSource(_RunLogStepSnapshot snapshot) {
-  if (_isScriptableReplayStep(snapshot)) {
-    return _RunLogStepSource.omniflow;
+  final evidence = _runLogSourceEvidence(snapshot);
+  if (_containsAny(evidence, const [
+    'human_takeover',
+    'manual_recording',
+    'human',
+  ])) {
+    return _RunLogStepSource.human;
+  }
+  if (_containsAny(evidence, const [
+    'omniflow_replay',
+    'oob_omniflow_replay',
+    'oob_function_runner',
+    'completed_local',
+  ])) {
+    return _RunLogStepSource.omniflowReplay;
   }
   if (_isVlmRunLogStep(snapshot)) {
-    return _RunLogStepSource.vlm;
+    return _RunLogStepSource.agentVlm;
   }
   return _RunLogStepSource.route;
 }
 
+Set<String> _runLogSourceEvidence(_RunLogStepSnapshot snapshot) {
+  final values = <String>{};
+  void collect(dynamic value, {int depth = 0}) {
+    if (value == null || depth > 4) {
+      return;
+    }
+    if (value is Map) {
+      for (final entry in value.entries) {
+        final key = entry.key.toString().trim().toLowerCase();
+        final shouldCollect = const {
+          'source',
+          'run_source',
+          'runsource',
+          'selection_source',
+          'selectionsource',
+          'recording_source',
+          'recordingsource',
+          'compile_kind',
+          'compilekind',
+          'tool_type',
+          'tooltype',
+          'runner',
+          'executor',
+          'execution_status',
+          'executionstatus',
+          'replay_engine',
+          'replayengine',
+        }.contains(key);
+        if (shouldCollect) {
+          collect(entry.value, depth: depth + 1);
+        } else if (entry.value is Map || entry.value is List) {
+          collect(entry.value, depth: depth + 1);
+        }
+      }
+      return;
+    }
+    if (value is List) {
+      for (final item in value) {
+        collect(item, depth: depth + 1);
+      }
+      return;
+    }
+    final text = value.toString().trim().toLowerCase();
+    if (text.isNotEmpty) {
+      values.add(text);
+    }
+  }
+
+  collect(snapshot.card);
+  collect(snapshot.header);
+  collect(snapshot.result);
+  collect(snapshot.params);
+  collect(snapshot.compileResult);
+  values.add(snapshot.compileKind.trim().toLowerCase());
+  values.add(snapshot.toolName.trim().toLowerCase());
+  return values.where((value) => value.isNotEmpty).toSet();
+}
+
+bool _containsAny(Set<String> values, List<String> needles) {
+  for (final value in values) {
+    for (final needle in needles) {
+      if (value == needle || value.contains(needle)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool _hasRunLogSourceBadge(_RunLogStepSource source) {
-  return source == _RunLogStepSource.vlm ||
-      source == _RunLogStepSource.omniflow;
+  return source == _RunLogStepSource.agentVlm ||
+      source == _RunLogStepSource.human ||
+      source == _RunLogStepSource.omniflowReplay;
 }
 
 Color _runLogStepSourceColor(BuildContext context, _RunLogStepSource source) {
   switch (source) {
-    case _RunLogStepSource.vlm:
+    case _RunLogStepSource.agentVlm:
       return _vlmColor(context);
-    case _RunLogStepSource.omniflow:
+    case _RunLogStepSource.human:
+      return _humanColor(context);
+    case _RunLogStepSource.omniflowReplay:
       return _modelFreeColor(context);
     case _RunLogStepSource.route:
       return _routeColor(context);
@@ -4429,10 +4507,12 @@ Color _runLogStepSourceColor(BuildContext context, _RunLogStepSource source) {
 
 String _runLogStepSourceLabel(BuildContext context, _RunLogStepSource source) {
   switch (source) {
-    case _RunLogStepSource.vlm:
-      return 'VLM';
-    case _RunLogStepSource.omniflow:
-      return 'OmniFlow';
+    case _RunLogStepSource.agentVlm:
+      return 'Agent/VLM';
+    case _RunLogStepSource.human:
+      return _text(context, '人类', 'Human');
+    case _RunLogStepSource.omniflowReplay:
+      return _text(context, '离线重放', 'OmniFlow Replay');
     case _RunLogStepSource.route:
       return _text(context, '工具', 'Tool');
   }
@@ -4440,10 +4520,12 @@ String _runLogStepSourceLabel(BuildContext context, _RunLogStepSource source) {
 
 String _runLogStepDetailTitle(BuildContext context, _RunLogStepSource source) {
   switch (source) {
-    case _RunLogStepSource.vlm:
-      return _text(context, 'VLM 执行记录', 'VLM run');
-    case _RunLogStepSource.omniflow:
-      return _text(context, 'OmniFlow 执行记录', 'OmniFlow run');
+    case _RunLogStepSource.agentVlm:
+      return _text(context, 'Agent/VLM 执行记录', 'Agent/VLM run');
+    case _RunLogStepSource.human:
+      return _text(context, '人类接管记录', 'Human takeover');
+    case _RunLogStepSource.omniflowReplay:
+      return _text(context, '离线重放记录', 'Offline replay');
     case _RunLogStepSource.route:
       return _text(context, '工具调用历史', 'Tool call history');
   }
@@ -4454,10 +4536,12 @@ String _runLogStepActionPanelTitle(
   _RunLogStepSource source,
 ) {
   switch (source) {
-    case _RunLogStepSource.vlm:
-      return _text(context, 'VLM 动作', 'VLM action');
-    case _RunLogStepSource.omniflow:
-      return _text(context, 'OmniFlow 动作', 'OmniFlow action');
+    case _RunLogStepSource.agentVlm:
+      return _text(context, 'Agent/VLM 动作', 'Agent/VLM action');
+    case _RunLogStepSource.human:
+      return _text(context, '人类操作', 'Human action');
+    case _RunLogStepSource.omniflowReplay:
+      return _text(context, '离线重放动作', 'Offline replay action');
     case _RunLogStepSource.route:
       return _text(context, '工具动作', 'Tool action');
   }
@@ -4465,8 +4549,9 @@ String _runLogStepActionPanelTitle(
 
 bool _shouldShowVisualActionPanel(_RunLogStepSnapshot snapshot) {
   final source = _runLogStepSource(snapshot);
-  return source == _RunLogStepSource.vlm ||
-      source == _RunLogStepSource.omniflow;
+  return source == _RunLogStepSource.agentVlm ||
+      source == _RunLogStepSource.human ||
+      source == _RunLogStepSource.omniflowReplay;
 }
 
 String _runLogStepDisplayTitle(

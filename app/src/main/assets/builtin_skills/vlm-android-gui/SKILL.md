@@ -133,10 +133,24 @@ Use exactly one primary mode for a step sequence:
 - **VLM**: live model-planned screen operation through `vlm_task`.
 - **OmniFlow**: deterministic replay of an existing reusable command through
   `call_tool` with `function_id`.
+- **Human takeover**: manual user actions recorded during a paused VLM task.
 
 If VLM creates a successful RunLog and the user wants reuse, convert that RunLog
 to a reusable command after the run. If OmniFlow replay needs live perception,
 return to VLM as an explicit fallback instead of mixing labels inside one replay.
+
+RunLog source labels must describe how the step actually executed, not whether
+the action is convertible:
+
+- Agent/VLM: online `vlm_task` or `compile_kind=vlm_step`; VLM token fields are
+  online generation cost.
+- Human: `source=human_takeover` or `compile_kind=manual_recording`.
+- OmniFlow Replay: direct reusable-command replay with
+  `source/run_source=omniflow_replay` or `runner=oob_omniflow_replay`.
+
+Concrete actions such as `click`, `input_text`, and `swipe` in an online VLM
+RunLog are only OmniFlow-compatible; do not label them as offline replay unless
+the replay runner metadata is present.
 
 ## Direct VLM Task
 
@@ -685,6 +699,10 @@ execution`. Keep this contract visible and separate from runtime tests:
 - Reusable command execution results should keep diagnostic timing internal. Persist
   `duration_ms`, `started_at_ms`, `finished_at_ms`, and phase timings in RunLog
   and test artifacts, but do not expose these fields in user-facing UI.
+- Offline replay cards should carry `run_source=omniflow_replay` and
+  `runner=oob_omniflow_replay`. User UI may show a compact "离线重放 /
+  OmniFlow Replay" tag, but must not show VLM token cost unless the replay
+  explicitly fell back to VLM.
 - `call_function` cards should appear in the same agent RunLog as other tool
   cards. Users should see a compact reusable-command card and status; detailed
   nested `step_results` stay inside the card detail / raw result surfaces.

@@ -473,6 +473,8 @@ internal fun buildOobReusableFunctionAgentFallbackPayload(
         "taskId" to taskId,
         "agent_task_id" to taskId,
         "agent_task_started" to started,
+        "source" to "omniflow_replay",
+        "run_source" to "omniflow_replay",
         "runner" to runner,
         "local_steps_completed" to completedStepCount,
         "agent_steps_pending" to pendingAgentStepCount,
@@ -532,6 +534,8 @@ internal fun buildOobReusableFunctionLocalPayload(
     val timing = runPayload["timing"]
     val runner = runPayload["runner"] ?: "oob_mixed_runner"
     val sharedExecutionMeta = linkedMapOf<String, Any?>(
+        "source" to "omniflow_replay",
+        "run_source" to "omniflow_replay",
         "runner" to runner,
         "step_count" to stepCount,
         "success_step_count" to successStepCount,
@@ -1848,6 +1852,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "success" to success
         )
         durationMs?.let { header["duration_ms"] = it }
+        val replaySource = agentToolReplaySource(toolName, argsJson, payload)
+        if (replaySource.isNotBlank()) {
+            header["source"] = replaySource
+            header["run_source"] = replaySource
+            header["runner"] = firstNonBlankString(
+                payload["runner"],
+                payload["runRunner"],
+                payload["run_runner"]
+            ).ifBlank { "oob_omniflow_replay" }
+        }
         return linkedMapOf(
             "card_id" to entryId,
             "tool_call_id" to entryId,
@@ -1873,7 +1887,101 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "result" to resultValue,
             "raw_result_json" to payload["rawResultJson"],
             "compile_kind" to "agent_tool"
-        )
+        ).apply {
+            if (replaySource.isNotBlank()) {
+                put("source", replaySource)
+                put("run_source", replaySource)
+                put("selection_source", replaySource)
+                put("runner", header["runner"])
+            }
+        }
+    }
+
+    private fun agentToolReplaySource(
+        toolName: String,
+        argsJson: String,
+        payload: Map<String, Any?>
+    ): String {
+        val evidence = linkedSetOf<String>()
+        var hasFunctionIdArgument = false
+        fun collect(raw: Any?, depth: Int = 0) {
+            if (raw == null || depth > 4) return
+            when (raw) {
+                is Map<*, *> -> raw.forEach { (key, value) ->
+                    val normalizedKey = key?.toString()?.trim()?.lowercase().orEmpty()
+                    if (normalizedKey in setOf("function_id", "functionid", "oob_function_id")) {
+                        if (value?.toString()?.trim().orEmpty().isNotBlank()) {
+                            hasFunctionIdArgument = true
+                        }
+                    }
+                    if (normalizedKey in setOf(
+                            "source",
+                            "run_source",
+                            "runsource",
+                            "runner",
+                            "executor",
+                            "execution_status",
+                            "executionstatus"
+                        )
+                    ) {
+                        collect(value, depth + 1)
+                    } else if (value is Map<*, *> || value is List<*>) {
+                        collect(value, depth + 1)
+                    }
+                }
+                is List<*> -> raw.forEach { collect(it, depth + 1) }
+                else -> raw.toString().trim().lowercase()
+                    .takeIf { it.isNotBlank() }
+                    ?.let(evidence::add)
+            }
+        }
+        collect(payload)
+        if (argsJson.trim().startsWith("{")) {
+            runCatching { collect(jsonObjectToMap(JSONObject(argsJson))) }
+        }
+        listOf("resultPreviewJson", "rawResultJson").forEach { key ->
+            val jsonText = payload[key]?.toString()?.trim().orEmpty()
+            if (jsonText.startsWith("{")) {
+                runCatching { collect(jsonObjectToMap(JSONObject(jsonText))) }
+            }
+        }
+        val normalizedToolName = toolName.trim().lowercase()
+        val isReplay = normalizedToolName == "oob_function_run" ||
+            (normalizedToolName in setOf("call_tool", "oob_tool_call") && hasFunctionIdArgument) ||
+            evidence.any { value ->
+                value.contains("oob_omniflow_replay") ||
+                    value.contains("omniflow_replay") ||
+                    value.contains("oob_function_runner") ||
+                    value == OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL
+            }
+        return if (isReplay) "omniflow_replay" else ""
+    }
+
+    private fun firstNonBlankString(vararg values: Any?): String {
+        return values.firstNotNullOfOrNull { raw ->
+            raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        }.orEmpty()
+    }
+
+    private fun jsonObjectToMap(json: JSONObject): Map<String, Any?> {
+        val result = linkedMapOf<String, Any?>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            result[key] = jsonValueToKotlin(json.opt(key))
+        }
+        return result
+    }
+
+    private fun jsonValueToKotlin(value: Any?): Any? {
+        return when (value) {
+            JSONObject.NULL -> null
+            is JSONObject -> jsonObjectToMap(value)
+            is JSONArray -> (0 until value.length()).map { index ->
+                jsonValueToKotlin(value.opt(index))
+            }
+            else -> value
+        }
     }
 
     private fun buildAssistantResponseRunLogCard(
