@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
@@ -18,8 +19,10 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.NoOpAgentRunControl
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import cn.com.omnimind.baselib.llm.AssistantToolCall
+import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowActionBackend
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
+import cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompiler
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
@@ -520,6 +523,102 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
+    fun `vlm task runlog converts to function and replays with changed drink`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingBackend(
+            currentXml = "<hierarchy><node text=\"美团\" package=\"com.sankuai.meituan\"/></hierarchy>",
+            currentPackage = "com.sankuai.meituan",
+            currentActivity = "MainActivity",
+        )
+        try {
+            val spec = requireNotNull(
+                RunLogReusableFunctionCompiler.compile(
+                    InternalRunLogRecord(
+                        runId = "run-vlm-meituan-coffee",
+                        goal = "打开美团点一杯咖啡",
+                        source = "agent_tool",
+                        toolName = "vlm_task",
+                        operationDescription = "打开美团点一杯咖啡",
+                        success = true,
+                        cards = listOf(
+                            runLogCard(
+                                toolName = "vlm_task",
+                                args = mapOf("goal" to "打开美团点一杯咖啡"),
+                                title = "视觉执行：打开美团点一杯咖啡",
+                            ),
+                            runLogCard(
+                                toolName = "open_app",
+                                args = mapOf("package_name" to "com.sankuai.meituan"),
+                                title = "Open Meituan",
+                                afterPackage = "com.sankuai.meituan",
+                            ),
+                            runLogCard(
+                                toolName = "input_text",
+                                args = mapOf(
+                                    "target_description" to "美团搜索框",
+                                    "content" to "咖啡",
+                                    "x" to 360,
+                                    "y" to 180,
+                                ),
+                                title = "order item",
+                                beforePackage = "com.sankuai.meituan",
+                                afterPackage = "com.sankuai.meituan",
+                            ),
+                            runLogCard(
+                                toolName = "click",
+                                args = mapOf(
+                                    "target_description" to "搜索",
+                                    "x" to 920,
+                                    "y" to 180,
+                                ),
+                                title = "Tap search",
+                                beforePackage = "com.sankuai.meituan",
+                                afterPackage = "com.sankuai.meituan",
+                            ),
+                            runLogCard(
+                                toolName = "finished",
+                                args = mapOf("content" to "已准备下单咖啡"),
+                                title = "Finished coffee flow",
+                                beforePackage = "com.sankuai.meituan",
+                                afterPackage = "com.sankuai.meituan",
+                            ),
+                        ),
+                    )
+                )
+            )
+            val parameterName = OobFunctionSchemaBuilder.parameterNames(spec).single()
+            assertEquals("order_item_text", parameterName)
+            assertEquals("run-vlm-meituan-coffee", (spec["source"] as Map<*, *>)["run_id"])
+
+            val materialized = OobReusableFunctionStore.materialize(
+                spec,
+                mapOf(parameterName to "奶茶"),
+            )
+            val steps = OobFunctionSchemaBuilder.materializedSteps(materialized)
+            assertEquals(listOf("open_app", "input_text", "click", "finished"), steps.map { it["tool"] })
+            assertEquals("奶茶", (steps[1]["args"] as Map<*, *>)["content"])
+
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = OobFunctionSchemaBuilder.functionId(spec),
+                    spec = spec,
+                    materializedSpec = materialized,
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(true, run["success"])
+                assertEquals(false, run["model_required"])
+                assertEquals(listOf("com.sankuai.meituan"), backend.launchedPackages)
+                assertEquals(listOf("奶茶"), backend.inputTexts)
+                assertEquals(1, backend.clickCount)
+                assertEquals(4, stepResults(run).size)
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `call_tool without function id requires agent runner when router unavailable`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -726,6 +825,27 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         "args" to emptyMap<String, Any?>(),
     )
 
+    private fun runLogCard(
+        toolName: String,
+        args: Map<String, Any?>,
+        title: String,
+        beforePackage: String = "com.android.launcher",
+        afterPackage: String = beforePackage,
+    ): Map<String, Any?> {
+        return linkedMapOf(
+            "tool_name" to toolName,
+            "title" to title,
+            "args" to args,
+            "success" to true,
+            "before" to linkedMapOf(
+                "package_name" to beforePackage,
+            ),
+            "after" to linkedMapOf(
+                "package_name" to afterPackage,
+            ),
+        )
+    }
+
     private fun stepResults(run: Map<String, Any?>): List<Map<String, Any?>> {
         val raw = run["step_results"] as? List<*>
         assertNotNull(raw)
@@ -787,6 +907,8 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             private set
         var currentXmlReadCount = 0
             private set
+        val launchedPackages = mutableListOf<String>()
+        val inputTexts = mutableListOf<String>()
 
         override fun isReady(): Boolean = true
 
@@ -804,9 +926,17 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             durationMs: Long,
         ) = Unit
 
-        override suspend fun inputTextToFocusedNode(text: String) = Unit
+        override suspend fun inputTextToFocusedNode(text: String) {
+            inputTexts += text
+        }
 
-        override suspend fun launchApplication(packageName: String) = Unit
+        override suspend fun launchApplication(packageName: String) {
+            launchedPackages += packageName
+        }
+
+        override suspend fun launchApplication(packageName: String, resetTask: Boolean) {
+            launchedPackages += packageName
+        }
 
         override suspend fun pressHotKey(key: String) = Unit
 
