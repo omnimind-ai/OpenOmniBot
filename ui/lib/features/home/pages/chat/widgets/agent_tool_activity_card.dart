@@ -14,13 +14,11 @@ class AgentToolActivityCard extends StatefulWidget {
     super.key,
     required this.activity,
     this.compactSurface = false,
-    this.initiallyExpanded = false,
     this.onLayoutChanged,
   });
 
   final AgentToolActivity activity;
   final bool compactSurface;
-  final bool initiallyExpanded;
   final VoidCallback? onLayoutChanged;
 
   @override
@@ -28,10 +26,10 @@ class AgentToolActivityCard extends StatefulWidget {
 }
 
 class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
-  static const double _compactMaxWidthFactor = 0.76;
+  static const double _compactMaxWidthFactor = 0.84;
   static const double _compactMaxWidth = 360;
-  static const double _compactMinWidth = 148;
-  static const double _compactRadius = 999;
+  static const double _compactMinWidth = 252;
+  static const double _compactRadius = 10;
   static const double _processFontSize = 12;
 
   @override
@@ -61,16 +59,20 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
             final availableWidth = constraints.maxWidth.isFinite
                 ? constraints.maxWidth
                 : MediaQuery.of(context).size.width;
-            final maxWidth = (availableWidth * _compactMaxWidthFactor)
+            final targetWidth = (availableWidth * _compactMaxWidthFactor)
                 .clamp(_compactMinWidth, _compactMaxWidth)
                 .toDouble();
+            final cardWidth = targetWidth > availableWidth
+                ? availableWidth
+                : targetWidth;
             return ConstrainedBox(
               key: ValueKey(
                 'agent-tool-activity-compact-surface-${widget.activity.id}',
               ),
               constraints: BoxConstraints(
-                minWidth: _compactMinWidth,
-                maxWidth: maxWidth,
+                minWidth: cardWidth,
+                maxWidth: cardWidth,
+                minHeight: 38,
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
@@ -84,7 +86,7 @@ class _AgentToolActivityCardState extends State<AgentToolActivityCard> {
                       borderRadius: BorderRadius.circular(_compactRadius),
                       border: Border.all(color: compactBorderColor),
                     ),
-                    padding: EdgeInsets.zero,
+                    padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
                   ),
                 ),
               ),
@@ -191,18 +193,7 @@ class _ActivityHeader extends StatelessWidget {
       'status': activity.status,
       'toolType': AgentToolCardPolicy.toolTypeForKind(activity.kind),
     }, locale: locale);
-    final label = _activityLabel(
-      context,
-      activity.kind,
-      status: activity.status,
-    );
-    final explicitTitle = _explicitSingleStepTitle(context, activity);
-    final effectiveTitle = explicitTitle.isEmpty ? label : explicitTitle;
-    final tagLabel = _activityTagLabel(
-      context,
-      activity,
-      statusLabel: statusLabel,
-    );
+    final effectiveTitle = _activityPrimaryText(context, activity);
     final tagBackgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
             statusColor.withValues(alpha: 0.14),
@@ -234,24 +225,45 @@ class _ActivityHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: BoxDecoration(
-            color: tagBackgroundColor,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            tagLabel,
-            style: TextStyle(
-              color: tagTextColor,
-              fontSize: _AgentToolActivityCardState._processFontSize,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
-              height: 1,
-            ),
-          ),
+        _ActivityTag(
+          label: statusLabel,
+          backgroundColor: tagBackgroundColor,
+          textColor: tagTextColor,
         ),
       ],
+    );
+  }
+}
+
+class _ActivityTag extends StatelessWidget {
+  const _ActivityTag({
+    required this.label,
+    required this.backgroundColor,
+    required this.textColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: _AgentToolActivityCardState._processFontSize,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          height: 1,
+        ),
+      ),
     );
   }
 }
@@ -491,46 +503,64 @@ String _activityLabel(
   }
 }
 
-String _stepUnit(BuildContext context, int count) {
-  return AppTextLocalizer.choose(
-    zh: '步',
-    en: count == 1 ? 'step' : 'steps',
-    locale: Localizations.localeOf(context),
+String _activityPrimaryText(BuildContext context, AgentToolActivity activity) {
+  final defaultLabel = _activityLabel(
+    context,
+    activity.kind,
+    status: activity.status,
   );
+  if (_activityPrefersSummary(activity.kind)) {
+    final summary = _activityLatestSummary(context, activity);
+    if (summary.isNotEmpty) {
+      return summary;
+    }
+  }
+  final title = activity.title.trim();
+  if (title.isNotEmpty &&
+      !AgentToolCardPolicy.isPlaceholderText(title) &&
+      _localizedActivityText(context, title) != defaultLabel) {
+    return _localizedActivityText(context, title);
+  }
+  for (final step in activity.steps.reversed) {
+    final stepTitle = _stepTitle(context, step).trim();
+    if (stepTitle.isNotEmpty &&
+        !AgentToolCardPolicy.isPlaceholderText(stepTitle) &&
+        stepTitle != defaultLabel) {
+      return stepTitle;
+    }
+  }
+  final summary = _activityLatestSummary(context, activity);
+  if (summary.isNotEmpty) {
+    return summary;
+  }
+  if (title.isNotEmpty && !AgentToolCardPolicy.isPlaceholderText(title)) {
+    return _localizedActivityText(context, title);
+  }
+  return defaultLabel;
 }
 
-String _activityTagLabel(
-  BuildContext context,
-  AgentToolActivity activity, {
-  required String statusLabel,
-}) {
-  if (activity.stepCount > 1) {
-    return '${activity.stepCount} ${_stepUnit(context, activity.stepCount)}';
-  }
-  if (activity.isRunning) {
-    return _activityLabel(context, activity.kind, status: activity.status);
-  }
-  return statusLabel;
+bool _activityPrefersSummary(AgentToolActivityKind kind) {
+  return kind == AgentToolActivityKind.vlm ||
+      kind == AgentToolActivityKind.research ||
+      kind == AgentToolActivityKind.generic ||
+      kind == AgentToolActivityKind.workbench;
 }
 
-String _explicitSingleStepTitle(
+String _activityLatestSummary(
   BuildContext context,
   AgentToolActivity activity,
 ) {
-  if (activity.stepCount != 1 || activity.kind == AgentToolActivityKind.vlm) {
-    return '';
+  for (final step in activity.steps.reversed) {
+    final cardData = step.message.cardData ?? const <String, dynamic>{};
+    final summary = resolveAgentToolSummaryText(
+      cardData,
+      locale: Localizations.localeOf(context),
+    ).trim();
+    if (summary.isNotEmpty) {
+      return summary;
+    }
   }
-  final cardData =
-      activity.steps.single.message.cardData ?? const <String, dynamic>{};
-  final title = AgentToolCardPolicy.firstNonBlank(<Object?>[
-    cardData['toolTitle'],
-    cardData['tool_title'],
-    cardData['displayName'],
-  ]);
-  if (title.isEmpty || AgentToolCardPolicy.isPlaceholderText(title)) {
-    return '';
-  }
-  return _localizedActivityText(context, title);
+  return '';
 }
 
 String _localizedActivityText(BuildContext context, String value) {

@@ -101,6 +101,7 @@
     "skills_loaded",
     "status_update",
     "assistant_response",
+    "get_state",
     "wait"
   ],
   "agent_step_reasons": {

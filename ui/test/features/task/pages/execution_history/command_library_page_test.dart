@@ -319,12 +319,7 @@ void main() {
       });
       await tester.pumpAndSettle();
 
-      expect(find.text('复用指令执行结果'), findsOneWidget);
-      expect(find.text('执行步骤 · 1'), findsOneWidget);
-      expect(_selectableTextContaining('duration_ms'), findsNothing);
-      expect(_selectableTextContaining('phase_ms'), findsNothing);
-      expect(_selectableTextContaining('parse_request_ms'), findsNothing);
-      expect(_selectableTextContaining('compile_kind'), findsNothing);
+      expect(find.text('复用指令执行结果'), findsNothing);
 
       expect(find.text('执行'), findsOneWidget);
     },
@@ -425,7 +420,7 @@ void main() {
       Map<String, dynamic>.from(runArgs['arguments'] as Map),
       containsPair('query', 'wifi'),
     );
-    expect(find.text('复用指令执行结果'), findsOneWidget);
+    expect(find.text('复用指令执行结果'), findsNothing);
   });
 
   testWidgets('Memory Center reusable command embed keeps OOB interactions', (
@@ -578,10 +573,7 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('复用指令执行结果'), findsOneWidget);
-
-    Navigator.of(tester.element(find.text('复用指令执行结果'))).pop();
-    await tester.pumpAndSettle();
+    expect(find.text('复用指令执行结果'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.delete_outline_rounded));
     await tester.pumpAndSettle();
@@ -598,11 +590,4 @@ void main() {
     expect(find.text('打开 Settings'), findsNothing);
     expect(find.text('暂无复用指令'), findsOneWidget);
   });
-}
-
-Finder _selectableTextContaining(String text) {
-  return find.byWidgetPredicate(
-    (widget) => widget is SelectableText && widget.data?.contains(text) == true,
-    description: 'SelectableText containing "$text"',
-  );
 }

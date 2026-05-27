@@ -113,6 +113,39 @@ void main() {
       },
     );
 
+    test(
+      'parses direct VLM fallback completion separately from agent start',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(assistCoreChannel, (call) async {
+              return <String, dynamic>{
+                'success': true,
+                'function_id': 'search_settings',
+                'execution_status': 'completed_vlm_fallback',
+                'terminal_state': <String, dynamic>{
+                  'status': 'completed_vlm_fallback',
+                  'execution_status': 'completed_vlm_fallback',
+                  'taskId': 'run-vlm-1',
+                  'vlm_task_id': 'vlm-task-1',
+                  'model_required': true,
+                  'local_steps_completed': 1,
+                  'agent_steps_pending': 1,
+                },
+              };
+            });
+
+        final result = await AssistsMessageService.runOobReusableFunction(
+          functionId: 'search_settings',
+        );
+
+        expect(result.success, isTrue);
+        expect(result.executionStatus, 'completed_vlm_fallback');
+        expect(result.completedVlmFallback, isTrue);
+        expect(result.startedAgentFallback, isFalse);
+        expect(result.completedLocal, isFalse);
+      },
+    );
+
     test('parses accessibility preflight failure', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(assistCoreChannel, (call) async {

@@ -791,6 +791,9 @@ String _runStateText(
   UtgManualRunResult result, {
   String? rawStatus,
 }) {
+  if (result.completedVlmFallback) {
+    return _text(context, 'VLM 执行完成', 'Completed by VLM');
+  }
   if (result.startedAgentFallback) {
     return _text(context, '已交给 VLM 继续执行', 'Handed off to VLM');
   }

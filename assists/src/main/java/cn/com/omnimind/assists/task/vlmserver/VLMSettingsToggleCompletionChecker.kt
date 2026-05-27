@@ -14,7 +14,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.abs
 import kotlin.math.min
 
-internal object VLMSettingsToggleCompletionChecker {
+object VLMSettingsToggleCompletionChecker {
     data class StateSnapshot(
         val wifiEnabled: Boolean? = null,
         val bluetoothEnabled: Boolean? = null
@@ -23,7 +23,8 @@ internal object VLMSettingsToggleCompletionChecker {
     data class Result(
         val complete: Boolean,
         val reason: String = "",
-        val summary: String = ""
+        val summary: String = "",
+        val stateSource: String = ""
     )
 
     private data class ToggleIntent(
@@ -47,8 +48,9 @@ internal object VLMSettingsToggleCompletionChecker {
         }
 
         val xmlState = readStateFromXml(currentXml)
-        val wifiState = stateSnapshot.wifiEnabled ?: xmlState.wifiEnabled
-        val bluetoothState = stateSnapshot.bluetoothEnabled ?: xmlState.bluetoothEnabled
+        val wifiState = stateSnapshot.wifiEnabled ?: xmlState.state.wifiEnabled
+        val bluetoothState = stateSnapshot.bluetoothEnabled ?: xmlState.state.bluetoothEnabled
+        val stateSource = stateSourceForIntent(intent, stateSnapshot, xmlState)
         val mismatches = mutableListOf<String>()
         val unknown = mutableListOf<String>()
 
@@ -67,11 +69,19 @@ internal object VLMSettingsToggleCompletionChecker {
             }
         }
 
-        if (unknown.isNotEmpty()) {
-            return Result(complete = false, reason = "unknown_state:${unknown.joinToString(",")}")
-        }
         if (mismatches.isNotEmpty()) {
-            return Result(complete = false, reason = "state_mismatch:${mismatches.joinToString(";")}")
+            return Result(
+                complete = false,
+                reason = "state_mismatch:${mismatches.joinToString(";")}",
+                stateSource = stateSource
+            )
+        }
+        if (unknown.isNotEmpty()) {
+            return Result(
+                complete = false,
+                reason = "unknown_state:${unknown.joinToString(",")}",
+                stateSource = stateSource
+            )
         }
 
         val packageHint = listOfNotNull(currentPackageName, targetPackageName)
@@ -81,7 +91,8 @@ internal object VLMSettingsToggleCompletionChecker {
         return Result(
             complete = true,
             reason = "settings_toggle_state_satisfied",
-            summary = buildSummary(intent, wifiState, bluetoothState, packageHint)
+            summary = buildSummary(intent, wifiState, bluetoothState, packageHint),
+            stateSource = stateSource
         )
     }
 
@@ -127,7 +138,10 @@ internal object VLMSettingsToggleCompletionChecker {
             Settings.Global.getInt(resolver, "wifi_on") != 0
         }.getOrNull()
 
-        val bluetoothEnabled = runCatching {
+        val bluetoothGlobalEnabled = runCatching {
+            Settings.Global.getInt(resolver, "bluetooth_on") != 0
+        }.getOrNull()
+        val bluetoothAdapterEnabled = runCatching {
             val hasConnectPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
                 appContext.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
             if (hasConnectPermission) {
@@ -136,9 +150,8 @@ internal object VLMSettingsToggleCompletionChecker {
             } else {
                 null
             }
-        }.getOrNull() ?: runCatching {
-            Settings.Global.getInt(resolver, "bluetooth_on") != 0
         }.getOrNull()
+        val bluetoothEnabled = bluetoothGlobalEnabled ?: bluetoothAdapterEnabled
 
         return StateSnapshot(
             wifiEnabled = wifiEnabled,
@@ -198,25 +211,70 @@ internal object VLMSettingsToggleCompletionChecker {
         return NON_TOGGLE_BLUETOOTH_TERMS.any { normalized.contains(it) }
     }
 
-    private fun readStateFromXml(xml: String?): StateSnapshot {
-        if (xml.isNullOrBlank()) return StateSnapshot()
+    private fun readStateFromXml(xml: String?): ParsedStateSnapshot {
+        if (xml.isNullOrBlank()) return ParsedStateSnapshot()
         val nodes = parseNodes(xml)
         var wifi: Boolean? = null
         var bluetooth: Boolean? = null
+        var wifiEvidence: XmlStateEvidence? = null
+        var bluetoothEvidence: XmlStateEvidence? = null
 
         nodes.forEach { node ->
             val label = normalize(node.semanticText)
-            val state = node.checked ?: stateFromText(label)
+            val checkedState = node.checked
+            val state = checkedState ?: stateFromText(label)
             if (state == null) return@forEach
+            val evidence = if (checkedState != null) {
+                XmlStateEvidence.CHECKED_ATTRIBUTE
+            } else {
+                XmlStateEvidence.TEXT_STATE
+            }
             if (wifi == null && WIFI_PATTERNS.any { label.contains(it) }) {
                 wifi = state
+                wifiEvidence = evidence
             }
             if (bluetooth == null && BLUETOOTH_PATTERNS.any { label.contains(it) }) {
                 bluetooth = state
+                bluetoothEvidence = evidence
             }
         }
-        return StateSnapshot(wifiEnabled = wifi, bluetoothEnabled = bluetooth)
+        return ParsedStateSnapshot(
+            state = StateSnapshot(wifiEnabled = wifi, bluetoothEnabled = bluetooth),
+            wifiEvidence = wifiEvidence,
+            bluetoothEvidence = bluetoothEvidence
+        )
     }
+
+    private fun stateSourceForIntent(
+        intent: ToggleIntent,
+        stateSnapshot: StateSnapshot,
+        xmlState: ParsedStateSnapshot
+    ): String {
+        val sources = mutableListOf<String>()
+        intent.wifiEnabled?.let {
+            sources += stateSourceForDomain(stateSnapshot.wifiEnabled, xmlState.wifiEvidence)
+        }
+        intent.bluetoothEnabled?.let {
+            sources += stateSourceForDomain(stateSnapshot.bluetoothEnabled, xmlState.bluetoothEvidence)
+        }
+        val distinct = sources.distinct()
+        return when {
+            distinct.isEmpty() -> ""
+            distinct.size == 1 -> distinct.single()
+            else -> distinct.joinToString("+")
+        }
+    }
+
+    private fun stateSourceForDomain(
+        snapshotState: Boolean?,
+        xmlEvidence: XmlStateEvidence?,
+    ): String =
+        when {
+            snapshotState != null -> "state_snapshot"
+            xmlEvidence == XmlStateEvidence.CHECKED_ATTRIBUTE -> "xml_checked"
+            xmlEvidence == XmlStateEvidence.TEXT_STATE -> "xml_text"
+            else -> "unknown"
+        }
 
     private fun parseNodes(xml: String): List<XmlNode> {
         val document = runCatching {
@@ -263,12 +321,20 @@ internal object VLMSettingsToggleCompletionChecker {
         return parts.joinToString(" ")
     }
 
-    private fun stateFromText(text: String): Boolean? =
-        when {
+    private fun stateFromText(text: String): Boolean? {
+        if (hasNonCurrentStatePhrase(text)) return null
+        return when {
             ON_STATE_TERMS.any { containsTerm(text, it) } -> true
             OFF_STATE_TERMS.any { containsTerm(text, it) } -> false
             else -> null
         }
+    }
+
+    private fun hasNonCurrentStatePhrase(text: String): Boolean =
+        NON_CURRENT_STATE_PHRASES.any { containsTerm(text, it) } ||
+            CONDITIONAL_STATE_PREFIXES.any { prefix ->
+                text.contains(prefix) && (text.contains(" turned on") || text.contains(" enabled"))
+            }
 
     private fun buildSummary(
         intent: ToggleIntent,
@@ -306,13 +372,16 @@ internal object VLMSettingsToggleCompletionChecker {
         val hits = mutableListOf<Int>()
         var index = text.indexOf(term)
         while (index >= 0) {
-            if (hasBoundary(text, index - 1) && hasBoundary(text, index + term.length)) {
+            if (containsCjk(term) || (hasBoundary(text, index - 1) && hasBoundary(text, index + term.length))) {
                 hits += index
             }
             index = text.indexOf(term, startIndex = index + term.length)
         }
         return hits
     }
+
+    private fun containsCjk(value: String): Boolean =
+        value.any { it in '\u4e00'..'\u9fff' }
 
     private fun hasBoundary(text: String, index: Int): Boolean =
         index < 0 || index >= text.length || !text[index].isLetterOrDigit()
@@ -328,13 +397,57 @@ internal object VLMSettingsToggleCompletionChecker {
         val checked: Boolean?
     )
 
+    private data class ParsedStateSnapshot(
+        val state: StateSnapshot = StateSnapshot(),
+        val wifiEvidence: XmlStateEvidence? = null,
+        val bluetoothEvidence: XmlStateEvidence? = null
+    )
+
+    private enum class XmlStateEvidence {
+        CHECKED_ATTRIBUTE,
+        TEXT_STATE
+    }
+
     private const val WINDOW_CHARS = 36
     private const val MAX_DESCENDANTS = 24
     private val WIFI_PATTERNS = listOf("wifi", "wi fi", "wireless", "无线", "wifi")
     private val BLUETOOTH_PATTERNS = listOf("bluetooth", "blue tooth", "蓝牙")
     private val OFF_TERMS = listOf("turn off", "turned off", "disable", "disabled", "deactivate", "off", "close", "关闭", "关掉", "禁用")
-    private val ON_TERMS = listOf("turn on", "turned on", "enable", "enabled", "activate", "on", "开启", "启用")
+    private val ON_TERMS = listOf("turn on", "turned on", "enable", "enabled", "activate", "on", "开启", "启用", "打开")
     private val OFF_STATE_TERMS = listOf("off", "disabled", "关闭", "已关闭", "禁用")
     private val ON_STATE_TERMS = listOf("on", "enabled", "开启", "已开启", "启用")
-    private val NON_TOGGLE_BLUETOOTH_TERMS = listOf("pair", "pairing", "配对")
+    private val CONDITIONAL_STATE_PREFIXES = listOf("when ", "after ", "once ", "if ")
+    private val NON_CURRENT_STATE_PHRASES = listOf(
+        "will turn on",
+        "will enable",
+        "turn on to",
+        "enable to",
+        "tap to turn on",
+        "tap to enable",
+        "click to turn on",
+        "click to enable",
+        "press to turn on",
+        "press to enable",
+        "select to turn on",
+        "select to enable",
+        "try to turn on",
+        "try to enable",
+        "cannot turn on",
+        "cannot enable",
+        "can turn on",
+        "can enable",
+        "to turn on",
+        "to enable",
+        "将开启",
+        "将打开",
+        "会开启",
+        "会打开",
+        "点击开启",
+        "点击打开",
+        "开启后",
+        "打开后",
+        "开启时",
+        "打开时",
+    )
+    private val NON_TOGGLE_BLUETOOTH_TERMS = listOf("pair", "pairing", "bluetooth settings", "配对", "蓝牙设置")
 }

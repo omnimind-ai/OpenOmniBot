@@ -45,9 +45,9 @@
         <RelativeLayout
             android:id="@+id/bottomContentLayout"
             android:layout_width="match_parent"
-            android:layout_height="25dp"
+            android:layout_height="32dp"
             android:layout_below="@+id/llTitle"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:orientation="horizontal"
             android:visibility="gone">
             <!-- 执行中状态文字容器 -->
@@ -74,8 +74,8 @@
                     android:layout_marginLeft="4.78dp"
                     android:fontFamily="sans-serif"
                     android:text="云端模型 执行中"
-                    android:textColor="#666666"
-                    android:textSize="10sp" />
+                    android:textColor="#5F6875"
+                    android:textSize="11sp" />
             </LinearLayout>
             <!-- 内容容器 -->
             <LinearLayout
@@ -90,14 +90,13 @@
                 <LinearLayout
                     android:id="@+id/llResume"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="30dp"
                     android:layout_gravity="center_vertical"
-                    android:background="@drawable/bg_gray_rounded_rect"
+                    android:background="@drawable/bg_vlm_action_resume"
                     android:gravity="center_vertical"
-                    android:paddingLeft="6dp"
-                    android:paddingTop="3dp"
-                    android:paddingRight="9dp"
-                    android:paddingBottom="3dp"
+                    android:minWidth="62dp"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="10dp"
                     android:visibility="gone">
 
                     <ImageView
@@ -113,10 +112,10 @@
                         android:layout_marginLeft="4dp"
                         android:fontFamily="sans-serif"
                         android:gravity="end|center_vertical"
-                        android:letterSpacing="0.05"
+                        android:letterSpacing="0"
                         android:text="继续"
                         android:textColor="#202f51"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
 
                 </LinearLayout>
 
@@ -124,13 +123,12 @@
                 <LinearLayout
                     android:id="@+id/llTakeOver"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_gray_rounded_rect"
+                    android:layout_height="30dp"
+                    android:background="@drawable/bg_vlm_action_takeover"
                     android:gravity="center_vertical"
-                    android:paddingLeft="6dp"
-                    android:paddingTop="3dp"
-                    android:paddingRight="9dp"
-                    android:paddingBottom="3dp">
+                    android:minWidth="66dp"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="10dp">
 
                     <ImageView
                         android:layout_width="16dp"
@@ -139,15 +137,17 @@
                         android:src="@mipmap/ic_user_info" />
 
                     <TextView
+                        android:id="@+id/llTakeOverTextView"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginLeft="4dp"
                         android:fontFamily="sans-serif"
                         android:gravity="end|center_vertical"
-                        android:letterSpacing="0.05"
+                        android:letterSpacing="0"
                         android:text="接管"
 
                         android:textColor="#202f51"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
 
                 </LinearLayout>
 
@@ -155,14 +155,13 @@
                 <LinearLayout
                     android:id="@+id/llStop"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="30dp"
                     android:layout_marginLeft="8dp"
-                    android:background="@drawable/bg_gray_rounded_rect"
+                    android:background="@drawable/bg_vlm_action_complete"
                     android:gravity="center_vertical"
-                    android:paddingLeft="6dp"
-                    android:paddingTop="3dp"
-                    android:paddingRight="9dp"
-                    android:paddingBottom="3dp">
+                    android:minWidth="72dp"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="10dp">
 
                     <ImageView
                         android:layout_width="16dp"
@@ -171,14 +170,16 @@
                         android:src="@mipmap/ic_vlm_task_stop_new" />
 
                     <TextView
+                        android:id="@+id/llStopTextView"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginLeft="4dp"
                         android:fontFamily="sans-serif"
                         android:gravity="end|center_vertical"
-                        android:letterSpacing="0.05"
-                        android:text="结束"
-                        android:textColor="#202f51"
-                        android:textSize="10sp" />
+                        android:letterSpacing="0"
+                        android:text="已完成"
+                        android:textColor="#16794A"
+                        android:textSize="11sp" />
 
                 </LinearLayout>
 
@@ -188,4 +189,3 @@
 
 
 </RelativeLayout>
-

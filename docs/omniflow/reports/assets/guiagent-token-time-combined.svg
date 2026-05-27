@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="658" viewBox="0 0 1120 658" role="img" aria-label="Token 和用时合并视图">
+<style>
+text{font-family:Inter,Arial,sans-serif;fill:#17202a}.muted{fill:#5f6b7a}.title{font-size:26px;font-weight:800}.subtitle{font-size:14px}.label{font-size:13px}.value{font-size:13px;font-weight:700}.bar-bg{fill:#edf1f5}.token{fill:#0b6bcb}.time{fill:#147a52}
+</style>
+<rect width="100%" height="100%" rx="8" fill="#ffffff"/>
+<text x="24" y="36" class="title">Token 和用时合并视图</text>
+<text x="24" y="62" class="subtitle muted">每个样本同时展示在线模型 token 和本地 / replay 用时。</text>
+<rect x="24" y="76" width="14" height="10" class="token"/><text x="44" y="85" class="label muted">在线 token</text>
+<rect x="162" y="76" width="14" height="10" class="time"/><text x="182" y="85" class="label muted">本地 / replay 用时</text>
+<text x="24" y="110" class="label">5554 Display</text>
+<text x="24" y="128" class="label muted">打开 Display 设置</text>
+<rect x="245" y="96" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="96" width="455.1" height="14" rx="4" class="token"/>
+<rect x="245" y="116" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="116" width="479.0" height="14" rx="4" class="time"/>
+<text x="959" y="108" class="value">31,038 tok</text>
+<text x="959" y="128" class="value">7,105 ms</text>
+<text x="24" y="168" class="label">5556 Network</text>
+<text x="24" y="186" class="label muted">打开 Network &amp; internet</text>
+<rect x="245" y="154" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="154" width="259.1" height="14" rx="4" class="token"/>
+<rect x="245" y="174" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="174" width="321.4" height="14" rx="4" class="time"/>
+<text x="959" y="166" class="value">17,670 tok</text>
+<text x="959" y="186" class="value">4,768 ms</text>
+<text x="24" y="226" class="label">5556 Display</text>
+<text x="24" y="244" class="label muted">打开 Display 设置</text>
+<rect x="245" y="212" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="212" width="340.3" height="14" rx="4" class="token"/>
+<rect x="245" y="232" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="232" width="700.0" height="14" rx="4" class="time"/>
+<text x="959" y="224" class="value">23,209 tok</text>
+<text x="959" y="244" class="value">10,384 ms</text>
+<text x="24" y="284" class="label">5554 Display v2</text>
+<text x="24" y="302" class="label muted">打开 Display 设置</text>
+<rect x="245" y="270" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="270" width="229.9" height="14" rx="4" class="token"/>
+<rect x="245" y="290" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="290" width="384.6" height="14" rx="4" class="time"/>
+<text x="959" y="282" class="value">15,680 tok</text>
+<text x="959" y="302" class="value">5,706 ms</text>
+<text x="24" y="342" class="label">5556 Clock</text>
+<text x="24" y="360" class="label muted">打开 Clock / Stopwatch</text>
+<rect x="245" y="328" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="328" width="143.6" height="14" rx="4" class="token"/>
+<rect x="245" y="348" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="348" width="201.1" height="14" rx="4" class="time"/>
+<text x="959" y="340" class="value">9,793 tok</text>
+<text x="959" y="360" class="value">2,983 ms</text>
+<text x="24" y="400" class="label">5554 Recall Guidance</text>
+<text x="24" y="418" class="label muted">在线 VLM 加载召回上下文</text>
+<rect x="245" y="386" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="386" width="700.0" height="14" rx="4" class="token"/>
+<rect x="245" y="406" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="406" width="0.0" height="14" rx="4" class="time"/>
+<text x="959" y="398" class="value">47,737 tok</text>
+<text x="959" y="418" class="value">- ms</text>
+<text x="24" y="458" class="label">5556 Recall Guidance</text>
+<text x="24" y="476" class="label muted">在线 VLM 加载召回上下文</text>
+<rect x="245" y="444" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="444" width="382.0" height="14" rx="4" class="token"/>
+<rect x="245" y="464" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="464" width="0.0" height="14" rx="4" class="time"/>
+<text x="959" y="456" class="value">26,051 tok</text>
+<text x="959" y="476" class="value">- ms</text>
+<text x="24" y="516" class="label">5554 UDEG recall E2E</text>
+<text x="24" y="534" class="label muted">通过召回 segment 打开 Settings</text>
+<rect x="245" y="502" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="502" width="0.0" height="14" rx="4" class="token"/>
+<rect x="245" y="522" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="522" width="504.1" height="14" rx="4" class="time"/>
+<text x="959" y="514" class="value">0 tok</text>
+<text x="959" y="534" class="value">7,478 ms</text>
+<text x="24" y="574" class="label">5556 segment_hit E2E</text>
+<text x="24" y="592" class="label muted">通过召回 segment 打开 Settings</text>
+<rect x="245" y="560" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="560" width="0.0" height="14" rx="4" class="token"/>
+<rect x="245" y="580" width="700" height="14" rx="4" class="bar-bg"/>
+<rect x="245" y="580" width="529.4" height="14" rx="4" class="time"/>
+<text x="959" y="572" class="value">0 tok</text>
+<text x="959" y="592" class="value">7,854 ms</text>
+</svg>

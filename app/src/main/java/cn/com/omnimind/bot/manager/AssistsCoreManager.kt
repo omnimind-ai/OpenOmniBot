@@ -16,7 +16,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import cn.com.omnimind.accessibility.api.Constant
+import cn.com.omnimind.accessibility.service.AssistsService
+import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.assists.AssistsCore
+import cn.com.omnimind.assists.HumanTrajectoryLearningSession
+import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
 import cn.com.omnimind.assists.api.bean.TaskParams
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
@@ -67,7 +71,6 @@ import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.agent.AgentConversationContextCompactor
 import cn.com.omnimind.bot.agent.AgentImageAttachmentSupport
-import cn.com.omnimind.bot.agent.AGENT_STREAM_EVENT_SCHEMA_VERSION
 import cn.com.omnimind.bot.agent.AgentStreamEvent
 import cn.com.omnimind.bot.agent.AgentTextSanitizer
 import cn.com.omnimind.bot.agent.AgentModelOverride
@@ -95,8 +98,12 @@ import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
+import cn.com.omnimind.bot.mcp.VlmTaskRequest
 import cn.com.omnimind.bot.quicklog.QuickLogService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
+import cn.com.omnimind.bot.vlm.VlmToolCoordinator
+import cn.com.omnimind.bot.vlm.VlmToolOutcome
+import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
 import cn.com.omnimind.bot.webchat.ConversationDomainService
 import cn.com.omnimind.bot.webchat.FlutterChatSyncBridge
 import cn.com.omnimind.bot.webchat.RealtimeHub
@@ -105,6 +112,7 @@ import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workspace.WorkspaceStorageAccess
 import cn.com.omnimind.uikit.UIKit
+import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import com.google.gson.Gson
 import androidx.core.app.NotificationCompat
@@ -142,6 +150,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.ArrayDeque
+import java.util.UUID
 import kotlin.collections.mapOf
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -440,7 +449,10 @@ private fun extractTextPayload(raw: JsonElement?): String {
 internal const val OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL = "completed_local"
 internal const val OOB_REUSABLE_EXECUTION_STATUS_STARTED_AGENT_FALLBACK =
     "started_agent_fallback"
+internal const val OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_VLM_FALLBACK =
+    "completed_vlm_fallback"
 internal const val OOB_REUSABLE_EXECUTION_STATUS_FAILED = "failed"
+private const val AGENT_STREAM_META_SCHEMA_VERSION = "oob.agent_event.v1"
 
 internal fun isOobReusableFunctionPendingAgentStep(step: Map<*, *>): Boolean {
     return step["needs_agent"] == true ||
@@ -511,6 +523,82 @@ internal fun buildOobReusableFunctionAgentFallbackPayload(
             "execution_status" to executionStatus,
             "argument_count" to argumentCount,
             "step_results" to stepResults
+        ).apply {
+            putAll(sharedExecutionMeta)
+        }
+    )
+}
+
+internal fun buildOobReusableFunctionVlmFallbackPayload(
+    functionId: String,
+    runId: String,
+    vlmTaskId: String,
+    outcome: VlmToolOutcome,
+    success: Boolean,
+    runPayload: Map<String, Any?>,
+    stepResults: List<Map<*, *>>,
+    completedStepCount: Int,
+    pendingAgentStepCount: Int,
+    argumentCount: Int,
+): Map<String, Any?> {
+    val executionStatus = if (success) {
+        OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_VLM_FALLBACK
+    } else {
+        OOB_REUSABLE_EXECUTION_STATUS_FAILED
+    }
+    val stepCount = stepResults.size
+    val replaySuccessStepCount = stepResults.count { it["success"] != false }
+    val successStepCount = if (success) stepCount else replaySuccessStepCount
+    val timing = runPayload["timing"]
+    val message = outcome.errorMessage?.trim()?.takeIf { it.isNotEmpty() }
+        ?: outcome.message.trim().takeIf { it.isNotEmpty() }
+    val sharedExecutionMeta = linkedMapOf<String, Any?>(
+        "taskId" to runId,
+        "run_id" to runId,
+        "vlm_task_id" to vlmTaskId,
+        "vlmTaskId" to vlmTaskId,
+        "source" to "omniflow_replay",
+        "run_source" to "omniflow_replay",
+        "runner" to "oob_direct_vlm_fallback",
+        "local_steps_completed" to completedStepCount,
+        "agent_steps_pending" to pendingAgentStepCount,
+        "step_count" to stepCount,
+        "success_step_count" to successStepCount,
+        "arguments_applied" to true,
+        "model_used" to true,
+        "model_required" to false,
+        "delegated_tool_used" to true,
+        "fallback_available" to (runPayload["fallback_available"] == true),
+        "vlm_status" to outcome.status.name,
+        "vlm_message" to outcome.message,
+        "timing" to timing
+    )
+
+    return linkedMapOf(
+        "success" to success,
+        "goal" to "oob_reusable_function_run:$functionId",
+        "function_id" to functionId,
+        "execution_status" to executionStatus,
+        "error_code" to if (success) null else outcome.errorCode ?: outcome.status.name,
+        "error_message" to if (success) null else message,
+        "timing" to timing,
+        "terminal_state" to linkedMapOf<String, Any?>(
+            "status" to if (success) {
+                OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_VLM_FALLBACK
+            } else {
+                "error"
+            },
+            "execution_status" to executionStatus
+        ).apply {
+            putAll(sharedExecutionMeta)
+        },
+        "context" to linkedMapOf<String, Any?>(
+            "source" to "oob_reusable_function",
+            "function_id" to functionId,
+            "execution_status" to executionStatus,
+            "argument_count" to argumentCount,
+            "step_results" to stepResults,
+            "vlm_outcome" to outcome.toPayload()
         ).apply {
             putAll(sharedExecutionMeta)
         }
@@ -788,6 +876,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         override val toolName: String,
         override val toolCallId: String
     ) : AgentToolExecutionHandle {
+        override val runId: String = owner.taskId
         private val lock = Any()
         private var cardId: String? = null
         private var job: Job? = null
@@ -924,6 +1013,23 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private fun registerActiveAgentRun(taskId: String, context: ActiveAgentRunContext) {
         idleConsolidationJob?.cancel()
         idleConsolidationJob = null
+        AgentVlmUiSession.registerRun(
+            runId = taskId,
+            onStopRequested = {
+                val activeVlmTaskIds = AgentVlmUiSession.activeTaskIdsForRun(taskId)
+                cancelActiveAgentRun(taskId, "agent_vlm_ui_stop")
+                if (activeVlmTaskIds.isEmpty()) {
+                    AssistsUtil.Core.cancelRunningTask(taskId)
+                } else {
+                    activeVlmTaskIds.forEach { childTaskId ->
+                        AssistsUtil.Core.cancelRunningTask(childTaskId)
+                    }
+                }
+            },
+            onCompleteRequested = {
+                completeActiveAgentRun(taskId, "agent_vlm_ui_completed")
+            }
+        )
         synchronized(activeAgentLock) {
             activeAgentRuns[taskId] = context
         }
@@ -957,6 +1063,26 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         if (removed) {
             dispatchAgentRunStateChanged("agent_run_finished")
             if (nowIdle) scheduleIdleConsolidation()
+        }
+    }
+
+    private suspend fun finishAgentVlmUiSessionIfNeeded(runId: String, message: String) {
+        val sessionEnd = AgentVlmUiSession.endRun(runId)
+        if (!sessionEnd.wasActive || sessionEnd.stopRequested || sessionEnd.completeRequested) {
+            return
+        }
+        runCatching {
+            withContext(Dispatchers.Main) {
+                UIKit.uiTaskEvent?.finishDoingTask(message)
+            }
+            if (sessionEnd.shouldFinishCompanion) {
+                delay(500)
+                withContext(Dispatchers.Main) {
+                    UIKit.uiBaseEvent?.finishCompanion()
+                }
+            }
+        }.onFailure {
+            OmniLog.w(TAG, "finish agent VLM UI session failed: ${it.message}")
         }
     }
 
@@ -1026,7 +1152,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
-    private fun cancelActiveAgentRun(taskId: String?, reason: String) {
+    private fun cancelActiveAgentRun(taskId: String?, reason: String): Boolean {
         val runsToCancel = synchronized(activeAgentLock) {
             if (taskId.isNullOrBlank()) {
                 val snapshot = activeAgentRuns.values.toList()
@@ -1041,6 +1167,24 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             OmniLog.i(TAG, "Cancelling active agent run(s): $reason taskId=$taskId")
             runsToCancel.forEach { run ->
                 publishManualAgentCancellation(run)
+                run.job.cancel(CancellationException(reason))
+            }
+        }
+        return runsToCancel.isNotEmpty()
+    }
+
+    private fun completeActiveAgentRun(taskId: String?, reason: String) {
+        val runsToComplete = synchronized(activeAgentLock) {
+            if (taskId.isNullOrBlank()) {
+                activeAgentRuns.values.toList()
+            } else {
+                activeAgentRuns[taskId]?.let(::listOf).orEmpty()
+            }
+        }
+        if (runsToComplete.isNotEmpty()) {
+            OmniLog.i(TAG, "Completing active agent run(s): $reason taskId=$taskId")
+            runsToComplete.forEach { run ->
+                publishManualAgentCompletion(run)
                 run.job.cancel(CancellationException(reason))
             }
         }
@@ -1089,6 +1233,53 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 OmniLog.w(TAG, "publish manual agent cancellation failed: ${it.message}", it)
             }
             dispatchAgentRunStateChanged("agent_run_cancelled")
+        }
+    }
+
+    private fun publishManualAgentCompletion(run: ActiveAgentRunContext) {
+        val conversationId = run.conversationId ?: return
+        val completedText = when (AppLocaleManager.resolvePromptLocale(context)) {
+            PromptLocale.EN_US -> "Task completed"
+            PromptLocale.ZH_CN -> "任务已完成"
+        }
+        val entryId = "${run.taskId}-completed"
+        val now = System.currentTimeMillis()
+        val streamMeta = buildAgentManualCancellationStreamMeta(run.taskId, entryId) +
+            mapOf("doneReason" to "user_completed")
+        workJob.launch {
+            runCatching {
+                val repository = conversationHistoryRepository()
+                repository.upsertAssistantMessage(
+                    conversationId = conversationId,
+                    conversationMode = run.conversationMode,
+                    entryId = entryId,
+                    text = completedText,
+                    isError = false,
+                    streamMeta = streamMeta,
+                    createdAt = now
+                )
+                withContext(Dispatchers.Main) {
+                    invokeFlutterEventSafely(
+                        "onAgentStreamEvent",
+                        sanitizeInteropMap(
+                            mapOf(
+                                "taskId" to run.taskId,
+                                "seq" to AGENT_MANUAL_CANCELLATION_SEQUENCE,
+                                "kind" to "text_snapshot",
+                                "entryId" to entryId,
+                                "roundIndex" to AGENT_MANUAL_CANCELLATION_ROUND,
+                                "isFinal" to true,
+                                "text" to completedText,
+                                "createdAt" to now,
+                                "streamMeta" to streamMeta
+                            )
+                        )
+                    )
+                }
+            }.onFailure {
+                OmniLog.w(TAG, "publish manual agent completion failed: ${it.message}", it)
+            }
+            dispatchAgentRunStateChanged("agent_run_completed_by_user")
         }
     }
 
@@ -1801,6 +1992,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         if (result.actions.isNotEmpty()) {
             payload["actions"] = result.actions.map { it.toPayload() }
         }
+        if (toolName.equals("vlm_task", ignoreCase = true)) {
+            listOf(previewJson, rawResultJson)
+                .firstNotNullOfOrNull { json ->
+                    runCatching {
+                        JSONObject(json).optString("taskId").trim()
+                            .takeIf { it.isNotEmpty() }
+                    }.getOrNull()
+                }
+                ?.let { childRunId ->
+                    payload["childRunId"] = childRunId
+                    payload["child_run_id"] = childRunId
+                }
+            payload["spanKind"] = "vlm_task"
+            payload["span_kind"] = "vlm_task"
+        }
         return payload
     }
 
@@ -1814,6 +2020,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         finishedAtMillis: Long? = null
     ): Map<String, Any?> {
         val meta = resolveAgentToolMeta(toolName)
+        val isVlmWrapper = toolName.trim().equals("vlm_task", ignoreCase = true)
         val durationMs = finishedAtMillis?.let { (it - startedAtMillis).coerceAtLeast(0L) }
         val success = when (val raw = payload["success"]) {
             is Boolean -> raw
@@ -1843,6 +2050,47 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 ).toString()
             }
             ?: JSONObject(mapOf("status" to status)).toString()
+        val resultChildRunId = if (isVlmWrapper) {
+            listOf(payload["resultPreviewJson"], payload["rawResultJson"])
+                .firstNotNullOfOrNull { raw ->
+                    raw?.toString()
+                        ?.trim()
+                        ?.takeIf { it.startsWith("{") }
+                        ?.let { json ->
+                            runCatching {
+                                JSONObject(json).optString("taskId").trim()
+                                    .takeIf { it.isNotEmpty() }
+                            }.getOrNull()
+                        }
+                }
+                .orEmpty()
+        } else {
+            ""
+        }
+        val childRunId = firstNonBlankString(
+            payload["childRunId"],
+            payload["child_run_id"],
+            resultChildRunId
+        )
+        val parentCardId = firstNonBlankString(
+            payload["parentCardId"],
+            payload["parent_card_id"]
+        )
+        val spanKind = firstNonBlankString(
+            payload["spanKind"],
+            payload["span_kind"]
+        ).ifBlank {
+            if (isVlmWrapper) "vlm_task" else ""
+        }
+        val compileKind = firstNonBlankString(
+            payload["compile_kind"],
+            payload["compileKind"]
+        ).ifBlank { "agent_tool" }
+        val toolType = firstNonBlankString(
+            payload["toolType"],
+            payload["tool_type"],
+            meta.toolType
+        )
         val stepIndex = entryId.substringAfterLast('-')
             .toIntOrNull()
             ?.minus(1)
@@ -1874,7 +2122,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "summary" to payload["summary"],
             "tool_name" to toolName,
             "toolName" to toolName,
-            "tool_type" to meta.toolType,
+            "tool_type" to toolType,
             "server_name" to meta.serverName,
             "status" to status,
             "success" to success,
@@ -1890,8 +2138,25 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "arguments" to argsJson,
             "result" to resultValue,
             "raw_result_json" to payload["rawResultJson"],
-            "compile_kind" to "agent_tool"
+            "compile_kind" to compileKind
         ).apply {
+            if (childRunId.isNotBlank()) {
+                put("child_run_id", childRunId)
+                put("childRunId", childRunId)
+            }
+            if (parentCardId.isNotBlank()) {
+                put("parent_card_id", parentCardId)
+                put("parentCardId", parentCardId)
+            }
+            if (spanKind.isNotBlank()) {
+                put("span_kind", spanKind)
+                put("spanKind", spanKind)
+            }
+            if (compileKind == "vlm_step") {
+                put("source", "vlm")
+                payload["token_usage"]?.let { put("token_usage", it) }
+                payload["tokenUsage"]?.let { if (!containsKey("token_usage")) put("token_usage", it) }
+            }
             if (replaySource.isNotBlank()) {
                 put("source", replaySource)
                 put("run_source", replaySource)
@@ -2110,6 +2375,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     ) {
         mainJob.launch {
             try {
+                AgentVlmUiSession.requestStopActiveSession()
+                cancelActiveAgentRun(null, "cancelTask")
+                AssistsUtil.Core.cancelRunningTask()
                 AssistsUtil.Core.finishTask(context)
                 withContext(Dispatchers.Main) {
                     result.success("SUCCESS")
@@ -2130,9 +2398,24 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     ) {
         mainJob.launch {
             try {
-                val taskId = call.argument<String>("taskId")
-                cancelActiveAgentRun(taskId, "cancelRunningTask")
-                AssistsUtil.Core.cancelRunningTask(taskId)
+                val taskId = call.argument<String>("taskId")?.trim()?.takeIf { it.isNotEmpty() }
+                val stoppedVlmSession = taskId?.let {
+                    AgentVlmUiSession.requestStopSession(it)
+                } ?: false
+                val cancelledAgentRun = taskId?.let {
+                    cancelActiveAgentRun(it, "cancelRunningTask")
+                } ?: false
+                val stoppedNativeTask = if (taskId == null) {
+                    AssistsUtil.Core.cancelRunningTask()
+                } else {
+                    AssistsUtil.Core.cancelRunningTask(taskId)
+                }
+                if (taskId != null && !stoppedVlmSession && !cancelledAgentRun && !stoppedNativeTask) {
+                    OmniLog.w(
+                        TAG,
+                        "cancelRunningTask target not found; ignoring stale targeted cancel: taskId=$taskId"
+                    )
+                }
                 withContext(Dispatchers.Main) {
                     result.success("SUCCESS")
                 }
@@ -2761,6 +3044,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "toolName" to (event["toolName"] ?: "vlm_task"),
             "displayName" to (event["displayName"] ?: event["toolName"] ?: "vlm_task"),
             "toolType" to "vlm",
+            "spanKind" to (event["spanKind"] ?: event["span_kind"] ?: "vlm_step"),
+            "span_kind" to (event["span_kind"] ?: event["spanKind"] ?: "vlm_step"),
+            "parentSpanKind" to (event["parentSpanKind"] ?: event["parent_span_kind"] ?: "vlm_task"),
+            "parent_span_kind" to (event["parent_span_kind"] ?: event["parentSpanKind"] ?: "vlm_task"),
             "runLogId" to (event["runLogId"] ?: event["run_id"] ?: taskId),
             "run_id" to (event["run_id"] ?: event["runLogId"] ?: taskId),
             "status" to (event["status"] ?: if (normalizedKind == "tool_completed") "success" else "running")
@@ -2787,7 +3074,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 conversationMode = "agent"
             ) + mapOf(
                 "streamMeta" to linkedMapOf<String, Any?>(
-                    "schema_version" to AGENT_STREAM_EVENT_SCHEMA_VERSION,
+                    "schema_version" to AGENT_STREAM_META_SCHEMA_VERSION,
                     "trace_id" to taskId,
                     "run_id" to taskId,
                     "span_id" to cardId,
@@ -2983,6 +3270,207 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         }
     }
 
+    fun startHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val name = (
+                args["name"] ?: args["title"] ?: call.argument<String>("name")
+            )?.toString()?.trim().orEmpty()
+            val description = (
+                args["description"] ?: args["goal"] ?: call.argument<String>("description")
+            )?.toString()?.trim().orEmpty()
+            val learningResult = runCatching {
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.setDoing(
+                        message = "正在准备手动录制",
+                        isShowTakeOver = false,
+                        subMessage = "正在连接无障碍服务",
+                        isShowStop = false,
+                        preferApplicationOverlay = true
+                    )
+                }
+                if (!awaitHumanTrajectoryRecordingBackend()) {
+                    throw IllegalStateException("无障碍服务未就绪，无法开始手动录制")
+                }
+                val sessionResult = HumanTrajectoryLearningSession.start(
+                    context = context,
+                    name = name,
+                    description = description
+                )
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.learningTask(
+                        message = "正在学习你的操作",
+                        subMessage = "人工学习中 · 完成后点完成学习",
+                        preferApplicationOverlay = true
+                    )
+                }
+                sessionResult.await()
+            }.getOrElse { error ->
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.finishDoingTask("手动录制失败")
+                    result.success(
+                        linkedMapOf(
+                            "success" to false,
+                            "error_code" to "HUMAN_TRAJECTORY_LEARNING_FAILED",
+                            "error_message" to error.message.orEmpty(),
+                            "function_kind" to "oob_reusable_function",
+                            "asset_state" to "native_local"
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            val payload = if (!learningResult.success) {
+                val errorMessage = learningResult.errorMessage.ifBlank { "未记录到可复用的人类操作" }
+                val runLog = runCatching {
+                    InternalRunLogStore.timelinePayload(context, learningResult.runId)
+                }.getOrNull()
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.finishDoingTask(
+                        if (errorMessage.contains("取消")) "学习已取消" else "学习失败"
+                    )
+                }
+                linkedMapOf(
+                    "success" to false,
+                    "error_code" to if (errorMessage.contains("取消")) {
+                        "HUMAN_TRAJECTORY_CANCELLED"
+                    } else {
+                        "HUMAN_TRAJECTORY_EMPTY"
+                    },
+                    "error_message" to errorMessage,
+                    "run_id" to learningResult.runId,
+                    "action_count" to learningResult.actionCount,
+                    "summary" to learningResult.summary,
+                    "run_log" to runLog,
+                    "function_kind" to "oob_reusable_function",
+                    "asset_state" to "native_local"
+                )
+            } else {
+                val conversion = runCatching {
+                    OobRunLogReplayService(context).convertRunLog(
+                        runId = learningResult.runId,
+                        register = true,
+                        nameOverride = learningResult.name,
+                        descriptionOverride = learningResult.description
+                    )
+                }.getOrElse { error ->
+                    linkedMapOf(
+                        "success" to false,
+                        "error_code" to "HUMAN_TRAJECTORY_CONVERT_FAILED",
+                        "error_message" to error.message.orEmpty(),
+                        "run_id" to learningResult.runId,
+                        "function_kind" to "oob_reusable_function",
+                        "asset_state" to "native_local"
+                    )
+                }
+                val conversionSuccess = conversion["success"] == true
+                val runLog = runCatching {
+                    InternalRunLogStore.timelinePayload(context, learningResult.runId)
+                }.getOrNull()
+                val actionList = learningResult.actions.mapIndexed { index, action ->
+                    manualRecordedActionPayload(index + 1, action)
+                }
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.finishDoingTask(
+                        if (conversionSuccess) "学习完成" else "学习失败"
+                    )
+                }
+                linkedMapOf<String, Any?>(
+                    "success" to conversionSuccess,
+                    "error_code" to if (conversionSuccess) null else {
+                        conversion["error_code"] ?: "HUMAN_TRAJECTORY_CONVERT_FAILED"
+                    },
+                    "error_message" to if (conversionSuccess) null else {
+                        conversion["error_message"] ?: "学习轨迹无法转换为复用指令"
+                    },
+                    "run_id" to learningResult.runId,
+                    "name" to learningResult.name,
+                    "description" to learningResult.description,
+                    "action_count" to learningResult.actionCount,
+                    "actions" to actionList,
+                    "editable_actions" to actionList,
+                    "summary" to learningResult.summary,
+                    "run_log" to runLog,
+                    "function_id" to conversion["function_id"],
+                    "created_function_id" to conversion["created_function_id"],
+                    "function_spec" to conversion["function_spec"],
+                    "conversion" to conversion,
+                    "function_kind" to "oob_reusable_function",
+                    "asset_state" to "native_local"
+                )
+            }
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    private suspend fun awaitHumanTrajectoryRecordingBackend(
+        timeoutMs: Long = 30_000L,
+        intervalMs: Long = 150L
+    ): Boolean {
+        runCatching {
+            if (!AssistsUtil.Core.isInitialized()) {
+                AssistsUtil.Core.initCore(context)
+            }
+        }.onFailure {
+            OmniLog.w(TAG, "manual recording core init failed: ${it.message}")
+        }
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() <= deadline) {
+            if (AssistsService.instance != null && AccessibilityController.initController()) {
+                return true
+            }
+            delay(intervalMs)
+        }
+        return false
+    }
+
+    private fun manualRecordedActionPayload(
+        index: Int,
+        action: ManualVlmRecordedAction
+    ): Map<String, Any?> {
+        return linkedMapOf<String, Any?>(
+            "index" to index,
+            "action" to action.actionName,
+            "title" to action.title,
+            "summary" to action.summary,
+            "params" to action.params,
+            "package_name" to action.packageName,
+            "started_at_ms" to action.startedAtMs,
+            "finished_at_ms" to action.finishedAtMs,
+            "duration_ms" to (action.finishedAtMs - action.startedAtMs).coerceAtLeast(0L),
+            "before" to linkedMapOf(
+                "observation_xml" to action.beforeXml,
+                "package_name" to action.packageName
+            ).filterValues { it != null },
+            "after" to linkedMapOf(
+                "observation_xml" to action.afterXml,
+                "package_name" to action.packageName
+            ).filterValues { it != null },
+            "source_context" to linkedMapOf(
+                "src_ctx" to linkedMapOf(
+                    "page" to action.beforeXml,
+                    "package_name" to action.packageName,
+                    "require_unique_action_signature" to false
+                ).filterValues { it != null },
+                "dst_ctx" to linkedMapOf(
+                    "page" to action.afterXml,
+                    "package_name" to action.packageName
+                ).filterValues { it != null },
+                "action" to linkedMapOf<String, Any?>("tool" to action.actionName).apply {
+                    putAll(action.params)
+                },
+                "_oob_meta" to linkedMapOf(
+                    "mode" to "manual_operation_recording",
+                    "recording_backend" to "accessibility_event",
+                    "editable" to true
+                )
+            )
+        ).filterValues { it != null }
+    }
+
     fun getOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val args = normalizeMethodCallMap(call.arguments)
@@ -3151,71 +3639,24 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 ?.filterIsInstance<Map<*, *>>() ?: emptyList()
             val pendingAgentSteps = stepResults.filter(::isOobReusableFunctionPendingAgentStep)
 
-            // Phase 2: if agent steps couldn't run inline, hand them (and any
-            // subsequent steps) to the agent with a targeted prompt.
+            // Phase 2: if local replay reaches a step that needs visual
+            // reasoning, run the device VLM directly. Returning SUCCESS from
+            // createAgentTask only meant the agent job was scheduled; it did
+            // not guarantee that the model had actually called vlm_task.
             if (pendingAgentSteps.isNotEmpty()) {
                 val completedCount = stepResults.indexOfFirst(::isOobReusableFunctionPendingAgentStep)
-                val conversationId = when (val raw = args["conversationId"]) {
-                    is Number -> raw.toLong().takeIf { it > 0L }
-                    is String -> raw.trim().toLongOrNull()?.takeIf { it > 0L }
-                    else -> currentConversationId
-                }
-                val conversationMode = args["conversationMode"]
-                    ?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: currentConversationMode
                 val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: "${System.currentTimeMillis()}-ai"
-                val prompt = buildOobReusableFunctionRunPrompt(
+                    ?: "${System.currentTimeMillis()}-vlm"
+                val payload = executeOobReusableFunctionVlmFallback(
                     functionId = functionId,
                     functionSpec = materializedSpec,
                     arguments = callArguments,
-                    completedStepCount = completedCount
-                )
-                val createArgs = linkedMapOf<String, Any?>(
-                    "taskId" to taskId,
-                    "userMessage" to prompt,
-                    "reasoningEffort" to "low"
-                ).apply {
-                    conversationId?.let { put("conversationId", it) }
-                    put("conversationMode", conversationMode)
-                }
-                var startResult: Any? = null
-                var startErrorCode: String? = null
-                var startErrorMessage: String? = null
-                createAgentTask(
-                    MethodCall("createAgentTask", createArgs),
-                    object : MethodChannel.Result {
-                        override fun success(result: Any?) { startResult = result }
-                        override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                            startErrorCode = errorCode; startErrorMessage = errorMessage
-                        }
-                        override fun notImplemented() {
-                            startErrorCode = "NOT_IMPLEMENTED"
-                            startErrorMessage = "createAgentTask not implemented"
-                        }
-                    }
-                )
-                val started = startErrorCode == null && startResult == "SUCCESS"
-                OobReusableFunctionStore.recordRun(
-                    context = context,
-                    functionId = functionId,
-                    success = started,
-                    runId = taskId,
-                    runner = runPayload["runner"]?.toString() ?: "oob_mixed_runner",
-                    stepCount = stepResults.size,
-                    errorMessage = startErrorMessage
-                )
-                val payload = buildOobReusableFunctionAgentFallbackPayload(
-                    functionId = functionId,
-                    taskId = taskId,
-                    started = started,
-                    startErrorCode = startErrorCode,
-                    startErrorMessage = startErrorMessage,
                     runPayload = runPayload,
                     stepResults = stepResults,
                     completedStepCount = completedCount,
                     pendingAgentStepCount = pendingAgentSteps.size,
-                    argumentCount = callArguments.size
+                    argumentCount = callArguments.size,
+                    runId = taskId,
                 )
                 withContext(Dispatchers.Main) {
                     result.success(payload)
@@ -5339,6 +5780,187 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         return normalizeMethodCallMap(value)
     }
 
+    private suspend fun executeOobReusableFunctionVlmFallback(
+        functionId: String,
+        functionSpec: Map<String, Any?>,
+        arguments: Map<String, Any?>,
+        runPayload: Map<String, Any?>,
+        stepResults: List<Map<*, *>>,
+        completedStepCount: Int,
+        pendingAgentStepCount: Int,
+        argumentCount: Int,
+        runId: String,
+    ): Map<String, Any?> {
+        val vlmTaskId = "oob-vlm-${UUID.randomUUID()}"
+        val goal = buildOobReusableFunctionVlmFallbackGoal(
+            functionId = functionId,
+            functionSpec = functionSpec,
+            arguments = arguments,
+            completedStepCount = completedStepCount,
+        )
+        val targetPackage = if (completedStepCount <= 0) {
+            oobReusableFunctionInitialPackage(functionSpec)
+        } else {
+            ""
+        }
+        AgentVlmUiSession.registerRun(
+            runId = runId,
+            onStopRequested = {
+                VlmToolCoordinator.cancelTask(vlmTaskId, mainJob, "任务已结束")
+                AssistsUtil.Core.cancelRunningTask(vlmTaskId)
+            },
+            onCompleteRequested = {
+                // The overlay callback completes the active VLM task; this
+                // session flag only prevents the UI from being destroyed twice.
+            }
+        )
+        AgentVlmUiSession.beginTask(runId, vlmTaskId)
+
+        var finishMessage = "任务已完成"
+        return try {
+            val outcome = try {
+                withContext(Dispatchers.Default) {
+                    VlmToolCoordinator.executeNewTask(
+                        context = context,
+                        request = VlmTaskRequest(
+                            goal = goal,
+                            maxSteps = 64,
+                            waitTimeoutMs = 600_000L,
+                            packageName = targetPackage.takeIf { it.isNotBlank() },
+                            needSummary = false,
+                            skipGoHome = targetPackage.isBlank(),
+                            disableOmniFlowRecall = true,
+                            allowOmniFlowFunctionAutoExecute = false,
+                        ),
+                        scope = mainJob,
+                        taskIdOverride = vlmTaskId,
+                        returnOnWaitingInput = false,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                VlmToolOutcome(
+                    taskId = vlmTaskId,
+                    goal = goal,
+                    status = VlmToolOutcomeStatus.ERROR,
+                    message = error.message ?: "VLM fallback failed",
+                    needSummary = false,
+                    errorMessage = error.message ?: "VLM fallback failed",
+                )
+            }
+            val success = outcome.status == VlmToolOutcomeStatus.FINISHED
+            finishMessage = when {
+                success -> "任务已完成"
+                outcome.status == VlmToolOutcomeStatus.CANCELLED -> "任务已结束"
+                else -> "任务执行失败"
+            }
+            OobReusableFunctionStore.recordRun(
+                context = context,
+                functionId = functionId,
+                success = success,
+                runId = vlmTaskId,
+                runner = "oob_direct_vlm_fallback",
+                stepCount = stepResults.size,
+                errorMessage = if (success) null else {
+                    outcome.errorMessage ?: outcome.message
+                }
+            )
+            buildOobReusableFunctionVlmFallbackPayload(
+                functionId = functionId,
+                runId = runId,
+                vlmTaskId = vlmTaskId,
+                outcome = outcome,
+                success = success,
+                runPayload = runPayload,
+                stepResults = stepResults,
+                completedStepCount = completedStepCount,
+                pendingAgentStepCount = pendingAgentStepCount,
+                argumentCount = argumentCount,
+            )
+        } finally {
+            AgentVlmUiSession.endTask(vlmTaskId)
+            finishAgentVlmUiSessionIfNeeded(runId, finishMessage)
+        }
+    }
+
+    private fun buildOobReusableFunctionVlmFallbackGoal(
+        functionId: String,
+        functionSpec: Map<String, Any?>,
+        arguments: Map<String, Any?>,
+        completedStepCount: Int,
+    ): String {
+        val goal = firstNonBlankString(
+            functionSpec["description"],
+            functionSpec["name"],
+            functionId,
+        )
+        val steps = oobReusableFunctionSteps(functionSpec)
+        val remainingSteps = steps.drop(completedStepCount.coerceAtLeast(0)).take(12)
+        val lines = mutableListOf<String>()
+        lines += "请从当前手机屏幕完成这个复用指令：$goal"
+        if (completedStepCount > 0) {
+            lines += "前 $completedStepCount 步已经由本地回放完成，请不要从头重复，直接继续剩余流程。"
+        }
+        if (arguments.isNotEmpty()) {
+            lines += "调用参数：${OobReusableFunctionStore.prettyJson(arguments)}"
+        }
+        if (remainingSteps.isNotEmpty()) {
+            lines += "剩余步骤参考："
+            remainingSteps.forEachIndexed { index, step ->
+                lines += "${completedStepCount + index + 1}. ${oobReusableFunctionStepSummary(step)}"
+            }
+        }
+        lines += "你需要实际点击、输入、滑动或打开应用，直到任务完成；不要只回复文字。"
+        return lines.joinToString("\n").trim()
+    }
+
+    private fun oobReusableFunctionSteps(functionSpec: Map<String, Any?>): List<Map<*, *>> {
+        val execution = functionSpec["execution"] as? Map<*, *> ?: return emptyList()
+        return (execution["steps"] as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?: emptyList()
+    }
+
+    private fun oobReusableFunctionInitialPackage(functionSpec: Map<String, Any?>): String {
+        return oobReusableFunctionSteps(functionSpec).asSequence()
+            .mapNotNull { step ->
+                val args = step["args"] as? Map<*, *> ?: return@mapNotNull null
+                val action = firstNonBlankString(
+                    step["omniflow_action"],
+                    step["local_action"],
+                    step["tool"],
+                    step["callable_tool"],
+                ).lowercase()
+                if (action != "open_app") return@mapNotNull null
+                firstNonBlankString(args["package_name"], args["packageName"])
+            }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    private fun oobReusableFunctionStepSummary(step: Map<*, *>): String {
+        val title = firstNonBlankString(step["title"], step["name"])
+        val agentPrompt = ((step["agent_call"] as? Map<*, *>)?.get("args") as? Map<*, *>)
+            ?.let { firstNonBlankString(it["prompt"], it["goal"]) }
+            .orEmpty()
+        val tool = firstNonBlankString(
+            step["omniflow_action"],
+            step["local_action"],
+            step["tool"],
+            step["callable_tool"],
+        )
+        val args = step["args"] as? Map<*, *>
+        val argsText = args?.entries
+            ?.take(3)
+            ?.joinToString(", ") { (key, value) -> "$key=$value" }
+            .orEmpty()
+        return listOf(title, agentPrompt, tool, argsText)
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
+            ?: "继续执行剩余操作"
+    }
+
     private fun buildOobReusableFunctionRunPrompt(
         functionId: String,
         functionSpec: Map<String, Any?>,
@@ -5362,6 +5984,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         if (completedStepCount > 0) {
             lines += "（前 $completedStepCount 步已由本地执行完毕，从第 ${completedStepCount + 1} 步继续）"
         }
+        lines += ""
+        lines += "你必须调用工具执行，不要只回复文字。当前直接执行入口只暴露 vlm_task 工具；请调用 vlm_task，让小万从当前手机屏幕完成剩余步骤。"
+        lines += "vlm_task 的 goal 应该概括剩余任务，不要逐字解释步骤。"
         lines += ""
         lines += "步骤（按顺序执行）："
 
@@ -5663,6 +6288,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
         agentRunScope.launch {
             var historyRepository: AgentConversationHistoryRepository? = null
+            var agentVlmUiFinishMessage = "任务已完成"
             try {
                 // 1. 获取当前包名
                 val currentPackageName = AssistsCore.getCurrentPackageName()
@@ -5753,19 +6379,22 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     runControl = agentRunContext
                 )
             } catch (e: CancellationException) {
+                val completedByUser = e.message == "agent_vlm_ui_completed"
+                agentVlmUiFinishMessage = if (completedByUser) "任务已完成" else "任务已结束"
                 OmniLog.i(TAG, "createAgentTask cancelled: ${e.message}")
                 runCatching {
                     InternalRunLogStore.finishRun(
                         context = context,
                         runId = taskId,
-                        success = false,
-                        doneReason = "cancelled",
-                        errorMessage = e.message
+                        success = completedByUser,
+                        doneReason = if (completedByUser) "user_completed" else "cancelled",
+                        errorMessage = if (completedByUser) null else e.message
                     )
                 }.onFailure {
                     OmniLog.w(TAG, "finish internal agent cancelled run log failed: ${it.message}")
                 }
             } catch (e: Exception) {
+                agentVlmUiFinishMessage = "任务执行失败"
                 OmniLog.e(TAG, "createAgentTask error: ${e.message}")
                 runCatching {
                     InternalRunLogStore.finishRun(
@@ -5873,6 +6502,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     OmniLog.w(TAG, "dispatch agent startup failure failed: ${it.message}")
                 }
             } finally {
+                finishAgentVlmUiSessionIfNeeded(taskId, agentVlmUiFinishMessage)
                 TaskRuntimeSettings.onTaskFinished(context)
                 clearActiveAgentJob(taskId, agentRunJob)
             }

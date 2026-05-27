@@ -13,8 +13,20 @@ import kotlinx.serialization.json.encodeToJsonElement
 
 interface DeviceOperator {
     suspend fun clickCoordinate(x: Float, y: Float): OperationResult
+    suspend fun clickNodeById(nodeId: String, targetDescription: String = ""): OperationResult =
+        OperationResult(false, "组件点击不支持: node_id=$nodeId", null)
     suspend fun longClickCoordinate(x: Float, y: Float, duration: Long = 1000L): OperationResult
+    suspend fun longClickNodeById(
+        nodeId: String,
+        targetDescription: String = "",
+        duration: Long = 1000L,
+    ): OperationResult = OperationResult(false, "组件长按不支持: node_id=$nodeId", null)
     suspend fun inputText(text: String): OperationResult
+    suspend fun inputTextToNodeById(
+        nodeId: String,
+        text: String,
+        targetDescription: String = "",
+    ): OperationResult = OperationResult(false, "组件输入不支持: node_id=$nodeId", null)
     suspend fun pressHotKey(key: String): OperationResult
     suspend fun copyToClipboard(text: String): OperationResult
     suspend fun getClipboard(): String? // 获取剪贴板内容
@@ -74,11 +86,34 @@ class ActionExecutor(
         ensureActionActive()
         val result = when (val action = vlmStep.action) {
             is ClickAction -> {
-                deviceOperator.clickCoordinate(action.x.toFloat(), action.y.toFloat())
+                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
+                    deviceOperator.clickNodeById(nodeId, action.targetDescription)
+                }
+                if (nodeResult?.success == true) {
+                    nodeResult
+                } else {
+                    if (nodeResult != null) {
+                        OmniLog.w(TAG, "click node failed, falling back to coordinates: ${nodeResult.message}")
+                    }
+                    deviceOperator.clickCoordinate(action.x.toFloat(), action.y.toFloat())
+                }
             }
 
             is LongPressAction -> {
-                deviceOperator.longClickCoordinate(action.x.toFloat(), action.y.toFloat())
+                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
+                    deviceOperator.longClickNodeById(
+                        nodeId = nodeId,
+                        targetDescription = action.targetDescription
+                    )
+                }
+                if (nodeResult?.success == true) {
+                    nodeResult
+                } else {
+                    if (nodeResult != null) {
+                        OmniLog.w(TAG, "long click node failed, falling back to coordinates: ${nodeResult.message}")
+                    }
+                    deviceOperator.longClickCoordinate(action.x.toFloat(), action.y.toFloat())
+                }
             }
 
             is TypeAction -> {
@@ -86,21 +121,35 @@ class ActionExecutor(
             }
 
             is InputTextAction -> {
-                val clickResult = deviceOperator.clickCoordinate(action.x, action.y)
-                if (!clickResult.success) {
-                    clickResult
+                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
+                    deviceOperator.inputTextToNodeById(
+                        nodeId = nodeId,
+                        text = action.content,
+                        targetDescription = action.targetDescription
+                    )
+                }
+                if (nodeResult?.success == true) {
+                    nodeResult
                 } else {
-                    ensureActionActive()
-                    kotlinx.coroutines.delay(INPUT_TEXT_FOCUS_DELAY_MS)
-                    val inputResult = deviceOperator.inputText(action.content)
-                    if (inputResult.success) {
-                        OperationResult(
-                            success = true,
-                            message = "点击 ${action.targetDescription} 并输入文本成功",
-                            data = inputResult.data
-                        )
+                    if (nodeResult != null) {
+                        OmniLog.w(TAG, "input node failed, falling back to coordinate focus: ${nodeResult.message}")
+                    }
+                    val clickResult = deviceOperator.clickCoordinate(action.x, action.y)
+                    if (!clickResult.success) {
+                        clickResult
                     } else {
-                        inputResult
+                        ensureActionActive()
+                        kotlinx.coroutines.delay(INPUT_TEXT_FOCUS_DELAY_MS)
+                        val inputResult = deviceOperator.inputText(action.content)
+                        if (inputResult.success) {
+                            OperationResult(
+                                success = true,
+                                message = "点击 ${action.targetDescription} 并输入文本成功",
+                                data = inputResult.data
+                            )
+                        } else {
+                            inputResult
+                        }
                     }
                 }
             }

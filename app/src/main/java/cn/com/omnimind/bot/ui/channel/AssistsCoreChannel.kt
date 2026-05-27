@@ -67,6 +67,9 @@ class AssistsCoreChannel {
                 "convertInternalRunLogToOobFunction" -> {
                     assistsCoreManager!!.convertInternalRunLogToOobFunction(call, result)
                 }
+                "startHumanTrajectoryLearning" -> {
+                    assistsCoreManager!!.startHumanTrajectoryLearning(call, result)
+                }
                 "getOobReusableFunction" -> {
                     assistsCoreManager!!.getOobReusableFunction(call, result)
                 }

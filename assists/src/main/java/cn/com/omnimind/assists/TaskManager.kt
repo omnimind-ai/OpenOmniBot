@@ -230,23 +230,29 @@ class TaskManager(
      * 取消等待中或运行中的任务，不检查 isRunning 状态
      * 用于在预执行 delay 期间取消任务
      */
-    fun cancelPendingTask(taskId: String? = null) {
+    fun cancelPendingTask(taskId: String? = null): Boolean {
         OmniLog.d(TAG, "cancelPendingTask called, runningTask=$runningTask")
-        when (runningTask) {
+        return when (val task = runningTask) {
             is VLMOperationTask -> {
-                if (!taskId.isNullOrBlank() && runningTask?.id != taskId) {
-                    return
+                if (!taskId.isNullOrBlank() && task.id != taskId) {
+                    false
+                } else {
+                    OmniLog.d(TAG, "Cancelling pending VLM task")
+                    // Use finishTask to trigger onTaskStop and close ready UI (onReadyStartVLMTask)
+                    task.finishTask()
+                    true
                 }
-                OmniLog.d(TAG, "Cancelling pending VLM task")
-                // Use finishTask to trigger onTaskStop and close ready UI (onReadyStartVLMTask)
-                (runningTask as VLMOperationTask).finishTask()
             }
             else -> {
-                if (!taskId.isNullOrBlank() && runningTask?.id != taskId) {
-                    return
+                if (task == null) {
+                    false
+                } else if (!taskId.isNullOrBlank() && task.id != taskId) {
+                    false
+                } else {
+                    // 兜底：尝试调用 finishDoingTask
+                    finishDoingTask()
+                    true
                 }
-                // 兜底：尝试调用 finishDoingTask
-                finishDoingTask()
             }
         }
     }

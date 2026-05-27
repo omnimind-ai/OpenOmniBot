@@ -20,6 +20,9 @@ interface AgentRunControl {
 }
 
 interface AgentToolExecutionHandle {
+    val runId: String?
+        get() = null
+
     val generation: Long
     val toolName: String
     val toolCallId: String

@@ -7,6 +7,7 @@ import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,6 +94,97 @@ class RunLogReusableFunctionCompilerTest {
             SOURCE_XML,
             ((click["source_context"] as Map<*, *>)["src_ctx"] as Map<*, *>)["page"],
         )
+    }
+
+    @Test
+    fun `manual recording click keeps coordinates and source context for replay`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf(
+                        "target_description" to "Bluetooth",
+                        "x" to 540f,
+                        "y" to 620f,
+                        "bounds" to "[40,560][1040,680]",
+                        "recording_backend" to "accessibility_event",
+                    ),
+                    beforeXml = SOURCE_XML,
+                    afterXml = AFTER_XML,
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-manual-click",
+        )
+
+        val click = stepsFrom(spec).single()
+        assertEquals("click", click["tool"])
+        assertEquals("omniflow", click["executor"])
+        assertEquals("omniflow", click["coordinate_hook"])
+        val args = click["args"] as Map<*, *>
+        assertEquals(540, (args["x"] as Number).toInt())
+        assertEquals(620, (args["y"] as Number).toInt())
+        assertEquals("Bluetooth", args["target_description"])
+        val sourceContext = click["source_context"] as Map<*, *>
+        val srcCtx = sourceContext["src_ctx"] as Map<*, *>
+        val action = sourceContext["action"] as Map<*, *>
+        assertEquals(SOURCE_XML, srcCtx["page"])
+        assertEquals("click", action["tool"])
+        assertEquals(540, (action["x"] as Number).toInt())
+        assertEquals(620, (action["y"] as Number).toInt())
+    }
+
+    @Test
+    fun `get state observation cards are omitted from reusable function replay`() {
+        val spec = compile(
+            listOf(
+                card("get_state", mapOf("reason" to "refresh current page")),
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                ),
+            ),
+            runId = "run-get-state-click",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(1, steps.size)
+        assertEquals("click", steps.single()["tool"])
+        assertFalse(steps.any { it["tool"] == "get_state" })
+
+        val observationOnly = InternalRunLogRecord(
+            runId = "run-get-state-only",
+            goal = "Refresh state",
+            toolName = "test_tool",
+            operationDescription = "Refresh state",
+            cards = listOf(card("get_state", mapOf("reason" to "refresh current page"))),
+        )
+        assertNull(RunLogReusableFunctionCompiler.compile(observationOnly))
+    }
+
+    @Test
+    fun `settings toggle run log exports terminal postcondition`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Use Bluetooth", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                ),
+                card("finished", mapOf("content" to "Bluetooth is on")),
+            ),
+            runId = "run-settings-toggle",
+            goal = "打开蓝牙",
+        )
+
+        val terminal = spec["terminal_postconditions"] as? List<*>
+        val postcondition = terminal?.single() as? Map<*, *>
+        assertEquals("android_settings_toggle", postcondition?.get("kind"))
+        assertEquals("打开蓝牙", postcondition?.get("goal"))
+        val execution = spec["execution"] as Map<*, *>
+        assertEquals(terminal, execution["terminal_postconditions"])
     }
 
     @Test
@@ -756,12 +848,13 @@ class RunLogReusableFunctionCompilerTest {
     private fun compile(
         cards: List<Map<String, Any?>>,
         runId: String,
+        goal: String = "Replay $runId",
     ): Map<String, Any?> {
         val record = InternalRunLogRecord(
             runId = runId,
-            goal = "Replay $runId",
+            goal = goal,
             toolName = "test_tool",
-            operationDescription = "Replay $runId",
+            operationDescription = goal,
             cards = cards,
         )
         return requireNotNull(RunLogReusableFunctionCompiler.compile(record))

@@ -77,7 +77,8 @@ WORKFLOW:
                 ),
                 "disableOmniFlowRecall" to mapOf(
                     "type" to "boolean",
-                    "description" to "Optional validation/debug flag: set true to force a fresh online VLM run without OmniFlow recall context. Default false."
+                    "default" to true,
+                    "description" to "Optional flag. Default true: run fresh online VLM from the current screenshot/XML without OmniFlow recall context. Set false only when recall guidance is explicitly needed."
                 ),
                 "allowOmniFlowFunctionAutoExecute" to mapOf(
                     "type" to "boolean",

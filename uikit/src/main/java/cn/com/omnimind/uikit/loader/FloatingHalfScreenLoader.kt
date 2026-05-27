@@ -84,6 +84,14 @@ class FloatingHalfScreenLoader(
         fun restoreAfterExternalActivity(): Boolean {
             return getInstance()?.restoreAfterExternalActivity() ?: false
         }
+
+        fun hideForManualRecording(): Boolean {
+            return getInstance()?.hideForManualRecording() ?: false
+        }
+
+        fun restoreAfterManualRecording(): Boolean {
+            return getInstance()?.restoreAfterManualRecording() ?: false
+        }
     }
     private var flutterView: View? = null
 
@@ -96,6 +104,9 @@ class FloatingHalfScreenLoader(
     private var didHideScreenMaskForExternalActivity: Boolean = false
     private var didHideCancelClickForExternalActivity: Boolean = false
     private var didHideDraggableForExternalActivity: Boolean = false
+    private var isHiddenForManualRecording: Boolean = false
+    private var didHideScreenMaskForManualRecording: Boolean = false
+    private var didHideCancelClickForManualRecording: Boolean = false
 
     fun isShowing(): Boolean = isAttachedToWindow
 
@@ -342,6 +353,68 @@ class FloatingHalfScreenLoader(
         }
     }
 
+    fun hideForManualRecording(): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { hideForManualRecording() }
+            return false
+        }
+        didHideScreenMaskForManualRecording = ScreenMaskLoader.hideForExternalActivity()
+        didHideCancelClickForManualRecording = CancelClickLoader.hideForExternalActivity()
+        if (!isAttachedToWindow || container == null) {
+            return didHideScreenMaskForManualRecording ||
+                    didHideCancelClickForManualRecording
+        }
+        return try {
+            flutterView?.animate()?.cancel()
+            flutterView?.alpha = 1f
+            getWindowManager().removeView(container)
+            isAttachedToWindow = false
+            isHiddenForManualRecording = true
+            OmniLog.d("FloatingHalfScreenLoader", "Half screen hidden for manual recording")
+            true
+        } catch (e: Exception) {
+            OmniLog.e("FloatingHalfScreenLoader", "hideForManualRecording failed: ${e.message}", e)
+            false
+        }
+    }
+
+    fun restoreAfterManualRecording(): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { restoreAfterManualRecording() }
+            return false
+        }
+        var restoredScreenMask = false
+        if (didHideScreenMaskForManualRecording) {
+            restoredScreenMask = ScreenMaskLoader.restoreAfterExternalActivity()
+            didHideScreenMaskForManualRecording = false
+        }
+        var restoredCancelClick = false
+        if (didHideCancelClickForManualRecording) {
+            restoredCancelClick = CancelClickLoader.restoreAfterExternalActivity()
+            didHideCancelClickForManualRecording = false
+        }
+        val view = container ?: return restoredScreenMask || restoredCancelClick
+        val params = windowParams ?: return restoredScreenMask || restoredCancelClick
+        if (isAttachedToWindow || !isHiddenForManualRecording) {
+            return restoredScreenMask || restoredCancelClick
+        }
+        return try {
+            getWindowManager().addView(view, params)
+            flutterView?.visibility = View.VISIBLE
+            flutterView?.alpha = 1f
+            isAttachedToWindow = true
+            isHiddenForManualRecording = false
+            OmniLog.d("FloatingHalfScreenLoader", "Half screen restored after manual recording")
+            true
+        } catch (e: BadTokenException) {
+            OmniLog.e("FloatingHalfScreenLoader", "restoreAfterManualRecording BadTokenException: ${e.message}")
+            restoredScreenMask || restoredCancelClick
+        } catch (e: Exception) {
+            OmniLog.e("FloatingHalfScreenLoader", "restoreAfterManualRecording failed: ${e.message}", e)
+            restoredScreenMask || restoredCancelClick
+        }
+    }
+
     fun removeView() {
         if (!isAttachedToWindow) {
             if (isHiddenForExternalActivity) {
@@ -353,6 +426,9 @@ class FloatingHalfScreenLoader(
                 didHideScreenMaskForExternalActivity = false
                 didHideCancelClickForExternalActivity = false
                 didHideDraggableForExternalActivity = false
+                isHiddenForManualRecording = false
+                didHideScreenMaskForManualRecording = false
+                didHideCancelClickForManualRecording = false
             }
             return
         }
@@ -375,5 +451,8 @@ class FloatingHalfScreenLoader(
         didHideScreenMaskForExternalActivity = false
         didHideCancelClickForExternalActivity = false
         didHideDraggableForExternalActivity = false
+        isHiddenForManualRecording = false
+        didHideScreenMaskForManualRecording = false
+        didHideCancelClickForManualRecording = false
     }
 }

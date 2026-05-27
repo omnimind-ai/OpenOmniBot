@@ -126,6 +126,26 @@ class TraceRecordingDeviceOperator(
         return result
     }
 
+    override suspend fun clickNodeById(nodeId: String, targetDescription: String): OperationResult {
+        val result = delegate.clickNodeById(nodeId, targetDescription)
+        traceSession.recordDeviceEvent(
+            eventType = "node_click",
+            request = mapOf(
+                "action" to mapOf(
+                    "type" to "click",
+                    "params" to mapOf(
+                        "node_id" to nodeId,
+                        "target_description" to targetDescription,
+                        "execution" to "accessibility_node_action",
+                    ),
+                )
+            ),
+            response = operationResultMap(result),
+            advanceStepIndex = true,
+        )
+        return result
+    }
+
     override suspend fun longClickCoordinate(x: Float, y: Float, duration: Long): OperationResult {
         val result = delegate.longClickCoordinate(x, y, duration)
         traceSession.recordDeviceEvent(
@@ -146,6 +166,31 @@ class TraceRecordingDeviceOperator(
         return result
     }
 
+    override suspend fun longClickNodeById(
+        nodeId: String,
+        targetDescription: String,
+        duration: Long
+    ): OperationResult {
+        val result = delegate.longClickNodeById(nodeId, targetDescription, duration)
+        traceSession.recordDeviceEvent(
+            eventType = "node_long_click",
+            request = mapOf(
+                "action" to mapOf(
+                    "type" to "long_press",
+                    "params" to mapOf(
+                        "node_id" to nodeId,
+                        "target_description" to targetDescription,
+                        "duration_ms" to duration,
+                        "execution" to "accessibility_node_action",
+                    ),
+                )
+            ),
+            response = operationResultMap(result),
+            advanceStepIndex = true,
+        )
+        return result
+    }
+
     override suspend fun inputText(text: String): OperationResult {
         val result = delegate.inputText(text)
         traceSession.recordDeviceEvent(
@@ -154,6 +199,31 @@ class TraceRecordingDeviceOperator(
                 "action" to mapOf(
                     "type" to "input_text",
                     "params" to mapOf("text" to text),
+                )
+            ),
+            response = operationResultMap(result),
+            advanceStepIndex = true,
+        )
+        return result
+    }
+
+    override suspend fun inputTextToNodeById(
+        nodeId: String,
+        text: String,
+        targetDescription: String
+    ): OperationResult {
+        val result = delegate.inputTextToNodeById(nodeId, text, targetDescription)
+        traceSession.recordDeviceEvent(
+            eventType = "node_input_text",
+            request = mapOf(
+                "action" to mapOf(
+                    "type" to "input_text",
+                    "params" to mapOf(
+                        "node_id" to nodeId,
+                        "target_description" to targetDescription,
+                        "text" to text,
+                        "execution" to "accessibility_node_action",
+                    ),
                 )
             ),
             response = operationResultMap(result),

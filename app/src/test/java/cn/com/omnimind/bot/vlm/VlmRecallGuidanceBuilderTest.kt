@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.vlm
 
 import cn.com.omnimind.assists.task.vlmserver.UIContext
+import cn.com.omnimind.assists.task.vlmserver.VLMCurrentPageSnapshot
 import cn.com.omnimind.assists.task.vlmserver.VLMPageContextRequest
 import cn.com.omnimind.bot.runlog.OobOmniFlowLoopAcceptanceTest
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
@@ -411,7 +412,7 @@ class VlmRecallGuidanceBuilderTest {
     }
 
     @Test
-    fun `online page context provider observes page and injects udeg node context`() = runBlocking {
+    fun `online page context provider records first seen page without injecting node skill`() = runBlocking {
         val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
         try {
             val provider = OobVlmPageContextProvider(context)
@@ -425,13 +426,129 @@ class VlmRecallGuidanceBuilderTest {
                     currentPackageName = "com.example.settings",
                     screenshotBase64 = "fake-screenshot",
                     stepIndex = 0,
+                    snapshot = VLMCurrentPageSnapshot(
+                        packageName = "com.example.settings",
+                        xml = SETTINGS_XML,
+                        screenshotBase64 = "fake-screenshot",
+                        displayWidth = 1080,
+                        displayHeight = 1920,
+                        capturedAtMs = 1234L,
+                    )
                 )
             )
 
-            assertTrue(enriched.currentPageSummary.contains("UDEG page-match context"))
+            assertFalse(enriched.currentPageSummary.contains("UDEG page skill context"))
+            assertEquals("true", enriched.pageDiagnostics["udeg_first_seen"])
+            assertEquals("false", enriched.pageDiagnostics["udeg_context_injected"])
+            assertEquals("1234", enriched.pageDiagnostics["snapshot_timestamp"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `online page context provider injects structured node skill after page match`() = runBlocking {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            OobUdegNodeStore(context).upsertFunction(
+                "open_network_settings",
+                mapOf(
+                    "name" to "Open Network settings",
+                    "description" to "Open the Network row from Settings",
+                    "execution" to mapOf(
+                        "steps" to listOf(
+                            mapOf(
+                                "tool" to "click",
+                                "title" to "Click Network",
+                                "source_context" to mapOf(
+                                    "src_ctx" to mapOf(
+                                        "observation_xml" to SETTINGS_XML,
+                                        "package_name" to "com.example.settings",
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            val provider = OobVlmPageContextProvider(context)
+            val enriched = provider.enrich(
+                VLMPageContextRequest(
+                    context = UIContext(
+                        overallTask = "Open Network settings",
+                        targetPackageName = "com.example.settings",
+                    ),
+                    currentXml = SETTINGS_XML,
+                    currentPackageName = "com.example.settings",
+                    screenshotBase64 = "fake-screenshot",
+                    stepIndex = 1,
+                )
+            )
+
+            assertTrue(enriched.currentPageSummary.contains("UDEG page skill context"))
             assertTrue(enriched.currentPageSummary.contains(OobUdegNodeStore.UDEG_DECISION_PATH))
-            assertTrue(enriched.currentPageSummary.contains("Network"))
-            assertTrue(enriched.currentPageSummary.contains("live screenshot/XML page match"))
+            assertTrue(enriched.currentPageSummary.contains("UDEG attached Functions"))
+            assertTrue(enriched.currentPageSummary.contains("function_id=open_network_settings"))
+            assertTrue(enriched.currentPageSummary.contains("动作仍必须基于本轮 live screenshot/XML/indexed evidence"))
+            assertEquals("false", enriched.pageDiagnostics["udeg_first_seen"])
+            assertEquals("true", enriched.pageDiagnostics["udeg_context_injected"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `online page context provider uses snapshot xml instead of stale request xml`() = runBlocking {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            OobUdegNodeStore(context).upsertFunction(
+                "open_network_settings",
+                mapOf(
+                    "name" to "Open Network settings",
+                    "description" to "Open the Network row from Settings",
+                    "execution" to mapOf(
+                        "steps" to listOf(
+                            mapOf(
+                                "tool" to "click",
+                                "title" to "Click Network",
+                                "source_context" to mapOf(
+                                    "src_ctx" to mapOf(
+                                        "observation_xml" to SETTINGS_XML,
+                                        "package_name" to "com.example.settings",
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            val provider = OobVlmPageContextProvider(context)
+            val enriched = provider.enrich(
+                VLMPageContextRequest(
+                    context = UIContext(
+                        overallTask = "Open Network settings",
+                        targetPackageName = "com.example.settings",
+                    ),
+                    currentXml = SETTINGS_XML,
+                    currentPackageName = "com.example.settings",
+                    screenshotBase64 = "stale-screenshot",
+                    stepIndex = 2,
+                    snapshot = VLMCurrentPageSnapshot(
+                        packageName = "com.example.settings",
+                        xml = DISPLAY_XML,
+                        screenshotBase64 = "fresh-screenshot",
+                        displayWidth = 1080,
+                        displayHeight = 1920,
+                        capturedAtMs = 5678L,
+                    )
+                )
+            )
+
+            assertFalse(enriched.currentPageSummary.contains("function_id=open_network_settings"))
+            assertFalse(enriched.currentPageSummary.contains("UDEG page skill context"))
+            assertEquals("true", enriched.pageDiagnostics["udeg_first_seen"])
+            assertEquals("false", enriched.pageDiagnostics["udeg_context_injected"])
+            assertEquals("5678", enriched.pageDiagnostics["snapshot_timestamp"])
         } finally {
             context.root.deleteRecursively()
         }
@@ -444,6 +561,16 @@ class VlmRecallGuidanceBuilderTest {
                 <node class="android.widget.TextView" package="com.example.settings" text="Settings" bounds="[32,64][400,160]" />
                 <node class="android.widget.TextView" package="com.example.settings" text="Network" clickable="true" enabled="true" bounds="[32,240][1048,360]" />
                 <node class="android.widget.TextView" package="com.example.settings" text="Display" clickable="true" enabled="true" bounds="[32,380][1048,500]" />
+              </node>
+            </hierarchy>
+        """
+
+        const val DISPLAY_XML = """
+            <hierarchy>
+              <node class="android.widget.FrameLayout" package="com.example.settings" bounds="[0,0][1080,1920]">
+                <node class="android.widget.TextView" package="com.example.settings" text="Display" bounds="[32,64][400,160]" />
+                <node class="android.widget.TextView" package="com.example.settings" text="Brightness level" clickable="true" enabled="true" bounds="[32,240][1048,360]" />
+                <node class="android.widget.TextView" package="com.example.settings" text="Dark theme" clickable="true" enabled="true" bounds="[32,380][1048,500]" />
               </node>
             </hierarchy>
         """

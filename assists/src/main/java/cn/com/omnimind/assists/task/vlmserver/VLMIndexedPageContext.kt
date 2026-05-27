@@ -29,7 +29,8 @@ object VLMIndexedPageContext {
         val index: Int,
         val label: String,
         val centerX: Float,
-        val centerY: Float
+        val centerY: Float,
+        val nodeId: String? = null
     )
 
     data class IndexedScrollTarget(
@@ -197,7 +198,8 @@ object VLMIndexedPageContext {
             index = index,
             label = node.displayLabel.take(MAX_LABEL_CHARS),
             centerX = node.bounds.centerX,
-            centerY = node.bounds.centerY
+            centerY = node.bounds.centerY,
+            nodeId = node.nodeId.takeIf { it.isNotBlank() }
         )
     }
 
@@ -329,6 +331,7 @@ object VLMIndexedPageContext {
             val bounds = parseBounds(element.attr("bounds")) ?: continue
             if (bounds.area <= 0f) continue
             nodes += PageNode(
+                nodeId = element.attr("id"),
                 bounds = bounds,
                 text = element.attr("text"),
                 contentDesc = element.attr("content-desc"),
@@ -427,6 +430,7 @@ object VLMIndexedPageContext {
     )
 
     private data class PageNode(
+        val nodeId: String,
         val bounds: Rect,
         val text: String,
         val contentDesc: String,

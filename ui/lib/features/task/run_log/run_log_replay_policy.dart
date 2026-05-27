@@ -113,6 +113,7 @@ class RunLogReplayPolicy {
     'skills_loaded',
     'status_update',
     'assistant_response',
+    'get_state',
     'wait',
   };
 

@@ -22,9 +22,14 @@ object OobReusableFunctionStore {
         context: Context,
         functionSpec: Map<String, Any?>
     ): Map<String, Any?> {
-        val spec = sanitizeMap(functionSpec)
-        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        val rawSpec = sanitizeMap(functionSpec)
+        val functionId = functionIdFromSpec(rawSpec)
         require(functionId.isNotEmpty()) { "function_id is empty" }
+        val spec = linkedMapOf<String, Any?>().apply {
+            putAll(rawSpec)
+            putIfAbsent("function_id", functionId)
+            putIfAbsent("name", functionId)
+        }
 
         val prefs = prefs(context)
         val key = "$SPEC_PREFIX$functionId"
@@ -207,37 +212,87 @@ object OobReusableFunctionStore {
         val resolvedArguments = linkedMapOf<String, Any?>()
         val bindingResults = mutableListOf<Map<String, Any?>>()
         val missingRequired = mutableListOf<String>()
+        val legacyParameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
+        if (legacyParameters.isNotEmpty()) {
+            legacyParameters.forEach { rawParameter ->
+                val parameter = rawParameter as? Map<*, *> ?: return@forEach
+                val name = parameter["name"]?.toString()?.trim().orEmpty()
+                if (name.isEmpty()) return@forEach
+                val type = parameter["type"]?.toString()?.trim().orEmpty()
+                val hasCallArgument = arguments.containsKey(name)
+                val hasDefault = parameter.containsKey("default")
+                val rawValue = if (hasCallArgument) {
+                    arguments[name]
+                } else {
+                    parameter["default"]
+                }
+                val value = coerceParameterValue(rawValue, type)
+                if (value == null) {
+                    if (isRequired(parameter["required"]) && !hasCallArgument && !hasDefault) {
+                        missingRequired += name
+                    }
+                    return@forEach
+                }
+                resolvedArguments[name] = value
+                val bindings = listArg(parameter["bindings"])
+                bindings.forEach { rawBinding ->
+                    val binding = rawBinding?.toString()?.trim().orEmpty()
+                    if (binding.isEmpty()) return@forEach
+                    bindingResults += linkedMapOf(
+                        "parameter" to name,
+                        "binding" to binding,
+                        "applied" to setJsonPathValue(spec, binding, value)
+                    )
+                }
+            }
+        } else {
+            val parameterSchema = mapArg(spec["parameters"])
+            val properties = mapArg(parameterSchema["properties"])
+            val requiredNames = listArg(parameterSchema["required"])
+                .mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+                .toSet()
+            properties.forEach { (name, rawProperty) ->
+                val parameter = mapArg(rawProperty)
+                if (name.isBlank()) return@forEach
+                val type = firstJsonSchemaType(parameter["type"])
+                val hasCallArgument = arguments.containsKey(name)
+                val hasDefault = parameter.containsKey("default")
+                val rawValue = if (hasCallArgument) {
+                    arguments[name]
+                } else {
+                    parameter["default"]
+                }
+                val value = coerceParameterValue(rawValue, type)
+                if (value == null) {
+                    if (name in requiredNames && !hasCallArgument && !hasDefault) {
+                        missingRequired += name
+                    }
+                    return@forEach
+                }
+                resolvedArguments[name] = value
+                parameterBindings(name, parameter, spec).forEach { binding ->
+                    bindingResults += linkedMapOf(
+                        "parameter" to name,
+                        "binding" to binding,
+                        "applied" to setJsonPathValue(spec, binding, value)
+                    )
+                }
+            }
+        }
+
+        val rendered = renderParameterTemplates(spec, resolvedArguments)
+        if (rendered is Map<*, *>) {
+            spec.clear()
+            spec.putAll(mutableJsonMap(sanitizeMap(rendered)))
+        }
+
         val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
         parameters.forEach { rawParameter ->
             val parameter = rawParameter as? Map<*, *> ?: return@forEach
             val name = parameter["name"]?.toString()?.trim().orEmpty()
             if (name.isEmpty()) return@forEach
-            val type = parameter["type"]?.toString()?.trim().orEmpty()
-            val hasCallArgument = arguments.containsKey(name)
-            val hasDefault = parameter.containsKey("default")
-            val rawValue = if (hasCallArgument) {
-                arguments[name]
-            } else {
-                parameter["default"]
-            }
-            val value = coerceParameterValue(rawValue, type)
-            if (value == null) {
-                if (isRequired(parameter["required"]) && !hasCallArgument && !hasDefault) {
-                    missingRequired += name
-                }
-                return@forEach
-            }
-            resolvedArguments[name] = value
-            val bindings = parameter["bindings"] as? List<*> ?: emptyList<Any?>()
-            bindings.forEach { rawBinding ->
-                val binding = rawBinding?.toString()?.trim().orEmpty()
-                if (binding.isEmpty()) return@forEach
-                bindingResults += linkedMapOf(
-                    "parameter" to name,
-                    "binding" to binding,
-                    "applied" to setJsonPathValue(spec, binding, value)
-                )
-            }
+            // Legacy parameter specs are already applied above. This pass is kept
+            // empty intentionally after rendering so old specs retain their shape.
         }
 
         val existingRuntime = spec["runtime"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
@@ -259,6 +314,52 @@ object OobReusableFunctionStore {
     }
 
     fun missingRequiredArguments(
+        functionSpec: Map<String, Any?>,
+        arguments: Map<String, Any?>
+    ): List<String> {
+        val legacyParameters = functionSpec["parameters"] as? List<*>
+        if (legacyParameters != null) {
+            return legacyParameters.mapNotNull { rawParameter ->
+                val parameter = rawParameter as? Map<*, *> ?: return@mapNotNull null
+                val name = parameter["name"]?.toString()?.trim().orEmpty()
+                if (name.isEmpty() || !isRequired(parameter["required"])) {
+                    return@mapNotNull null
+                }
+                val hasArgument = arguments.containsKey(name) && arguments[name] != null
+                val hasDefault = parameter.containsKey("default") && parameter["default"] != null
+                if (hasArgument || hasDefault) null else name
+            }
+        }
+        val schema = mapArg(functionSpec["parameters"])
+        val required = listArg(schema["required"])
+            .mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+        if (required.isEmpty()) return emptyList()
+        val properties = mapArg(schema["properties"])
+        return required.mapNotNull { name ->
+            val property = mapArg(properties[name])
+            val hasArgument = arguments.containsKey(name) && arguments[name] != null
+            val hasDefault = property.containsKey("default") && property["default"] != null
+            if (hasArgument || hasDefault) null else name
+        }
+    }
+
+    fun functionIdFromSpec(functionSpec: Map<String, Any?>): String =
+        firstNonBlank(functionSpec["function_id"], functionSpec["functionId"], functionSpec["name"])
+
+    fun parameterNames(functionSpec: Map<String, Any?>): List<String> {
+        val legacyParameters = functionSpec["parameters"] as? List<*>
+        if (legacyParameters != null) {
+            return legacyParameters.mapNotNull { raw ->
+                (raw as? Map<*, *>)?.get("name")?.toString()?.trim()?.takeIf(String::isNotEmpty)
+            }
+        }
+        val schema = mapArg(functionSpec["parameters"])
+        return mapArg(schema["properties"]).keys
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    private fun legacyMissingRequiredArguments(
         functionSpec: Map<String, Any?>,
         arguments: Map<String, Any?>
     ): List<String> {
@@ -331,6 +432,24 @@ object OobReusableFunctionStore {
         }
     }
 
+    private fun mapArg(value: Any?): Map<String, Any?> {
+        return when (value) {
+            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
+                value.forEach { (key, item) ->
+                    if (key != null) put(key.toString(), sanitizeValue(item))
+                }
+            }
+            else -> emptyMap()
+        }
+    }
+
+    private fun listArg(value: Any?): List<Any?> =
+        when (value) {
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> emptyList()
+        }
+
     private fun mutableJsonMap(value: Map<String, Any?>): MutableMap<String, Any?> {
         return linkedMapOf<String, Any?>().apply {
             value.forEach { (key, item) ->
@@ -380,6 +499,80 @@ object OobReusableFunctionStore {
             is Boolean -> value
             is String -> value.trim().equals("true", ignoreCase = true)
             else -> false
+        }
+    }
+
+    private fun firstJsonSchemaType(value: Any?): String {
+        return when (value) {
+            is String -> value.trim()
+            is List<*> -> value.firstNotNullOfOrNull {
+                it?.toString()?.trim()?.takeIf { type -> type != "null" && type.isNotEmpty() }
+            }.orEmpty()
+            else -> ""
+        }
+    }
+
+    private fun parameterBindings(
+        name: String,
+        property: Map<String, Any?>,
+        spec: Map<String, Any?>,
+    ): List<String> {
+        val output = linkedSetOf<String>()
+        listArg(property["bindings"]).forEach { raw ->
+            raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(output::add)
+        }
+        listArg(property["x_oob_bindings"]).forEach { raw ->
+            raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(output::add)
+        }
+        listArg(property["x-oob-bindings"]).forEach { raw ->
+            raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(output::add)
+        }
+
+        val metadata = mapArg(spec["metadata"])
+        val bindingEntries = listArg(spec["x_oob_parameter_bindings"]) +
+            listArg(spec["parameter_bindings"]) +
+            listArg(metadata["oob_parameter_bindings"])
+        bindingEntries.forEach { rawEntry ->
+            val entry = mapArg(rawEntry)
+            if (firstNonBlank(entry["name"], entry["parameter"]) != name) return@forEach
+            listArg(entry["bindings"]).forEach { raw ->
+                raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(output::add)
+            }
+            firstNonBlank(entry["binding"]).takeIf(String::isNotEmpty)?.let(output::add)
+        }
+        return output.toList()
+    }
+
+    private fun renderParameterTemplates(
+        value: Any?,
+        arguments: Map<String, Any?>,
+    ): Any? {
+        if (arguments.isEmpty()) return value
+        return when (value) {
+            is String -> renderTemplateString(value, arguments)
+            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
+                value.forEach { (key, item) ->
+                    if (key != null) put(key.toString(), renderParameterTemplates(item, arguments))
+                }
+            }
+            is List<*> -> value.map { renderParameterTemplates(it, arguments) }
+            is Array<*> -> value.map { renderParameterTemplates(it, arguments) }
+            else -> value
+        }
+    }
+
+    private fun renderTemplateString(
+        text: String,
+        arguments: Map<String, Any?>,
+    ): Any? {
+        val exact = PARAMETER_TOKEN_REGEX.matchEntire(text.trim())
+        if (exact != null) {
+            val name = exact.groupValues[1]
+            if (arguments.containsKey(name)) return arguments[name]
+        }
+        return PARAMETER_TOKEN_REGEX.replace(text) { match ->
+            val name = match.groupValues[1]
+            arguments[name]?.toString() ?: match.value
         }
     }
 
@@ -447,49 +640,59 @@ object OobReusableFunctionStore {
 
     private fun sourceRunIds(spec: Map<String, Any?>): List<String> {
         val source = spec["source"] as? Map<*, *>
-        return source?.get("run_id")
-            ?.toString()
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { listOf(it) }
-            ?: emptyList()
+        val metadata = spec["metadata"] as? Map<*, *>
+        return buildList {
+            source?.get("run_id")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::add)
+            metadata?.get("run_id")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::add)
+            (metadata?.get("source_run_ids") as? List<*>)?.forEach { raw ->
+                raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(::add)
+            }
+        }.distinct()
     }
 
     private fun summaryMap(spec: Map<String, Any?>): Map<String, Any?> {
         val execution = spec["execution"] as? Map<*, *>
         val steps = execution?.get("steps") as? List<*>
-        val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
+        val actions = spec["actions"] as? List<*>
+        val stepLikeItems = steps ?: actions ?: emptyList<Any?>()
         val registry = spec["_oob_registry"] as? Map<*, *>
         val source = spec["source"] as? Map<*, *>
         val runStats = registry?.get("run_stats") as? Map<*, *>
         return linkedMapOf(
-            "function_id" to spec["function_id"],
+            "function_id" to functionIdFromSpec(spec),
             "name" to spec["name"],
             "description" to spec["description"],
-            "step_count" to (steps?.size ?: 0),
+            "step_count" to (execution?.get("step_count") ?: stepLikeItems.size),
             "card_count" to (
                 intValue(source?.get("card_count"))
                     .takeIf { it > 0 }
                     ?: intValue(source?.get("replayable_card_count"))
                     .takeIf { it > 0 }
-                    ?: (steps?.size ?: 0)
+                    ?: stepLikeItems.size
                 ),
-            "parameter_names" to parameters.mapNotNull { raw ->
-                (raw as? Map<*, *>)?.get("name")?.toString()?.takeIf { it.isNotBlank() }
-            },
-            "step_summaries" to (steps ?: emptyList<Any?>()).mapIndexedNotNull { index, rawStep ->
+            "parameter_names" to parameterNames(spec),
+            "step_summaries" to stepLikeItems.mapIndexedNotNull { index, rawStep ->
                 val step = rawStep as? Map<*, *> ?: return@mapIndexedNotNull null
                 linkedMapOf(
                     "index" to index,
                     "id" to step["id"],
                     "title" to step["title"],
-                    "kind" to step["kind"],
+                    "kind" to (step["kind"] ?: step["type"]),
                     "executor" to step["executor"],
                     "tool" to (
                         step["omniflow_action"]
                             ?: step["local_action"]
                             ?: step["callable_tool"]
                             ?: step["tool"]
+                            ?: step["type"]
                         )
                 )
             },
@@ -511,4 +714,14 @@ object OobReusableFunctionStore {
             else -> 0
         }
     }
+
+    private fun firstNonBlank(vararg values: Any?): String {
+        for (value in values) {
+            val text = value?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) return text
+        }
+        return ""
+    }
+
+    private val PARAMETER_TOKEN_REGEX = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)}""")
 }

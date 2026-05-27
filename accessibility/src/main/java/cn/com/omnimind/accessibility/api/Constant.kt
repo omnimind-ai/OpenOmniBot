@@ -8,6 +8,7 @@ object Constant {
         "com.android.quickstep",           // 最近任务
         "com.huawei.screenrecorder",//华为录屏功能 直接过滤
         "com.oplus.securitypermission",//一加权限弹框
+        "com.vivo.upslide", // vivo 手势栏/侧滑栏/上滑控制层，不是真实前台应用
     )
 
     // 屏蔽特定类名

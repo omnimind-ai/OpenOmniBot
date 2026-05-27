@@ -85,6 +85,116 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `guard and replay skip get state observation steps without agent fallback`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "function_with_get_state_observation"
+
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "Observation then done",
+                    "description" to "Refresh page state before a terminal marker",
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "get_state",
+                            "reason" to "refresh current page",
+                        ),
+                        mapOf(
+                            "action" to "finished",
+                            "content" to "Done",
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val guard = toolkit.guardCheck(mapOf("function_id" to functionId))
+            assertEquals(true, guard["success"])
+            assertEquals("allow", guard["decision"])
+            val stepDecisions = guard["step_decisions"] as? List<*>
+            val firstStep = stepDecisions?.firstOrNull() as? Map<*, *>
+            assertEquals("get_state", firstStep?.get("tool"))
+            assertEquals("allow", firstStep?.get("decision"))
+
+            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            assertEquals(true, call["success"])
+            assertEquals(false, call["fallback"])
+            assertEquals(false, (call["oob_result"] as? Map<*, *>)?.get("model_required"))
+            val results = call["step_results"] as? List<*>
+            val firstResult = results?.firstOrNull() as? Map<*, *>
+            assertEquals(true, firstResult?.get("skipped"))
+            assertEquals(true, firstResult?.get("success"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `replay skips settings toggle function when terminal state already satisfied`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingOmniflowBackend(
+            initialPackage = "com.android.settings",
+            currentXml = "<hierarchy><node text=\"Bluetooth\" checked=\"true\" /></hierarchy>",
+        )
+        val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "settings_toggle_already_satisfied"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to mapOf(
+                        "schema_version" to "oob.reusable_function.v1",
+                        "function_id" to functionId,
+                        "name" to "Open Bluetooth",
+                        "description" to "打开蓝牙",
+                        "parameters" to emptyList<Map<String, Any?>>(),
+                        "terminal_postconditions" to listOf(
+                            mapOf(
+                                "kind" to "android_settings_toggle",
+                                "goal" to "打开蓝牙",
+                            )
+                        ),
+                        "execution" to mapOf(
+                            "kind" to "tool_sequence",
+                            "runner" to "oob_tool_sequence",
+                            "steps" to listOf(
+                                mapOf(
+                                    "id" to "step_1",
+                                    "index" to 0,
+                                    "title" to "Click Bluetooth switch",
+                                    "kind" to "omniflow_action",
+                                    "executor" to "omniflow",
+                                    "omniflow_action" to "click",
+                                    "local_action" to "click",
+                                    "tool" to "click",
+                                    "callable_tool" to "click",
+                                    "model_free" to true,
+                                    "scriptable" to true,
+                                    "args" to mapOf("x" to 360, "y" to 513),
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            assertEquals(true, call["success"])
+            assertEquals(false, call["fallback"])
+            val results = call["step_results"] as? List<*>
+            val firstResult = results?.single() as? Map<*, *>
+            assertEquals(true, firstResult?.get("skipped"))
+            assertEquals("terminal_postcondition_satisfied", firstResult?.get("skip_reason"))
+        } finally {
+            backendHandle.close()
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `simple function registration captures current page for UDEG recall when source page omitted`() = runBlocking {
         val context = TempFilesContext()
         val backend = RecordingOmniflowBackend(

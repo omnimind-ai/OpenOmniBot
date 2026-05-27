@@ -87,7 +87,7 @@ fun TaskParams.ScheduledVLMOperationTaskParams.toScheduledVLMOperationTaskParams
         needSummary = this.needSummary
     )
 
-internal fun ScheduledVLMOperationTaskParamsData.toScheduledVLMOperationTaskParams(id: String):
+fun ScheduledVLMOperationTaskParamsData.toScheduledVLMOperationTaskParams(id: String):
         TaskParams.ScheduledVLMOperationTaskParams =
     TaskParams.ScheduledVLMOperationTaskParams(
         name = this.name,

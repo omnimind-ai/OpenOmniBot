@@ -8,6 +8,16 @@ data class VLMPageContextRequest(
     val currentPackageName: String?,
     val screenshotBase64: String?,
     val stepIndex: Int,
+    val snapshot: VLMCurrentPageSnapshot? = null,
+)
+
+data class VLMCurrentPageSnapshot(
+    val packageName: String?,
+    val xml: String?,
+    val screenshotBase64: String?,
+    val displayWidth: Int,
+    val displayHeight: Int,
+    val capturedAtMs: Long,
 )
 
 interface VLMPageContextProvider {

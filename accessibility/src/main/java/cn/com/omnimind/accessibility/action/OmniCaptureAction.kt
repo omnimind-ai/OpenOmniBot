@@ -159,7 +159,8 @@ class OmniCaptureAction(
         val ignoredPackages = listOf(
             "com.google.android.inputmethod.latin", // Google输入法
             "com.samsung.android.app.clipboardedge", // Samsung边缘面板
-            "com.android.quickstep"           // 最近任务
+            "com.android.quickstep",           // 最近任务
+            "com.vivo.upslide"                 // vivo 手势栏/侧滑栏/上滑控制层
         )
 
         // 屏蔽特定类名
@@ -297,6 +298,9 @@ class OmniCaptureAction(
         className: String,
     ): Boolean {
         if (isOobPackage(packageName)) {
+            return true
+        }
+        if (Constant.IGNORED_PACKAGES.any { packageName.startsWith(it) }) {
             return true
         }
         if (packageName.startsWith("com.google.android.inputmethod") ||

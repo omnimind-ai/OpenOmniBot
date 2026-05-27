@@ -1,6 +1,8 @@
 package cn.com.omnimind.uikit.api.callbackimpl
 
+import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.assists.AssistsCore
+import cn.com.omnimind.assists.HumanTrajectoryLearningSession
 import cn.com.omnimind.assists.api.eventapi.ExecutingTaskType
 import cn.com.omnimind.baselib.util.VibrationUtil
 import cn.com.omnimind.uikit.UIKit
@@ -21,10 +23,26 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
     }
 
     override fun onStopClick() {
-        // 不论什么情况，执行结束都需要结束任务
-        DraggableBallInstance.finishDoingTask("任务已结束!")
+        if (HumanTrajectoryLearningSession.completeActive()) {
+            DraggableBallInstance.setDoing(
+                message = "正在整理复用指令",
+                isShowTakeOver = false,
+                subMessage = "请稍候",
+                isShowStop = false
+            )
+            return
+        }
+        if (AgentVlmUiSession.requestCompleteActiveSession()) {
+            DraggableBallInstance.finishDoingTask("任务已完成")
+            UIKit.executionTaskEventApi?.vlmTask?.completeByUser()
+            if (!CompanionOverlaySettings.isEnabled()) {
+                CompanionOverlaySettings.dismissFloatingUi()
+            }
+            return
+        }
+        DraggableBallInstance.finishDoingTask("任务已完成")
         if (UIKit.executionTaskEventApi?.taskType == ExecutingTaskType.VLM) {
-            UIKit.executionTaskEventApi?.vlmTask?.finishTask()
+            UIKit.executionTaskEventApi?.vlmTask?.completeByUser()
         } else {
             AssistsCore.finishDoingTask()
         }
@@ -36,7 +54,16 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
     override fun onPauseClick() {
         VibrationUtil.vibrateLight()
 
+        if (HumanTrajectoryLearningSession.isActive()) {
+            HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
+            DraggableBallInstance.finishDoingTask("学习已取消")
+            if (!CompanionOverlaySettings.isEnabled()) {
+                CompanionOverlaySettings.dismissFloatingUi()
+            }
+            return
+        }
         if (UIKit.executionTaskEventApi?.taskType == ExecutingTaskType.VLM) {
+            DraggableBallInstance.pauseTask("用户已接管任务")
             UIKit.executionTaskEventApi?.vlmTask?.requestPause()
         }
     }

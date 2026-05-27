@@ -1,0 +1,335 @@
+{
+  "generated_from": [
+    "docs/agent_context/OOB_DEVICE_VALIDATION_2026-05-25.md",
+    "docs/agent_context/OOB_ONLINE_OFFLINE_SHARED_MEMORY.md"
+  ],
+  "cases": [
+    {
+      "name": "5554 Display",
+      "goal": "打开 Display 设置",
+      "online": {
+        "run_id": "3cac6073-15c5-4204-8718-c31b21c22095",
+        "total_tokens": 31038,
+        "call_count": 3,
+        "steps": [
+          { "index": 1, "name": "scroll", "tokens": 7191, "duration_ms": null },
+          { "index": 2, "name": "click", "tokens": 10492, "duration_ms": null },
+          { "index": 3, "name": "finished", "tokens": 13355, "duration_ms": null }
+        ]
+      },
+      "local": {
+        "kind": "offline_replay",
+        "run_id": "omniflow_run_1779720778865_1",
+        "total_tokens": 0,
+        "duration_ms": 7105,
+        "steps": [
+          { "index": 1, "name": "open_app", "tokens": 0, "duration_ms": 2535 },
+          { "index": 2, "name": "scroll", "tokens": 0, "duration_ms": 2012 },
+          { "index": 3, "name": "click", "tokens": 0, "duration_ms": 1554 },
+          { "index": 4, "name": "finished", "tokens": 0, "duration_ms": 1003 }
+        ]
+      }
+    },
+    {
+      "name": "5556 Network",
+      "goal": "打开 Network & internet",
+      "online": {
+        "run_id": "63686bd5-8352-4810-9c23-e117bf9ac4a8",
+        "total_tokens": 17670,
+        "call_count": 2,
+        "steps": [
+          { "index": 1, "name": "click", "tokens": 7368, "duration_ms": null },
+          { "index": 2, "name": "finished", "tokens": 10302, "duration_ms": null }
+        ]
+      },
+      "local": {
+        "kind": "offline_replay",
+        "run_id": "omniflow_run_1779720838178_1",
+        "total_tokens": 0,
+        "duration_ms": 4768,
+        "steps": [
+          { "index": 1, "name": "open_app", "tokens": 0, "duration_ms": 2319 },
+          { "index": 2, "name": "click", "tokens": 0, "duration_ms": 1445 },
+          { "index": 3, "name": "finished", "tokens": 0, "duration_ms": 1003 }
+        ]
+      }
+    },
+    {
+      "name": "5556 Display",
+      "goal": "打开 Display 设置",
+      "online": {
+        "run_id": "c7c0c721-eeda-482c-a8a5-78ad12830e8e",
+        "total_tokens": 23209,
+        "call_count": 4,
+        "steps": [],
+        "note": "当前源记录只有总 token 和卡片数，未记录每步 token / action 拆分。"
+      },
+      "local": {
+        "kind": "offline_replay",
+        "run_id": "debug_c7c0c721_eeda_482c_a8a5_78ad12830e8e",
+        "total_tokens": 0,
+        "duration_ms": 10384,
+        "step_count": 5,
+        "steps": [],
+        "note": "Replay 成功 5/5；当前源记录未记录每步名称和用时。"
+      }
+    },
+    {
+      "name": "5554 Display v2",
+      "goal": "打开 Display 设置",
+      "online": {
+        "run_id": "e8ac3f03-65f7-461d-811f-fe658490e454",
+        "total_tokens": 15680,
+        "call_count": 3,
+        "steps": [],
+        "note": "当前源记录只有总 token 和卡片数，未记录每步 token / action 拆分。"
+      },
+      "local": {
+        "kind": "offline_replay",
+        "run_id": "debug_e8ac3f03_65f7_461d_811f_fe658490e454",
+        "total_tokens": 0,
+        "duration_ms": 5706,
+        "step_count": 4,
+        "steps": [],
+        "note": "Replay 成功 4/4；当前源记录未记录每步名称和用时。"
+      }
+    },
+    {
+      "name": "5556 Clock",
+      "goal": "打开 Clock / Stopwatch",
+      "online": {
+        "run_id": "4bb87c95-f9d5-4f07-b7cd-5518d59dbd81",
+        "total_tokens": 9793,
+        "call_count": 2,
+        "steps": [
+          { "index": 1, "name": "open_app", "tokens": null, "duration_ms": null },
+          { "index": 2, "name": "finished", "tokens": null, "duration_ms": null }
+        ],
+        "note": "已知 action 名称，但当前源记录未记录每步 token 拆分。"
+      },
+      "local": {
+        "kind": "offline_replay",
+        "run_id": "debug_4bb87c95_f9d5_4f07_b7cd_5518d59dbd81",
+        "total_tokens": 0,
+        "duration_ms": 2983,
+        "steps": [
+          { "index": 1, "name": "open_app", "tokens": 0, "duration_ms": null },
+          { "index": 2, "name": "finished", "tokens": 0, "duration_ms": null }
+        ],
+        "note": "Replay 成功 2/2；当前源记录未记录每步用时。"
+      }
+    },
+    {
+      "name": "5554 Recall Guidance",
+      "goal": "在线 VLM 加载召回上下文",
+      "online": {
+        "run_id": "7e7ece8d-b424-4dea-aad0-f25ff4c7e89e",
+        "total_tokens": 47737,
+        "call_count": 3,
+        "steps": [],
+        "note": "召回上下文已进入在线 VLM；当前源记录未记录每步 token 拆分。"
+      },
+      "local": null
+    },
+    {
+      "name": "5556 Recall Guidance",
+      "goal": "在线 VLM 加载召回上下文",
+      "online": {
+        "run_id": "d686b44d-6940-44c5-b1d2-5cf0e1d299cb",
+        "total_tokens": 26051,
+        "call_count": 2,
+        "steps": [],
+        "note": "召回上下文已进入在线 VLM；当前源记录未记录每步 token 拆分。"
+      },
+      "local": null
+    },
+    {
+      "name": "5554 UDEG recall E2E",
+      "goal": "通过召回 segment 打开 Settings",
+      "online": null,
+      "local": {
+        "kind": "recall_segment",
+        "decision": "recall",
+        "total_tokens": 0,
+        "duration_ms": 7478,
+        "steps": [
+          { "index": 1, "name": "wait_accessibility", "tokens": 0, "duration_ms": 0 },
+          { "index": 2, "name": "observe_before", "tokens": 0, "duration_ms": 518 },
+          { "index": 3, "name": "register_child", "tokens": 0, "duration_ms": 437 },
+          { "index": 4, "name": "register_parent", "tokens": 0, "duration_ms": 2 },
+          { "index": 5, "name": "load_child", "tokens": 0, "duration_ms": 1 },
+          { "index": 6, "name": "recall", "tokens": 0, "duration_ms": 126 },
+          { "index": 7, "name": "parent_run", "tokens": 0, "duration_ms": 5098 },
+          { "index": 8, "name": "post_run_settle", "tokens": 0, "duration_ms": 1202 },
+          { "index": 9, "name": "observe_after", "tokens": 0, "duration_ms": 61 }
+        ]
+      }
+    },
+    {
+      "name": "5556 segment_hit E2E",
+      "goal": "通过召回 segment 打开 Settings",
+      "online": null,
+      "local": {
+        "kind": "recall_segment",
+        "decision": "segment_hit",
+        "total_tokens": 0,
+        "duration_ms": 7854,
+        "steps": [
+          { "index": 1, "name": "wait_accessibility", "tokens": 0, "duration_ms": 0 },
+          { "index": 2, "name": "observe_before", "tokens": 0, "duration_ms": 131 },
+          { "index": 3, "name": "register_child", "tokens": 0, "duration_ms": 536 },
+          { "index": 4, "name": "register_parent", "tokens": 0, "duration_ms": 2 },
+          { "index": 5, "name": "load_child", "tokens": 0, "duration_ms": 1 },
+          { "index": 6, "name": "recall", "tokens": 0, "duration_ms": 2621 },
+          { "index": 7, "name": "parent_run", "tokens": 0, "duration_ms": 3216 },
+          { "index": 8, "name": "post_run_settle", "tokens": 0, "duration_ms": 1203 },
+          { "index": 9, "name": "observe_after", "tokens": 0, "duration_ms": 135 }
+        ]
+      }
+    }
+  ],
+  "token_runs": [
+    {
+      "name": "5554 Display",
+      "group": "online_no_recall",
+      "total_tokens": 31038,
+      "call_count": 3,
+      "steps": [
+        { "name": "scroll", "tokens": 7191 },
+        { "name": "click", "tokens": 10492 },
+        { "name": "finish", "tokens": 13355 }
+      ],
+      "replay_tokens": 0
+    },
+    {
+      "name": "5556 Network",
+      "group": "online_no_recall",
+      "total_tokens": 17670,
+      "call_count": 2,
+      "steps": [
+        { "name": "click", "tokens": 7368 },
+        { "name": "finish", "tokens": 10302 }
+      ],
+      "replay_tokens": 0
+    },
+    {
+      "name": "5556 Display",
+      "group": "online_no_recall",
+      "total_tokens": 23209,
+      "call_count": 4,
+      "steps": [],
+      "replay_tokens": 0
+    },
+    {
+      "name": "5554 Display v2",
+      "group": "online_no_recall",
+      "total_tokens": 15680,
+      "call_count": 3,
+      "steps": [],
+      "replay_tokens": 0
+    },
+    {
+      "name": "5556 Clock",
+      "group": "online_no_recall",
+      "total_tokens": 9793,
+      "call_count": 2,
+      "steps": [],
+      "replay_tokens": 0
+    },
+    {
+      "name": "5554 Recall Guidance",
+      "group": "online_with_recall_guidance",
+      "total_tokens": 47737,
+      "call_count": 3,
+      "steps": [],
+      "replay_tokens": null
+    },
+    {
+      "name": "5556 Recall Guidance",
+      "group": "online_with_recall_guidance",
+      "total_tokens": 26051,
+      "call_count": 2,
+      "steps": [],
+      "replay_tokens": null
+    }
+  ],
+  "time_runs": [
+    {
+      "name": "5554 Display replay",
+      "group": "offline_replay",
+      "duration_ms": 7105,
+      "steps": [
+        { "name": "open_app", "duration_ms": 2535 },
+        { "name": "scroll", "duration_ms": 2012 },
+        { "name": "click", "duration_ms": 1554 },
+        { "name": "finish", "duration_ms": 1003 }
+      ]
+    },
+    {
+      "name": "5556 Network replay",
+      "group": "offline_replay",
+      "duration_ms": 4768,
+      "steps": [
+        { "name": "open_app", "duration_ms": 2319 },
+        { "name": "click", "duration_ms": 1445 },
+        { "name": "finish", "duration_ms": 1003 }
+      ]
+    },
+    {
+      "name": "5556 Display replay",
+      "group": "offline_replay",
+      "duration_ms": 10384,
+      "steps": []
+    },
+    {
+      "name": "5554 Display v2 replay",
+      "group": "offline_replay",
+      "duration_ms": 5706,
+      "steps": []
+    },
+    {
+      "name": "5556 Clock replay",
+      "group": "offline_replay",
+      "duration_ms": 2983,
+      "steps": []
+    },
+    {
+      "name": "5554 UDEG recall E2E",
+      "group": "recall_segment",
+      "duration_ms": 7478,
+      "steps": [
+        { "name": "observe_before", "duration_ms": 518 },
+        { "name": "register_child", "duration_ms": 437 },
+        { "name": "recall", "duration_ms": 126 },
+        { "name": "parent_run", "duration_ms": 5098 },
+        { "name": "post_run_settle", "duration_ms": 1202 },
+        { "name": "observe_after", "duration_ms": 61 }
+      ]
+    },
+    {
+      "name": "5556 segment_hit E2E",
+      "group": "recall_segment",
+      "duration_ms": 7854,
+      "steps": [
+        { "name": "observe_before", "duration_ms": 131 },
+        { "name": "register_child", "duration_ms": 536 },
+        { "name": "recall", "duration_ms": 2621 },
+        { "name": "parent_run", "duration_ms": 3216 },
+        { "name": "post_run_settle", "duration_ms": 1203 },
+        { "name": "observe_after", "duration_ms": 135 }
+      ]
+    }
+  ],
+  "image_token_estimates": [
+    {
+      "name": "1080x2400 screenshot",
+      "qwen3_vl_tokens": 2550,
+      "openai_4o_high_tokens": 1445
+    },
+    {
+      "name": "1080x1920 screenshot",
+      "qwen3_vl_tokens": 2040,
+      "openai_4o_high_tokens": 1105
+    }
+  ]
+}

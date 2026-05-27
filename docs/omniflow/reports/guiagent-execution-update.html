@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GUI Agent 执行更新与成本复盘</title>
+  <style>
+    :root { --ink:#17202a; --muted:#5f6b7a; --line:#dce3ea; --soft:#f6f8fb; --blue:#0b6bcb; --green:#147a52; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:#fbfcfe; }
+    * { box-sizing:border-box; }
+    body { margin:0; letter-spacing:0; }
+    header { border-bottom:1px solid var(--line); background:linear-gradient(120deg,#fff,#eef7ff 54%,#f3faf6); }
+    .hero, main { max-width:1180px; margin:0 auto; padding:44px 24px; }
+    main { padding-top:34px; padding-bottom:72px; }
+    .eyebrow { margin:0 0 12px; color:var(--green); font-size:13px; font-weight:800; }
+    h1 { margin:0; max-width:960px; font-size:clamp(34px,5vw,58px); line-height:1.04; letter-spacing:0; }
+    h2 { margin:0 0 16px; font-size:27px; line-height:1.2; letter-spacing:0; }
+    h3 { margin:0 0 10px; font-size:18px; letter-spacing:0; }
+    p { color:var(--muted); line-height:1.62; }
+    .lead { max-width:930px; margin:18px 0 0; font-size:18px; }
+    section { margin-top:40px; }
+    .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-top:20px; }
+    .card { min-height:122px; padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .value { font-size:34px; font-weight:850; line-height:1; }
+    .label { margin-top:10px; color:var(--muted); font-size:13px; line-height:1.45; }
+    .wrap { overflow-x:auto; margin-top:14px; }
+    table { width:100%; border-collapse:collapse; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    th, td { padding:13px 14px; border-bottom:1px solid #edf1f5; text-align:left; vertical-align:top; font-size:14px; line-height:1.5; }
+    th { background:var(--soft); color:var(--muted); font-size:12px; font-weight:850; text-transform:uppercase; }
+    tr:last-child td { border-bottom:0; }
+    .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .note { margin-top:14px; padding:14px 16px; border:1px solid rgba(11,107,203,.18); border-radius:8px; background:#eef6ff; color:#234e6f; font-size:14px; line-height:1.58; }
+    .warn { border-color:rgba(153,98,27,.24); background:#fff7e8; color:#6f4718; }
+    .grid2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .panel { padding:18px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .chart-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .chart { padding:16px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .chart img { display:block; width:100%; height:auto; border:1px solid #edf1f5; border-radius:8px; }
+    .chart-wide { margin-top:14px; }
+    .detail-frame { width:100%; min-height:620px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    details { margin-top:18px; }
+    summary { cursor:pointer; color:var(--blue); font-weight:800; }
+    ul { margin:10px 0 0; padding-left:20px; color:var(--muted); line-height:1.62; }
+    code { padding:1px 5px; border-radius:5px; background:#eef4fb; color:#174d83; font-family:"SFMono-Regular",Consolas,monospace; font-size:.94em; }
+    @media (max-width:900px) { .cards,.grid2,.chart-grid { grid-template-columns:1fr; } .hero,main { padding-left:18px; padding-right:18px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <p class="eyebrow">GUI Agent 执行更新 + 成本复盘</p>
+      <h1>在线探索沉淀为离线复用，同时看清 token 花在哪里</h1>
+      <p class="lead">汇报合并为一页：先讲方法和效果，再讲成本。核心结论是：第一次在线 VLM 探索有 token 成本；成功路径转成 Function 后，重复执行可以做到 0 token。</p>
+      <div class="cards">
+        <div class="card"><div class="value">5/5</div><div class="label">在线 VLM 样本成功</div></div>
+        <div class="card"><div class="value">5/5</div><div class="label">转 Function 后 replay 成功</div></div>
+        <div class="card"><div class="value">97,390</div><div class="label">无召回在线样本总 token</div></div>
+        <div class="card"><div class="value">0</div><div class="label">离线 replay token</div></div>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>1. 方法更新</h2>
+      <div class="wrap"><table><thead><tr><th>路径</th><th>发生什么</th><th>优势</th><th>成本</th></tr></thead><tbody>
+        <tr><td>在线 VLM</td><td>实时看屏幕和页面结构，一步一步选择操作，并生成 RunLog。</td><td>适合新任务、页面变化和需要判断的场景。</td><td>每一步都有模型 token 成本。</td></tr>
+        <tr><td>离线 Function replay</td><td>把成功 RunLog 转成动作序列，下次直接本地执行。</td><td>重复执行稳定、可审计、无需模型。</td><td>token 为 0；耗时来自本地执行和页面稳定。</td></tr>
+        <tr><td>召回 / segment</td><td>先匹配当前页面，再找可复用 Function 或其中一段继续执行。</td><td>降低误命中；避免整条路径重跑；公共子路径可复用。</td><td>有本地检索耗时，但不消耗模型 token。</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section>
+      <h2>2. 效果对比</h2>
+      <div class="wrap"><table><thead><tr><th>验证项</th><th>样本</th><th>结果</th><th>Token</th><th>耗时</th></tr></thead><tbody>
+        <tr><td>在线 VLM</td><td>5 个 Settings / Clock 任务，14 次 VLM 调用粗算</td><td>5/5 成功</td><td class="num">97,390 总计；约 6,956 / 次调用</td><td>随页面和步骤变化</td></tr>
+        <tr><td>离线 Function replay</td><td>5 个由成功 RunLog 转出的 Function</td><td>5/5 成功</td><td class="num">0</td><td>2,983 ms - 10,384 ms</td></tr>
+        <tr><td>UDEG 召回 / segment</td><td>5554、5556 两台 emulator</td><td>2/2 通过</td><td class="num">0</td><td>7,478 ms / 7,854 ms 端到端</td></tr>
+        <tr><td>在线 VLM + 召回上下文</td><td>2 个任务，5 次 VLM 调用</td><td>2/2 成功加载召回上下文</td><td class="num">73,788 总计；约 14,758 / 次调用</td><td>仍然是在线模型路径</td></tr>
+      </tbody></table></div>
+      <div class="note warn">召回上下文模式不是省 token 路径。它把候选 Function / segment 信息提供给在线 VLM，所以会增加 prompt；真正省 token 的是显式执行离线 Function。</div>
+    </section>
+
+    <section>
+      <h2>3. Token + 用时合并图</h2>
+      <div class="chart chart-wide">
+        <h3>每个样本的在线 token 和本地耗时</h3>
+        <img src="assets/guiagent-token-time-combined.svg" alt="GUI Agent token and time combined chart">
+      </div>
+      <div class="note">蓝色是在线 VLM token，绿色是本地 replay / recall 用时。离线 Function 和本地召回不调模型，所以 token 为 0；但仍然有打开应用、页面稳定、点击和召回检索的时间成本。</div>
+
+      <h3>完整步骤明细：每一步 token 和用时</h3>
+      <iframe class="detail-frame" src="assets/guiagent-step-detail.html" title="GUI Agent step detail table"></iframe>
+      <div class="note warn">表里“未记录”不是 token 为 0，而是当前 RunLog / source note 没有写到这一层。已明确记录的本地 replay、UDEG recall / segment 步骤均展示了逐步用时；已明确记录的在线 VLM 步骤展示了逐步 token。</div>
+
+      <details>
+        <summary>查看辅助拆分图</summary>
+        <div class="chart-grid">
+          <div class="chart">
+            <h3>按样本 token</h3>
+            <img src="assets/guiagent-token-cost.svg" alt="GUI Agent token cost by run">
+          </div>
+          <div class="chart">
+            <h3>逐步 token 拆分</h3>
+            <img src="assets/guiagent-token-step-split.svg" alt="GUI Agent token step split">
+          </div>
+          <div class="chart">
+            <h3>按样本用时</h3>
+            <img src="assets/guiagent-time-cost.svg" alt="GUI Agent time cost by run">
+          </div>
+          <div class="chart">
+            <h3>逐步用时拆分</h3>
+            <img src="assets/guiagent-time-step-split.svg" alt="GUI Agent time step split">
+          </div>
+        </div>
+      </details>
+      <div class="note">图和步骤表由 <code>scripts/generate_guiagent_cost_charts.py</code> 生成；后续更新 <code>docs/omniflow/reports/guiagent-cost-data.json</code> 后重跑脚本即可刷新。</div>
+    </section>
+
+    <section>
+      <h2>4. 为什么 token 高？</h2>
+      <div class="wrap"><table><thead><tr><th>原因</th><th>统计证据</th><th>解释</th><th>降成本方向</th></tr></thead><tbody>
+        <tr><td>每步都带截图</td><td>1080×2400 图约 2,550 image tokens；1080×1920 图约 2,040 image tokens</td><td>截图是固定大头，但不是唯一大头。</td><td>页面不变的 retry 不重发图；能用 XML 判断时少发图。</td></tr>
+        <tr><td>文本上下文很大</td><td>5554 Display 首步 7,191 token；扣掉一张图后仍约 4.6k - 5.1k</td><td>剩下主要是系统规则、工具定义、当前页面元素和输出要求。</td><td>压缩系统规则；只保留可操作节点；裁剪工具定义。</td></tr>
+        <tr><td>历史逐步变大</td><td>5554 Display：7,191 → 10,492 → 13,355</td><td>后续步骤带上之前的操作、结果和页面变化。</td><td>历史做摘要；只保留关键事实和最后一步反馈。</td></tr>
+        <tr><td>finish 也走完整 VLM</td><td>finish 步：13,355 / 10,302 token</td><td>完成判断仍发送完整上下文，不是本地轻量判断。</td><td>先用本地标题/文本校验，命中后直接 finish。</td></tr>
+        <tr><td>召回上下文增加输入</td><td>带召回约 14,758 / 次调用，高于无召回粗均值 6,956 / 次调用</td><td>候选 Function、segment 和步骤摘要都进入 prompt。</td><td>只给 Top 1-2；只给剩余步骤；强命中直接 replay。</td></tr>
+        <tr><td>重复任务还走在线</td><td>同类任务 replay token = 0；在线每任务平均 19,478 token</td><td>第一次探索有成本，重复执行应该复用。</td><td>成功 RunLog 自动建议保存，下次优先 recall + guard + replay。</td></tr>
+      </tbody></table></div>
+      <div class="note">一句话：第一步贵在“图 + 规则 + 页面证据”，后面更贵在“历史增长”，带召回更贵在“候选路径文本”。</div>
+    </section>
+
+    <section>
+      <h2>5. 每一个地方的 token 消耗</h2>
+      <div class="wrap"><table><thead><tr><th>位置</th><th>精确 token</th><th>怎么算出来的</th><th>结论</th></tr></thead><tbody>
+        <tr><td>无召回在线 VLM 总消耗</td><td class="num">97,390</td><td>5 个成功在线任务的 RunLog token total 相加</td><td>平均每个任务 19,478 token；粗算每次 VLM 调用 6,956 token。</td></tr>
+        <tr><td>带召回上下文在线 VLM 总消耗</td><td class="num">73,788</td><td>5554 47,737 + 5556 26,051</td><td>粗算每次 VLM 调用 14,758 token，比无召回在线调用明显更高。</td></tr>
+        <tr><td>离线 Function replay</td><td class="num">0</td><td>执行时不调模型，记录为 model-free 路径</td><td>重复任务最应该走这里。</td></tr>
+        <tr><td>UDEG 召回 / segment 查找</td><td class="num">0</td><td>本地页面匹配和 Function 排序，不请求模型</td><td>有时间成本，但没有 token 成本。</td></tr>
+        <tr><td>人工接管记录</td><td class="num">0</td><td>记录 Accessibility 事件，不请求模型</td><td>可以沉淀成 RunLog，不增加 token。</td></tr>
+      </tbody></table></div>
+      <div class="wrap"><table><thead><tr><th>具体 VLM 调用位置</th><th>精确 token</th><th>图片估算</th><th>扣掉图片后的剩余</th><th>剩余主要是什么</th></tr></thead><tbody>
+        <tr><td>5554 Display · scroll</td><td class="num">7,191</td><td class="num">约 2,040 - 2,550</td><td class="num">约 4,641 - 5,151</td><td>系统规则、工具定义、当前页面证据、模型输出。</td></tr>
+        <tr><td>5554 Display · click</td><td class="num">10,492</td><td class="num">约 2,040 - 2,550</td><td class="num">约 7,942 - 8,452</td><td>增加了上一步历史、操作结果和新的页面证据。</td></tr>
+        <tr><td>5554 Display · finish</td><td class="num">13,355</td><td class="num">约 2,040 - 2,550</td><td class="num">约 10,805 - 11,315</td><td>历史最多；完成判断仍走完整 VLM。</td></tr>
+        <tr><td>5556 Network · click</td><td class="num">7,368</td><td class="num">约 2,040 - 2,550</td><td class="num">约 4,818 - 5,328</td><td>首步在线判断的基础成本。</td></tr>
+        <tr><td>5556 Network · finish</td><td class="num">10,302</td><td class="num">约 2,040 - 2,550</td><td class="num">约 7,752 - 8,262</td><td>带历史的完成判断成本。</td></tr>
+      </tbody></table></div>
+      <div class="note">只有总 token 是精确值；图片是按常见手机截图尺寸估算，剩余值是“总 token - 图片估算”。现有日志还不能把剩余部分精确拆成系统规则、页面证据、工具定义、历史和输出。</div>
+    </section>
+
+    <section>
+      <h2>6. 样本 token 与耗时明细</h2>
+      <div class="wrap"><table><thead><tr><th>任务</th><th>在线 token</th><th>已知步骤 token</th><th>replay token</th><th>replay 耗时</th></tr></thead><tbody>
+        <tr><td>5554 打开 Display 设置</td><td class="num">31,038</td><td>scroll 7,191；click 10,492；finish 13,355</td><td class="num">0</td><td class="num">7,105 ms</td></tr>
+        <tr><td>5556 打开 Network & internet</td><td class="num">17,670</td><td>click 7,368；finish 10,302</td><td class="num">0</td><td class="num">4,768 ms</td></tr>
+        <tr><td>5556 打开 Display 设置</td><td class="num">23,209</td><td>记录了总量；未拆到每步</td><td class="num">0</td><td class="num">10,384 ms</td></tr>
+        <tr><td>5554 打开 Display 设置</td><td class="num">15,680</td><td>记录了总量；未拆到每步</td><td class="num">0</td><td class="num">5,706 ms</td></tr>
+        <tr><td>5556 打开 Clock / Stopwatch</td><td class="num">9,793</td><td>记录了总量；未拆到每步</td><td class="num">0</td><td class="num">2,983 ms</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section>
+      <h2>7. 召回和 segment 的优势</h2>
+      <div class="grid2">
+        <div class="panel"><h3>召回</h3><ul><li>先匹配当前页面，再找可复用 Function，降低误触发。</li><li>把历史成功经验给模型，但默认不静默执行。</li><li>强命中时可跳过在线 VLM，直接走 replay。</li></ul></div>
+        <div class="panel"><h3>Segment</h3><ul><li>可以从 Function 中间继续执行，不必整条重跑。</li><li>公共入口段能被多个任务复用。</li><li>失败时能定位到具体步骤，方便更新。</li></ul></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. 后续统计设计</h2>
+      <div class="wrap"><table><thead><tr><th>新增统计项</th><th>目的</th><th>汇报里怎么用</th></tr></thead><tbody>
+        <tr><td>图片宽高、图片数量、估算 image tokens</td><td>拆出截图成本</td><td>显示图片约占输入多少。</td></tr>
+        <tr><td>系统规则 / 工具定义 baseline</td><td>识别固定成本</td><td>看 prompt 压缩后下降多少。</td></tr>
+        <tr><td>页面证据 token</td><td>识别页面文本是否过长</td><td>对比全量节点和精简节点。</td></tr>
+        <tr><td>历史 token</td><td>量化多步任务越跑越贵</td><td>决定何时摘要或截断。</td></tr>
+        <tr><td>召回上下文 token</td><td>量化 recall guidance 额外成本</td><td>决定给 Top 几个候选。</td></tr>
+        <tr><td>本地完成校验命中率</td><td>减少昂贵 finish 调用</td><td>报告少问模型多少次、省多少 token。</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section>
+      <h2>9. Claim 边界</h2>
+      <div class="wrap"><table><thead><tr><th>可以 claim</th><th>不要 claim</th></tr></thead><tbody>
+        <tr><td>已记录样本里，成功 RunLog 可以转 Function，replay 0 token 成功。</td><td>不要说所有 AndroidWorld 或所有 App 都 100% 成功。</td></tr>
+        <tr><td>召回 / segment 能减少重复在线探索。</td><td>不要说 recall guidance 一定降低 live VLM token。</td></tr>
+        <tr><td>图片是重要成本，但不是唯一原因。</td><td>不要把 base64 长度当图片 token。</td></tr>
+      </tbody></table></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -30,21 +30,6 @@ object VLMActionPostProcessor {
         displayHeight: Int
     ): Result {
         val currentPackage = currentPackageName?.trim().orEmpty()
-        val targetPackage = context.targetPackageName.trim()
-        if (
-            stepIndex == 0 &&
-            context.trace.isEmpty() &&
-            targetPackage.isNotBlank() &&
-            currentPackage.isNotBlank() &&
-            !currentPackage.equals(targetPackage, ignoreCase = true) &&
-            step.action !is OpenAppAction
-        ) {
-            return corrected(
-                step = step,
-                action = OpenAppAction(packageName = targetPackage),
-                reason = "target_package_not_foreground"
-            )
-        }
 
         VLMActionControllerRegistry.correct(
             VLMActionControllerRequest(
@@ -76,6 +61,13 @@ object VLMActionPostProcessor {
             context = context,
             currentPackageName = currentPackage,
             page = page
+        )?.let { return it }
+        correctGetStateToSettingsToggleTarget(
+            step = step,
+            context = context,
+            currentPackageName = currentPackage,
+            page = page,
+            displayWidth = displayWidth
         )?.let { return it }
 
         if (step.action is ClickAction) {
@@ -509,6 +501,38 @@ object VLMActionPostProcessor {
                 y = target.bounds.centerY
             ),
             reason = "settings_toggle_target"
+        )
+    }
+
+    private fun correctGetStateToSettingsToggleTarget(
+        step: VLMStep,
+        context: UIContext,
+        currentPackageName: String,
+        page: PageModel,
+        displayWidth: Int
+    ): Result? {
+        val action = step.action as? GetStateAction ?: return null
+        if (!currentPackageName.equals("com.android.settings", ignoreCase = true)) return null
+        val intentText = listOf(context.overallTask, context.activeGoal(), stepIntentText(step), action.reason)
+            .joinToString(" ")
+        if (!hasSettingsToggleIntent(intentText)) return null
+
+        val domain = settingsProgress(context)?.pendingDomain
+            ?: settingsDomainForText(stepIntentText(step))
+            ?: settingsDomainForText(action.reason)
+            ?: settingsDomainForText(context.activeGoal())
+            ?: return null
+        if (domain != SettingsDomain.NETWORK && domain != SettingsDomain.CONNECTED_DEVICES) return null
+
+        val target = page.bestSettingsToggleTarget(domain) ?: return null
+        return corrected(
+            step = step,
+            action = ClickAction(
+                targetDescription = target.label,
+                x = toggleClickX(target.bounds, displayWidth),
+                y = target.bounds.centerY
+            ),
+            reason = "get_state_settings_toggle_target"
         )
     }
 
@@ -1639,7 +1663,7 @@ object VLMActionPostProcessor {
             SettingsDomain.NETWORK -> scoreSignals(
                 normalized = normalized,
                 semanticTerms = terms,
-                strongPhrases = listOf("network internet", "internet", "wi fi", "wifi"),
+                strongPhrases = listOf("network internet", "internet", "wi fi", "wifi", "网络", "无线"),
                 termSignals = listOf("wifi", "network", "internet", "hotspot", "wireless", "网络", "无线"),
                 wifiPairSignal = true
             )
@@ -1647,21 +1671,21 @@ object VLMActionPostProcessor {
             SettingsDomain.CONNECTED_DEVICES -> scoreSignals(
                 normalized = normalized,
                 semanticTerms = terms,
-                strongPhrases = listOf("connected devices", "bluetooth", "pairing"),
+                strongPhrases = listOf("connected devices", "bluetooth", "pairing", "蓝牙", "设备", "配对"),
                 termSignals = listOf("bluetooth", "pairing", "paired", "device", "devices", "蓝牙", "配对", "设备")
             )
 
             SettingsDomain.DISPLAY -> scoreSignals(
                 normalized = normalized,
                 semanticTerms = terms,
-                strongPhrases = listOf("display", "brightness"),
+                strongPhrases = listOf("display", "brightness", "显示", "亮度", "屏幕"),
                 termSignals = listOf("display", "brightness", "bright", "显示", "亮度")
             )
 
             SettingsDomain.SOUND -> scoreSignals(
                 normalized = normalized,
                 semanticTerms = terms,
-                strongPhrases = listOf("sound vibration", "sound", "volume"),
+                strongPhrases = listOf("sound vibration", "sound", "volume", "声音", "音量", "振动"),
                 termSignals = listOf("sound", "volume", "vibration", "ring", "alarm", "media", "声音", "音量", "振动")
             )
         }

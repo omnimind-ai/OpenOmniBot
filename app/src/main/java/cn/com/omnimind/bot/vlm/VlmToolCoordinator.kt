@@ -91,9 +91,11 @@ object VlmToolCoordinator {
         context: Context,
         request: VlmTaskRequest,
         scope: CoroutineScope,
+        taskIdOverride: String = UUID.randomUUID().toString(),
+        returnOnWaitingInput: Boolean = true,
         progressReporter: VlmToolProgressReporter = { _, _ -> }
     ): VlmToolOutcome = withContext(Dispatchers.IO) {
-        val taskId = UUID.randomUUID().toString()
+        val taskId = taskIdOverride.trim().takeIf { it.isNotEmpty() } ?: UUID.randomUUID().toString()
         val needSummary = request.needSummary == true
 
         val missingPermissions = missingAutomationPermissions(context)
@@ -175,8 +177,7 @@ object VlmToolCoordinator {
             context = context,
             request = request,
         )
-        val augmentedRequest = recallBaseRequest.withRecallGuidance(recallGuidance.guidance)
-        taskState.vlmRequest = augmentedRequest
+        taskState.vlmRequest = recallBaseRequest
         if (recallGuidance.guidance.isNotBlank()) {
             taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
             taskState.markStateChanged()
@@ -186,7 +187,7 @@ object VlmToolCoordinator {
                 taskState.status,
                 "召回增强",
                 mapOf(
-                    "summary" to "已注入 OmniFlow 历史轨迹提示",
+                    "summary" to "已准备 OmniFlow/UDEG 候选；当前页上下文将由每轮 page skill 注入",
                     "omniflowRecallDecision" to recallGuidance.decision,
                     "omniflowRecall" to recallGuidance.payload,
                 )
@@ -211,7 +212,7 @@ object VlmToolCoordinator {
             McpTaskManager.scheduleTaskCleanup(taskId, scope)
             return@withContext outcome
         }
-        val executionRequest = taskState.vlmRequest ?: augmentedRequest
+        val executionRequest = taskState.vlmRequest ?: recallBaseRequest
 
         val startResult = startVlmTaskInternal(
             context,
@@ -258,8 +259,33 @@ object VlmToolCoordinator {
             goal = request.goal,
             progressReporter = progressReporter,
             waitTimeoutMs = executionRequest.waitTimeoutMs,
-            targetPackageName = executionRequest.packageName
+            targetPackageName = executionRequest.packageName,
+            returnOnWaitingInput = returnOnWaitingInput
         )
+    }
+
+    fun cancelTask(
+        taskId: String,
+        scope: CoroutineScope? = null,
+        message: String = "任务已取消"
+    ) {
+        val normalizedTaskId = taskId.trim()
+        if (normalizedTaskId.isEmpty()) return
+        val state = McpTaskManager.getTask(normalizedTaskId)
+        if (state != null && state.status !in setOf(TaskStatus.FINISHED, TaskStatus.ERROR, TaskStatus.CANCELLED)) {
+            state.status = TaskStatus.CANCELLED
+            state.message = message
+            state.addChatMessage("[SYSTEM] VLM task cancelled")
+            state.markStateChanged()
+        }
+        runCatching {
+            AssistsUtil.Core.cancelRunningTask(normalizedTaskId)
+        }.onFailure {
+            OmniLog.w(TAG, "cancel VLM task failed taskId=$normalizedTaskId error=${it.message}")
+        }
+        if (state != null && scope != null) {
+            McpTaskManager.scheduleTaskCleanup(normalizedTaskId, scope)
+        }
     }
 
     suspend fun waitForTask(
@@ -336,8 +362,7 @@ object VlmToolCoordinator {
                     context = context,
                     request = request,
                 )
-                val augmentedRequest = recallBaseRequest.withRecallGuidance(recallGuidance.guidance)
-                taskState.vlmRequest = augmentedRequest
+                taskState.vlmRequest = recallBaseRequest
                 if (recallGuidance.guidance.isNotBlank()) {
                     taskState.executionRoute = "vlm_with_omniflow_recall:${recallGuidance.decision}"
                     taskState.markStateChanged()
@@ -361,7 +386,7 @@ object VlmToolCoordinator {
                     McpTaskManager.scheduleTaskCleanup(taskId, scope)
                     return@withContext outcome
                 }
-                val executionRequest = taskState.vlmRequest ?: augmentedRequest
+                val executionRequest = taskState.vlmRequest ?: recallBaseRequest
                 val startResult = startVlmTaskInternal(
                     context,
                     executionRequest,
@@ -416,6 +441,7 @@ object VlmToolCoordinator {
         progressReporter: VlmToolProgressReporter,
         waitTimeoutMs: Long? = null,
         targetPackageName: String? = null,
+        returnOnWaitingInput: Boolean = true,
     ): VlmToolOutcome {
         val startWaitTime = System.currentTimeMillis()
         val resolvedWaitTimeoutMs = resolveWaitTimeoutMs(waitTimeoutMs)
@@ -510,11 +536,14 @@ object VlmToolCoordinator {
                     )
                 }
                 TaskStatus.WAITING_INPUT, TaskStatus.USER_PAUSED -> {
-                    return state.toOutcome(
-                        status = VlmToolOutcomeStatus.WAITING_INPUT,
-                        message = state.waitingQuestion ?: state.message.ifBlank { "请提供继续执行所需的信息。" },
-                        waitingQuestion = state.waitingQuestion ?: state.message
-                    )
+                    if (returnOnWaitingInput) {
+                        return state.toOutcome(
+                            status = VlmToolOutcomeStatus.WAITING_INPUT,
+                            message = state.waitingQuestion ?: state.message.ifBlank { "请提供继续执行所需的信息。" },
+                            waitingQuestion = state.waitingQuestion ?: state.message
+                        )
+                    }
+                    delay(McpTaskManager.POLL_INTERVAL_MS)
                 }
                 TaskStatus.SCREEN_LOCKED -> {
                     return state.toOutcome(
@@ -545,37 +574,7 @@ object VlmToolCoordinator {
         progressReporter: VlmToolProgressReporter,
         targetPackageName: String?,
     ): VlmToolOutcome {
-        val finalCheck = verifyFinalTargetPackage(targetPackageName)
-        if (finalCheck.ok) {
-            return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
-        }
-        val message = finalCheck.message ?: "任务结束后未停留在目标应用。"
-        state.status = TaskStatus.ERROR
-        state.message = message
-        state.errorCode = finalCheck.errorCode
-        state.addChatMessage(
-            "[SYSTEM] Final state check failed: target=${finalCheck.targetPackageName.orEmpty()} " +
-                "observed=${finalCheck.observedPackageName.orEmpty()}"
-        )
-        state.markStateChanged()
-        emitProgress(
-            progressReporter,
-            state.taskId,
-            state.status,
-            "终态校验失败",
-            mapOf(
-                "summary" to message,
-                "errorCode" to finalCheck.errorCode,
-                "targetPackageName" to finalCheck.targetPackageName,
-                "observedPackageName" to finalCheck.observedPackageName,
-            )
-        )
-        return state.toOutcome(
-            status = VlmToolOutcomeStatus.ERROR,
-            message = message,
-            errorMessage = message,
-            errorCode = finalCheck.errorCode,
-        )
+        return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
     }
 
     private suspend fun verifyFinalTargetPackage(targetPackageName: String?): FinalTargetPackageCheck {
@@ -653,7 +652,7 @@ object VlmToolCoordinator {
 
     internal fun resolveWaitTimeoutMs(requestedWaitTimeoutMs: Long?): Long {
         val requested = requestedWaitTimeoutMs?.takeIf { it > 0L }
-            ?: return McpTaskManager.MAX_WAIT_TIME_MS
+            ?: return MAX_WAIT_TIMEOUT_MS
         return requested.coerceIn(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS)
     }
 
@@ -789,6 +788,9 @@ object VlmToolCoordinator {
                     raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 }.orEmpty()
                 if (summary.isNotBlank()) {
+                    if (taskState.status == TaskStatus.WAITING_INPUT || taskState.status == TaskStatus.USER_PAUSED) {
+                        taskState.status = TaskStatus.RUNNING
+                    }
                     taskState.message = summary
                     taskState.markStateChanged()
                 }
@@ -851,9 +853,7 @@ object VlmToolCoordinator {
         } else {
             request
         }
-        val observation = waitForRecallObservation(
-            targetPackage = targetPackage.takeIf { shouldPrelaunchForRecall }
-        )
+        val observation = waitForRecallObservation()
         val currentPackage = observation.packageName
         val guidance = VlmRecallGuidanceBuilder.build(
             context = context,
@@ -871,7 +871,7 @@ object VlmToolCoordinator {
         val xml: String?,
     )
 
-    private suspend fun waitForRecallObservation(targetPackage: String?): RecallObservation {
+    private suspend fun waitForRecallObservation(): RecallObservation {
         var lastPackage: String? = null
         var lastXml: String? = null
         repeat(RECALL_OBSERVE_ATTEMPTS) { attempt ->
@@ -883,8 +883,7 @@ object VlmToolCoordinator {
                 ?.takeIf { it.isNotEmpty() }
             if (currentPackage != null) lastPackage = currentPackage
             if (currentXml != null) lastXml = currentXml
-            val packageReady = targetPackage.isNullOrBlank() || currentPackage == targetPackage
-            if (packageReady && currentXml != null) {
+            if (currentXml != null) {
                 return RecallObservation(currentPackage, currentXml)
             }
             if (attempt < RECALL_OBSERVE_ATTEMPTS - 1) {

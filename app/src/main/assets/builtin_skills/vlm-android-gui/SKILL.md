@@ -19,6 +19,10 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 - Protocol correction retries for the same unchanged screen may omit the
   screenshot when indexed Accessibility evidence is present; do not treat that
   as a new observation turn.
+- If the screenshot is black or blank but Accessibility tree / indexed evidence
+  lists the current page and target text, act from that tree evidence. Do not
+  loop on `get_state` for the same unchanged page solely because pixels are
+  black.
 - OOB indexed page evidence: choose by visible label/role; include `element_index`
   or `scrollable_index` when available and emit 0-1000 normalized centers as fallback.
 - Pass `packageName` when known; derive unknown packages from installed apps.
@@ -793,6 +797,19 @@ The decision path is exactly: `page match -> UDEG node -> node skill-like
 decision context -> VLM/tool decision`. UDEG node data is skill-like decision
 context, not memory text and not a flat reusable command list. Do not skip the
 node by scanning the reusable command store directly.
+
+For online VLM, every action turn must be grounded on a fresh current-page
+snapshot: current package, Accessibility XML, screenshot, display size, and
+snapshot timestamp are captured once and reused only inside that same turn. A
+tool-call format retry may reuse the same snapshot; a page-stability retry or
+the next action turn must capture a new snapshot. Do not carry a previous
+turn's UDEG page-match result into the next turn.
+
+The UDEG node skill is OOB's page-level app-card equivalent. It may be injected
+into `currentPageSummary` only after the live page matches a UDEG node, and it
+is current-page decision context only. The next action must still be selected
+from live screenshot/XML/indexed evidence. Keep pre-run `stepSkillGuidance` for
+static user or skill instructions; do not append dynamic page-match facts there.
 
 Do not treat recall as a flat text search over all reusable commands. A recalled
 reusable command is trusted only when the current page has been localized to its

@@ -23,6 +23,7 @@ import 'package:ui/features/home/pages/chat/utils/agent_thinking_card_locator.da
 import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart';
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
 import 'package:ui/features/home/pages/chat/widgets/agent_run_group_message.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/services/voice_playback_coordinator.dart';
 import 'package:ui/services/screen_dialog_service.dart';
@@ -1769,6 +1770,11 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     final messageText = text ?? _messageController.text.trim();
     if (messageText.isEmpty || _isAiResponding) return;
 
+    final handledManualRecording = await _tryStartManualRecordingFromMessage(
+      messageText,
+    );
+    if (handledManualRecording) return;
+
     final handledSlash = await _tryHandleSlashCommand(messageText);
     if (handledSlash) return;
 
@@ -1812,6 +1818,104 @@ class _ChatBotSheetState extends State<ChatBotSheet>
         ),
       );
     }
+  }
+
+  Future<bool> _tryStartManualRecordingFromMessage(String messageText) async {
+    if (!_isManualRecordingCommand(messageText)) {
+      return false;
+    }
+    await _startManualRecordingFlow(userMessageText: messageText);
+    return true;
+  }
+
+  Future<void> _startManualRecordingFromShortcut() async {
+    if (_isAiResponding) return;
+    await _startManualRecordingFlow(userMessageText: '录制轨迹');
+  }
+
+  Future<void> _startManualRecordingFlow({
+    required String userMessageText,
+  }) async {
+    _inputFocusNode.unfocus();
+    final messageIds = _addUserMessage(userMessageText);
+    await _saveConversationToDb();
+    showToast('开始手动录制。请执行操作，结束后点小万「完成学习」。');
+    unawaited(ScreenDialogService.hideForManualRecording());
+    try {
+      final result = await AssistsMessageService.startHumanTrajectoryLearning();
+      if (!mounted) return;
+      unawaited(ScreenDialogService.restoreAfterManualRecording());
+      _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
+      final success = result['success'] == true;
+      final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
+      showToast(
+        success ? '手动录制完成，RunLog 已生成' : '手动录制失败',
+        type: success ? ToastType.success : ToastType.error,
+      );
+      if (success && runId.trim().isNotEmpty && mounted) {
+        unawaited(
+          showRunLogTimelineSheet(
+            context,
+            runId: runId.trim(),
+            title: '手动录制 RunLog',
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      unawaited(ScreenDialogService.restoreAfterManualRecording());
+      _insertManualRecordingResultMessage(messageIds.aiMessageId, {
+        'success': false,
+        'error_message': error.toString(),
+      });
+      showToast(error.toString(), type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isAiResponding = false);
+        await _saveConversationToDb();
+      }
+    }
+  }
+
+  bool _isManualRecordingCommand(String messageText) {
+    final normalized = messageText.trim().toLowerCase();
+    return normalized == '手动录制' ||
+        normalized == '开始手动录制' ||
+        normalized == '人工录制' ||
+        normalized == 'manual recording' ||
+        normalized == 'manual record';
+  }
+
+  void _insertManualRecordingResultMessage(
+    String messageId,
+    Map<String, dynamic> result,
+  ) {
+    final success = result['success'] == true;
+    final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
+    final actionCount = result['action_count'] ?? result['actionCount'] ?? 0;
+    final functionId = result['function_id'] ?? result['functionId'];
+    final errorMessage = result['error_message'] ?? result['errorMessage'];
+    final cardData = <String, dynamic>{
+      'type': 'manual_recording_result',
+      'cardId': messageId,
+      'success': success,
+      'runId': runId,
+      'run_id': runId,
+      'actionCount': actionCount,
+      'action_count': actionCount,
+      'functionId': functionId,
+      'function_id': functionId,
+      'summary': result['summary'],
+      'errorMessage': errorMessage,
+      'error_message': errorMessage,
+    }..removeWhere((_, value) => value == null || value.toString().isEmpty);
+    setState(() {
+      _messages.removeWhere((message) => message.id == messageId);
+      _messages.insert(
+        0,
+        ChatMessageModel.cardMessage(cardData, id: messageId),
+      );
+    });
   }
 
   ({String userMessageId, String aiMessageId}) _addUserMessage(
@@ -2683,16 +2787,115 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     return Container(
       key: _inputAreaKey,
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
-      child: ChatInputArea(
-        key: _chatInputAreaKey,
-        controller: _messageController,
-        focusNode: _inputFocusNode,
-        isProcessing: _isAiResponding,
-        onSendMessage: _sendMessage,
-        onCancelTask: _onCancelTask,
-        onPopupVisibilityChanged: _onPopupVisibilityChanged,
-        openClawEnabled: _openClawEnabled,
-        onToggleOpenClaw: _setOpenClawEnabled,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildManualRecordingTestBlock(),
+          const SizedBox(height: 8),
+          ChatInputArea(
+            key: _chatInputAreaKey,
+            controller: _messageController,
+            focusNode: _inputFocusNode,
+            isProcessing: _isAiResponding,
+            onSendMessage: _sendMessage,
+            onCancelTask: _onCancelTask,
+            onPopupVisibilityChanged: _onPopupVisibilityChanged,
+            openClawEnabled: _openClawEnabled,
+            onToggleOpenClaw: _setOpenClawEnabled,
+            onManualRecordingTap: _startManualRecordingFromShortcut,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildManualRecordingTestBlock() {
+    final disabled = _isAiResponding;
+    return Semantics(
+      container: true,
+      label: '手动录制测试',
+      child: Container(
+        key: const ValueKey('manual-recording-test-block'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3EAF4)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x120D1B2A),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEAF2FF),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.gesture_rounded,
+                size: 19,
+                color: Color(0xFF2F65D9),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text(
+                    '手动录制测试',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF25314A),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '点击后开始收集点击和简单滑动轨迹',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Color(0xFF71809B)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              height: 34,
+              child: ElevatedButton.icon(
+                key: const ValueKey('manual-recording-start-button'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2F65D9),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFD8E0EC),
+                  disabledForegroundColor: const Color(0xFF8C99AC),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('开始手动录制'),
+                onPressed: disabled ? null : _startManualRecordingFromShortcut,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

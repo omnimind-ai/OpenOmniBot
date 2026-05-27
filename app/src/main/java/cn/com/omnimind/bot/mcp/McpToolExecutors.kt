@@ -48,8 +48,9 @@ object McpToolExecutors {
             packageName = if (startFromCurrent) null else firstString(args, "packageName", "package_name"),
             needSummary = shouldSummary,
             skipGoHome = startFromCurrent,
-            disableOmniFlowRecall = boolArg(
+            disableOmniFlowRecall = boolArgOrDefault(
                 args,
+                default = true,
                 "disableOmniFlowRecall",
                 "disable_omniflow_recall",
                 "disableRecall",
@@ -129,6 +130,23 @@ object McpToolExecutors {
             }
         }
         return false
+    }
+
+    private fun boolArgOrDefault(
+        args: Map<String, Any?>?,
+        default: Boolean,
+        vararg keys: String
+    ): Boolean {
+        if (args == null) return default
+        for (key in keys) {
+            val raw = args[key] ?: continue
+            when (raw) {
+                is Boolean -> return raw
+                is String -> raw.trim().toBooleanStrictOrNull()?.let { return it }
+                is Number -> return raw.toInt() != 0
+            }
+        }
+        return default
     }
     
     /**

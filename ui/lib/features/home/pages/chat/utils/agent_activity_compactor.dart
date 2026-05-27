@@ -78,13 +78,16 @@ class AgentActivityCompactor {
   _ActivityBuilder? _pending;
   List<AgentProcessItem> _cachedResult = const [];
 
-  List<AgentProcessItem> compact(List<ChatMessageModel> messages) {
+  List<AgentProcessItem> compact(
+    List<ChatMessageModel> messages, {
+    bool settleRunning = false,
+  }) {
     if (messages.isEmpty) {
       _reset();
       return const [];
     }
 
-    final signature = _messagesSignature(messages);
+    final signature = Object.hash(settleRunning, _messagesSignature(messages));
     if (signature == _lastSignature) {
       return _cachedResult;
     }
@@ -92,7 +95,7 @@ class AgentActivityCompactor {
     _committed.clear();
     _pending = null;
     for (final message in messages) {
-      _processOne(message);
+      _processOne(message, settleRunning: settleRunning);
     }
     _lastSignature = signature;
     _cachedResult = _buildResult();
@@ -106,10 +109,13 @@ class AgentActivityCompactor {
     _cachedResult = const [];
   }
 
-  void _processOne(ChatMessageModel message) {
+  void _processOne(ChatMessageModel message, {required bool settleRunning}) {
     if (isStaleAgentToolPreviewPlaceholder(message)) return;
 
-    final candidate = _ToolActivityCandidate.tryParse(message);
+    final candidate = _ToolActivityCandidate.tryParse(
+      message,
+      settleRunning: settleRunning,
+    );
     if (candidate == null) {
       _flushPending();
       _committed.add(AgentProcessItem.message(message));
@@ -291,6 +297,13 @@ bool _isDetailedVlmStep(_ToolActivityCandidate candidate) {
   if (candidate.kind != AgentToolActivityKind.vlm) {
     return false;
   }
+  final spanKind = AgentToolCardPolicy.firstNonBlank(<Object?>[
+    candidate.cardData['spanKind'],
+    candidate.cardData['span_kind'],
+  ]).toLowerCase();
+  if (spanKind == 'vlm_step') {
+    return true;
+  }
   final compileKind = AgentToolCardPolicy.firstNonBlank(<Object?>[
     candidate.cardData['compile_kind'],
     candidate.cardData['compileKind'],
@@ -303,6 +316,13 @@ bool _isDetailedVlmStep(_ToolActivityCandidate candidate) {
 
 bool _isVlmTaskWrapper(_ToolActivityCandidate candidate) {
   if (candidate.kind != AgentToolActivityKind.vlm) {
+    return false;
+  }
+  final spanKind = AgentToolCardPolicy.firstNonBlank(<Object?>[
+    candidate.cardData['spanKind'],
+    candidate.cardData['span_kind'],
+  ]).toLowerCase();
+  if (spanKind == 'vlm_step') {
     return false;
   }
   final toolName = candidate.cardData['toolName']?.toString().trim() ?? '';
@@ -345,7 +365,10 @@ class _ToolActivityCandidate {
   final String status;
   final Map<String, dynamic> args;
 
-  static _ToolActivityCandidate? tryParse(ChatMessageModel message) {
+  static _ToolActivityCandidate? tryParse(
+    ChatMessageModel message, {
+    bool settleRunning = false,
+  }) {
     final cardData = message.cardData;
     if (cardData == null ||
         (cardData['type'] ?? '').toString() != kAgentToolActivityCardType) {
@@ -394,7 +417,12 @@ class _ToolActivityCandidate {
       cardData['displayName'],
       cardData['toolName'],
     ]);
-    final status = AgentToolCardPolicy.normalizeStatus(cardData['status']);
+    final parsedStatus = AgentToolCardPolicy.normalizeStatus(
+      cardData['status'],
+    );
+    final status = settleRunning && parsedStatus == 'running'
+        ? 'success'
+        : parsedStatus;
 
     return _ToolActivityCandidate(
       message: message,

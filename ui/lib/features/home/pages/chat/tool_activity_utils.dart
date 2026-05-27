@@ -581,6 +581,23 @@ String resolveAgentToolPreview(
   return resolveAgentToolStatusLabel(cardData, locale: locale);
 }
 
+String resolveAgentToolSummaryText(
+  Map<String, dynamic> cardData, {
+  Locale? locale,
+}) {
+  final summary = _firstNonPlaceholder(<Object?>[
+    cardData['summary'],
+    cardData['progress'],
+  ]);
+  if (summary.isEmpty) {
+    return '';
+  }
+  return _localizeToolUiText(
+    _compactToolText(summary, maxChars: _kToolCardTitleMaxChars),
+    locale: locale,
+  );
+}
+
 String resolveAgentToolStatusLabel(
   Map<String, dynamic> cardData, {
   Locale? locale,

@@ -591,7 +591,7 @@ object AgentToolDefinitions {
             put("toolType", "builtin")
             put(
                 "description",
-                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。默认只把召回的复用指令作为候选上下文交给在线 VLM 决策，不会自动执行 Function。"
+                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。一次 vlm_task 调用代表一次完整设备执行流程；打开 App 是该完整流程的第一步，不要先单独调用 vlm_task 打开 App、再第二次调用 vlm_task 执行后续目标。内部点击/输入/滚动会作为 vlm_step 进度持续上报。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。默认裸跑在线 VLM：观察当前截图/XML，执行一个动作，再刷新状态继续；不会注入或自动执行复用指令。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -618,7 +618,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("timeoutMs") {
                         put("type", "integer")
-                        put("description", "可选控制面等待超时，单位毫秒。默认 120000；长流程验收可显式放大，设备端 VLM 会继续按 maxSteps 执行。")
+                        put("description", "可选控制面等待超时，单位毫秒。默认 600000；设备端 VLM 会在同一个 vlm_task 内按 maxSteps 持续执行，不要用第二个 vlm_task 续接同一目标。")
                     }
                     putJsonObject("startFromCurrent") {
                         put("type", "boolean")
@@ -626,7 +626,8 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("disableOmniFlowRecall") {
                         put("type", "boolean")
-                        put("description", "可选。设为 true 时不注入复用指令/UDEG 召回上下文，用于裸跑在线 VLM 验证。")
+                        put("default", true)
+                        put("description", "可选，默认 true。true 时不注入复用指令/UDEG 召回上下文，按当前截图/XML 裸跑在线 VLM。只有需要显式召回辅助时才设为 false。")
                     }
                     putJsonObject("allowOmniFlowFunctionAutoExecute") {
                         put("type", "boolean")

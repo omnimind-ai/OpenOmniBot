@@ -105,4 +105,26 @@ class ScreenDialogService {
       return false;
     }
   }
+
+  static Future<bool> hideForManualRecording() async {
+    try {
+      final result = await _channel.invokeMethod('hideForManualRecording');
+      return result == true;
+    } on PlatformException catch (e) {
+      print('Failed to hide dialog for manual recording: ${e.message}');
+      return false;
+    }
+  }
+
+  static Future<bool> restoreAfterManualRecording() async {
+    try {
+      final result = await _channel.invokeMethod(
+        'restoreAfterManualRecording',
+      );
+      return result == true;
+    } on PlatformException catch (e) {
+      print('Failed to restore dialog after manual recording: ${e.message}');
+      return false;
+    }
+  }
 }

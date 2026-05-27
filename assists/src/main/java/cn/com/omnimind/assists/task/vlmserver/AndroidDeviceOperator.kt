@@ -22,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -32,6 +34,7 @@ class AndroidDeviceOperator(
 ) : DeviceOperator {
 
     private val Tag = "AndroidDeviceOperator"
+    private val json = Json { encodeDefaults = false }
 
     // 存储最后一次截图的尺寸（传给VLM的图片）以及设备实际尺寸
     private var lastScreenshotWidth: Int = 1080
@@ -77,6 +80,22 @@ class AndroidDeviceOperator(
         }
     }
 
+    override suspend fun clickNodeById(nodeId: String, targetDescription: String): OperationResult {
+        return try {
+            AccessibilityController.clickNodeById(nodeId, targetDescription)
+            OperationResult(
+                success = true,
+                message = "点击组件 ${targetDescription.ifBlank { nodeId }} 成功",
+                data = json.encodeToJsonElement(mapOf(
+                    "node_id" to nodeId,
+                    "execution" to "accessibility_node_action"
+                ))
+            )
+        } catch (e: Exception) {
+            OperationResult(false, "组件点击失败: ${e.message}", null)
+        }
+    }
+
     override suspend fun longClickCoordinate(x: Float, y: Float, duration: Long): OperationResult {
         return try {
             if (executionTaskEventApi != null) {
@@ -89,6 +108,26 @@ class AndroidDeviceOperator(
             OperationResult(true, "长按坐标 ($x, $y) 成功", null)
         } catch (e: Exception) {
             OperationResult(false, "长按失败: ${e.message}", null)
+        }
+    }
+
+    override suspend fun longClickNodeById(
+        nodeId: String,
+        targetDescription: String,
+        duration: Long
+    ): OperationResult {
+        return try {
+            AccessibilityController.longClickNodeById(nodeId, targetDescription)
+            OperationResult(
+                success = true,
+                message = "长按组件 ${targetDescription.ifBlank { nodeId }} 成功",
+                data = json.encodeToJsonElement(mapOf(
+                    "node_id" to nodeId,
+                    "execution" to "accessibility_node_action"
+                ))
+            )
+        } catch (e: Exception) {
+            OperationResult(false, "组件长按失败: ${e.message}", null)
         }
     }
 
@@ -112,6 +151,26 @@ class AndroidDeviceOperator(
                 return shellFallback
             }
             OperationResult(false, "输入失败: ${e.message}", null)
+        }
+    }
+
+    override suspend fun inputTextToNodeById(
+        nodeId: String,
+        text: String,
+        targetDescription: String
+    ): OperationResult {
+        return try {
+            AccessibilityController.inputTextToNodeById(nodeId, text, targetDescription)
+            OperationResult(
+                success = true,
+                message = "向组件 ${targetDescription.ifBlank { nodeId }} 输入文本成功",
+                data = json.encodeToJsonElement(mapOf(
+                    "node_id" to nodeId,
+                    "execution" to "accessibility_node_action"
+                ))
+            )
+        } catch (e: Exception) {
+            OperationResult(false, "组件输入失败: ${e.message}", null)
         }
     }
 
@@ -446,7 +505,7 @@ class AndroidDeviceOperator(
             val accessibilityReady = AccessibilityController.initController()
             if (accessibilityReady) {
                 val accessibilityLaunch = runCatching {
-                    AccessibilityController.launchApplication(packageName) { x, y ->
+                    AccessibilityController.launchApplicationBestEffort(packageName) { x, y ->
                         if (executionTaskEventApi != null) {
                             executionTaskEventApi.clickCoordinate(x, y) {
                                 AccessibilityController.clickCoordinate(x, y)
@@ -457,7 +516,7 @@ class AndroidDeviceOperator(
                     }
                 }
                 if (accessibilityLaunch.isSuccess) {
-                    return OperationResult(true, "启动应用 $packageName 成功", null)
+                    return OperationResult(true, "已发起启动应用 $packageName", null)
                 }
                 accessibilityLaunch.exceptionOrNull()?.let { error ->
                     if (error is PrivacyBlockedException) throw error

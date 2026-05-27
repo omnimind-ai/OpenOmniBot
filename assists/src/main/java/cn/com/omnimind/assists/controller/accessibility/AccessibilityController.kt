@@ -31,6 +31,7 @@ import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.ImageUtils
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.exception.PermissionException
+import cn.com.omnimind.baselib.util.exception.PrivacyBlockedException
 import cn.com.omnimind.omniintelligence.models.HostResponse
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import kotlinx.coroutines.CancellationException
@@ -206,12 +207,70 @@ class AccessibilityController() {
             }
         }
 
+        suspend fun clickNodeById(
+            nodeId: String,
+            targetDescription: String = ""
+        ) {
+            checkAccessibilityPermissions()
+            withTimeout(2000) {
+                val node = findNodeById(nodeId)
+                    ?: throw IllegalArgumentException("Node with ID '$nodeId' not found.")
+                val clickableNode = findActionableAncestor(
+                    node = node.info,
+                    supportsAction = { it.isEnabled && it.isClickable }
+                ) ?: throw IllegalStateException(
+                    "Node '$nodeId' is not clickable: ${targetDescription.ifBlank { nodeSemanticLabel(node.info) }}"
+                )
+                actionController?.clickNode(clickableNode)
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+            }
+        }
+
         suspend fun longClickCoordinate(
             x: Float, y: Float, duration: Long = 1000L
         ) {
             checkAccessibilityPermissions()
             withTimeout(2000 + duration) {
                 actionController?.longClickCoordinate(x, y, duration)?.await()
+            }
+        }
+
+        suspend fun longClickNodeById(
+            nodeId: String,
+            targetDescription: String = ""
+        ) {
+            checkAccessibilityPermissions()
+            withTimeout(3000) {
+                val node = findNodeById(nodeId)
+                    ?: throw IllegalArgumentException("Node with ID '$nodeId' not found.")
+                val longClickableNode = findActionableAncestor(
+                    node = node.info,
+                    supportsAction = { it.isEnabled && it.isLongClickable }
+                ) ?: throw IllegalStateException(
+                    "Node '$nodeId' is not long-clickable: ${targetDescription.ifBlank { nodeSemanticLabel(node.info) }}"
+                )
+                actionController?.longClickNode(longClickableNode)
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+            }
+        }
+
+        suspend fun inputTextToNodeById(
+            nodeId: String,
+            text: String,
+            targetDescription: String = ""
+        ) {
+            checkAccessibilityPermissions()
+            withTimeout(3000) {
+                val node = findNodeById(nodeId)
+                    ?: throw IllegalArgumentException("Node with ID '$nodeId' not found.")
+                val editableNode = findActionableAncestor(
+                    node = node.info,
+                    supportsAction = { it.isEnabled && it.isEditable }
+                ) ?: throw IllegalStateException(
+                    "Node '$nodeId' is not editable: ${targetDescription.ifBlank { nodeSemanticLabel(node.info) }}"
+                )
+                actionController?.inputText(editableNode, text)
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
             }
         }
 
@@ -472,6 +531,22 @@ class AccessibilityController() {
                 ?.node
         }
 
+        private fun findNodeById(nodeId: String): AccessibilityNode? =
+            captureAction?.getNodeMap()?.get(nodeId.trim())
+
+        private fun findActionableAncestor(
+            node: AccessibilityNodeInfo,
+            supportsAction: (AccessibilityNodeInfo) -> Boolean
+        ): AccessibilityNodeInfo? {
+            var current: AccessibilityNodeInfo? = node
+            repeat(MAX_NODE_ACTION_ANCESTOR_DEPTH) {
+                val candidate = current ?: return null
+                if (supportsAction(candidate)) return candidate
+                current = runCatching { candidate.parent }.getOrNull()
+            }
+            return null
+        }
+
         private fun hasSliderSignal(
             node: AccessibilityNodeInfo,
             targetTerms: Set<String>
@@ -582,6 +657,29 @@ class AccessibilityController() {
             throw IllegalStateException(message)
         }
 
+        suspend fun launchApplicationBestEffort(
+            packageName: String,
+            doClickInvoke: suspend (x: Float, y: Float) -> Unit
+        ) {
+            checkAccessibilityPermissions()
+            val controller = actionController
+                ?: throw IllegalStateException("Accessibility action controller is not ready")
+            val accessibilityLaunch = runCatching {
+                controller.launchApplication(packageName)
+            }.onFailure { error ->
+                if (error is PrivacyBlockedException) throw error
+                OmniLog.w(TAG, "best-effort accessibility launch failed: target=$packageName error=${error.message}")
+            }.isSuccess
+            awaitAnyLaunchObservation(packageName)
+            val intentLaunch = launchApplicationByIntent(packageName)
+            if (intentLaunch) {
+                awaitAnyLaunchObservation(packageName)
+            }
+            if (!accessibilityLaunch && !intentLaunch) {
+                throw IllegalStateException("launchApplication could not start target package: $packageName")
+            }
+        }
+
         private suspend fun launchApplicationByIntent(packageName: String): Boolean =
             withContext(Dispatchers.Main) {
                 val appContext = BaseApplication.instance
@@ -613,6 +711,19 @@ class AccessibilityController() {
             val startedAt = System.currentTimeMillis()
             while (System.currentTimeMillis() - startedAt < timeoutMs) {
                 if (getPackageName() == packageName) {
+                    return
+                }
+                delay(150)
+            }
+            PageStabilityDetector.awaitStability()
+        }
+
+        private suspend fun awaitAnyLaunchObservation(packageName: String, timeoutMs: Long = 1500L) {
+            val startedAt = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startedAt < timeoutMs) {
+                val observedPackage = runCatching { getPackageName() }.getOrNull()
+                val observedXml = runCatching { getCaptureScreenShotXml(true) }.getOrNull()
+                if (observedPackage == packageName || !observedXml.isNullOrBlank()) {
                     return
                 }
                 delay(150)
@@ -867,5 +978,6 @@ class AccessibilityController() {
         private const val SLIDER_GESTURE_DISTANCE_FRACTION = 0.84f
         private const val MIN_SCROLLABLE_WIDTH_PX = 120
         private const val MIN_SCROLLABLE_HEIGHT_PX = 160
+        private const val MAX_NODE_ACTION_ANCESTOR_DEPTH = 6
     }
 }

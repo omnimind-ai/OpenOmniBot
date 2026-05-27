@@ -198,6 +198,10 @@ class AgentToolCardPolicy {
       cardData['compile_kind'],
       cardData['compileKind'],
     ]).toLowerCase();
+    final spanKind = firstNonBlank(<Object?>[
+      cardData['spanKind'],
+      cardData['span_kind'],
+    ]).toLowerCase();
     final selectionSource = firstNonBlank(<Object?>[
       cardData['selection_source'],
       cardData['selectionSource'],
@@ -211,6 +215,8 @@ class AgentToolCardPolicy {
         toolTypeLower == 'mobile' ||
         toolTypeSnake == 'vlm' ||
         toolNameLower == 'vlm_task' ||
+        spanKind == 'vlm_task' ||
+        spanKind == 'vlm_step' ||
         compileKind == 'vlm_step' ||
         compileKind == 'vlm' ||
         selectionSource == 'vlm') {
@@ -834,10 +840,14 @@ class AgentToolCardPolicy {
     Map<String, dynamic>? cardData,
   }) {
     final card = cardData ?? message?.cardData;
+    final embeddedStreamMeta = asStringMap(card?['streamMeta']);
     final value = firstNonBlank(<Object?>[
       message?.streamMeta?['parentTaskId'],
+      embeddedStreamMeta['parentTaskId'],
       message?.streamMeta?['runLogId'],
       message?.streamMeta?['run_id'],
+      embeddedStreamMeta['runLogId'],
+      embeddedStreamMeta['run_id'],
       card?['taskId'],
       card?['taskID'],
       card?['runLogId'],

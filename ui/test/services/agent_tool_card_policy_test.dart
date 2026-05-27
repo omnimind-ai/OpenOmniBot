@@ -52,4 +52,19 @@ void main() {
       'vlm-run-1',
     );
   });
+
+  test('task id reads embedded stream meta before nested card task id', () {
+    final message = ChatMessageModel.cardMessage(const <String, dynamic>{
+      'type': 'agent_tool_summary',
+      'taskId': 'vlm-run-2',
+      'runLogId': 'vlm-run-2',
+      'cardId': 'vlm-run-2-vlm-1',
+      'streamMeta': <String, dynamic>{
+        'parentTaskId': 'agent-run-2',
+        'runLogId': 'agent-run-2',
+      },
+    }, id: 'vlm-run-2-vlm-1');
+
+    expect(AgentToolCardPolicy.taskIdForMessage(message), 'agent-run-2');
+  });
 }

@@ -1067,9 +1067,13 @@ class CodexEventReducer {
           if (cardData?['type'] != kAgentToolSummaryCardType) {
             return false;
           }
+          final embeddedStreamMeta = AgentToolCardPolicy.asStringMap(
+            cardData?['streamMeta'],
+          );
           final cardTaskId =
-              _string(cardData?['taskId']) ??
-              _string(message.streamMeta?['parentTaskId']);
+              _string(message.streamMeta?['parentTaskId']) ??
+              _string(embeddedStreamMeta['parentTaskId']) ??
+              _string(cardData?['taskId']);
           if (cardTaskId != parentTaskId) {
             return false;
           }

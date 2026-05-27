@@ -481,6 +481,136 @@ void main() {
     expect(activity?.steps.single.cardId, 'vlm-run-2-vlm-1');
   });
 
+  test('keeps wrapper and vlm_step with child run id in one VLM activity', () {
+    final items = compactAgentProcessItems(<ChatMessageModel>[
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-3',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'cardId': 'agent-run-3-vlm-wrapper',
+          'childRunId': 'vlm-run-3',
+          'spanKind': 'vlm_task',
+          'argsJson': '{"goal":"完成手机操作"}',
+          'summary': '视觉任务执行中',
+        },
+        id: 'agent-run-3-vlm-wrapper',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-3',
+          'entryId': 'agent-run-3-vlm-wrapper',
+          'kind': 'tool_progress',
+          'seq': 1,
+        },
+      ),
+      ChatMessageModel.cardMessage(
+        const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'agent-run-3',
+          'runLogId': 'vlm-run-3',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-3-vlm-1',
+          'childRunId': 'vlm-run-3',
+          'spanKind': 'vlm_step',
+          'parentSpanKind': 'vlm_task',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"确认按钮"}',
+          'summary': '点击 确认按钮',
+        },
+        id: 'vlm-run-3-vlm-1',
+        streamMeta: const <String, dynamic>{
+          'parentTaskId': 'agent-run-3',
+          'runLogId': 'vlm-run-3',
+          'entryId': 'vlm-run-3-vlm-1',
+          'kind': 'tool_completed',
+          'seq': 2,
+        },
+      ),
+    ]);
+
+    expect(items, hasLength(1));
+    final activity = items.single.activity;
+    expect(activity?.kind, AgentToolActivityKind.vlm);
+    expect(activity?.taskId, 'agent-run-3');
+    expect(activity?.status, 'running');
+    expect(activity?.stepCount, 1);
+    expect(activity?.steps.single.cardId, 'vlm-run-3-vlm-1');
+    expect(activity?.steps.single.target, '确认按钮');
+  });
+
+  test(
+    'settles completed run VLM wrappers and child steps into one activity',
+    () {
+      final items = AgentActivityCompactor().compact(<ChatMessageModel>[
+        ChatMessageModel.cardMessage(const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-4',
+          'status': 'RUNNING',
+          'toolType': 'vlm',
+          'toolName': 'vlm_task',
+          'cardId': 'agent-run-4-vlm-wrapper',
+          'argsJson': '{"goal":"打开外卖"}',
+          'summary': '任务启动中',
+          'streamMeta': <String, dynamic>{
+            'parentTaskId': 'agent-run-4',
+            'entryId': 'agent-run-4-vlm-wrapper',
+            'kind': 'tool_progress',
+            'seq': 1,
+          },
+        }, id: 'agent-run-4-vlm-wrapper'),
+        ChatMessageModel.cardMessage(const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-4',
+          'runLogId': 'vlm-run-4',
+          'status': 'success',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-4-vlm-1',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"外卖"}',
+          'summary': '[grounded:indexed_element:6]',
+          'streamMeta': <String, dynamic>{
+            'parentTaskId': 'agent-run-4',
+            'runLogId': 'agent-run-4',
+            'entryId': 'vlm-run-4-vlm-1',
+            'kind': 'tool_completed',
+            'seq': 2,
+          },
+        }, id: 'vlm-run-4-vlm-1'),
+        ChatMessageModel.cardMessage(const <String, dynamic>{
+          'type': 'agent_tool_summary',
+          'taskId': 'vlm-run-4',
+          'runLogId': 'vlm-run-4',
+          'status': 'running',
+          'toolType': 'vlm',
+          'toolName': 'click',
+          'cardId': 'vlm-run-4-vlm-2',
+          'compile_kind': 'vlm_step',
+          'argsJson': '{"target_description":"搜索"}',
+          'summary': '[grounded:indexed_element:7]',
+          'streamMeta': <String, dynamic>{
+            'parentTaskId': 'agent-run-4',
+            'runLogId': 'agent-run-4',
+            'entryId': 'vlm-run-4-vlm-2',
+            'kind': 'tool_started',
+            'seq': 3,
+          },
+        }, id: 'vlm-run-4-vlm-2'),
+      ], settleRunning: true);
+
+      expect(items, hasLength(1));
+      final activity = items.single.activity;
+      expect(activity?.kind, AgentToolActivityKind.vlm);
+      expect(activity?.taskId, 'agent-run-4');
+      expect(activity?.status, 'success');
+      expect(activity?.steps, hasLength(2));
+      expect(activity?.steps.any((step) => step.isCurrent), isFalse);
+    },
+  );
+
   test('non-tool messages break activity compaction', () {
     final thinking = ChatMessageModel.cardMessage(<String, dynamic>{
       'type': 'deep_thinking',

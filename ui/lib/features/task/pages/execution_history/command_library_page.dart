@@ -20,6 +20,7 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
   String? _error;
   final Set<String> _deletingIds = {};
   final Set<String> _runningIds = {};
+  bool _isLearning = false;
 
   @override
   void initState() {
@@ -141,6 +142,17 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     }
   }
 
+  Future<void> _startLearning() async {
+    await _startHumanTrajectoryLearningFlow(
+      context: context,
+      isLearning: () => _isLearning,
+      setLearning: (value) {
+        if (mounted) setState(() => _isLearning = value);
+      },
+      reload: _load,
+    );
+  }
+
   Future<void> _run(_FunctionGroup group) async {
     if (_runningIds.contains(group.signature)) return;
     setState(() => _runningIds.add(group.signature));
@@ -164,11 +176,13 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         duration: const Duration(seconds: 3),
       );
       if (mounted) setState(() => _runningIds.remove(group.signature));
-      await showFunctionRunResultSheet(
-        context,
-        result: result,
-        title: _text(context, '复用指令执行结果', 'Reusable command result'),
-      );
+      if (!result.success && mounted) {
+        await showFunctionRunResultSheet(
+          context,
+          result: result,
+          title: _text(context, '复用指令执行结果', 'Reusable command result'),
+        );
+      }
       if (result.success && mounted) {
         await _load();
       }
@@ -204,6 +218,20 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         primary: true,
         actions: [
           Tooltip(
+            message: _text(context, '学习操作', 'Learn Actions'),
+            child: IconButton(
+              icon: _isLearning
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.gesture_rounded),
+              color: palette.textPrimary,
+              onPressed: _isLearning ? null : _startLearning,
+            ),
+          ),
+          Tooltip(
             message: _text(context, '刷新', 'Refresh'),
             child: IconButton(
               icon: const Icon(Icons.refresh_rounded),
@@ -236,11 +264,11 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         title: _text(context, '暂无复用指令', 'No Reusable Commands Yet'),
         subtitle: _text(
           context,
-          '成功的 RunLog 会自动保存为复用指令；也可以在 RunLog 详情页直接重放。',
-          'Successful RunLogs are saved as reusable commands. You can also replay from RunLog details.',
+          '可以直接学习一段完整的人类操作，保存后在这里复用。',
+          'Learn a complete human-operated trajectory and reuse it here.',
         ),
-        actionLabel: _text(context, '刷新', 'Refresh'),
-        onAction: _load,
+        actionLabel: _text(context, '学习操作', 'Learn Actions'),
+        onAction: _startLearning,
       );
     }
     return RefreshIndicator(
@@ -277,6 +305,7 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
   String? _error;
   final Set<String> _deletingIds = {};
   final Set<String> _runningIds = {};
+  bool _isLearning = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -424,11 +453,13 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         duration: const Duration(seconds: 3),
       );
       if (mounted) setState(() => _runningIds.remove(group.signature));
-      await showFunctionRunResultSheet(
-        context,
-        result: result,
-        title: _text(context, '复用指令执行结果', 'Reusable command result'),
-      );
+      if (!result.success && mounted) {
+        await showFunctionRunResultSheet(
+          context,
+          result: result,
+          title: _text(context, '复用指令执行结果', 'Reusable command result'),
+        );
+      }
       if (result.success && mounted) {
         await _load();
       }
@@ -454,6 +485,17 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     );
   }
 
+  Future<void> _startLearning() async {
+    await _startHumanTrajectoryLearningFlow(
+      context: context,
+      isLearning: () => _isLearning,
+      setLearning: (value) {
+        if (mounted) setState(() => _isLearning = value);
+      },
+      reload: _load,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -475,11 +517,11 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         title: _text(context, '暂无复用指令', 'No Reusable Commands Yet'),
         subtitle: _text(
           context,
-          '成功的 RunLog 会自动保存为复用指令；也可以在 RunLog 详情页直接重放。',
-          'Successful RunLogs are saved as reusable commands. You can also replay from RunLog details.',
+          '可以直接学习一段完整的人类操作，保存后在这里复用。',
+          'Learn a complete human-operated trajectory and reuse it here.',
         ),
-        actionLabel: _text(context, '刷新', 'Refresh'),
-        onAction: _load,
+        actionLabel: _text(context, '学习操作', 'Learn Actions'),
+        onAction: _startLearning,
       );
     }
     return RefreshIndicator(
@@ -1738,6 +1780,55 @@ class _FunctionDetailSnapshot {
   }
 }
 
+Future<void> _startHumanTrajectoryLearningFlow({
+  required BuildContext context,
+  required bool Function() isLearning,
+  required ValueChanged<bool> setLearning,
+  required Future<void> Function() reload,
+}) async {
+  if (isLearning()) return;
+  if (!context.mounted) return;
+  setLearning(true);
+  showToast(
+    _text(
+      context,
+      '开始记录操作。请在目标应用中完成点击或滑动，结束后点小万「完成学习」。',
+      'Recording started. Perform taps or swipes in the target app, then tap Finish Learning on the floating assistant.',
+    ),
+    duration: const Duration(seconds: 4),
+  );
+  try {
+    final result = await AssistsMessageService.startHumanTrajectoryLearning();
+    if (!context.mounted) return;
+    if (result['success'] == true) {
+      final functionId = (result['function_id'] ?? '').toString();
+      showToast(
+        functionId.isEmpty
+            ? _text(context, '已学习为复用指令', 'Learned as reusable command')
+            : _text(
+                context,
+                '已学习为复用指令：$functionId',
+                'Learned as reusable command: $functionId',
+              ),
+        type: ToastType.success,
+        duration: const Duration(seconds: 3),
+      );
+      await reload();
+    } else {
+      showToast(
+        (result['error_message'] ?? _text(context, '学习失败', 'Learning failed'))
+            .toString(),
+        type: ToastType.error,
+      );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    showToast(e.toString(), type: ToastType.error);
+  } finally {
+    setLearning(false);
+  }
+}
+
 Future<Map<String, dynamic>?> _resolveRunArguments(
   BuildContext context,
   Map<String, dynamic>? spec,
@@ -2096,6 +2187,13 @@ String _text(BuildContext context, String zh, String en) {
 }
 
 String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
+  if (result.completedVlmFallback) {
+    return _text(
+      context,
+      '复用指令已通过 VLM 执行完成',
+      'Reusable command completed by VLM',
+    );
+  }
   if (result.startedAgentFallback) {
     final taskId = result.taskId;
     return _text(

@@ -589,7 +589,9 @@ fi
 
 if [[ "$LAUNCH_APP" -eq 1 ]]; then
   log "launching=${PACKAGE_NAME}"
-  "${ADB[@]}" shell monkey -p "$PACKAGE_NAME" -c android.intent.category.LAUNCHER 1 >/dev/null
+  if ! "${ADB[@]}" shell monkey -p "$PACKAGE_NAME" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; then
+    log "launch_warning=monkey_failed"
+  fi
 fi
 
 check_device_clock "post_launch"

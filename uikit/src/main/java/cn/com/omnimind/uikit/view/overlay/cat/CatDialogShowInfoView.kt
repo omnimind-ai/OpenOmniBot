@@ -78,9 +78,12 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         layoutParams: WindowManager.LayoutParams,
         windowManager: WindowManager,
         isShowTakeOver: Boolean = true,
+        isShowStop: Boolean = true,
+        subMessage: String? = null,
 
         ) {
         setMessage(message)
+        subMessage?.let { setSubMessage(it) }
         // 取消首次展示动画（如果正在执行）
         if (CatDialogStateData.viewState == CatDialogViewState.EMPTY) {
             showInfoView.visibility = GONE
@@ -89,7 +92,32 @@ class CatDialogShowInfoView @JvmOverloads constructor(
 
         }
         visibility = VISIBLE
-        showInfoView.setDoing(catDialogShowInfoView, layoutParams, windowManager, isShowTakeOver)
+        showInfoView.setDoing(
+            catDialogShowInfoView,
+            layoutParams,
+            windowManager,
+            isShowTakeOver,
+            isShowStop
+        )
+        CatDialogStateData.viewState = CatDialogViewState.TASK_DOING
+    }
+
+    fun learningTask(
+        message: String,
+        subMessage: String,
+        catDialogShowInfoView: CatDialogShowInfoView,
+        layoutParams: WindowManager.LayoutParams,
+        windowManager: WindowManager
+    ) {
+        setMessage(message)
+        setSubMessage(subMessage)
+        showInfoView.visibility = VISIBLE
+        visibility = VISIBLE
+        showInfoView.learningTask(
+            catDialogShowInfoView,
+            layoutParams,
+            windowManager
+        )
         CatDialogStateData.viewState = CatDialogViewState.TASK_DOING
     }
 
@@ -103,7 +131,7 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         showInfoView.visibility = VISIBLE
         visibility = VISIBLE
         setMessage(message)
-        setSubMessage("完成后请点击继续")
+        setSubMessage("完成后请点击继续或已完成")
         showInfoView.pause(catDialogShowInfoView, catDialogShowInfoViewParams, windowManager)
 
     }
@@ -118,7 +146,7 @@ class CatDialogShowInfoView @JvmOverloads constructor(
             showInfoView.visibility = VISIBLE
             visibility = VISIBLE
             setMessage(message)
-            setSubMessage("完成后请点击继续")
+            setSubMessage("完成后请点击继续或已完成")
         }
         return showInfoView.userAction(
             catDialogShowInfoView,

@@ -908,20 +908,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.text('思考中'), findsOneWidget);
-    expect(find.text('网页搜索'), findsOneWidget);
-    expect(find.text('工具调用'), findsOneWidget);
-    expect(_thinkingDetailFinder(), findsOneWidget);
+    expect(find.text('搜索完成'), findsOneWidget);
+    expect(find.text('工具完成'), findsOneWidget);
+    expect(_thinkingDetailFinder(), findsNothing);
     expect(find.text('Thinking'), findsNothing);
     expect(find.text('Web search'), findsNothing);
-    expect(find.text('Tool activity'), findsNothing);
+    expect(find.text('Tool call'), findsNothing);
 
+    final thinkingSurface = find.byKey(
+      const ValueKey('agent-thinking-activity-row-task-mixed-thinking'),
+    );
+    final genericSurface = find.byKey(
+      const ValueKey(
+        'agent-tool-activity-compact-surface-task-mixed-generic-activity',
+      ),
+    );
     final researchSurface = find.byKey(
       const ValueKey(
         'agent-tool-activity-compact-surface-task-mixed-research-activity',
       ),
     );
+    expect(thinkingSurface, findsOneWidget);
+    expect(genericSurface, findsOneWidget);
     expect(researchSurface, findsOneWidget);
-    expect(tester.getSize(researchSurface).width, lessThan(400 * 0.9));
+    final cardWidth = tester.getSize(researchSurface).width;
+    expect(cardWidth, lessThan(400 * 0.9));
+    expect(tester.getSize(thinkingSurface).width, closeTo(cardWidth, 0.01));
+    expect(tester.getSize(genericSurface).width, closeTo(cardWidth, 0.01));
+    _expectUniformProcessText(tester, thinkingSurface);
+    _expectUniformProcessText(tester, genericSurface);
     _expectUniformProcessText(tester, researchSurface);
     expect(tester.takeException(), isNull);
   });
@@ -987,17 +1002,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('Thinking'), findsOneWidget);
-    expect(find.text('Web search'), findsOneWidget);
-    expect(find.text('Tool call'), findsOneWidget);
+    expect(find.text('思考摘要'), findsOneWidget);
+    expect(find.text('搜索完成'), findsOneWidget);
+    expect(find.text('工具完成'), findsOneWidget);
     expect(find.text('思考中'), findsNothing);
     expect(find.text('网页搜索'), findsNothing);
     expect(find.text('工具调用'), findsNothing);
   });
 
-  testWidgets('VLM process row uses visual task label and compact width', (
-    tester,
-  ) async {
+  testWidgets('VLM process renders one compact summary card', (tester) async {
     final controller = ScrollController();
     final messages = _buildVlmProcessRunMessages();
 
@@ -1020,7 +1033,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 320));
 
-    expect(find.text('视觉执行'), findsOneWidget);
+    expect(find.text('输入 hello'), findsOneWidget);
+    expect(find.text('视觉执行'), findsNothing);
     expect(find.text('网页搜索'), findsNothing);
     expect(find.text('Visual task'), findsNothing);
 
@@ -1032,9 +1046,8 @@ void main() {
     );
     expect(vlmSurface, findsOneWidget);
     expect(tester.getSize(vlmSurface).width, lessThan(400 * 0.9));
-    _expectUniformProcessText(tester, vlmSurface);
 
-    expect(find.text('2 步'), findsOneWidget);
+    expect(find.text('2 步'), findsNothing);
     expect(find.textContaining('设置按钮'), findsNothing);
 
     await tester.tap(vlmSurface);
@@ -1044,7 +1057,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('multi-step VLM activity stays collapsed and opens full runlog', (
+  testWidgets('multi-step VLM activity stays one card and opens full runlog', (
     tester,
   ) async {
     final controller = ScrollController();
@@ -1070,8 +1083,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
 
     expect(find.byType(AgentToolActivityCard), findsOneWidget);
-    expect(find.text('视觉执行'), findsOneWidget);
-    expect(find.text('2 步'), findsOneWidget);
+    expect(find.text('输入 hello'), findsOneWidget);
+    expect(find.text('视觉执行'), findsNothing);
+    expect(find.text('2 步'), findsNothing);
     expect(find.textContaining('设置按钮'), findsNothing);
     expect(find.text('工具调用历史'), findsNothing);
 
@@ -1116,6 +1130,7 @@ void main() {
 
     expect(find.byType(AgentToolActivityCard), findsOneWidget);
     expect(find.text('查看完整 RunLog'), findsNothing);
+    expect(find.text('输入 hello'), findsOneWidget);
     expect(find.textContaining('设置按钮'), findsNothing);
 
     final surface = find.byKey(

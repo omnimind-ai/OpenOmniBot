@@ -62,6 +62,7 @@ import 'package:ui/features/home/pages/chat/utils/deep_thinking_persistence.dart
 import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.dart';
 import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
 import 'package:ui/features/home/pages/codex/codex_remote_workspace_browser.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
@@ -2085,6 +2086,8 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   Future<bool> _ensureNormalChatModelConfigurationForSend();
 
   Future<void> _sendMessage({String? text});
+
+  Future<void> _startManualRecordingFromShortcut();
 
   Future<void> _retryUserMessageText(
     String text, {

@@ -1,5 +1,6 @@
 package cn.com.omnimind.uikit.api.eventimpl
 
+import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.assists.api.enums.TaskFinishType
 import cn.com.omnimind.assists.api.eventapi.ExecutingTaskType
 import cn.com.omnimind.assists.api.eventapi.ExecutionTaskEventApi
@@ -36,6 +37,7 @@ class ExecutionUIImpl(
     }
 
     override suspend fun onStartVLMTask(isCompanionRunning: Boolean) {
+        AgentVlmUiSession.markTaskCompanionState(vlmTask?.id, isCompanionRunning)
         if (uiChatEvent.isChatBotHalfScreenShowing()) {
             uiChatEvent.dismissHalfScreen()
         }
@@ -61,12 +63,20 @@ class ExecutionUIImpl(
             if (isResume) {
                 vlmTask?.provideUserInput("用户已完成操作,请继续执行")
             } else {
-                vlmTask?.finishTask()
+                vlmTask?.completeByUser()
             }
         } else if (finishType == TaskFinishType.USER_PAUSED) {
             uiTaskEvent.pauseTask("用户已接管任务")
             OmniLog.d("StateMachine", "VLM任务进入用户主动暂停状态")
         } else {
+            val currentTaskId = vlmTask?.id
+            if (AgentVlmUiSession.shouldHoldUiForTask(currentTaskId)) {
+                AgentVlmUiSession.markTaskStopSuppressed(currentTaskId, isCompanionRunning)
+                vlmTask = null
+                uiTaskEvent.setDoing("继续执行中...", false)
+                OmniLog.d("StateMachine", "VLM子任务结束，agent-run 仍在运行，小万UI保持执行态")
+                return
+            }
             vlmTask = null
             uiTaskEvent.finishDoingTask(message.ifEmpty { finishType.message })
             if (!isCompanionRunning) {

@@ -59,6 +59,9 @@ void main() {
                 ],
               };
             }
+            if (args['runId'] == 'run-agent-with-nested-vlm') {
+              return _nestedVlmRunLogTimelinePayload();
+            }
             return <String, dynamic>{
               'success': true,
               'run_id': 'run-vlm',
@@ -117,7 +120,7 @@ void main() {
                 <String, dynamic>{
                   'card_id': 'run-vlm-1',
                   'compile_kind': 'vlm_step',
-                  'source': 'vlm',
+                  'source': 'omniflow_replay',
                   'header': <String, dynamic>{
                     'step_index': 0,
                     'success': true,
@@ -179,19 +182,22 @@ void main() {
 
     expect(find.text('执行步骤'), findsOneWidget);
     expect(find.text('执行已完成'), findsOneWidget);
-    expect(find.text('离线复用流程'), findsOneWidget);
-    expect(find.text('RunLog 已收集'), findsOneWidget);
-    expect(find.text('可保存为复用指令'), findsOneWidget);
-    expect(find.text('本地执行'), findsOneWidget);
-    expect(find.text('重放 RunLog'), findsOneWidget);
-    expect(find.text('保存复用指令'), findsOneWidget);
+    expect(find.text('离线复用流程'), findsNothing);
+    expect(find.text('RunLog 已收集'), findsNothing);
+    expect(find.text('重放 RunLog'), findsNothing);
+    expect(find.text('保存复用指令'), findsNothing);
+    expect(find.byKey(const ValueKey('run-log-action-replay')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+      findsOneWidget,
+    );
     expect(find.text('已完成 · 1 步'), findsOneWidget);
-    expect(find.text('Token 消耗'), findsOneWidget);
-    expect(_richTextContaining('总计  1.23k'), findsOneWidget);
-    expect(_richTextContaining('VLM 调用  2'), findsOneWidget);
+    expect(find.text('在线 VLM 成本'), findsNothing);
+    expect(_richTextContaining('VLM Token  1.23k'), findsOneWidget);
+    expect(_richTextContaining('VLM 调用  2'), findsNothing);
     expect(_richTextContaining('步骤  1'), findsAtLeastNWidgets(1));
-    expect(_richTextContaining('输入  1.00k'), findsOneWidget);
-    expect(_richTextContaining('输出  234'), findsOneWidget);
+    expect(_richTextContaining('输入  1.00k'), findsNothing);
+    expect(_richTextContaining('输出  234'), findsNothing);
     expect(find.text('第 1 步'), findsOneWidget);
     expect(find.text('1.23k'), findsOneWidget);
     expect(find.text('OmniFlow'), findsOneWidget);
@@ -211,7 +217,6 @@ void main() {
     expect(_richTextContaining('Token  1.23k · P1000/C234'), findsOneWidget);
     expect(_richTextContaining('VLM 决策 / OmniFlow 本地重放'), findsNothing);
     expect(_richTextContaining('重放  OmniFlow 本地'), findsNothing);
-    expect(find.textContaining('VLM'), findsNothing);
     expect(find.textContaining('Visual task'), findsNothing);
 
     await tester.scrollUntilVisible(
@@ -264,6 +269,96 @@ void main() {
     expect(_richTextContaining('OmniFlow'), findsNothing);
   });
 
+  testWidgets('RunLog separates execution steps from tool call detail', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'getInternalRunLogTimeline') {
+            return <String, dynamic>{
+              'success': true,
+              'run_id': 'run-tool',
+              'run_finished': true,
+              'run_success': true,
+              'run_status': 'success',
+              'goal': '查询天气',
+              'cards': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'card_id': 'tool-1',
+                  'compile_kind': 'hit',
+                  'summary': '查询天气',
+                  'header': <String, dynamic>{
+                    'step_index': 0,
+                    'success': true,
+                    'compile_kind': 'hit',
+                  },
+                  'tool_call': <String, dynamic>{
+                    'id': 'tool-1',
+                    'name': 'web_search',
+                    'arguments': <String, dynamic>{'query': '今日天气'},
+                  },
+                  'result': <String, dynamic>{'summary': '搜索完成'},
+                },
+              ],
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-tool', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('执行步骤'), findsOneWidget);
+    expect(find.text('工具调用历史'), findsNothing);
+
+    await tester.tap(find.text('查询天气').last);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('工具调用 · 第 1 步'), findsOneWidget);
+    expect(_richTextContaining('执行方式  工具调用'), findsOneWidget);
+    expect(find.text('工具调用历史'), findsNothing);
+  });
+
+  testWidgets('Agent runlog nests VLM internal actions under vlm_task', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(
+          runId: 'run-agent-with-nested-vlm',
+          title: '',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已完成 · 3 步'), findsOneWidget);
+    expect(find.text('第 1 步'), findsOneWidget);
+    expect(find.text('第 2 步'), findsNothing);
+    expect(find.text('第 3 步'), findsNothing);
+    expect(find.text('视觉执行 打开 Settings'), findsOneWidget);
+    expect(find.text('内部 VLM 动作'), findsOneWidget);
+    expect(find.text('2 步'), findsOneWidget);
+    expect(find.text('打开应用 com.android.settings'), findsOneWidget);
+    expect(find.text('点击 Network & internet'), findsOneWidget);
+    expect(find.text('1.2s'), findsOneWidget);
+    expect(find.text('320ms'), findsOneWidget);
+
+    await tester.tap(find.text('视觉执行 打开 Settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('VLM 执行记录 · 第 1 步'), findsOneWidget);
+    expect(find.text('内部 VLM 动作'), findsWidgets);
+    expect(find.text('打开应用 com.android.settings'), findsWidgets);
+    expect(find.text('点击 Network & internet'), findsWidgets);
+  });
+
   testWidgets('Running RunLog surfaces unfinished state and disables save', (
     tester,
   ) async {
@@ -289,14 +384,12 @@ void main() {
 
     expect(find.text('执行还在进行中'), findsOneWidget);
     expect(find.text('运行中 · 1 步'), findsOneWidget);
-    expect(find.text('等待成功结果'), findsOneWidget);
+    expect(find.text('等待结束'), findsNothing);
 
-    final saveButton = tester.widget<InkWell>(
-      find
-          .ancestor(of: find.text('保存复用指令'), matching: find.byType(InkWell))
-          .first,
+    final saveButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey('run-log-action-save-function')),
     );
-    expect(saveButton.onTap, isNull);
+    expect(saveButton.onPressed, isNull);
   });
 
   testWidgets('RunLog copied transcript hides internal compile schema keys', (
@@ -399,8 +492,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('本地执行'), findsOneWidget);
-      await tester.tap(find.text('重放 RunLog'));
+      expect(find.text('本地执行'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('run-log-action-replay')));
       await tester.pumpAndSettle();
 
       final convertCall = methodCalls.singleWhere(
@@ -418,8 +511,7 @@ void main() {
       final runArgs = Map<String, dynamic>.from(runCall.arguments as Map);
       expect(runArgs['functionId'], 'fn_from_runlog');
       expect(runArgs['arguments'], isA<Map>());
-      expect(find.text('RunLog 重放结果'), findsOneWidget);
-      expect(find.text('执行步骤 · 1'), findsOneWidget);
+      expect(find.text('RunLog 重放结果'), findsNothing);
     },
   );
 
@@ -444,6 +536,11 @@ void main() {
                   'function_id': 'fn_from_runlog',
                   'name': '打开 Settings',
                   'description': '打开 Android 设置',
+                  'source': <String, dynamic>{
+                    'kind': 'run_log',
+                    'run_id': 'run-vlm',
+                    'converter': 'native_run_log_reusable_function_builder',
+                  },
                   'compile_kind': 'hit',
                   'parameters': <dynamic>[],
                   'execution': <String, dynamic>{
@@ -480,7 +577,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('保存复用指令').last);
+      await tester.tap(
+        find.byKey(const ValueKey('run-log-action-save-function')),
+      );
       await tester.pump();
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
@@ -502,6 +601,12 @@ void main() {
       expect(find.text('RunLog 保存结果', skipOffstage: false), findsOneWidget);
       expect(_richTextContaining('来源  已保存'), findsOneWidget);
       expect(_richTextContaining('状态  可执行'), findsOneWidget);
+      expect(find.text('保存', skipOffstage: false), findsOneWidget);
+      expect(find.text('执行', skipOffstage: false), findsOneWidget);
+      expect(find.text('定时任务', skipOffstage: false), findsOneWidget);
+      expect(find.text('复制 JSON', skipOffstage: false), findsNothing);
+      expect(find.text('复制 Agent 提示', skipOffstage: false), findsNothing);
+      expect(find.text('转为定时任务', skipOffstage: false), findsNothing);
       expect(find.text('API', skipOffstage: false), findsNothing);
       expect(find.text('Native', skipOffstage: false), findsNothing);
       expect(find.text('Local', skipOffstage: false), findsNothing);
@@ -516,8 +621,130 @@ void main() {
       expect(_selectableTextContaining('route_kind'), findsNothing);
       expect(_selectableTextContaining('route_result'), findsNothing);
       expect(_selectableTextContaining('route_status'), findsNothing);
+
+      methodCalls.clear();
+      await tester.scrollUntilVisible(
+        find.text('保存'),
+        180,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.drag(
+        find.byType(Scrollable).last,
+        const Offset(0, -520),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final reRegisterCalls = methodCalls
+          .where((call) => call.method == 'convertInternalRunLogToOobFunction')
+          .toList(growable: false);
+      expect(reRegisterCalls, hasLength(1));
+      expect(
+        methodCalls.where(
+          (call) => call.method == 'registerOobReusableFunction',
+        ),
+        isEmpty,
+      );
+      final reRegisterArgs = Map<String, dynamic>.from(
+        reRegisterCalls.single.arguments as Map,
+      );
+      expect(reRegisterArgs['runId'], 'run-vlm');
+      expect(reRegisterArgs['register'], isTrue);
+      expect(reRegisterArgs['functionId'], 'fn_from_runlog');
+      expect(reRegisterArgs['name'], '打开 Settings');
     },
   );
+}
+
+Map<String, dynamic> _nestedVlmRunLogTimelinePayload() {
+  return <String, dynamic>{
+    'success': true,
+    'run_id': 'run-agent-with-nested-vlm',
+    'run_finished': true,
+    'run_success': true,
+    'run_status': 'success',
+    'done_reason': 'finished',
+    'goal': '打开 Settings',
+    'cards': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'card_id': 'parent-vlm',
+        'compile_kind': 'agent_tool',
+        'span_kind': 'vlm_task',
+        'child_run_id': 'child-vlm-1',
+        'tool_type': 'vlm',
+        'header': <String, dynamic>{
+          'step_index': 0,
+          'success': true,
+          'duration_ms': 50000,
+          'compile_kind': 'agent_tool',
+          'span_kind': 'vlm_task',
+        },
+        'tool_call': <String, dynamic>{
+          'id': 'parent-vlm',
+          'name': 'vlm_task',
+          'arguments': <String, dynamic>{'goal': '打开 Settings'},
+        },
+        'result': <String, dynamic>{
+          'summary': '视觉任务已完成',
+          'taskId': 'child-vlm-1',
+        },
+      },
+      <String, dynamic>{
+        'card_id': 'child-vlm-1-open',
+        'parent_card_id': 'parent-vlm',
+        'child_run_id': 'child-vlm-1',
+        'compile_kind': 'vlm_step',
+        'span_kind': 'vlm_action',
+        'source': 'vlm',
+        'tool_type': 'vlm',
+        'header': <String, dynamic>{
+          'step_index': 0,
+          'success': true,
+          'duration_ms': 1200,
+          'compile_kind': 'vlm_step',
+          'parent_card_id': 'parent-vlm',
+          'span_kind': 'vlm_action',
+        },
+        'tool_call': <String, dynamic>{
+          'id': 'child-vlm-1-open',
+          'name': 'open_app',
+          'arguments': <String, dynamic>{
+            'package_name': 'com.android.settings',
+          },
+        },
+        'result': <String, dynamic>{'message': '目标应用已打开'},
+      },
+      <String, dynamic>{
+        'card_id': 'child-vlm-1-click',
+        'parent_card_id': 'parent-vlm',
+        'child_run_id': 'child-vlm-1',
+        'compile_kind': 'vlm_step',
+        'span_kind': 'vlm_action',
+        'source': 'vlm',
+        'tool_type': 'vlm',
+        'header': <String, dynamic>{
+          'step_index': 1,
+          'success': true,
+          'duration_ms': 320,
+          'compile_kind': 'vlm_step',
+          'parent_card_id': 'parent-vlm',
+          'span_kind': 'vlm_action',
+        },
+        'tool_call': <String, dynamic>{
+          'id': 'child-vlm-1-click',
+          'name': 'click',
+          'arguments': <String, dynamic>{
+            'target_description': 'Network & internet',
+            'x': 210,
+            'y': 340,
+          },
+        },
+        'result': <String, dynamic>{'message': '点击完成'},
+      },
+    ],
+  };
 }
 
 Map<String, dynamic> _runLogTimelinePayload({

@@ -53,6 +53,8 @@ class PromptTemplateTest {
 
             assertTrue(prompt.contains("Turn reminder"))
             assertTrue(prompt.contains("exactly one native tool_call"))
+            assertTrue(prompt.contains("black/blank"))
+            assertTrue(prompt.contains("do not repeatedly call get_state"))
             assertFalse(prompt.contains("1. Pick the next action directly from the tools list"))
             assertFalse(prompt.contains("8. Do not output any idle"))
         } finally {

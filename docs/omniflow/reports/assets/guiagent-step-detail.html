@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { color:#17202a; font-family:Inter,Arial,sans-serif; }
+    body { margin:0; background:#fff; }
+    table { width:100%; border-collapse:collapse; border:1px solid #dce3ea; }
+    th, td { padding:12px 13px; border-bottom:1px solid #edf1f5; text-align:left; vertical-align:top; font-size:13px; line-height:1.55; }
+    th { background:#f6f8fb; color:#5f6b7a; font-size:12px; font-weight:850; text-transform:uppercase; }
+    tr:last-child td { border-bottom:0; }
+    .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .muted { color:#5f6b7a; }
+  </style>
+</head>
+<body>
+  <table>
+    <thead>
+      <tr>
+        <th>案例</th>
+        <th>在线 token</th>
+        <th>VLM 调用</th>
+        <th>在线步骤（token / 用时）</th>
+        <th>本地 token</th>
+        <th>本地用时</th>
+        <th>Replay / 召回步骤（token / 用时）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>5554 Display</strong><br><span class="muted">打开 Display 设置</span></td><td class="num">31,038</td><td class="num">3</td><td>1. scroll <span class="muted">(7,191 tok, 用时未记录)</span><br>2. click <span class="muted">(10,492 tok, 用时未记录)</span><br>3. finished <span class="muted">(13,355 tok, 用时未记录)</span></td><td class="num">0</td><td class="num">7,105</td><td>1. open_app <span class="muted">(0 tok, 2,535 ms)</span><br>2. scroll <span class="muted">(0 tok, 2,012 ms)</span><br>3. click <span class="muted">(0 tok, 1,554 ms)</span><br>4. finished <span class="muted">(0 tok, 1,003 ms)</span></td></tr><tr><td><strong>5556 Network</strong><br><span class="muted">打开 Network &amp; internet</span></td><td class="num">17,670</td><td class="num">2</td><td>1. click <span class="muted">(7,368 tok, 用时未记录)</span><br>2. finished <span class="muted">(10,302 tok, 用时未记录)</span></td><td class="num">0</td><td class="num">4,768</td><td>1. open_app <span class="muted">(0 tok, 2,319 ms)</span><br>2. click <span class="muted">(0 tok, 1,445 ms)</span><br>3. finished <span class="muted">(0 tok, 1,003 ms)</span></td></tr><tr><td><strong>5556 Display</strong><br><span class="muted">打开 Display 设置</span></td><td class="num">23,209</td><td class="num">4</td><td>当前源记录只有总 token 和卡片数，未记录每步 token / action 拆分。</td><td class="num">0</td><td class="num">10,384</td><td>Replay 成功 5/5；当前源记录未记录每步名称和用时。</td></tr><tr><td><strong>5554 Display v2</strong><br><span class="muted">打开 Display 设置</span></td><td class="num">15,680</td><td class="num">3</td><td>当前源记录只有总 token 和卡片数，未记录每步 token / action 拆分。</td><td class="num">0</td><td class="num">5,706</td><td>Replay 成功 4/4；当前源记录未记录每步名称和用时。</td></tr><tr><td><strong>5556 Clock</strong><br><span class="muted">打开 Clock / Stopwatch</span></td><td class="num">9,793</td><td class="num">2</td><td>1. open_app <span class="muted">(token 未记录, 用时未记录)</span><br>2. finished <span class="muted">(token 未记录, 用时未记录)</span></td><td class="num">0</td><td class="num">2,983</td><td>1. open_app <span class="muted">(0 tok, 用时未记录)</span><br>2. finished <span class="muted">(0 tok, 用时未记录)</span></td></tr><tr><td><strong>5554 Recall Guidance</strong><br><span class="muted">在线 VLM 加载召回上下文</span></td><td class="num">47,737</td><td class="num">3</td><td>召回上下文已进入在线 VLM；当前源记录未记录每步 token 拆分。</td><td class="num">-</td><td class="num">-</td><td>本地步骤明细未记录</td></tr><tr><td><strong>5556 Recall Guidance</strong><br><span class="muted">在线 VLM 加载召回上下文</span></td><td class="num">26,051</td><td class="num">2</td><td>召回上下文已进入在线 VLM；当前源记录未记录每步 token 拆分。</td><td class="num">-</td><td class="num">-</td><td>本地步骤明细未记录</td></tr><tr><td><strong>5554 UDEG recall E2E</strong><br><span class="muted">通过召回 segment 打开 Settings</span></td><td class="num">-</td><td class="num">-</td><td>在线步骤明细未记录</td><td class="num">0</td><td class="num">7,478</td><td>1. wait_accessibility <span class="muted">(0 tok, 0 ms)</span><br>2. observe_before <span class="muted">(0 tok, 518 ms)</span><br>3. register_child <span class="muted">(0 tok, 437 ms)</span><br>4. register_parent <span class="muted">(0 tok, 2 ms)</span><br>5. load_child <span class="muted">(0 tok, 1 ms)</span><br>6. recall <span class="muted">(0 tok, 126 ms)</span><br>7. parent_run <span class="muted">(0 tok, 5,098 ms)</span><br>8. post_run_settle <span class="muted">(0 tok, 1,202 ms)</span><br>9. observe_after <span class="muted">(0 tok, 61 ms)</span></td></tr><tr><td><strong>5556 segment_hit E2E</strong><br><span class="muted">通过召回 segment 打开 Settings</span></td><td class="num">-</td><td class="num">-</td><td>在线步骤明细未记录</td><td class="num">0</td><td class="num">7,854</td><td>1. wait_accessibility <span class="muted">(0 tok, 0 ms)</span><br>2. observe_before <span class="muted">(0 tok, 131 ms)</span><br>3. register_child <span class="muted">(0 tok, 536 ms)</span><br>4. register_parent <span class="muted">(0 tok, 2 ms)</span><br>5. load_child <span class="muted">(0 tok, 1 ms)</span><br>6. recall <span class="muted">(0 tok, 2,621 ms)</span><br>7. parent_run <span class="muted">(0 tok, 3,216 ms)</span><br>8. post_run_settle <span class="muted">(0 tok, 1,203 ms)</span><br>9. observe_after <span class="muted">(0 tok, 135 ms)</span></td></tr>
+    </tbody>
+  </table>
+</body>
+</html>

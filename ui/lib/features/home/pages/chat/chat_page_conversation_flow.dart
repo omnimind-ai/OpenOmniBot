@@ -494,6 +494,12 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       return;
     }
 
+    final handledManualRecording = await _tryStartManualRecordingFromMessage(
+      messageText,
+      attachments: attachments,
+    );
+    if (handledManualRecording) return;
+
     if (_isOmniInferLocalModelSelected &&
         activeConversationModeValue != ConversationMode.chatOnly) {
       showToast(
@@ -1200,6 +1206,105 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     } finally {
       _isAwaitingAuthorizeResult = false;
     }
+  }
+
+  Future<bool> _tryStartManualRecordingFromMessage(
+    String messageText, {
+    required List<Map<String, dynamic>> attachments,
+  }) async {
+    if (attachments.isNotEmpty || !_isManualRecordingCommand(messageText)) {
+      return false;
+    }
+    await _startManualRecordingFlow(messageText);
+    return true;
+  }
+
+  @override
+  Future<void> _startManualRecordingFromShortcut() async {
+    if (_isAiResponding) return;
+    await _startManualRecordingFlow('录制轨迹');
+  }
+
+  Future<void> _startManualRecordingFlow(String messageText) async {
+    _inputFocusNode.unfocus();
+    final messageIds = addUserMessage(messageText);
+    _syncUserMessageLinkPreviews(messageIds.userMessageId);
+    showToast('开始手动录制。请执行操作，结束后点小万「完成学习」。');
+    unawaited(AppStateService.exitApp());
+    try {
+      final result = await AssistsMessageService.startHumanTrajectoryLearning();
+      if (!mounted) return;
+      _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
+      final success = result['success'] == true;
+      final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
+      showToast(
+        success ? '手动录制完成，RunLog 已生成' : '手动录制失败',
+        type: success ? ToastType.success : ToastType.error,
+      );
+      if (success && runId.trim().isNotEmpty && mounted) {
+        unawaited(
+          showRunLogTimelineSheet(
+            context,
+            runId: runId.trim(),
+            title: '手动录制 RunLog',
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _insertManualRecordingResultMessage(messageIds.aiMessageId, {
+        'success': false,
+        'error_message': error.toString(),
+      });
+      showToast(error.toString(), type: ToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isAiResponding = false);
+        _syncRuntimeSnapshotForMode(_activeMode);
+        unawaited(saveConversation());
+      }
+    }
+  }
+
+  bool _isManualRecordingCommand(String messageText) {
+    final normalized = messageText.trim().toLowerCase();
+    return normalized == '手动录制' ||
+        normalized == '开始手动录制' ||
+        normalized == '人工录制' ||
+        normalized == 'manual recording' ||
+        normalized == 'manual record';
+  }
+
+  void _insertManualRecordingResultMessage(
+    String messageId,
+    Map<String, dynamic> result,
+  ) {
+    final success = result['success'] == true;
+    final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
+    final actionCount = result['action_count'] ?? result['actionCount'] ?? 0;
+    final functionId = result['function_id'] ?? result['functionId'];
+    final errorMessage = result['error_message'] ?? result['errorMessage'];
+    final cardData = <String, dynamic>{
+      'type': 'manual_recording_result',
+      'cardId': messageId,
+      'success': success,
+      'runId': runId,
+      'run_id': runId,
+      'actionCount': actionCount,
+      'action_count': actionCount,
+      'functionId': functionId,
+      'function_id': functionId,
+      'summary': result['summary'],
+      'errorMessage': errorMessage,
+      'error_message': errorMessage,
+    }..removeWhere((_, value) => value == null || value.toString().isEmpty);
+    setState(() {
+      _messages.removeWhere((message) => message.id == messageId);
+      _messages.insert(
+        0,
+        ChatMessageModel.cardMessage(cardData, id: messageId),
+      );
+    });
   }
 
   @override

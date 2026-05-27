@@ -7,7 +7,7 @@ import org.junit.Test
 
 class VLMActionPostProcessorTest {
     @Test
-    fun `first step opens target package when foreground app differs`() {
+    fun `first step does not force open app when foreground package differs`() {
         val step = VLMStep(
             observation = "launcher",
             thought = "tap current page",
@@ -27,10 +27,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("target_package_not_foreground", result.reason)
-        val action = result.step.action as OpenAppAction
-        assertEquals("com.android.settings", action.packageName)
+        assertFalse(result.step.action is OpenAppAction)
+        assertFalse(result.reason == "target_package_not_foreground")
     }
 
     @Test
@@ -841,6 +839,37 @@ class VLMActionPostProcessorTest {
         assertTrue(action.targetDescription, action.targetDescription.contains("Wi-Fi", ignoreCase = true))
         assertTrue(action.x >= 560f)
         assertTrue(action.y in 590f..660f)
+    }
+
+    @Test
+    fun `converts get state loop on settings toggle page into visible target click`() {
+        val step = VLMStep(
+            observation = "bluetooth settings",
+            thought = "蓝牙可能仍在开启，刷新状态",
+            action = GetStateAction(
+                reason = "当前页面为蓝牙设置页，需确认蓝牙是否已开启或需要点击开启"
+            )
+        )
+
+        val result = VLMActionPostProcessor.correct(
+            step = step,
+            context = UIContext(
+                overallTask = "当前在设置首页。打开蓝牙。如果蓝牙已经开启，就直接完成。",
+                targetPackageName = "com.android.settings"
+            ),
+            currentXml = BLUETOOTH_SUBPAGE_WITH_CONNECTION_PREFERENCES_XML,
+            currentPackageName = "com.android.settings",
+            stepIndex = 2,
+            displayWidth = 720,
+            displayHeight = 1280
+        )
+
+        assertTrue(result.applied)
+        assertEquals("get_state_settings_toggle_target", result.reason)
+        val action = result.step.action as ClickAction
+        assertTrue(action.targetDescription, action.targetDescription.contains("Bluetooth", ignoreCase = true))
+        assertTrue(action.x >= 560f)
+        assertTrue(action.y in 850f..930f)
     }
 
     @Test
@@ -1988,6 +2017,27 @@ class VLMActionPostProcessorTest {
                     <node text="Network preferences" enabled="true" bounds="[48,718][419,772]" />
                     <node text="Wi-Fi turns back on automatically" enabled="true" bounds="[48,772][459,810]" />
                   </node>
+                </node>
+              </node>
+            </hierarchy>
+            """
+
+        private const val BLUETOOTH_SUBPAGE_WITH_CONNECTION_PREFERENCES_XML =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node content-desc="Navigate up" clickable="true" focusable="true" enabled="true" bounds="[0,48][112,160]" />
+                <node bounds="[0,406][720,1150]" class="androidx.recyclerview.widget.RecyclerView" scrollable="true" focusable="true" enabled="true">
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,406][720,562]">
+                    <node text="Pair new device" enabled="true" bounds="[144,438][423,492]" />
+                    <node text="Bluetooth will turn on to pair" enabled="true" bounds="[144,492][491,530]" />
+                  </node>
+                  <node text="Saved devices" enabled="true" bounds="[48,610][688,648]" />
+                  <node clickable="true" focusable="true" enabled="true" bounds="[0,820][720,976]">
+                    <node text="Connection preferences" enabled="true" bounds="[48,852][472,906]" />
+                    <node text="Bluetooth, Android Auto" enabled="true" bounds="[48,906][342,944]" />
+                  </node>
+                  <node text="Turn on Bluetooth to connect to other devices." enabled="true" bounds="[48,1064][618,1150]" />
                 </node>
               </node>
             </hierarchy>

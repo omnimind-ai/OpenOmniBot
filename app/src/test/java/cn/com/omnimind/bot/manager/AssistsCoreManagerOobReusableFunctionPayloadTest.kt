@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.manager
 
+import cn.com.omnimind.bot.vlm.VlmToolOutcome
+import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -101,6 +103,48 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
         assertEquals(2, context["step_count"])
         assertEquals(1, context["success_step_count"])
         assertEquals(timing, context["timing"])
+    }
+
+    @Test
+    fun `direct vlm fallback payload reports completed vlm status`() {
+        val stepResults = listOf<Map<*, *>>(
+            mapOf("tool" to "open_app", "success" to true),
+            mapOf("tool" to "input_text", "success" to false, "needs_agent" to true),
+        )
+        val payload = buildOobReusableFunctionVlmFallbackPayload(
+            functionId = "open_settings_then_vlm",
+            runId = "run-1",
+            vlmTaskId = "vlm-1",
+            outcome = VlmToolOutcome(
+                taskId = "vlm-1",
+                goal = "继续执行",
+                status = VlmToolOutcomeStatus.FINISHED,
+                message = "已完成",
+                needSummary = false,
+            ),
+            success = true,
+            runPayload = mapOf(
+                "runner" to "oob_mixed_runner",
+                "fallback_available" to true,
+            ),
+            stepResults = stepResults,
+            completedStepCount = 1,
+            pendingAgentStepCount = 1,
+            argumentCount = 0,
+        )
+
+        assertEquals(true, payload["success"])
+        assertEquals(
+            OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_VLM_FALLBACK,
+            payload["execution_status"]
+        )
+        val terminalState = payload["terminal_state"] as Map<*, *>
+        assertEquals("run-1", terminalState["taskId"])
+        assertEquals("vlm-1", terminalState["vlm_task_id"])
+        assertEquals(false, terminalState["model_required"])
+        assertEquals(true, terminalState["delegated_tool_used"])
+        assertEquals("FINISHED", terminalState["vlm_status"])
+        assertEquals(2, terminalState["success_step_count"])
     }
 
     @Test

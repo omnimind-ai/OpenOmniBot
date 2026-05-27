@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import android.provider.Settings
+import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.*
 import cn.com.omnimind.bot.agent.AgentCallback
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 
 class VlmToolHandler(
     private val helper: SharedHelper,
@@ -50,7 +52,7 @@ class VlmToolHandler(
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        return executeVlmTask(args, env.userMessage, env.attachments, env.runtimeContextRepository, env.currentPackageName, env.resolvedSkills, callback)
+        return executeVlmTask(args, env.userMessage, env.attachments, env.runtimeContextRepository, env.currentPackageName, env.resolvedSkills, callback, toolHandle)
     }
 
     private suspend fun executeVlmTask(
@@ -60,8 +62,13 @@ class VlmToolHandler(
         runtimeContextRepository: AgentRuntimeContextRepository,
         currentPackageName: String?,
         resolvedSkills: List<ResolvedSkillContext>,
-        callback: AgentCallback
+        callback: AgentCallback,
+        toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
+        val vlmTaskId = UUID.randomUUID().toString()
+        toolHandle.bindStopAction {
+            VlmToolCoordinator.cancelTask(vlmTaskId, scope)
+        }
         return try {
             helper.ensureRunActive()
             val goal = args["goal"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Missing goal")
@@ -77,7 +84,7 @@ class VlmToolHandler(
                 "disable_omniflow_recall",
                 "disableRecall",
                 "disable_recall"
-            ) ?: false
+            ) ?: true
             val allowOmniFlowFunctionAutoExecute = firstBoolean(
                 args,
                 "allowOmniFlowFunctionAutoExecute",
@@ -131,6 +138,7 @@ class VlmToolHandler(
                 OmniLog.w("VlmToolHandler", "vlm_task args corrected: reasons=${sanitized.reasons.joinToString(",")}")
             }
             helper.ensureRunActive()
+            AgentVlmUiSession.beginTask(toolHandle.runId, vlmTaskId)
             val outcome = VlmToolCoordinator.executeNewTask(
                 context = helper.context,
                 request = VlmTaskRequest(
@@ -146,11 +154,28 @@ class VlmToolHandler(
                     allowOmniFlowFunctionAutoExecute = safeArgs.allowOmniFlowFunctionAutoExecute
                 ),
                 scope = scope,
+                taskIdOverride = vlmTaskId,
+                returnOnWaitingInput = false,
                 progressReporter = { progress, extras ->
                     val streamKind = (extras["agentStreamKind"] ?: extras["kind"])
                         ?.toString()
                         ?.trim()
                         .orEmpty()
+                    val parentCardId = toolHandle.currentCardId()
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                    val traceExtras = linkedMapOf<String, Any?>().apply {
+                        putAll(extras)
+                        put("progress", progress)
+                        put("childRunId", vlmTaskId)
+                        put("child_run_id", vlmTaskId)
+                        put("parentSpanKind", "vlm_task")
+                        put("parent_span_kind", "vlm_task")
+                        parentCardId?.let {
+                            put("parentCardId", it)
+                            put("parent_card_id", it)
+                        }
+                    }
                     if (
                         streamKind == "tool_started" ||
                         streamKind == "tool_progress" ||
@@ -158,14 +183,21 @@ class VlmToolHandler(
                     ) {
                         callback.onToolCardEvent(
                             streamKind,
-                            extras + mapOf("progress" to progress)
+                            traceExtras + mapOf(
+                                "spanKind" to "vlm_step",
+                                "span_kind" to "vlm_step"
+                            )
                         )
                     } else {
                         helper.reportToolProgress(
                             callback,
                             "vlm_task",
                             progress,
-                            extras
+                            traceExtras + mapOf(
+                                "spanKind" to "vlm_task",
+                                "span_kind" to "vlm_task"
+                            ),
+                            toolHandle = toolHandle
                         )
                     }
                 }
@@ -201,8 +233,14 @@ class VlmToolHandler(
                     )
                 }
             }
-        } catch (e: CancellationException) { throw e }
-        catch (e: Exception) { ToolExecutionResult.Error("vlm_task", helper.localized(e.message ?: "Unknown error")) }
+        } catch (e: CancellationException) {
+            VlmToolCoordinator.cancelTask(vlmTaskId, scope)
+            throw e
+        } catch (e: Exception) {
+            ToolExecutionResult.Error("vlm_task", helper.localized(e.message ?: "Unknown error"))
+        } finally {
+            AgentVlmUiSession.endTask(vlmTaskId)
+        }
     }
 
     private fun sanitizeVlmExecutionArgs(
@@ -214,7 +252,18 @@ class VlmToolHandler(
         var startFromCurrent = rawArgs.startFromCurrent
         var packageName = rawArgs.packageName?.trim()?.takeIf { it.isNotEmpty() }
         val reasons = mutableListOf<String>()
-        val openAppIntent = isLikelyOpenAppIntent(userMessage) || isLikelyOpenAppIntent(rawArgs.goal)
+        var goal = rawArgs.goal
+        val rawGoalOpenOnly = isLikelyOpenAppIntent(rawArgs.goal)
+        val userHasFullDeviceGoal = hasScreenAutomationIntent(
+            userMessage,
+            rawArgs.copy(packageName = null, startFromCurrent = false),
+            detectedTargetPackage = null
+        )
+        if (rawGoalOpenOnly && userHasFullDeviceGoal && !sameNormalizedIntent(userMessage, rawArgs.goal)) {
+            goal = userMessage.trim().takeIf { it.isNotEmpty() } ?: rawArgs.goal
+            reasons.add("open_app_goal_expanded_to_user_goal")
+        }
+        val openAppIntent = isLikelyOpenAppIntent(userMessage) || rawGoalOpenOnly
         val detectedTargetPackage = detectTargetAppPackage(userMessage, appNameToPackage) ?: detectTargetAppPackage(rawArgs.goal, appNameToPackage)
         if (packageName == null && openAppIntent && detectedTargetPackage != null) {
             packageName = detectedTargetPackage
@@ -226,7 +275,14 @@ class VlmToolHandler(
         if (startFromCurrent && openAppIntent) { startFromCurrent = false; reasons.add("open_app_should_not_start_from_current") }
         if (startFromCurrent && targetPackage != null && currentPackage != null && targetPackage != currentPackage) { startFromCurrent = false; reasons.add("target_package_differs_from_current_package") }
         if (startFromCurrent && currentPackage == assistantPackage && targetPackage != null && targetPackage != assistantPackage) { startFromCurrent = false; reasons.add("assistant_page_cannot_start_external_app_from_current") }
-        return VlmArgsSanitizeResult(args = rawArgs.copy(packageName = packageName, startFromCurrent = startFromCurrent), reasons = reasons.distinct())
+        return VlmArgsSanitizeResult(
+            args = rawArgs.copy(
+                goal = goal,
+                packageName = packageName,
+                startFromCurrent = startFromCurrent
+            ),
+            reasons = reasons.distinct()
+        )
     }
 
     private fun firstInt(args: JsonObject, vararg keys: String): Int? {
@@ -306,8 +362,16 @@ class VlmToolHandler(
         val openVerbs = listOf("打开", "启动", "进入", "点开")
         val hasOpenVerb = openVerbs.any { normalized.contains(it) }
         if (!hasOpenVerb) return false
-        val followUpActionWords = listOf("搜索", "发送", "回复", "聊天", "下单", "支付", "付款", "购买", "浏览", "查看", "看看", "总结", "答题", "填写", "输入", "点击", "并", "然后", "再", "之后", "顺便")
+        val followUpActionWords = listOf(
+            "搜索", "发送", "回复", "聊天", "下单", "支付", "付款", "购买", "浏览", "查看", "看看",
+            "总结", "答题", "填写", "输入", "点击", "点一", "点杯", "点餐", "点单", "帮我", "替我",
+            "订购", "预订", "预约", "买", "并", "然后", "再", "之后", "顺便"
+        )
         return followUpActionWords.none { normalized.contains(it) }
+    }
+
+    private fun sameNormalizedIntent(left: String, right: String): Boolean {
+        return normalizeIntentText(left) == normalizeIntentText(right)
     }
 
     private fun normalizeIntentText(text: String): String {
@@ -352,6 +416,7 @@ class VlmToolHandler(
             "点击", "点一下", "点开", "滑动", "下滑", "上滑", "输入", "填写", "选择", "勾选",
             "返回", "发送", "回复", "发布", "下单", "支付", "购买",
             "操控", "操作", "控制", "自动执行", "帮我在手机", "帮我操作", "替我操作",
+            "帮我", "替我", "点一", "点杯", "点餐", "点单", "订购", "预订", "预约", "买",
             "tap", "click", "swipe", "scroll", "type", "enter", "select",
             "send", "reply", "post", "pay", "buy", "control", "operate"
         )

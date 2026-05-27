@@ -20,16 +20,29 @@ class AgentToolSummaryCard extends StatelessWidget {
   final ScrollController? parentScrollController;
   final AppBackgroundVisualProfile visualProfile;
 
+  static const double _compactMaxWidthFactor = 0.84;
+  static const double _compactMaxWidth = 360;
+  static const double _compactMinWidth = 252;
+  static const double _compactRadius = 10;
+
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final status = (cardData['status'] ?? 'running').toString();
-    final title = resolveAgentToolTitle(cardData, locale: locale);
+    final resolvedTitle = resolveAgentToolTitle(cardData, locale: locale);
+    final summaryTitle = resolveAgentToolSummaryText(cardData, locale: locale);
+    final activityKind = AgentToolCardPolicy.activityKindFor(cardData);
+    final title =
+        _summaryCardPrefersSummary(activityKind) && summaryTitle.isNotEmpty
+        ? summaryTitle
+        : resolvedTitle;
     final statusLabel = resolveAgentToolStatusLabel(cardData, locale: locale);
     final preview = resolveAgentToolPreview(cardData, locale: locale);
-    final typeLabel = resolveAgentToolTypeLabel(cardData, locale: locale);
     final statusColor = resolveAgentToolStatusColor(status);
     final runLogRef = AgentToolCardPolicy.runLogRef(cardData);
+    final isVlmTaskWrapper =
+        activityKind == AgentToolActivityKind.vlm &&
+        (cardData['toolName'] ?? '').toString().trim() == 'vlm_task';
     final palette = context.omniPalette;
     final cardBackgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
@@ -56,6 +69,13 @@ class AgentToolSummaryCard extends StatelessWidget {
     final titleColor = context.isDarkTheme
         ? palette.textPrimary
         : visualProfile.primaryTextColor;
+    final availableCardWidth =
+        MediaQuery.of(context).size.width * _compactMaxWidthFactor;
+    final cardWidth = availableCardWidth < _compactMinWidth
+        ? availableCardWidth
+        : availableCardWidth
+              .clamp(_compactMinWidth, _compactMaxWidth)
+              .toDouble();
 
     final tooltipLines = <String>[title];
     if (preview.isNotEmpty && preview != title) {
@@ -68,24 +88,36 @@ class AgentToolSummaryCard extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-            minHeight: 34,
+            minWidth: cardWidth,
+            maxWidth: cardWidth,
+            minHeight: 38,
           ),
           child: Container(
             margin: const EdgeInsets.only(top: 6, bottom: 2),
             child: Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(_compactRadius),
               clipBehavior: Clip.antiAlias,
               child: Ink(
                 decoration: BoxDecoration(
                   color: cardBackgroundColor,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(_compactRadius),
                   border: Border.all(color: cardBorderColor),
                 ),
                 child: InkWell(
                   onTap: () {
-                    if (runLogRef.hasStep) {
+                    if (isVlmTaskWrapper && runLogRef.hasRunLog) {
+                      unawaited(
+                        showRunLogTimelineSheet(
+                          context,
+                          runId: runLogRef.runLogId,
+                          title: resolveAgentToolTitle(
+                            cardData,
+                            locale: locale,
+                          ),
+                        ),
+                      );
+                    } else if (runLogRef.hasStep) {
                       unawaited(
                         showRunLogStepDetailSheet(
                           context,
@@ -114,9 +146,9 @@ class AgentToolSummaryCard extends StatelessWidget {
                       );
                     }
                   },
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(_compactRadius),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+                    padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -140,25 +172,10 @@ class AgentToolSummaryCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusTagBackgroundColor,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            status == 'running' ? typeLabel : statusLabel,
-                            style: TextStyle(
-                              color: statusTagTextColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0,
-                              height: 1,
-                            ),
-                          ),
+                        _SummaryTag(
+                          label: statusLabel,
+                          backgroundColor: statusTagBackgroundColor,
+                          textColor: statusTagTextColor,
                         ),
                       ],
                     ),
@@ -167,6 +184,46 @@ class AgentToolSummaryCard extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+bool _summaryCardPrefersSummary(AgentToolActivityKind? kind) {
+  return kind == AgentToolActivityKind.vlm ||
+      kind == AgentToolActivityKind.research ||
+      kind == AgentToolActivityKind.generic ||
+      kind == AgentToolActivityKind.workbench;
+}
+
+class _SummaryTag extends StatelessWidget {
+  const _SummaryTag({
+    required this.label,
+    required this.backgroundColor,
+    required this.textColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          height: 1,
         ),
       ),
     );

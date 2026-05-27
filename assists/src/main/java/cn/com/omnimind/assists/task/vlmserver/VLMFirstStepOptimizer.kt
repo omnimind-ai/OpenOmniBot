@@ -20,14 +20,6 @@ object VLMFirstStepOptimizer {
         stepIndex: Int
     ): UIContext {
         val currentPackage = currentPackageName?.trim().orEmpty()
-        if (stepIndex != 0 || context.trace.isNotEmpty()) {
-            return context.copy(
-                currentPackageName = currentPackage,
-                currentPageSummary = "",
-                firstStepGuidance = ""
-            )
-        }
-
         val page = parsePage(currentXml)
         val goalText = firstNonBlank(context.activeGoal(), context.overallTask)
         val goalMatches = findGoalMatches(goalText, page)
@@ -35,20 +27,26 @@ object VLMFirstStepOptimizer {
             page = page,
             currentPackage = currentPackage,
             targetPackage = context.targetPackageName,
-            goalMatches = goalMatches
-        )
-        val firstStepGuidance = buildFirstStepGuidance(
-            currentPackage = currentPackage,
-            targetPackage = context.targetPackageName,
-            goalText = goalText,
             goalMatches = goalMatches,
-            hasPageSignal = page.hasSignals,
-            hasScrollable = page.hasScrollable
+            xmlLength = currentXml?.length ?: 0
         )
+        val isFirstTurn = stepIndex == 0 && context.trace.isEmpty()
+        val firstStepGuidance = if (isFirstTurn) {
+            buildFirstStepGuidance(
+                currentPackage = currentPackage,
+                targetPackage = context.targetPackageName,
+                goalText = goalText,
+                goalMatches = goalMatches,
+                hasPageSignal = page.hasSignals,
+                hasScrollable = page.hasScrollable
+            )
+        } else {
+            ""
+        }
         runCatching {
             OmniLog.d(
                 TAG,
-                "first-step context enriched: currentPackage=$currentPackage " +
+                "current page context enriched: step=$stepIndex currentPackage=$currentPackage " +
                     "targetPackage=${context.targetPackageName} " +
                     "pageSignals=${page.hasSignals} summaryChars=${pageSummary.length} " +
                     "guidanceChars=${firstStepGuidance.length}"
@@ -65,13 +63,16 @@ object VLMFirstStepOptimizer {
         page: PageSignals,
         currentPackage: String,
         targetPackage: String,
-        goalMatches: List<String>
+        goalMatches: List<String>,
+        xmlLength: Int
     ): String {
         val lines = mutableListOf<String>()
         if (currentPackage.isNotBlank()) {
+            lines += "app_info: package_name=$currentPackage"
             lines += "前台包名: $currentPackage"
         }
         if (targetPackage.isNotBlank()) {
+            lines += "app_info: target_package=$targetPackage"
             lines += "目标包名: $targetPackage"
         }
         if (goalMatches.isNotEmpty()) {
@@ -91,6 +92,14 @@ object VLMFirstStepOptimizer {
         if (capabilities.isNotEmpty()) {
             lines += "页面能力: ${capabilities.joinToString(" / ")}"
         }
+        if (page.hasSignals || xmlLength > 0) {
+            val parts = buildList {
+                if (page.visibleTexts.isNotEmpty()) add("visible_texts=${page.visibleTexts.size}")
+                if (page.actionableLabels.isNotEmpty()) add("actionables=${page.actionableLabels.size}")
+                if (xmlLength > 0) add("xml_length=$xmlLength")
+            }
+            lines += "page/xml: ${parts.joinToString(", ").ifBlank { "captured" }}"
+        }
         return lines.joinToString("\n").take(MAX_SUMMARY_CHARS)
     }
 
@@ -102,13 +111,8 @@ object VLMFirstStepOptimizer {
         hasPageSignal: Boolean,
         hasScrollable: Boolean
     ): String {
-        val normalizedCurrent = currentPackage.trim()
         val normalizedTarget = targetPackage.trim()
         return when {
-            normalizedTarget.isNotBlank() &&
-                !normalizedCurrent.equals(normalizedTarget, ignoreCase = true) ->
-                "首步策略: 当前前台不是目标应用，优先调用 open_app(package_name=$normalizedTarget)，不要猜其他包名，也不要先点当前页控件。"
-
             wantsScroll(goalText) ->
                 "首步策略: 用户明确要求滑动/滚动，优先对当前可滚动区域执行 scroll；不要改点首个列表项。"
 
@@ -117,9 +121,9 @@ object VLMFirstStepOptimizer {
 
             normalizedTarget.isNotBlank() ->
                 if (hasScrollable) {
-                    "首步策略: 目标应用已在前台，不要重复 open_app；先按用户任务匹配首屏文本。若目标文本不在首屏，优先使用较大幅度 scroll（从可滚动区域下部滑到中上部）或搜索，不要短滑，也不要点击无关的首个列表项。"
+                    "首步策略: 已捕捉到当前页面；不要仅因前台包名和目标包名不一致就重复 open_app。先按当前截图/XML匹配用户任务。若目标文本不在首屏，优先使用较大幅度 scroll（从可滚动区域下部滑到中上部）、搜索或 get_state，不要短滑，也不要点击无关的首个列表项。"
                 } else {
-                    "首步策略: 目标应用已在前台，不要重复 open_app；先按用户任务匹配首屏文本。若目标文本不在首屏，优先搜索，不要点击无关的首个列表项。"
+                    "首步策略: 已捕捉到当前页面；不要仅因前台包名和目标包名不一致就重复 open_app。先按当前截图/XML匹配用户任务。若目标文本不在首屏，优先搜索或 get_state，不要点击无关的首个列表项。"
                 }
 
             hasPageSignal ->

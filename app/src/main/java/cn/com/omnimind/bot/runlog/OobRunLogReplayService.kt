@@ -50,16 +50,6 @@ class OobRunLogReplayService(
                 runId = normalizedRunId
             )
         }
-        if (record.success != true) {
-            return errorPayload(
-                code = "RUN_LOG_NOT_SUCCESSFUL",
-                message = record.errorMessage.ifBlank {
-                    "Only successful RunLogs can be registered for deterministic replay"
-                },
-                runId = normalizedRunId
-            )
-        }
-
         val compiled = RunLogReusableFunctionCompiler.compile(record)
             ?: return errorPayload(
                 code = "RUN_LOG_NO_REPLAYABLE_STEPS",
@@ -321,7 +311,6 @@ class OobRunLogReplayService(
 
     private fun autoRegisterSkipReason(record: InternalRunLogRecord): String? {
         if (record.finishedAtMs == null) return "unfinished"
-        if (record.success != true) return "not_successful"
         if (record.cards.isEmpty()) return "empty"
         return null
     }

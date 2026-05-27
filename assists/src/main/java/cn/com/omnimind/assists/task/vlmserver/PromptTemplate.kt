@@ -130,7 +130,7 @@ object PromptTemplate {
                 appendLine(priorityEventSection)
             }
             if (context.currentPageSummary.isNotBlank() || context.firstStepGuidance.isNotBlank()) {
-                appendLine("${t(locale, "首步页面上下文", "First-step page context")}:")
+                appendLine("${t(locale, "当前页面上下文", "Current page context")}:")
                 if (context.currentPageSummary.isNotBlank()) {
                     appendLine(context.currentPageSummary)
                 }
@@ -151,6 +151,13 @@ object PromptTemplate {
                     locale,
                     "遵守 system 协议：每轮恰好一个原生 tool_call；坐标必须是 0-1000 单个数值；优先使用 indexed evidence 的 element_index/scrollable_index；只有当前截图或工具结果证明任务已完成才调用 finished；不要输出等待/空操作。",
                     "Follow the system protocol: exactly one native tool_call; coordinates are 0-1000 scalar values; prefer indexed evidence element_index/scrollable_index; call finished only when the current screenshot or tool result proves completion; do not output wait/no-op actions."
+                )
+            )
+            appendLine(
+                t(
+                    locale,
+                    "如果截图是黑屏/空白，但 Accessibility tree、indexed evidence、visible_texts 或 get_state 结果包含当前页面和目标控件，请把这些文本树证据视为当前页面证据并继续 click/swipe/type；同一未变化页面不要仅因黑屏连续调用 get_state。",
+                    "If the screenshot is black/blank but the Accessibility tree, indexed evidence, visible_texts, or get_state result contains the current page and target control, treat that tree/text evidence as current-page evidence and continue with click/swipe/type; do not repeatedly call get_state on the same unchanged page solely because the image is black."
                 )
             )
         }.trim()

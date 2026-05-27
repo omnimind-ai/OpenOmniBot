@@ -1197,13 +1197,6 @@ class OobOmniFlowToolkitService(
             errorMessage = firstNonBlank(resultMap["error"], runLog["error_message"]),
             cards = cards,
         )
-        if (record.success != true) {
-            return errorPayload(
-                code = "RUN_LOG_NOT_SUCCESSFUL",
-                message = "Only successful RunLogs can be ingested",
-                functionId = ""
-            )
-        }
         val spec = RunLogReusableFunctionCompiler.compile(record)
             ?: return errorPayload(
                 code = "RUN_LOG_NO_REPLAYABLE_STEPS",
@@ -2298,6 +2291,12 @@ class OobOmniFlowToolkitService(
         val reason: String
         val requiresRoot: Boolean
         when {
+            RunLogReplayPolicy.shouldSkipTool(tool) || RunLogReplayPolicy.shouldSkipTool(action) -> {
+                decision = "allow"
+                risk = "low"
+                reason = "$action is an observation-only or legacy non-semantic replay step"
+                requiresRoot = false
+            }
             action == "finished" -> {
                 decision = "allow"
                 risk = "low"

@@ -32,24 +32,38 @@ object DraggableBallInstance {
 
     private const val TAG = "DraggableBallInstance"
 
-    fun getInstance(): DraggableBallLoader? {
+    fun getInstance(preferApplicationOverlay: Boolean = false): DraggableBallLoader? {
         val accessibilityService = AssistsService.instance
-        val context = accessibilityService ?: UIKit.appContext ?: return null
+        val useAccessibilityOverlay = accessibilityService != null && !preferApplicationOverlay
+        val context = if (useAccessibilityOverlay) {
+            accessibilityService
+        } else {
+            UIKit.appContext ?: accessibilityService
+        } ?: return null
         return dragBall ?: synchronized(this) {
+            val current = dragBall
+            if (current != null && current.useAccessibilityOverlay != useAccessibilityOverlay) {
+                current.destroy()
+                dragBall = null
+            }
             dragBall ?: DraggableBallLoader(
-                context,
-                useAccessibilityOverlay = accessibilityService != null,
-                UIKit.catLayoutApi,
-                UIKit.menuApi,
-                UIKit.catApi,
-                UIKit.catStepLayoutApi
-            ).also { dragBall = it }
+                    context,
+                    useAccessibilityOverlay = useAccessibilityOverlay,
+                    UIKit.catLayoutApi,
+                    UIKit.menuApi,
+                    UIKit.catApi,
+                    UIKit.catStepLayoutApi
+                )
+                .also { dragBall = it }
         }
     }
 
-    private fun refreshOverlayContextIfAccessibilityStateChanged() {
+    private fun refreshOverlayContextIfAccessibilityStateChanged(
+        preferApplicationOverlay: Boolean = false
+    ) {
         val current = dragBall ?: return
-        val shouldUseAccessibilityOverlay = AssistsService.instance != null
+        val shouldUseAccessibilityOverlay =
+            AssistsService.instance != null && !preferApplicationOverlay
         if (current.useAccessibilityOverlay == shouldUseAccessibilityOverlay) {
             return
         }
@@ -59,10 +73,20 @@ object DraggableBallInstance {
     /**
      * 加载小猫
      */
-    fun loadBall(): Boolean {
-        refreshOverlayContextIfAccessibilityStateChanged()
-        val instance = getInstance() ?: return false
+    fun loadBall(preferApplicationOverlay: Boolean = false): Boolean {
+        refreshOverlayContextIfAccessibilityStateChanged(preferApplicationOverlay)
+        val instance = getInstance(preferApplicationOverlay) ?: return false
         instance.loadBall()
+        if (!preferApplicationOverlay &&
+            instance.useAccessibilityOverlay &&
+            !instance.isAttachedToWindow
+        ) {
+            OmniLog.w(TAG, "loadBall accessibility overlay failed; retrying application overlay")
+            destroy()
+            val fallback = getInstance(preferApplicationOverlay = true) ?: return false
+            fallback.loadBall()
+            return fallback.isAttachedToWindow
+        }
         return instance.isAttachedToWindow
     }
 
@@ -74,6 +98,29 @@ object DraggableBallInstance {
         dragBall?.catView?.post {
             dragBall?.catView?.refreshPetAppearance()
         }
+    }
+
+    private fun getLoadedInstance(
+        preferApplicationOverlay: Boolean = false
+    ): DraggableBallLoader? {
+        refreshOverlayContextIfAccessibilityStateChanged(preferApplicationOverlay)
+        val instance = getInstance(preferApplicationOverlay) ?: return null
+        if (!instance.isAttachedToWindow) {
+            instance.loadBall()
+        }
+        if (!preferApplicationOverlay &&
+            instance.useAccessibilityOverlay &&
+            !instance.isAttachedToWindow
+        ) {
+            OmniLog.w(TAG, "getLoadedInstance accessibility overlay failed; retrying application overlay")
+            destroy()
+            val fallback = getInstance(preferApplicationOverlay = true) ?: return null
+            if (!fallback.isAttachedToWindow) {
+                fallback.loadBall()
+            }
+            return fallback.takeIf { it.isAttachedToWindow }
+        }
+        return instance.takeIf { it.isAttachedToWindow }
     }
 
     /**
@@ -94,7 +141,7 @@ object DraggableBallInstance {
      */
     fun readyDoingTask(message: String) {
         resetTaskCompletionHintState()
-        val instance = getInstance() ?: return
+        val instance = getLoadedInstance() ?: return
         CancelClickLoader.cancelIntercepting()
         instance.collapseMenu()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
@@ -130,7 +177,7 @@ object DraggableBallInstance {
         message: String, subMessage: String
     ) {
         resetTaskCompletionHintState()
-        val instance = getInstance() ?: return
+        val instance = getLoadedInstance() ?: return
         CancelClickLoader.cancelIntercepting()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
@@ -168,9 +215,15 @@ object DraggableBallInstance {
 
     }
 
-    fun setDoing(message: String, isShowTakeOver: Boolean = true) {
+    fun setDoing(
+        message: String,
+        isShowTakeOver: Boolean = true,
+        subMessage: String? = null,
+        isShowStop: Boolean = true,
+        preferApplicationOverlay: Boolean = false
+    ) {
         resetTaskCompletionHintState()
-        val instance = getInstance() ?: return
+        val instance = getLoadedInstance(preferApplicationOverlay) ?: return
         CancelClickLoader.cancelIntercepting()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
@@ -206,7 +259,82 @@ object DraggableBallInstance {
             layoutParams = instance.catDialogShowInfoViewParams,
             catDialogShowInfoView = instance.catDialogShowInfoView,
             windowManager = instance.getWindowManager(),
-            isShowTakeOver = isShowTakeOver
+            isShowTakeOver = isShowTakeOver,
+            isShowStop = isShowStop,
+            subMessage = subMessage
+        )
+    }
+
+    fun learningTask(
+        message: String,
+        subMessage: String,
+        preferApplicationOverlay: Boolean = false
+    ) {
+        resetTaskCompletionHintState()
+        val instance = getLoadedInstance(preferApplicationOverlay) ?: return
+        CancelClickLoader.cancelIntercepting()
+        instance.catView.setViewState(DraggableViewState.DOING_TASK)
+        instance.collapseMenu()
+        val needsAttach = !instance.catDialogShowInfoView.isAttachedToWindow
+        val needsFreshLearningLayout =
+            needsAttach ||
+                instance.catDialogShowInfoView.visibility != View.VISIBLE ||
+                CatDialogStateData.viewState == CatDialogViewState.TASK_DOING
+        if (needsFreshLearningLayout) {
+            CatDialogStateData.viewState = CatDialogViewState.EMPTY
+        }
+        instance.catDialogShowInfoViewParams.flags = WindowFlag.SCREEN_LOCK_FLAG
+        if (CatDialogStateData.viewState == CatDialogViewState.EMPTY || needsAttach) {
+            instance.catDialogShowInfoViewParams = instance.getParams(WindowFlag.SCREEN_LOCK_FLAG)
+            val (x, y) = CatDialogStateData.getDoingTaskXY()
+            val (w, h) = CatDialogStateData.getTaskDoingWH()
+            instance.catDialogShowInfoViewParams.y = y
+            instance.catDialogShowInfoViewParams.x = x
+            instance.catDialogShowInfoViewParams.width = w
+            instance.catDialogShowInfoViewParams.height = h
+            instance.catDialogShowInfoView.visibility = View.VISIBLE
+            if (instance.catDialogShowInfoView.isAttachedToWindow) {
+                instance.catDialogShowInfoView.cancelAnimations()
+                instance.getWindowManager().removeView(instance.catDialogShowInfoView)
+            }
+            try {
+                instance.getWindowManager()
+                    .addView(instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams)
+            } catch (e: BadTokenException) {
+                OmniLog.e(TAG, "learningTask addView BadTokenException: ${e.message}")
+                return
+            }
+        } else {
+            val (x, y) = CatDialogStateData.getDoingTaskXY()
+            val (w, h) = CatDialogStateData.getTaskDoingWH()
+            instance.catDialogShowInfoViewParams.x = x
+            instance.catDialogShowInfoViewParams.y = y
+            instance.catDialogShowInfoViewParams.width = w
+            instance.catDialogShowInfoViewParams.height = h
+            instance.catDialogShowInfoView.visibility = View.VISIBLE
+            try {
+                instance.getWindowManager()
+                    .updateViewLayout(
+                        instance.catDialogShowInfoView,
+                        instance.catDialogShowInfoViewParams
+                    )
+            } catch (e: IllegalArgumentException) {
+                OmniLog.e(TAG, "learningTask updateViewLayout skipped: ${e.message}")
+            }
+        }
+        OmniLog.d(
+            TAG,
+            "learningTask overlay visible x=${instance.catDialogShowInfoViewParams.x} " +
+                "y=${instance.catDialogShowInfoViewParams.y} " +
+                "w=${instance.catDialogShowInfoViewParams.width} " +
+                "h=${instance.catDialogShowInfoViewParams.height}"
+        )
+        instance.catDialogShowInfoView.learningTask(
+            message = message,
+            subMessage = subMessage,
+            layoutParams = instance.catDialogShowInfoViewParams,
+            catDialogShowInfoView = instance.catDialogShowInfoView,
+            windowManager = instance.getWindowManager()
         )
     }
 
@@ -216,7 +344,7 @@ object DraggableBallInstance {
     fun pauseTask(message: String) {
         resetTaskCompletionHintState()
         // 取消待执行的动画任务
-        val instance = getInstance() ?: return
+        val instance = getLoadedInstance() ?: return
         CancelClickLoader.cancelIntercepting()
         instance.catDialogShowInfoView.cancelAnimations()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
@@ -237,7 +365,7 @@ object DraggableBallInstance {
     ): Boolean {
         resetTaskCompletionHintState()
         // 取消待执行的动画任务
-        val instance = getInstance() ?: return false
+        val instance = getLoadedInstance() ?: return false
         CancelClickLoader.cancelIntercepting()
         instance.catDialogShowInfoView.cancelAnimations()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)

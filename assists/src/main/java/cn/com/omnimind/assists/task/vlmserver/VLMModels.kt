@@ -25,7 +25,9 @@ data class ClickAction(
     var x: Float,
     var y: Float,
     @SerialName("element_index")
-    val elementIndex: Int? = null
+    val elementIndex: Int? = null,
+    @SerialName("node_id")
+    val nodeId: String? = null
 ) : UIAction()
 
 @Serializable
@@ -45,7 +47,9 @@ data class InputTextAction(
     var x: Float,
     var y: Float,
     @SerialName("element_index")
-    val elementIndex: Int? = null
+    val elementIndex: Int? = null,
+    @SerialName("node_id")
+    val nodeId: String? = null
 ) : UIAction()
 
 @Serializable
@@ -73,7 +77,9 @@ data class LongPressAction(
     var x: Float,
     var y: Float,
     @SerialName("element_index")
-    val elementIndex: Int? = null
+    val elementIndex: Int? = null,
+    @SerialName("node_id")
+    val nodeId: String? = null
 ) : UIAction()
 
 @Serializable
@@ -195,7 +201,9 @@ data class UIStep(
     @SerialName("token_usage")
     val tokenUsage: VLMTokenUsage? = null,
     @SerialName("token_usage_attempts")
-    val tokenUsageAttempts: List<VLMTokenUsage> = emptyList()
+    val tokenUsageAttempts: List<VLMTokenUsage> = emptyList(),
+    @SerialName("page_diagnostics")
+    val pageDiagnostics: Map<String, String> = emptyMap()
 )
 
 @Serializable
@@ -255,6 +263,8 @@ data class UIContext(
     val currentPageSummary: String = "",
     @SerialName("first_step_guidance")
     val firstStepGuidance: String = "",
+    @SerialName("page_diagnostics")
+    val pageDiagnostics: Map<String, String> = emptyMap(),
     val trace: List<UIStep> = emptyList(),
     @SerialName("key_memory")
     val keyMemory: List<String> = emptyList(),

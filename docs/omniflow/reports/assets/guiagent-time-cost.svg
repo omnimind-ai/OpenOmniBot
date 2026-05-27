@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="424" viewBox="0 0 1120 424" role="img" aria-label="本地 replay / recall 用时">
+<style>
+text{font-family:Inter,Arial,sans-serif;fill:#17202a} .muted{fill:#5f6b7a} .title{font-size:26px;font-weight:800} .subtitle{font-size:14px} .label{font-size:13px}.value{font-size:13px;font-weight:700}.axis{stroke:#dce3ea;stroke-width:1}.bar-bg{fill:#edf1f5}
+</style>
+<rect width="100%" height="100%" rx="8" fill="#ffffff"/>
+<text x="24" y="36" class="title">本地 replay / recall 用时</text>
+<text x="24" y="62" class="subtitle muted">本地执行有时间成本，但没有模型 token 成本。</text>
+<line x1="230" y1="78" x2="970" y2="78" class="axis"/>
+<text x="24" y="111" class="label">5554 Display replay</text>
+<rect x="230" y="96" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="96" width="506.3" height="20" rx="5" fill="#147a52"/>
+<text x="984" y="111" class="value">7,105 ms</text>
+<text x="24" y="153" class="label">5556 Network replay</text>
+<rect x="230" y="138" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="138" width="339.8" height="20" rx="5" fill="#147a52"/>
+<text x="984" y="153" class="value">4,768 ms</text>
+<text x="24" y="195" class="label">5556 Display replay</text>
+<rect x="230" y="180" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="180" width="740.0" height="20" rx="5" fill="#147a52"/>
+<text x="984" y="195" class="value">10,384 ms</text>
+<text x="24" y="237" class="label">5554 Display v2 replay</text>
+<rect x="230" y="222" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="222" width="406.6" height="20" rx="5" fill="#147a52"/>
+<text x="984" y="237" class="value">5,706 ms</text>
+<text x="24" y="279" class="label">5556 Clock replay</text>
+<rect x="230" y="264" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="264" width="212.6" height="20" rx="5" fill="#147a52"/>
+<text x="984" y="279" class="value">2,983 ms</text>
+<text x="24" y="321" class="label">5554 UDEG recall E2E</text>
+<rect x="230" y="306" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="306" width="532.9" height="20" rx="5" fill="#5f6b7a"/>
+<text x="984" y="321" class="value">7,478 ms</text>
+<text x="24" y="363" class="label">5556 segment_hit E2E</text>
+<rect x="230" y="348" width="740" height="20" rx="5" class="bar-bg"/>
+<rect x="230" y="348" width="559.7" height="20" rx="5" fill="#5f6b7a"/>
+<text x="984" y="363" class="value">7,854 ms</text>
+</svg>

@@ -845,14 +845,24 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       if (rawCardData == null || !AgentToolCardPolicy.isToolCard(rawCardData)) {
         continue;
       }
+      final embeddedStreamMeta = AgentToolCardPolicy.asStringMap(
+        rawCardData['streamMeta'],
+      );
       final cardTaskId = _firstNonEmpty([
-        rawCardData['taskId'],
         message.streamMeta?['parentTaskId'],
+        embeddedStreamMeta['parentTaskId'],
+        rawCardData['taskId'],
       ]);
       if (cardTaskId != normalizedTaskId) {
         continue;
       }
-      if ((rawCardData['status'] ?? '').toString() != 'running') {
+      final normalizedStatus = AgentToolCardPolicy.normalizeStatus(
+        rawCardData['status'],
+        fallback: '',
+      );
+      if (normalizedStatus != 'running' &&
+          normalizedStatus != 'pending' &&
+          normalizedStatus != 'progress') {
         continue;
       }
       // Terminal and browser tools manage their own streaming lifecycle;

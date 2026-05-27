@@ -22,12 +22,13 @@ class VLMFirstStepOptimizerTest {
         assertTrue(enriched.currentPageSummary.contains("前台包名: com.example.chat"))
         assertTrue(enriched.currentPageSummary.contains("发送"))
         assertTrue(enriched.currentPageSummary.contains("存在输入框"))
-        assertTrue(enriched.firstStepGuidance.contains("目标应用已在前台"))
-        assertTrue(enriched.firstStepGuidance.contains("不要重复 open_app"))
+        assertTrue(enriched.currentPageSummary.contains("app_info: package_name=com.example.chat"))
+        assertTrue(enriched.firstStepGuidance.contains("不要仅因前台包名和目标包名不一致就重复 open_app"))
+        assertTrue(enriched.firstStepGuidance.contains("当前截图/XML"))
     }
 
     @Test
-    fun `first step prefers opening target package when current package differs`() {
+    fun `first step uses current page evidence when current package differs`() {
         val context = UIContext(
             overallTask = "打开聊天应用发送消息",
             targetPackageName = "com.example.chat"
@@ -40,8 +41,11 @@ class VLMFirstStepOptimizerTest {
             stepIndex = 0
         )
 
-        assertTrue(enriched.firstStepGuidance.contains("open_app(package_name=com.example.chat)"))
-        assertTrue(enriched.firstStepGuidance.contains("不要猜其他包名"))
+        assertTrue(enriched.currentPageSummary.contains("app_info: package_name=com.android.launcher"))
+        assertTrue(enriched.currentPageSummary.contains("app_info: target_package=com.example.chat"))
+        assertTrue(enriched.currentPageSummary.contains("page/xml:"))
+        assertTrue(enriched.firstStepGuidance.contains("不要仅因前台包名和目标包名不一致就重复 open_app"))
+        assertTrue(enriched.firstStepGuidance.contains("当前截图/XML"))
     }
 
     @Test
@@ -120,7 +124,7 @@ class VLMFirstStepOptimizerTest {
 
 
     @Test
-    fun `clears first step hints after first turn`() {
+    fun `refreshes current page summary after first turn`() {
         val context = UIContext(
             overallTask = "给张三发送消息",
             targetPackageName = "com.example.chat",
@@ -142,7 +146,8 @@ class VLMFirstStepOptimizerTest {
             stepIndex = 1
         )
 
-        assertEquals("", enriched.currentPageSummary)
+        assertTrue(enriched.currentPageSummary.contains("app_info: package_name=com.example.chat"))
+        assertTrue(enriched.currentPageSummary.contains("发送"))
         assertEquals("", enriched.firstStepGuidance)
         assertEquals("com.example.chat", enriched.currentPackageName)
     }

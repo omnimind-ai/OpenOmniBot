@@ -65,6 +65,10 @@ class ManualVlmTraceRecorder(
             OmniLog.w(TAG, "manual trace recorder skipped: accessibility service is not ready")
             return false
         }
+        if (!AccessibilityController.initController()) {
+            OmniLog.w(TAG, "manual trace recorder skipped: accessibility controller is not ready")
+            return false
+        }
         isStarted = true
         lastXmlSnapshot = captureCurrentXml()
         AssistsService.addListener(listener)
@@ -119,15 +123,26 @@ class ManualVlmTraceRecorder(
     ) {
         flushPendingText(lastXmlSnapshot)
         flushPendingScroll(lastXmlSnapshot)
-        val node = event.source ?: return
-        if (shouldIgnoreNode(node)) return
-        val bounds = node.boundsInScreenOrNull() ?: return
+        val eventLabel = event.text.joinToString(" ").trim()
+        val eventClassName = event.className?.toString()
+        val target = event.source
+            ?.let { source -> targetFromSourceNode(source, packageName) }
+            ?: targetFromXml(
+                xml = beforeXml ?: captureCurrentXml(),
+                packageName = packageName,
+                eventLabel = eventLabel,
+                eventClassName = eventClassName,
+                preferScrollable = false
+            )
+            ?: return
+        val bounds = target.bounds
         if (bounds.isEmpty) return
 
         val now = System.currentTimeMillis()
-        val label = node.bestLabel().ifBlank { event.text.joinToString(" ").trim() }
-        val recordedActionName = navigationActionFor(packageName, label) ?: actionName
-        val signature = "$recordedActionName|$packageName|${node.stableKey(bounds)}"
+        val label = target.label.ifBlank { eventLabel }
+        val targetPackage = target.packageName ?: packageName
+        val recordedActionName = navigationActionFor(targetPackage, label) ?: actionName
+        val signature = "$recordedActionName|$targetPackage|${target.stableKey}"
         if (signature == lastDiscreteSignature && now - lastDiscreteAtMs < DUPLICATE_EVENT_WINDOW_MS) {
             return
         }
@@ -150,9 +165,16 @@ class ManualVlmTraceRecorder(
             )
         } else {
             linkedMapOf<String, Any?>(
-                "target_description" to label.ifBlank { node.className?.toString().orEmpty() },
+                "target_description" to label.ifBlank { target.className.orEmpty() },
                 "x" to bounds.centerX().toFloat(),
-                "y" to bounds.centerY().toFloat()
+                "y" to bounds.centerY().toFloat(),
+                "bounds" to boundsString(bounds),
+                "node_class" to target.className,
+                "node_resource_id" to target.resourceId,
+                "node_text" to target.text,
+                "node_content_description" to target.contentDescription,
+                "recording_backend" to "accessibility_event",
+                "target_resolution" to target.resolution
             )
         }
         if (recordedActionName == "long_press") {
@@ -164,7 +186,7 @@ class ManualVlmTraceRecorder(
             actionName = recordedActionName,
             title = title,
             params = params,
-            packageName = packageName,
+            packageName = targetPackage,
             beforeXml = beforeXml,
             afterXml = afterXml,
             startedAtMs = eventWallTime(event.eventTime, now),
@@ -179,9 +201,9 @@ class ManualVlmTraceRecorder(
         beforeXml: String?
     ) {
         val node = event.source ?: return
-        if (shouldIgnoreNode(node)) return
-        val bounds = node.boundsInScreenOrNull()
-        val key = node.stableKey(bounds)
+        val target = targetFromSourceNode(node, packageName) ?: return
+        val bounds = target.bounds
+        val key = target.stableKey
         val now = System.currentTimeMillis()
         val pendingBeforeXml = pendingText?.takeIf { it.nodeKey == key }?.beforeXml ?: beforeXml
         val text = event.text.joinToString("").ifBlank { node.text?.toString().orEmpty() }
@@ -190,9 +212,13 @@ class ManualVlmTraceRecorder(
 
         pendingText = PendingTextAction(
             nodeKey = key,
-            packageName = packageName,
-            label = node.bestLabel().ifBlank { "输入框" },
+            packageName = target.packageName ?: packageName,
+            label = target.label.ifBlank { "输入框" },
             text = safeText,
+            bounds = bounds,
+            className = target.className,
+            resourceId = target.resourceId,
+            resolution = target.resolution,
             beforeXml = pendingBeforeXml,
             startedAtMs = pendingText?.takeIf { it.nodeKey == key }?.startedAtMs
                 ?: eventWallTime(event.eventTime, now),
@@ -211,13 +237,22 @@ class ManualVlmTraceRecorder(
         }
         val afterXml = afterXmlOverride ?: captureCurrentXml()
         lastXmlSnapshot = afterXml
+        val params = linkedMapOf<String, Any?>(
+            "target_description" to pending.label,
+            "content" to pending.text,
+            "text" to pending.text,
+            "x" to pending.bounds.centerX().toFloat(),
+            "y" to pending.bounds.centerY().toFloat(),
+            "bounds" to boundsString(pending.bounds),
+            "node_class" to pending.className,
+            "node_resource_id" to pending.resourceId,
+            "recording_backend" to "accessibility_event",
+            "target_resolution" to pending.resolution
+        ).filterValues { it != null }
         appendRecordedAction(ManualVlmRecordedAction(
             actionName = "input_text",
             title = title,
-            params = linkedMapOf(
-                "target_description" to pending.label,
-                "text" to pending.text
-            ),
+            params = params,
             packageName = pending.packageName,
             beforeXml = pending.beforeXml,
             afterXml = afterXml,
@@ -233,12 +268,21 @@ class ManualVlmTraceRecorder(
         beforeXml: String?
     ) {
         flushPendingText(lastXmlSnapshot)
-        val node = event.source ?: return
-        if (shouldIgnoreNode(node)) return
-        val bounds = node.boundsInScreenOrNull() ?: return
+        val eventLabel = event.text.joinToString(" ").trim()
+        val target = event.source
+            ?.let { source -> targetFromSourceNode(source, packageName) }
+            ?: targetFromXml(
+                xml = beforeXml ?: captureCurrentXml(),
+                packageName = packageName,
+                eventLabel = eventLabel,
+                eventClassName = event.className?.toString(),
+                preferScrollable = true
+            )
+            ?: return
+        val bounds = target.bounds
         if (bounds.isEmpty) return
 
-        val key = node.stableKey(bounds)
+        val key = target.stableKey
         val previous = nodeScrollState[key]
         val current = ScrollSnapshot(
             scrollX = event.scrollX,
@@ -256,10 +300,13 @@ class ManualVlmTraceRecorder(
         val pendingBeforeXml = pendingScroll?.takeIf { it.nodeKey == key }?.beforeXml ?: beforeXml
         pendingScroll = PendingScrollAction(
             nodeKey = key,
-            packageName = packageName,
-            label = node.bestLabel().ifBlank { "列表" },
+            packageName = target.packageName ?: packageName,
+            label = target.label.ifBlank { "列表" },
             bounds = bounds,
             direction = direction,
+            className = target.className,
+            resourceId = target.resourceId,
+            resolution = target.resolution,
             beforeXml = pendingBeforeXml,
             startedAtMs = pendingScroll?.takeIf { it.nodeKey == key }?.startedAtMs
                 ?: eventWallTime(event.eventTime, now),
@@ -285,7 +332,12 @@ class ManualVlmTraceRecorder(
                 "x2" to swipe.x2,
                 "y2" to swipe.y2,
                 "duration_ms" to 500L,
-                "direction" to pending.direction.name.lowercase()
+                "direction" to pending.direction.name.lowercase(),
+                "bounds" to boundsString(pending.bounds),
+                "node_class" to pending.className,
+                "node_resource_id" to pending.resourceId,
+                "recording_backend" to "accessibility_event",
+                "target_resolution" to pending.resolution
             ),
             packageName = pending.packageName,
             beforeXml = pending.beforeXml,
@@ -373,12 +425,20 @@ class ManualVlmTraceRecorder(
 
     private fun shouldIgnoreNode(node: AccessibilityNodeInfo): Boolean {
         val packageName = node.packageName?.toString()
+        return shouldIgnoreTarget(
+            packageName = packageName,
+            label = node.bestLabel(),
+            resourceId = node.viewIdResourceName
+        )
+    }
+
+    private fun shouldIgnoreTarget(
+        packageName: String?,
+        label: String?,
+        resourceId: String?
+    ): Boolean {
         if (shouldIgnorePackage(packageName)) return true
-        val text = listOfNotNull(
-            node.text?.toString(),
-            node.contentDescription?.toString(),
-            node.viewIdResourceName
-        ).joinToString(" ").lowercase()
+        val text = listOfNotNull(label, resourceId).joinToString(" ").lowercase()
         return OOB_CONTROL_HINTS.any { text.contains(it) }
     }
 
@@ -403,8 +463,179 @@ class ManualVlmTraceRecorder(
             "${bounds?.left},${bounds?.top},${bounds?.right},${bounds?.bottom}"
     }
 
+    private fun targetFromSourceNode(
+        node: AccessibilityNodeInfo,
+        fallbackPackageName: String?
+    ): ManualEventTarget? {
+        val targetNode = actionableSourceNode(node) ?: node
+        if (shouldIgnoreNode(targetNode)) return null
+        val bounds = targetNode.boundsInScreenOrNull() ?: return null
+        if (bounds.isEmpty) return null
+        val packageName = targetNode.packageName?.toString() ?: fallbackPackageName
+        val resolution = if (targetNode === node) {
+            "event_source"
+        } else {
+            "event_source_actionable_ancestor"
+        }
+        return ManualEventTarget(
+            label = targetNode.bestLabel().ifBlank { node.bestLabel() },
+            bounds = bounds,
+            packageName = packageName,
+            className = targetNode.className?.toString(),
+            resourceId = targetNode.viewIdResourceName,
+            text = targetNode.text?.toString() ?: node.text?.toString(),
+            contentDescription = targetNode.contentDescription?.toString()
+                ?: node.contentDescription?.toString(),
+            stableKey = targetNode.stableKey(bounds),
+            resolution = resolution
+        )
+    }
+
+    private fun actionableSourceNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        repeat(MAX_ACTIONABLE_ANCESTOR_DEPTH + 1) {
+            val candidate = current ?: return null
+            val bounds = candidate.boundsInScreenOrNull()
+            if (
+                bounds != null &&
+                !bounds.isEmpty &&
+                candidate.isEnabled &&
+                (candidate.isClickable || candidate.isLongClickable || candidate.isScrollable)
+            ) {
+                return candidate
+            }
+            current = candidate.parent
+        }
+        return null
+    }
+
+    private fun targetFromXml(
+        xml: String?,
+        packageName: String?,
+        eventLabel: String,
+        eventClassName: String?,
+        preferScrollable: Boolean
+    ): ManualEventTarget? {
+        val nodes = parseXmlNodeCandidates(xml)
+            .filter { candidate ->
+                !candidate.bounds.isEmpty &&
+                    !shouldIgnoreTarget(
+                        packageName = candidate.packageName ?: packageName,
+                        label = candidate.bestLabel,
+                        resourceId = candidate.resourceId
+                    )
+            }
+        if (nodes.isEmpty()) return rootTargetFromXml(xml, packageName, preferScrollable)
+        val labelTokens = meaningfulTokens(eventLabel)
+        if (!preferScrollable && labelTokens.isEmpty() && eventClassName.isNullOrBlank()) {
+            return null
+        }
+        val best = nodes
+            .mapNotNull { candidate ->
+                val score = candidate.matchScore(
+                    packageName = packageName,
+                    labelTokens = labelTokens,
+                    eventClassName = eventClassName,
+                    preferScrollable = preferScrollable
+                )
+                if (score <= 0 && !preferScrollable) null else score to candidate
+            }
+            .maxWithOrNull(
+                compareBy<Pair<Int, XmlNodeCandidate>> { it.first }
+                    .thenBy { it.second.bounds.width() * it.second.bounds.height() }
+            )
+            ?.second
+            ?: return rootTargetFromXml(xml, packageName, preferScrollable)
+        return best.toManualTarget(packageName, "xml_fallback")
+    }
+
+    private fun rootTargetFromXml(
+        xml: String?,
+        packageName: String?,
+        allow: Boolean
+    ): ManualEventTarget? {
+        if (!allow) return null
+        val bounds = parseRootBounds(xml) ?: return null
+        if (bounds.isEmpty) return null
+        return ManualEventTarget(
+            label = "当前页面",
+            bounds = bounds,
+            packageName = packageName,
+            className = "hierarchy",
+            resourceId = null,
+            text = null,
+            contentDescription = null,
+            stableKey = "hierarchy|${boundsString(bounds)}",
+            resolution = "xml_root_fallback"
+        )
+    }
+
+    private fun parseXmlNodeCandidates(xml: String?): List<XmlNodeCandidate> {
+        if (xml.isNullOrBlank()) return emptyList()
+        return NODE_TAG_REGEX.findAll(xml).mapNotNull { match ->
+            val attrs = parseXmlAttributes(match.groupValues.getOrNull(1).orEmpty())
+            val bounds = parseBounds(attrs["bounds"]) ?: return@mapNotNull null
+            XmlNodeCandidate(
+                bounds = bounds,
+                packageName = attrs["package"],
+                className = attrs["class"],
+                text = decodeXmlAttr(attrs["text"]),
+                contentDescription = decodeXmlAttr(attrs["content-desc"] ?: attrs["contentDescription"]),
+                hintText = decodeXmlAttr(attrs["hint-text"] ?: attrs["hintText"]),
+                resourceId = attrs["resource-id"] ?: attrs["resourceId"],
+                clickable = attrs["clickable"] == "true",
+                scrollable = attrs["scrollable"] == "true",
+                enabled = attrs["enabled"] != "false",
+                visible = attrs["visible-to-user"] != "false"
+            )
+        }.toList()
+    }
+
+    private fun parseXmlAttributes(raw: String): Map<String, String> {
+        return ATTR_REGEX.findAll(raw).associate { match ->
+            match.groupValues[1] to match.groupValues[2]
+        }
+    }
+
+    private fun parseRootBounds(xml: String?): Rect? {
+        if (xml.isNullOrBlank()) return null
+        val hierarchy = HIERARCHY_TAG_REGEX.find(xml)?.groupValues?.getOrNull(1) ?: return null
+        return parseBounds(parseXmlAttributes(hierarchy)["bounds"])
+    }
+
+    private fun parseBounds(value: String?): Rect? {
+        if (value.isNullOrBlank()) return null
+        val match = BOUNDS_REGEX.find(value) ?: return null
+        val left = match.groupValues[1].toIntOrNull() ?: return null
+        val top = match.groupValues[2].toIntOrNull() ?: return null
+        val right = match.groupValues[3].toIntOrNull() ?: return null
+        val bottom = match.groupValues[4].toIntOrNull() ?: return null
+        return Rect(left, top, right, bottom)
+    }
+
+    private fun meaningfulTokens(value: String): List<String> {
+        val normalized = value.replace(Regex("\\s+"), " ").trim().lowercase()
+        if (normalized.isBlank()) return emptyList()
+        val asciiTokens = normalized
+            .split(Regex("[^a-z0-9]+"))
+            .map { it.trim() }
+            .filter { it.length >= 2 }
+        return if (asciiTokens.isNotEmpty()) asciiTokens else listOf(normalized)
+    }
+
+    private fun decodeXmlAttr(value: String?): String? {
+        val raw = value ?: return null
+        return raw
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+    }
+
     private fun captureCurrentXml(): String? {
         return try {
+            AccessibilityController.initController()
             AccessibilityController.getCaptureScreenShotXml(true)
         } catch (e: Exception) {
             OmniLog.w(TAG, "manual trace xml capture failed: ${e.message}")
@@ -445,6 +676,10 @@ class ManualVlmTraceRecorder(
         val packageName: String?,
         val label: String,
         val text: String,
+        val bounds: Rect,
+        val className: String?,
+        val resourceId: String?,
+        val resolution: String,
         val beforeXml: String?,
         val startedAtMs: Long,
         val updatedAtMs: Long
@@ -456,6 +691,9 @@ class ManualVlmTraceRecorder(
         val label: String,
         val bounds: Rect,
         val direction: ManualScrollDirection,
+        val className: String?,
+        val resourceId: String?,
+        val resolution: String,
         val beforeXml: String?,
         val startedAtMs: Long,
         val updatedAtMs: Long
@@ -478,6 +716,81 @@ class ManualVlmTraceRecorder(
         val y2: Float
     )
 
+    private data class ManualEventTarget(
+        val label: String,
+        val bounds: Rect,
+        val packageName: String?,
+        val className: String?,
+        val resourceId: String?,
+        val text: String?,
+        val contentDescription: String?,
+        val stableKey: String,
+        val resolution: String
+    )
+
+    private data class XmlNodeCandidate(
+        val bounds: Rect,
+        val packageName: String?,
+        val className: String?,
+        val text: String?,
+        val contentDescription: String?,
+        val hintText: String?,
+        val resourceId: String?,
+        val clickable: Boolean,
+        val scrollable: Boolean,
+        val enabled: Boolean,
+        val visible: Boolean
+    ) {
+        val bestLabel: String
+            get() = firstNonBlankStatic(
+                contentDescription,
+                text,
+                hintText,
+                resourceId?.substringAfterLast('/'),
+                className
+            )
+
+        fun matchScore(
+            packageName: String?,
+            labelTokens: List<String>,
+            eventClassName: String?,
+            preferScrollable: Boolean
+        ): Int {
+            var score = 0
+            if (visible) score += 2
+            if (enabled) score += 2
+            if (!packageName.isNullOrBlank() && packageName == this.packageName) score += 8
+            if (preferScrollable && scrollable) score += 40
+            if (!preferScrollable && clickable) score += 12
+            if (!eventClassName.isNullOrBlank() && eventClassName == className) score += 8
+            val haystack = listOfNotNull(text, contentDescription, hintText, resourceId, className)
+                .joinToString(" ")
+                .lowercase()
+            for (token in labelTokens) {
+                if (haystack == token) score += 35
+                if (haystack.contains(token)) score += 25
+            }
+            return score
+        }
+
+        fun toManualTarget(
+            fallbackPackageName: String?,
+            resolution: String
+        ): ManualEventTarget {
+            return ManualEventTarget(
+                label = bestLabel,
+                bounds = bounds,
+                packageName = packageName ?: fallbackPackageName,
+                className = className,
+                resourceId = resourceId,
+                text = text,
+                contentDescription = contentDescription,
+                stableKey = firstNonBlankStatic(resourceId, className) + "|" + boundsString(bounds),
+                resolution = resolution
+            )
+        }
+    }
+
     private enum class ManualScrollDirection {
         UP,
         DOWN,
@@ -492,18 +805,37 @@ class ManualVlmTraceRecorder(
         private const val MAX_LABEL_LENGTH = 80
         private const val MAX_SUMMARY_TEXT = 40
         private const val MAX_SUMMARY_ACTIONS = 8
+        private const val MAX_ACTIONABLE_ANCESTOR_DEPTH = 4
         private const val REDACTED_TEXT = "[REDACTED]"
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private val NODE_TAG_REGEX = Regex("<node\\b([^>]*)>")
+        private val HIERARCHY_TAG_REGEX = Regex("<hierarchy\\b([^>]*)>")
+        private val ATTR_REGEX = Regex("([A-Za-z0-9_:-]+)=\"([^\"]*)\"")
+        private val BOUNDS_REGEX = Regex("\\[(-?\\d+),(-?\\d+)]\\[(-?\\d+),(-?\\d+)]")
         private val OOB_CONTROL_HINTS = listOf(
             "已完成操作",
+            "完成学习",
+            "取消学习",
             "继续执行",
             "用户已接管",
             "接管",
+            "学习中",
             "resume",
             "continue",
             "takeover",
             "omnimind",
             "omnibot"
         )
+
+        private fun firstNonBlankStatic(vararg values: String?): String {
+            for (value in values) {
+                val normalized = value?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+                if (normalized.isNotEmpty()) return normalized
+            }
+            return ""
+        }
+
+        private fun boundsString(bounds: Rect): String =
+            "[${bounds.left},${bounds.top}][${bounds.right},${bounds.bottom}]"
     }
 }

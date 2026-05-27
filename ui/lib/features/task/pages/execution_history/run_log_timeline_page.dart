@@ -253,6 +253,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       Tooltip(
         message: l10n.omniflowAssetReplay,
         child: IconButton(
+          key: const ValueKey('run-log-action-replay'),
           icon: _isReplayingRunLog
               ? SizedBox(
                   width: 18,
@@ -275,6 +276,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
             ? _text(context, '保存为复用指令', 'Save reusable command')
             : convertEligibility.message,
         child: IconButton(
+          key: const ValueKey('run-log-action-save-function'),
           icon: _isConvertingFunction
               ? SizedBox(
                   width: 18,
@@ -297,6 +299,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       Tooltip(
         message: _text(context, '复制全部文本', 'Copy all text'),
         child: IconButton(
+          key: const ValueKey('run-log-action-copy'),
           icon: const Icon(Icons.copy_all_rounded),
           color: palette.textPrimary,
           onPressed: _cards.isEmpty ? null : _copyAllText,
@@ -361,42 +364,23 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         ],
       );
     }
-    final tokenSummary = _RunLogTokenUsageAggregate.fromPayload(_payload);
+    final cardGroups = _groupTimelineCards(_cards);
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       children: [
         _RunLogOverviewCard(payload: _payload, stepCount: _cards.length),
-        const SizedBox(height: 14),
-        _RunLogOfflineFlowCard(
-          canRegister: _runLogConvertEligibility(
-            context,
-            _payload,
-            _cards,
-          ).canConvert,
-          isRegistering: _isConvertingFunction,
-          isReplaying: _isReplayingRunLog,
-          onReplay:
-              _cards.isEmpty || _isConvertingFunction || _isReplayingRunLog
-              ? null
-              : _executeCurrentRunLog,
-          onRegister:
-              _runLogConvertEligibility(context, _payload, _cards).canConvert &&
-                  !_isConvertingFunction &&
-                  !_isReplayingRunLog
-              ? _registerCurrentRunLog
-              : null,
-        ),
-        const SizedBox(height: 14),
-        if (tokenSummary.hasUsage) ...[
-          _RunLogTokenSummaryCard(summary: tokenSummary),
-          const SizedBox(height: 14),
-        ],
-        for (var index = 0; index < _cards.length; index++)
+        const SizedBox(height: 12),
+        for (var index = 0; index < cardGroups.length; index++)
           _StepCard(
-            card: _cards[index],
-            fallbackIndex: index,
-            isLast: index == _cards.length - 1,
-            onTap: () => _showStepDetail(_cards[index], index),
+            card: cardGroups[index].card,
+            fallbackIndex: cardGroups[index].fallbackIndex,
+            isLast: index == cardGroups.length - 1,
+            nestedCards: cardGroups[index].nestedCards,
+            onTap: () => _showStepDetail(
+              cardGroups[index].card,
+              cardGroups[index].fallbackIndex,
+              nestedCards: cardGroups[index].nestedCards,
+            ),
           ),
       ],
     );
@@ -562,11 +546,13 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
             : _runLogReplayFailureMessage(context, result),
         type: result.success ? ToastType.success : ToastType.error,
       );
-      await showFunctionRunResultSheet(
-        context,
-        result: result,
-        title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
-      );
+      if (!result.success && mounted) {
+        await showFunctionRunResultSheet(
+          context,
+          result: result,
+          title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -599,7 +585,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     }
 
     lines.add('');
-    lines.add('## ${_text(context, '工具调用历史', 'Tool call history')}');
+    lines.add('## ${_text(context, '执行步骤', 'Execution steps')}');
     for (var index = 0; index < _cards.length; index++) {
       if (index > 0) {
         lines.add('');
@@ -621,7 +607,11 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     return lines.join('\n').trimRight();
   }
 
-  Future<void> _showStepDetail(Map<String, dynamic> card, int index) {
+  Future<void> _showStepDetail(
+    Map<String, dynamic> card,
+    int index, {
+    List<Map<String, dynamic>> nestedCards = const <Map<String, dynamic>>[],
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -631,6 +621,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       builder: (sheetContext) => _StepDetailSheet(
         card: card,
         fallbackIndex: index,
+        nestedCards: nestedCards,
         runId: widget.runId,
         title: widget.title,
         payload: _payload,
@@ -732,8 +723,6 @@ class _RunLogOverviewCard extends StatelessWidget {
     ]);
     final tokenSummary = _RunLogTokenUsageAggregate.fromPayload(payload);
     final durationMs = _asInt(payload['duration_ms'] ?? payload['durationMs']);
-    final started = _runLogTimeText(context, payload, start: true);
-    final finished = _runLogTimeText(context, payload, start: false);
     final chips = <MapEntry<String, String>>[
       MapEntry(_text(context, '步骤', 'Steps'), stepCount.toString()),
       if (durationMs != null)
@@ -743,15 +732,11 @@ class _RunLogOverviewCard extends StatelessWidget {
           _text(context, 'VLM Token', 'VLM tokens'),
           _formatTokens(tokenSummary.totalTokens!),
         ),
-      if (started.isNotEmpty)
-        MapEntry(_text(context, '开始', 'Started'), started),
-      if (finished.isNotEmpty)
-        MapEntry(_text(context, '结束', 'Finished'), finished),
     ];
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
       decoration: BoxDecoration(
         color: Color.alphaBlend(
           status.color.withValues(alpha: isDark ? 0.15 : 0.07),
@@ -769,15 +754,15 @@ class _RunLogOverviewCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 24,
+                height: 24,
                 decoration: BoxDecoration(
                   color: status.color.withValues(alpha: isDark ? 0.20 : 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(7),
                 ),
-                child: Icon(status.icon, color: status.color, size: 17),
+                child: Icon(status.icon, color: status.color, size: 14),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -788,8 +773,8 @@ class _RunLogOverviewCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: 0,
                       ),
                     ),
@@ -797,7 +782,7 @@ class _RunLogOverviewCard extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         goal,
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.textSecondary,
@@ -813,10 +798,10 @@ class _RunLogOverviewCard extends StatelessWidget {
             ],
           ),
           if (chips.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: chips
                   .map(
                     (entry) =>
@@ -844,341 +829,6 @@ class _RunLogOverviewCard extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _RunLogTokenSummaryCard extends StatelessWidget {
-  const _RunLogTokenSummaryCard({required this.summary});
-
-  final _RunLogTokenUsageAggregate summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
-    final accent = const Color(0xFF2563EB);
-    final items = <MapEntry<String, String>>[
-      if (summary.totalTokens != null)
-        MapEntry(
-          _text(context, '总计', 'Total'),
-          _formatTokens(summary.totalTokens!),
-        ),
-      if (summary.callCount != null)
-        MapEntry(
-          _text(context, 'VLM 调用', 'VLM calls'),
-          summary.callCount.toString(),
-        ),
-      if (summary.stepCount != null && summary.stepCount != summary.callCount)
-        MapEntry(_text(context, '步骤', 'Steps'), summary.stepCount.toString()),
-      if (summary.promptTokens != null)
-        MapEntry(
-          _text(context, '输入', 'Prompt'),
-          _formatTokens(summary.promptTokens!),
-        ),
-      if (summary.completionTokens != null)
-        MapEntry(
-          _text(context, '输出', 'Completion'),
-          _formatTokens(summary.completionTokens!),
-        ),
-      if (summary.cachedTokens != null && summary.cachedTokens! > 0)
-        MapEntry(
-          _text(context, '缓存', 'Cached'),
-          _formatTokens(summary.cachedTokens!),
-        ),
-    ];
-    if (items.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          accent.withValues(alpha: isDark ? 0.16 : 0.08),
-          isDark ? palette.surfaceSecondary : Colors.white,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: accent.withValues(alpha: isDark ? 0.32 : 0.18),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.data_usage_rounded, color: accent, size: 16),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _text(context, '在线 VLM 成本', 'Online VLM cost'),
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: items
-                      .map(
-                        (entry) =>
-                            _SummaryPill(label: entry.key, value: entry.value),
-                      )
-                      .toList(growable: false),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RunLogOfflineFlowCard extends StatelessWidget {
-  const _RunLogOfflineFlowCard({
-    required this.canRegister,
-    required this.isRegistering,
-    required this.isReplaying,
-    required this.onReplay,
-    required this.onRegister,
-  });
-
-  final bool canRegister;
-  final bool isRegistering;
-  final bool isReplaying;
-  final VoidCallback? onReplay;
-  final VoidCallback? onRegister;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
-    final accent = _modelFreeColor(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          accent.withValues(alpha: isDark ? 0.16 : 0.07),
-          isDark ? palette.surfaceSecondary : Colors.white,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: accent.withValues(alpha: isDark ? 0.36 : 0.18),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.route_rounded, color: accent, size: 16),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _text(context, '离线复用流程', 'Offline reuse flow'),
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _text(
-                        context,
-                        '这条 RunLog 可以直接重放，也可以保存成复用指令后继续使用。',
-                        'Replay this RunLog directly, or save it as a reusable command.',
-                      ),
-                      style: TextStyle(
-                        color: palette.textSecondary,
-                        fontSize: 12,
-                        height: 1.35,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FlowStepPill(
-                icon: Icons.history_toggle_off_rounded,
-                label: _text(context, 'RunLog 已收集', 'RunLog collected'),
-                active: true,
-              ),
-              _FlowStepPill(
-                icon: Icons.inventory_2_outlined,
-                label: canRegister
-                    ? _text(context, '可保存为复用指令', 'Reusable command ready')
-                    : _text(context, '等待成功结果', 'Awaiting success'),
-                active: canRegister,
-              ),
-              _FlowStepPill(
-                icon: Icons.play_arrow_rounded,
-                label: _text(context, '本地执行', 'Local execution'),
-                active: onReplay != null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _InlineActionButton(
-                  icon: Icons.play_arrow_rounded,
-                  label: isReplaying
-                      ? _text(context, '重放中', 'Replaying')
-                      : _text(context, '重放 RunLog', 'Replay RunLog'),
-                  onTap: onReplay,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _InlineActionButton(
-                  icon: Icons.cloud_upload_outlined,
-                  label: isRegistering
-                      ? _text(context, '注册中', 'Registering')
-                      : _text(context, '保存复用指令', 'Save reusable command'),
-                  onTap: onRegister,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FlowStepPill extends StatelessWidget {
-  const _FlowStepPill({
-    required this.icon,
-    required this.label,
-    required this.active,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final color = active ? _modelFreeColor(context) : palette.textTertiary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: context.isDarkTheme ? 0.16 : 0.09),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? palette.textPrimary : palette.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InlineActionButton extends StatelessWidget {
-  const _InlineActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final enabled = onTap != null;
-    return Material(
-      color: enabled
-          ? _modelFreeColor(
-              context,
-            ).withValues(alpha: context.isDarkTheme ? 0.18 : 0.10)
-          : palette.surfaceSecondary,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: enabled ? palette.textPrimary : palette.textTertiary,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: enabled ? palette.textPrimary : palette.textTertiary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1408,12 +1058,14 @@ class _StepCard extends StatelessWidget {
     required this.fallbackIndex,
     required this.isLast,
     required this.onTap,
+    this.nestedCards = const <Map<String, dynamic>>[],
   });
 
   final Map<String, dynamic> card;
   final int fallbackIndex;
   final bool isLast;
   final VoidCallback onTap;
+  final List<Map<String, dynamic>> nestedCards;
 
   @override
   Widget build(BuildContext context) {
@@ -1608,6 +1260,10 @@ class _StepCard extends StatelessWidget {
                             ),
                           ),
                         ],
+                        if (nestedCards.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          _NestedVlmStepsPreview(cards: nestedCards),
+                        ],
                       ],
                     ),
                   ),
@@ -1621,10 +1277,181 @@ class _StepCard extends StatelessWidget {
   }
 }
 
+class _NestedVlmStepsPreview extends StatelessWidget {
+  const _NestedVlmStepsPreview({required this.cards, this.onStepTap});
+
+  final List<Map<String, dynamic>> cards;
+  final void Function(Map<String, dynamic> card, int index)? onStepTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final visible = cards.take(5).toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(height: 1, color: palette.borderSubtle),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(
+              Icons.account_tree_outlined,
+              size: 14,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              _text(context, '内部 VLM 动作', 'Internal VLM actions'),
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${cards.length} ${_text(context, '步', 'steps')}',
+              style: TextStyle(
+                color: palette.textTertiary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        for (var index = 0; index < visible.length; index++)
+          _NestedVlmStepRow(
+            card: visible[index],
+            fallbackIndex: index,
+            onTap: onStepTap == null
+                ? null
+                : () => onStepTap!(visible[index], index),
+          ),
+        if (cards.length > visible.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 3, left: 22),
+            child: Text(
+              _text(
+                context,
+                '另有 ${cards.length - visible.length} 步',
+                '${cards.length - visible.length} more steps',
+              ),
+              style: TextStyle(
+                color: palette.textTertiary,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _NestedVlmStepRow extends StatelessWidget {
+  const _NestedVlmStepRow({
+    required this.card,
+    required this.fallbackIndex,
+    this.onTap,
+  });
+
+  final Map<String, dynamic> card;
+  final int fallbackIndex;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final snapshot = _RunLogStepSnapshot.fromCard(
+      card,
+      fallbackIndex: fallbackIndex,
+    );
+    final title = _runLogStepDisplayTitle(context, snapshot);
+    final success = snapshot.success ?? true;
+    final color = success ? _successColor(context) : _errorColor(context);
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: context.isDarkTheme ? 0.18 : 0.10),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(
+              '${fallbackIndex + 1}',
+              style: TextStyle(
+                color: color,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              title.isEmpty ? snapshot.toolName : title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+                height: 1.2,
+              ),
+            ),
+          ),
+          if (snapshot.durationMs != null) ...[
+            const SizedBox(width: 8),
+            Text(
+              _formatMs(snapshot.durationMs!),
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+          if (onTap != null) ...[
+            const SizedBox(width: 3),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+              color: palette.textTertiary,
+            ),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) {
+      return row;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: row,
+      ),
+    );
+  }
+}
+
 class _StepDetailSheet extends StatefulWidget {
   const _StepDetailSheet({
     required this.card,
     required this.fallbackIndex,
+    this.nestedCards = const <Map<String, dynamic>>[],
     required this.runId,
     required this.title,
     required this.payload,
@@ -1633,6 +1460,7 @@ class _StepDetailSheet extends StatefulWidget {
 
   final Map<String, dynamic> card;
   final int fallbackIndex;
+  final List<Map<String, dynamic>> nestedCards;
   final String runId;
   final String title;
   final Map<String, dynamic> payload;
@@ -1749,7 +1577,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                           Tooltip(
                             message: _text(
                               context,
-                              'AI 转此步',
+                              '转为复用指令',
                               'Convert this step',
                             ),
                             child: IconButton(
@@ -1796,6 +1624,32 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (widget.nestedCards.isNotEmpty) ...[
+                              _NestedVlmStepsPreview(
+                                cards: widget.nestedCards,
+                                onStepTap: (card, index) {
+                                  final childSnapshot =
+                                      _RunLogStepSnapshot.fromCard(
+                                        card,
+                                        fallbackIndex: index,
+                                      );
+                                  final childCardId = _firstNonBlank([
+                                    childSnapshot.toolCallId,
+                                    card['card_id'],
+                                    card['cardId'],
+                                  ]);
+                                  if (childCardId.isEmpty) return;
+                                  showRunLogStepDetailSheet(
+                                    context,
+                                    runId: widget.runId,
+                                    cardId: childCardId,
+                                    title: childSnapshot.title,
+                                    baseUrl: widget.baseUrl,
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             // Tool name chip + call ID inline (no card)
                             if (snapshot.toolName.isNotEmpty ||
                                 snapshot.toolCallId.isNotEmpty)
@@ -2032,7 +1886,7 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
           'source_step_number': snapshot.stepNumber,
         },
         cards: [widget.card],
-        useAi: true,
+        useAi: false,
         useEnglish: _localeValue(context, zh: false, en: true),
       );
       if (!mounted) return;
@@ -2224,26 +2078,6 @@ class _ReusableFunctionSpecSheetState
                               ],
                             ),
                           ),
-                          Tooltip(
-                            message: _text(
-                              context,
-                              '复制复用指令 JSON',
-                              'Copy reusable command JSON',
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.data_object_rounded),
-                              color: palette.textSecondary,
-                              onPressed: () => _copyText(
-                                context,
-                                functionJsonForUser,
-                                _text(
-                                  context,
-                                  '已复制复用指令 JSON',
-                                  'Reusable command JSON copied',
-                                ),
-                              ),
-                            ),
-                          ),
                           IconButton(
                             icon: const Icon(Icons.close_rounded),
                             color: palette.textSecondary,
@@ -2310,14 +2144,8 @@ class _ReusableFunctionSpecSheetState
                                   child: _SpecActionButton(
                                     icon: Icons.cloud_upload_outlined,
                                     label: _isImporting
-                                        ? _text(context, '注册中', 'Registering')
-                                        : _registeredFunctionId.isEmpty
-                                        ? _text(
-                                            context,
-                                            '保存复用指令',
-                                            'Save reusable command',
-                                          )
-                                        : _text(context, '重新注册', 'Re-register'),
+                                        ? _text(context, '保存中', 'Saving')
+                                        : _text(context, '保存', 'Save'),
                                     onTap: _isImporting
                                         ? null
                                         : _registerFunction,
@@ -2329,14 +2157,25 @@ class _ReusableFunctionSpecSheetState
                                     icon: Icons.play_arrow_rounded,
                                     label: _isExecuting
                                         ? _text(context, '执行中', 'Running')
-                                        : _text(
-                                            context,
-                                            '执行复用指令',
-                                            'Run reusable command',
-                                          ),
+                                        : _text(context, '执行', 'Run'),
                                     onTap: _isImporting || _isExecuting
                                         ? null
                                         : _executeRegisteredFunction,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _SpecActionButton(
+                                    icon: Icons.event_available_rounded,
+                                    label: _isScheduling
+                                        ? _text(context, '打开中', 'Opening')
+                                        : _text(context, '定时任务', 'Schedule'),
+                                    onTap:
+                                        _isImporting ||
+                                            _isExecuting ||
+                                            _isScheduling
+                                        ? null
+                                        : _scheduleRegisteredFunction,
                                   ),
                                 ),
                               ],
@@ -2351,69 +2190,6 @@ class _ReusableFunctionSpecSheetState
                                 apiCallJson: _apiCallJson,
                               ),
                             ],
-                            const SizedBox(height: 10),
-                            _SpecActionButton(
-                              icon: Icons.event_available_rounded,
-                              label: _isScheduling
-                                  ? _text(
-                                      context,
-                                      '打开定时设置中',
-                                      'Opening schedule',
-                                    )
-                                  : _text(
-                                      context,
-                                      '转为定时任务',
-                                      'Schedule this command',
-                                    ),
-                              onTap:
-                                  _isImporting || _isExecuting || _isScheduling
-                                  ? null
-                                  : _scheduleRegisteredFunction,
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _SpecActionButton(
-                                    icon: Icons.content_copy_rounded,
-                                    label: _text(
-                                      context,
-                                      '复制 JSON',
-                                      'Copy JSON',
-                                    ),
-                                    onTap: () => _copyText(
-                                      context,
-                                      functionJsonForUser,
-                                      _text(
-                                        context,
-                                        '已复制复用指令 JSON',
-                                        'Reusable command JSON copied',
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _SpecActionButton(
-                                    icon: Icons.smart_toy_outlined,
-                                    label: _text(
-                                      context,
-                                      '复制 Agent 提示',
-                                      'Copy agent prompt',
-                                    ),
-                                    onTap: () => _copyText(
-                                      context,
-                                      agentPromptForUser,
-                                      _text(
-                                        context,
-                                        '已复制 Agent 提示',
-                                        'Agent prompt copied',
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
                             const SizedBox(height: 14),
                             _DetailSection(
                               title: _text(
@@ -2421,7 +2197,6 @@ class _ReusableFunctionSpecSheetState
                                 '复用指令 JSON',
                                 'Reusable command JSON',
                               ),
-                              copyValue: functionJsonForUser,
                               child: _JsonText(text: functionJsonForUser),
                             ),
                             const SizedBox(height: 12),
@@ -2431,14 +2206,12 @@ class _ReusableFunctionSpecSheetState
                                 'Agent 复用提示',
                                 'Agent reuse prompt',
                               ),
-                              copyValue: agentPromptForUser,
                               child: _JsonText(text: agentPromptForUser),
                             ),
                             if (_apiCallJson.trim().isNotEmpty) ...[
                               const SizedBox(height: 12),
                               _DetailSection(
                                 title: _text(context, '执行调用', 'Run call'),
-                                copyValue: _apiCallJson,
                                 child: _JsonText(text: _apiCallJson),
                               ),
                             ],
@@ -2463,6 +2236,45 @@ class _ReusableFunctionSpecSheetState
       _apiError = null;
     });
     try {
+      final nativeRunLogId = _nativeRunLogRegistrationRunId;
+      if (nativeRunLogId.isNotEmpty) {
+        final result =
+            await AssistsMessageService.convertInternalRunLogToOobFunction(
+              runId: nativeRunLogId,
+              register: true,
+              functionId: spec.functionId,
+              name: spec.name,
+              description: (spec.json['description'] ?? '').toString(),
+            );
+        if (!mounted) return;
+        final registeredId = _firstNonBlank([
+          result['created_function_id'],
+          result['function_id'],
+        ]);
+        if (result['success'] != true || registeredId.isEmpty) {
+          final message = _firstNonBlank([
+            result['error_message'],
+            result['errorMessage'],
+            _text(context, '注册失败', 'Registration failed'),
+          ]);
+          setState(() {
+            _isImporting = false;
+            _apiError = message;
+          });
+          showToast(message, type: ToastType.error);
+          return;
+        }
+        setState(() {
+          _importResult = UtgRunLogImportResult.fromMap(result);
+          _isImporting = false;
+        });
+        showToast(
+          _text(context, '已保存为复用指令', 'Reusable command saved'),
+          type: ToastType.success,
+        );
+        return;
+      }
+
       final result = await AssistsMessageService.registerOobReusableFunction(
         functionSpec: spec.json,
       );
@@ -2559,11 +2371,13 @@ class _ReusableFunctionSpecSheetState
             : _runFailureMessage(context, result),
         type: result.success ? ToastType.success : ToastType.error,
       );
-      await showFunctionRunResultSheet(
-        context,
-        result: result,
-        title: _text(context, '复用指令执行结果', 'Reusable command result'),
-      );
+      if (!result.success && mounted) {
+        await showFunctionRunResultSheet(
+          context,
+          result: result,
+          title: _text(context, '复用指令执行结果', 'Reusable command result'),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2658,6 +2472,17 @@ class _ReusableFunctionSpecSheetState
     ]);
   }
 
+  String get _nativeRunLogRegistrationRunId {
+    final source = _asStringKeyMap(spec.json['source']);
+    final sourceKind = (source['kind'] ?? '').toString().trim();
+    final converter = (source['converter'] ?? '').toString().trim();
+    if (sourceKind != 'run_log' ||
+        converter != 'native_run_log_reusable_function_builder') {
+      return '';
+    }
+    return _firstNonBlank([source['run_id'], source['runId'], widget.runId]);
+  }
+
   String get _firstHitFunctionId {
     final ids = _importResult?.hitFunctionIds ?? const <String>[];
     for (final id in ids) {
@@ -2749,6 +2574,13 @@ class _ReusableFunctionSpecSheetState
   }
 
   String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
+    if (result.completedVlmFallback) {
+      return _text(
+        context,
+        '复用指令已通过 VLM 执行完成',
+        'Reusable command completed by VLM',
+      );
+    }
     if (result.startedAgentFallback) {
       final taskId = result.taskId;
       return _localeValue(
@@ -2773,11 +2605,6 @@ class _ReusableFunctionSpecSheetState
       return error;
     }
     return _text(context, '复用指令执行失败', 'Reusable command failed');
-  }
-
-  void _copyText(BuildContext context, String text, String successMessage) {
-    Clipboard.setData(ClipboardData(text: text));
-    showToast(successMessage, type: ToastType.success);
   }
 }
 
@@ -2884,6 +2711,13 @@ class _FunctionApiStatusBox extends StatelessWidget {
     final stepText = stepCount > 0
         ? ' · ${result.successStepCount}/$stepCount'
         : '';
+    if (result.completedVlmFallback) {
+      return _text(
+        context,
+        '执行：VLM 执行完成$stepText',
+        'Run: completed by VLM$stepText',
+      );
+    }
     if (result.startedAgentFallback) {
       return _text(
         context,
@@ -3258,9 +3092,7 @@ class _SummaryGrid extends StatelessWidget {
       MapEntry(_text(context, '状态', 'Status'), snapshot.statusLabel(context)),
       MapEntry(
         _text(context, '执行方式', 'Execution'),
-        _hasRunLogSourceBadge(source)
-            ? _runLogStepSourceLabel(context, source)
-            : _text(context, '需要模型', 'Needs model'),
+        _runLogStepSourceLabel(context, source),
       ),
       if (!_hasRunLogSourceBadge(source) && snapshot.compileKind.isNotEmpty)
         MapEntry(
@@ -4208,6 +4040,13 @@ String _runLogReplaySuccessMessage(
   BuildContext context,
   UtgManualRunResult result,
 ) {
+  if (result.completedVlmFallback) {
+    return _localeValue(
+      context,
+      zh: '执行记录已通过 VLM 执行完成',
+      en: 'Execution completed by VLM',
+    );
+  }
   if (result.startedAgentFallback) {
     final taskId = result.taskId;
     return _localeValue(
@@ -4352,44 +4191,6 @@ _RunLogStatusInfo _runLogStatusInfo(
   );
 }
 
-String _runLogTimeText(
-  BuildContext context,
-  Map<String, dynamic> payload, {
-  required bool start,
-}) {
-  final rawText = _firstNonBlank(
-    start
-        ? [payload['started_at'], payload['startedAt']]
-        : [payload['finished_at'], payload['finishedAt']],
-  );
-  final rawMs = _asInt(
-    start
-        ? payload['started_at_ms'] ?? payload['startedAtMs']
-        : payload['finished_at_ms'] ?? payload['finishedAtMs'],
-  );
-  DateTime? value;
-  if (rawMs != null && rawMs > 0) {
-    value = DateTime.fromMillisecondsSinceEpoch(rawMs).toLocal();
-  } else if (rawText.isNotEmpty) {
-    value = DateTime.tryParse(rawText)?.toLocal();
-  }
-  if (value == null) return '';
-  final now = DateTime.now();
-  final sameDay =
-      now.year == value.year &&
-      now.month == value.month &&
-      now.day == value.day;
-  final hour = value.hour.toString().padLeft(2, '0');
-  final minute = value.minute.toString().padLeft(2, '0');
-  final second = value.second.toString().padLeft(2, '0');
-  if (sameDay) {
-    return '$hour:$minute:$second';
-  }
-  final month = value.month.toString().padLeft(2, '0');
-  final day = value.day.toString().padLeft(2, '0');
-  return '${value.year}/$month/$day $hour:$minute';
-}
-
 enum _RunLogStepSource { agentVlm, human, omniflowReplay, route }
 
 bool _isVlmRunLogStep(_RunLogStepSnapshot snapshot) => snapshot.isVlmStep;
@@ -4508,26 +4309,26 @@ Color _runLogStepSourceColor(BuildContext context, _RunLogStepSource source) {
 String _runLogStepSourceLabel(BuildContext context, _RunLogStepSource source) {
   switch (source) {
     case _RunLogStepSource.agentVlm:
-      return 'Agent/VLM';
+      return 'VLM';
     case _RunLogStepSource.human:
       return _text(context, '人类', 'Human');
     case _RunLogStepSource.omniflowReplay:
-      return _text(context, '离线重放', 'OmniFlow Replay');
+      return 'OmniFlow';
     case _RunLogStepSource.route:
-      return _text(context, '工具', 'Tool');
+      return _text(context, '工具调用', 'Tool call');
   }
 }
 
 String _runLogStepDetailTitle(BuildContext context, _RunLogStepSource source) {
   switch (source) {
     case _RunLogStepSource.agentVlm:
-      return _text(context, 'Agent/VLM 执行记录', 'Agent/VLM run');
+      return _text(context, 'VLM 执行记录', 'VLM run');
     case _RunLogStepSource.human:
       return _text(context, '人类接管记录', 'Human takeover');
     case _RunLogStepSource.omniflowReplay:
-      return _text(context, '离线重放记录', 'Offline replay');
+      return _text(context, 'OmniFlow 执行记录', 'OmniFlow run');
     case _RunLogStepSource.route:
-      return _text(context, '工具调用历史', 'Tool call history');
+      return _text(context, '工具调用', 'Tool call');
   }
 }
 
@@ -4537,13 +4338,13 @@ String _runLogStepActionPanelTitle(
 ) {
   switch (source) {
     case _RunLogStepSource.agentVlm:
-      return _text(context, 'Agent/VLM 动作', 'Agent/VLM action');
+      return _text(context, 'VLM 动作', 'VLM action');
     case _RunLogStepSource.human:
       return _text(context, '人类操作', 'Human action');
     case _RunLogStepSource.omniflowReplay:
-      return _text(context, '离线重放动作', 'Offline replay action');
+      return _text(context, 'OmniFlow 动作', 'OmniFlow action');
     case _RunLogStepSource.route:
-      return _text(context, '工具动作', 'Tool action');
+      return _text(context, '工具调用', 'Tool call');
   }
 }
 
@@ -4670,6 +4471,83 @@ List<Map<String, dynamic>> _extractTimelineCards(Map<String, dynamic> payload) {
   return _findTimelineCards(payload, <Object>{});
 }
 
+class _RunLogCardGroup {
+  const _RunLogCardGroup({
+    required this.card,
+    required this.fallbackIndex,
+    required this.nestedCards,
+  });
+
+  final Map<String, dynamic> card;
+  final int fallbackIndex;
+  final List<Map<String, dynamic>> nestedCards;
+}
+
+List<_RunLogCardGroup> _groupTimelineCards(List<Map<String, dynamic>> cards) {
+  if (cards.isEmpty) return const <_RunLogCardGroup>[];
+  final parentIndexes = <String, int>{};
+  for (var index = 0; index < cards.length; index++) {
+    final cardId = _timelineCardId(cards[index]);
+    if (cardId.isNotEmpty) {
+      parentIndexes[cardId] = index;
+    }
+  }
+  final nestedByParent = <String, List<Map<String, dynamic>>>{};
+  final nestedIndexes = <int>{};
+  for (var index = 0; index < cards.length; index++) {
+    final parentId = _timelineParentCardId(cards[index]);
+    if (parentId.isEmpty || !parentIndexes.containsKey(parentId)) {
+      continue;
+    }
+    nestedByParent.putIfAbsent(parentId, () => <Map<String, dynamic>>[]);
+    nestedByParent[parentId]!.add(cards[index]);
+    nestedIndexes.add(index);
+  }
+  final groups = <_RunLogCardGroup>[];
+  for (var index = 0; index < cards.length; index++) {
+    if (nestedIndexes.contains(index)) {
+      continue;
+    }
+    final card = cards[index];
+    groups.add(
+      _RunLogCardGroup(
+        card: card,
+        fallbackIndex: index,
+        nestedCards:
+            nestedByParent[_timelineCardId(card)] ??
+            const <Map<String, dynamic>>[],
+      ),
+    );
+  }
+  return groups;
+}
+
+String _timelineCardId(Map<String, dynamic> card) {
+  final header = _asStringKeyMap(card['header']);
+  final toolCall = _extractToolCall(card);
+  return _firstNonBlank([
+    card['card_id'],
+    card['cardId'],
+    card['tool_call_id'],
+    card['toolCallId'],
+    toolCall['id'],
+    header['card_id'],
+    header['cardId'],
+  ]);
+}
+
+String _timelineParentCardId(Map<String, dynamic> card) {
+  final header = _asStringKeyMap(card['header']);
+  return _firstNonBlank([
+    card['parent_card_id'],
+    card['parentCardId'],
+    card['parent_tool_call_id'],
+    card['parentToolCallId'],
+    header['parent_card_id'],
+    header['parentCardId'],
+  ]);
+}
+
 class _RunLogTokenUsageAggregate {
   const _RunLogTokenUsageAggregate({
     required this.totalTokens,
@@ -4791,24 +4669,6 @@ _RunLogConvertEligibility _runLogConvertEligibility(
         '执行还在进行中，完成后才能注册',
         'This run is still executing. Register after it finishes.',
       ),
-    );
-  }
-  if (_runLogSuccess(payload) == false) {
-    final error = _firstNonBlank([
-      payload['error_message'],
-      payload['errorMessage'],
-      payload['done_reason'],
-      payload['doneReason'],
-    ]);
-    return _RunLogConvertEligibility(
-      canConvert: false,
-      message: error.isNotEmpty
-          ? _text(context, '执行未成功，不能注册：$error', 'Run failed: $error')
-          : _text(
-              context,
-              '执行未成功，不能注册',
-              'Only successful runs can be registered.',
-            ),
     );
   }
   return _RunLogConvertEligibility(

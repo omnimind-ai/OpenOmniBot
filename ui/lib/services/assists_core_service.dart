@@ -764,10 +764,16 @@ class UtgManualRunResult {
       executionStatus == 'completed' ||
       terminalState['status'] == 'completed';
 
-  bool get startedAgentFallback =>
-      executionStatus == 'started_agent_fallback' ||
-      executionStatus == 'started_agent' ||
-      (taskId.isNotEmpty && modelRequired);
+  bool get completedVlmFallback =>
+      executionStatus == 'completed_vlm_fallback' ||
+      executionStatus == 'vlm_fallback_completed';
+
+  bool get startedAgentFallback {
+    if (completedVlmFallback) return false;
+    return executionStatus == 'started_agent_fallback' ||
+        executionStatus == 'started_agent' ||
+        (taskId.isNotEmpty && modelRequired);
+  }
 
   bool get failed =>
       !success ||
@@ -2645,6 +2651,20 @@ class AssistsMessageService {
     return _jsonSafeDynamicMap(result);
   }
 
+  static Future<Map<String, dynamic>> startHumanTrajectoryLearning({
+    String? name,
+    String? description,
+  }) async {
+    final normalizedName = name?.trim() ?? '';
+    final result = await assistCore
+        .invokeMethod('startHumanTrajectoryLearning', {
+          if (normalizedName.isNotEmpty) 'name': normalizedName,
+          if (description != null && description.trim().isNotEmpty)
+            'description': description.trim(),
+        });
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<Map<String, dynamic>> listOobReusableFunctions({
     int limit = 100,
   }) async {
@@ -3602,7 +3622,9 @@ class AssistsMessageService {
       );
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
-      print('Failed to sync task completion notification setting: ${e.message}');
+      print(
+        'Failed to sync task completion notification setting: ${e.message}',
+      );
       return false;
     }
   }
@@ -3613,14 +3635,12 @@ class AssistsMessageService {
     bool visible = true,
   }) async {
     try {
-      final result = await assistCore.invokeMethod<String>(
-        'setVisibleChatConversation',
-        {
-          'conversationId': conversationId ?? 0,
-          'visible': visible,
-          if (conversationMode != null) 'mode': conversationMode,
-        },
-      );
+      final result = await assistCore
+          .invokeMethod<String>('setVisibleChatConversation', {
+            'conversationId': conversationId ?? 0,
+            'visible': visible,
+            if (conversationMode != null) 'mode': conversationMode,
+          });
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
       print('Failed to sync visible chat conversation: ${e.message}');
@@ -3635,15 +3655,13 @@ class AssistsMessageService {
     String? conversationMode,
   }) async {
     try {
-      final result = await assistCore.invokeMethod<String>(
-        'showTaskCompletionNotification',
-        {
-          'title': title,
-          'message': message,
-          if (conversationId != null) 'conversationId': conversationId,
-          if (conversationMode != null) 'conversationMode': conversationMode,
-        },
-      );
+      final result = await assistCore
+          .invokeMethod<String>('showTaskCompletionNotification', {
+            'title': title,
+            'message': message,
+            if (conversationId != null) 'conversationId': conversationId,
+            if (conversationMode != null) 'conversationMode': conversationMode,
+          });
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
       print('Failed to show task completion notification: ${e.message}');

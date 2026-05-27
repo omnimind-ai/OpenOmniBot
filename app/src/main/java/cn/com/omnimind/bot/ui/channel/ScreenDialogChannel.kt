@@ -51,6 +51,24 @@ class ScreenDialogChannel {
                     }
                 }
 
+                "hideForManualRecording" -> {
+                    mainJob.launch {
+                        val hidden = withContext(Dispatchers.Main) {
+                            FloatingHalfScreenLoader.hideForManualRecording()
+                        }
+                        result.success(hidden)
+                    }
+                }
+
+                "restoreAfterManualRecording" -> {
+                    mainJob.launch {
+                        val restored = withContext(Dispatchers.Main) {
+                            FloatingHalfScreenLoader.restoreAfterManualRecording()
+                        }
+                        result.success(restored)
+                    }
+                }
+
                 else -> result.notImplemented()
             }
         }

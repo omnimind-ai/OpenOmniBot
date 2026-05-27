@@ -1450,6 +1450,9 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                               });
                             }
                           : null,
+                      onManualRecordingTap: _activeMode == ChatPageMode.normal
+                          ? _startManualRecordingFromShortcut
+                          : null,
                       onInputHeightChanged: _handleInputAreaHeightChanged,
                       onClearSelectedModelOverride:
                           _activeMode == ChatPageMode.normal &&

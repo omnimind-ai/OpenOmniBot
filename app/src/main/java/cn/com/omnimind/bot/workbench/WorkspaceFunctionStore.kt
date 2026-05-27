@@ -121,7 +121,8 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
      * spec and registers it in this workspace store AND in SharedPreferences so
      * OobFunctionToolHandler can pick it up immediately.
      *
-     * Only called when run.success == true.
+     * Finished and cancelled runs may both be distilled; the compiler keeps only
+     * replayable steps and treats cancellation as the natural end of the trace.
      */
     fun distillFromRun(
         context: Context,
