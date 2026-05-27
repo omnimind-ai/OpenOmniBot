@@ -1121,29 +1121,11 @@ class OobUdegNodeStore(
     }
 
     private fun stepSummaries(functionSpec: Map<String, Any?>): List<Map<String, Any?>> {
-        val execution = mapArg(functionSpec["execution"])
-        return listArg(execution["steps"]).mapIndexedNotNull { index, raw ->
-            val step = mapArg(raw)
-            if (step.isEmpty()) return@mapIndexedNotNull null
-            val tool = firstNonBlank(
-                step["omniflow_action"],
-                step["local_action"],
-                step["callable_tool"],
-                step["tool"],
-            )
-            linkedMapOf(
-                "index" to index,
-                "id" to firstNonBlank(step["id"], "step_${index + 1}"),
-                "title" to firstNonBlank(step["title"], step["summary"], tool),
-                "tool" to tool,
-            )
-        }
+        return OobFunctionSchemaBuilder.stepSummaries(functionSpec)
     }
 
     private fun materializedSteps(functionSpec: Map<String, Any?>): List<Map<String, Any?>> =
-        listArg(mapArg(functionSpec["execution"])["steps"]).mapNotNull { raw ->
-            mapArg(raw).takeIf { it.isNotEmpty() }
-        }
+        OobFunctionSchemaBuilder.materializedSteps(functionSpec)
 
     private fun segmentBoundaryContexts(
         step: Map<String, Any?>,

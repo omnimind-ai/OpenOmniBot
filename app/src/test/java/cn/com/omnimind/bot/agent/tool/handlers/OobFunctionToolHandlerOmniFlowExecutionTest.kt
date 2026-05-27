@@ -479,6 +479,47 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
+    fun `canonical actions only function replays without legacy execution steps`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val spec = linkedMapOf<String, Any?>(
+                "schema_version" to "omniflow.function.v1",
+                "function_id" to "canonical_finished",
+                "name" to "omniflow_exported_finished",
+                "description" to "Canonical OmniFlow function",
+                "parameters" to linkedMapOf(
+                    "type" to "object",
+                    "properties" to emptyMap<String, Any?>(),
+                    "required" to emptyList<String>(),
+                    "additionalProperties" to false,
+                ),
+                "actions" to listOf(
+                    linkedMapOf(
+                        "type" to "finished",
+                        "content" to "done",
+                    )
+                ),
+            )
+
+            val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                functionId = "canonical_finished",
+                spec = spec,
+                materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                allowAgentFallback = false,
+            )
+
+            assertEquals(true, run["success"])
+            assertEquals(false, run["model_required"])
+            val step = stepResults(run).single()
+            assertEquals("omniflow", step["executor"])
+            assertEquals("finished", step["tool"])
+            assertEquals(true, step["success"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `call_tool without function id requires agent runner when router unavailable`() = runBlocking {
         val context = TempFilesContext()
         try {

@@ -801,15 +801,21 @@ class RunLogReusableFunctionCompilerTest {
             runId = "run-input-parameter",
         )
 
-        val parameter = parametersFrom(spec).single()
-        assertEquals("input_text", parameter["name"])
+        val parameterSchema = parameterSchemaFrom(spec)
+        assertEquals("object", parameterSchema["type"])
+        assertFalse((parameterSchema["required"] as List<*>).contains("input_text"))
+
+        val parameter = parameterPropertiesFrom(parameterSchema).getValue("input_text")
         assertEquals("string", parameter["type"])
-        assertEquals(false, parameter["required"])
         assertEquals("hello", parameter["default"])
         assertEquals(
-            listOf("$.execution.steps[0].args.text"),
-            parameter["bindings"],
+            listOf("$.execution.steps[0].args.text", "$.actions[0].text"),
+            parameter["x_oob_bindings"],
         )
+
+        val action = actionsFrom(spec).single()
+        assertEquals("input_text", action["type"])
+        assertEquals("${'$'}{input_text}", action["text"])
 
         val changed = OobReusableFunctionStore.materialize(
             spec,
@@ -904,11 +910,27 @@ class RunLogReusableFunctionCompilerTest {
         return capabilities.entries.associate { (key, value) -> key.toString() to value }
     }
 
-    private fun parametersFrom(spec: Map<String, Any?>): List<Map<String, Any?>> {
-        val parameters = spec["parameters"] as List<*>
-        return parameters.map { raw ->
+    private fun actionsFrom(spec: Map<String, Any?>): List<Map<String, Any?>> {
+        val actions = spec["actions"] as List<*>
+        return actions.map { raw ->
             (raw as Map<*, *>).entries.associate { (key, value) ->
                 key.toString() to value
+            }
+        }
+    }
+
+    private fun parameterSchemaFrom(spec: Map<String, Any?>): Map<String, Any?> {
+        val parameters = spec["parameters"] as Map<*, *>
+        return parameters.entries.associate { (key, value) ->
+            key.toString() to value
+        }
+    }
+
+    private fun parameterPropertiesFrom(schema: Map<String, Any?>): Map<String, Map<String, Any?>> {
+        val properties = schema["properties"] as Map<*, *>
+        return properties.entries.associate { (key, value) ->
+            key.toString() to (value as Map<*, *>).entries.associate { (propertyKey, propertyValue) ->
+                propertyKey.toString() to propertyValue
             }
         }
     }

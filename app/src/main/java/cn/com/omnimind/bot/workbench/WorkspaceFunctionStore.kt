@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.workbench
 
 import android.content.Context
 import cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompiler
+import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.baselib.util.OmniLog
@@ -34,14 +35,19 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
     // ── Function CRUD ────────────────────────────────────────────────────────
 
     fun register(spec: Map<String, Any?>): Map<String, Any?> {
-        val functionId = spec["function_id"]?.toString()?.trim()
+        val functionId = OobFunctionSchemaBuilder.functionId(spec).takeIf { it.isNotEmpty() }
             ?: return mapOf("success" to false, "errorMessage" to "function_id required")
+        val storedSpec = linkedMapOf<String, Any?>().apply {
+            putAll(spec)
+            put("function_id", functionId)
+            putIfAbsent("name", functionId)
+        }
         val file = functionFile(functionId)
         val tmp = File(file.parentFile, "${file.name}.tmp")
         return runCatching {
-            tmp.writeText(gson.toJson(spec))
+            tmp.writeText(gson.toJson(storedSpec))
             if (!tmp.renameTo(file)) {
-                file.writeText(gson.toJson(spec))
+                file.writeText(gson.toJson(storedSpec))
                 tmp.delete()
             }
             mapOf("success" to true, "function_id" to functionId,
@@ -77,7 +83,7 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
 
     fun functionIds(limit: Int = 500): List<String> =
         list(limit).mapNotNull { spec ->
-            spec["function_id"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            OobFunctionSchemaBuilder.functionId(spec).takeIf { it.isNotEmpty() }
         }
 
     fun delete(functionId: String): Boolean =
@@ -134,7 +140,7 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
             return mapOf("success" to false, "reason" to "no_replayable_steps")
         }
 
-        val functionId = spec["function_id"]?.toString().orEmpty()
+        val functionId = OobFunctionSchemaBuilder.functionId(spec)
             .ifEmpty { deriveCommandId(record) }
         val storedSpec = if (functionId == spec["function_id"]) {
             spec
@@ -153,10 +159,7 @@ class WorkspaceFunctionStore(private val workspaceRoot: File) {
         return mapOf(
             "success" to true,
             "function_id" to functionId,
-            "step_count" to (
-                ((storedSpec["execution"] as? Map<*, *>)?.get("steps") as? List<*>)
-                    ?.size ?: 0
-                ),
+            "step_count" to OobFunctionSchemaBuilder.materializedSteps(storedSpec).size,
             "path" to functionFile(functionId).absolutePath,
         )
     }

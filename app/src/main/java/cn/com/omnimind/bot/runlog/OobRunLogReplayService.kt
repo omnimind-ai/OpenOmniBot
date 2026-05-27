@@ -98,13 +98,10 @@ class OobRunLogReplayService(
             )
         }
         val functionId = normalizeFunctionId(rawFunctionId)
-        val spec = if (functionId == rawFunctionId) {
-            rawSpec
-        } else {
-            linkedMapOf<String, Any?>().apply {
-                putAll(rawSpec)
-                put("function_id", functionId)
-            }
+        val spec = linkedMapOf<String, Any?>().apply {
+            putAll(rawSpec)
+            put("function_id", functionId)
+            putIfAbsent("name", functionId)
         }
         val alreadyExists = workspaceFunctionStore.canHandle(functionId) ||
             OobReusableFunctionStore.get(context, functionId) != null
@@ -356,7 +353,7 @@ class OobRunLogReplayService(
     }
 
     private fun functionIdFromSpec(spec: Map<String, Any?>): String =
-        spec["function_id"]?.toString()?.trim().orEmpty()
+        OobReusableFunctionStore.functionIdFromSpec(spec)
 
     private fun normalizeFunctionId(value: String): String {
         val trimmed = value.trim()
@@ -378,23 +375,32 @@ class OobRunLogReplayService(
 
     private fun sourceRunIds(spec: Map<String, Any?>): List<String> {
         val source = spec["source"] as? Map<*, *>
-        return source?.get("run_id")
-            ?.toString()
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { listOf(it) }
-            ?: emptyList()
+        val metadata = spec["metadata"] as? Map<*, *>
+        return buildList {
+            source?.get("run_id")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::add)
+            metadata?.get("run_id")
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::add)
+            (metadata?.get("source_run_ids") as? List<*>)?.forEach { raw ->
+                raw?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }.distinct()
     }
 
     private fun summaryMap(spec: Map<String, Any?>): Map<String, Any?> {
         val execution = spec["execution"] as? Map<*, *>
-        val steps = execution?.get("steps") as? List<*> ?: emptyList<Any?>()
-        val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
+        val steps = OobFunctionSchemaBuilder.materializedSteps(spec)
         val registry = spec["_oob_registry"] as? Map<*, *>
         val source = spec["source"] as? Map<*, *>
         val runStats = registry?.get("run_stats") as? Map<*, *>
         return linkedMapOf(
-            "function_id" to spec["function_id"],
+            "function_id" to functionIdFromSpec(spec),
             "name" to spec["name"],
             "description" to spec["description"],
             "step_count" to (execution?.get("step_count") ?: steps.size),
@@ -408,25 +414,8 @@ class OobRunLogReplayService(
             "omniflow_step_count" to execution?.get("omniflow_step_count"),
             "agent_step_count" to execution?.get("agent_step_count"),
             "requires_agent_fallback" to execution?.get("requires_agent_fallback"),
-            "parameter_names" to parameters.mapNotNull { raw ->
-                (raw as? Map<*, *>)?.get("name")?.toString()?.takeIf { it.isNotBlank() }
-            },
-            "step_summaries" to steps.mapIndexedNotNull { index, rawStep ->
-                val step = rawStep as? Map<*, *> ?: return@mapIndexedNotNull null
-                linkedMapOf(
-                    "index" to index,
-                    "id" to step["id"],
-                    "title" to step["title"],
-                    "kind" to step["kind"],
-                    "executor" to step["executor"],
-                    "tool" to (
-                        step["omniflow_action"]
-                            ?: step["local_action"]
-                            ?: step["callable_tool"]
-                            ?: step["tool"]
-                        )
-                )
-            },
+            "parameter_names" to OobFunctionSchemaBuilder.parameterNames(spec),
+            "step_summaries" to OobFunctionSchemaBuilder.stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
             "runner" to "oob_agent_reusable_function",

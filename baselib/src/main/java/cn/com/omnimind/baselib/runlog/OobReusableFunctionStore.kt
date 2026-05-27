@@ -280,19 +280,13 @@ object OobReusableFunctionStore {
             }
         }
 
-        val rendered = renderParameterTemplates(spec, resolvedArguments)
-        if (rendered is Map<*, *>) {
-            spec.clear()
-            spec.putAll(mutableJsonMap(sanitizeMap(rendered)))
-        }
-
-        val parameters = spec["parameters"] as? List<*> ?: emptyList<Any?>()
-        parameters.forEach { rawParameter ->
-            val parameter = rawParameter as? Map<*, *> ?: return@forEach
-            val name = parameter["name"]?.toString()?.trim().orEmpty()
-            if (name.isEmpty()) return@forEach
-            // Legacy parameter specs are already applied above. This pass is kept
-            // empty intentionally after rendering so old specs retain their shape.
+        if (resolvedArguments.isNotEmpty()) {
+            val rendered = renderParameterTemplates(spec, resolvedArguments)
+            if (rendered is Map<*, *>) {
+                val renderedSpec = mutableJsonMap(sanitizeMap(rendered))
+                spec.clear()
+                spec.putAll(renderedSpec)
+            }
         }
 
         val existingRuntime = spec["runtime"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
@@ -357,23 +351,6 @@ object OobReusableFunctionStore {
         return mapArg(schema["properties"]).keys
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-    }
-
-    private fun legacyMissingRequiredArguments(
-        functionSpec: Map<String, Any?>,
-        arguments: Map<String, Any?>
-    ): List<String> {
-        val parameters = functionSpec["parameters"] as? List<*> ?: return emptyList()
-        return parameters.mapNotNull { rawParameter ->
-            val parameter = rawParameter as? Map<*, *> ?: return@mapNotNull null
-            val name = parameter["name"]?.toString()?.trim().orEmpty()
-            if (name.isEmpty() || !isRequired(parameter["required"])) {
-                return@mapNotNull null
-            }
-            val hasArgument = arguments.containsKey(name) && arguments[name] != null
-            val hasDefault = parameter.containsKey("default") && parameter["default"] != null
-            if (hasArgument || hasDefault) null else name
-        }
     }
 
     fun prettyJson(value: Any?): String = gson.toJson(sanitizeValue(value))

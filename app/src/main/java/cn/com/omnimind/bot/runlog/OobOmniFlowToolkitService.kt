@@ -517,7 +517,7 @@ class OobOmniFlowToolkitService(
             putAll(spec)
             put("success", true)
             put("function", spec)
-            put("function_id", firstNonBlank(spec["function_id"], functionId))
+            put("function_id", firstNonBlank(OobFunctionSchemaBuilder.functionId(spec), functionId))
             put("summary", functionAgentSummary(spec))
             put("response_source", "oob_native_function_store")
         }
@@ -655,8 +655,8 @@ class OobOmniFlowToolkitService(
         mapArg(request["functionSpec"])
             .ifEmpty { mapArg(request["function_spec"]) }
             .ifEmpty {
-                if (request.containsKey("function_id") &&
-                    mapArg(request["execution"]).isNotEmpty()
+                if ((request.containsKey("function_id") || request.containsKey("name")) &&
+                    (mapArg(request["execution"]).isNotEmpty() || listArg(request["actions"]).isNotEmpty())
                 ) {
                     request
                 } else {
@@ -2042,7 +2042,7 @@ class OobOmniFlowToolkitService(
         goal: String,
         currentPackage: String,
     ): RankedFunction? {
-        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        val functionId = OobFunctionSchemaBuilder.functionId(spec)
         if (functionId.isEmpty()) return null
         val scored = scoreFunctionText(spec, goal, currentPackage)
         if (scored.score < MIN_RECALL_SCORE) return null
@@ -2145,7 +2145,7 @@ class OobOmniFlowToolkitService(
         goal: String,
         currentPackage: String,
     ): FunctionTextScore {
-        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        val functionId = OobFunctionSchemaBuilder.functionId(spec)
         val name = spec["name"]?.toString()?.trim().orEmpty()
         val description = spec["description"]?.toString()?.trim().orEmpty()
         val source = mapArg(spec["source"])
@@ -2214,14 +2214,16 @@ class OobOmniFlowToolkitService(
         extras: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
         val execution = mapArg(spec["execution"])
+        val steps = materializedSteps(spec)
+        val functionId = OobFunctionSchemaBuilder.functionId(spec)
         return linkedMapOf<String, Any?>(
-            "function_id" to spec["function_id"],
-            "description" to (spec["description"] ?: spec["name"] ?: spec["function_id"]),
+            "function_id" to functionId,
+            "description" to (spec["description"] ?: spec["name"] ?: functionId),
             "name" to spec["name"],
             "inputSchema" to inputSchema(spec),
             "score" to score,
             "reason" to reason,
-            "step_count" to (execution["step_count"] ?: listArg(execution["steps"]).size),
+            "step_count" to (execution["step_count"] ?: steps.size),
             "requires_agent_fallback" to execution["requires_agent_fallback"],
             "step_summaries" to stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
@@ -2231,19 +2233,17 @@ class OobOmniFlowToolkitService(
 
     private fun functionAgentSummary(spec: Map<String, Any?>): Map<String, Any?> {
         val execution = mapArg(spec["execution"])
-        val steps = listArg(execution["steps"])
-        val parameters = listArg(spec["parameters"])
+        val steps = materializedSteps(spec)
+        val functionId = OobFunctionSchemaBuilder.functionId(spec)
         return linkedMapOf(
-            "function_id" to spec["function_id"],
+            "function_id" to functionId,
             "name" to spec["name"],
             "description" to spec["description"],
             "step_count" to (execution["step_count"] ?: steps.size),
             "omniflow_step_count" to execution["omniflow_step_count"],
             "agent_step_count" to execution["agent_step_count"],
             "requires_agent_fallback" to execution["requires_agent_fallback"],
-            "parameter_names" to parameters.mapNotNull { raw ->
-                firstNonBlank(mapArg(raw)["name"]).takeIf { it.isNotBlank() }
-            },
+            "parameter_names" to OobFunctionSchemaBuilder.parameterNames(spec),
             "step_summaries" to stepSummaries(spec),
             "source" to spec["source"],
             "constraints" to spec["constraints"],
@@ -2251,22 +2251,7 @@ class OobOmniFlowToolkitService(
     }
 
     private fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> {
-        val execution = mapArg(spec["execution"])
-        return listArg(execution["steps"]).mapIndexedNotNull { index, rawStep ->
-            val step = mapArg(rawStep).takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
-            linkedMapOf(
-                "index" to index,
-                "id" to firstNonBlank(step["id"], "step_${index + 1}"),
-                "title" to firstNonBlank(step["title"], step["summary"]),
-                "kind" to step["kind"],
-                "tool" to firstNonBlank(
-                    step["omniflow_action"],
-                    step["local_action"],
-                    step["callable_tool"],
-                    step["tool"],
-                )
-            )
-        }
+        return OobFunctionSchemaBuilder.stepSummaries(spec)
     }
 
     private fun inputSchema(spec: Map<String, Any?>): Map<String, Any?> {
@@ -2407,10 +2392,7 @@ class OobOmniFlowToolkitService(
     }
 
     private fun materializedSteps(spec: Map<String, Any?>): List<Map<String, Any?>> {
-        val rawSteps = listArg(mapArg(spec["execution"])["steps"])
-        return rawSteps.mapNotNull { rawStep ->
-            (rawStep as? Map<*, *>)?.let(::stringMap)
-        }
+        return OobFunctionSchemaBuilder.materializedSteps(spec)
     }
 
     private fun canonicalCallError(

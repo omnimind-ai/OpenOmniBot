@@ -37,7 +37,9 @@ object RunLogReusableFunctionCompiler {
 
         if (steps.isEmpty()) return null
 
-        val parameters = inferParameters(steps)
+        val legacyParameters = inferParameters(steps)
+        val parameters = canonicalParameterSchema(legacyParameters)
+        val actions = canonicalActionsForSteps(steps, legacyParameters)
         val now = System.currentTimeMillis().toString()
         val functionId = deriveFunctionId(record)
         val goal = record.goal.ifBlank { record.operationDescription }
@@ -50,7 +52,27 @@ object RunLogReusableFunctionCompiler {
             "name" to name,
             "description" to goal.ifBlank { name },
             "parameters" to parameters,
+            "actions" to actions,
             "terminal_postconditions" to terminalPostconditions.takeIf { it.isNotEmpty() },
+            "metadata" to linkedMapOf(
+                "source" to "run_log_import",
+                "run_id" to record.runId,
+                "source_run_ids" to listOf(record.runId),
+                "original_goal" to record.goal,
+                "goal" to goal.ifBlank { name },
+                "step_count" to actions.size,
+                "oob_parameter_bindings" to legacyParameters.mapNotNull { parameter ->
+                    val nameValue = firstNonBlank(parameter["name"])
+                    val bindings = parameter["bindings"] as? List<*> ?: emptyList<Any?>()
+                    if (nameValue.isBlank() || bindings.isEmpty()) return@mapNotNull null
+                    linkedMapOf(
+                        "name" to nameValue,
+                        "bindings" to bindings,
+                    )
+                },
+                "oob_legacy_parameters" to legacyParameters.takeIf { it.isNotEmpty() },
+                "oob_compat_execution" to true,
+            ).filterValues { it != null },
             "source" to linkedMapOf(
                 "kind" to "run_log",
                 "run_id" to record.runId,
@@ -64,7 +86,7 @@ object RunLogReusableFunctionCompiler {
                 "converter" to "native_run_log_reusable_function_builder",
                 "parameter_inference" to linkedMapOf(
                     "strategy" to "deterministic_input_text_bindings",
-                    "parameter_count" to parameters.size,
+                    "parameter_count" to legacyParameters.size,
                 ),
             ),
             "execution" to linkedMapOf(
@@ -253,6 +275,283 @@ object RunLogReusableFunctionCompiler {
         }
         return parameters
     }
+
+    private fun canonicalParameterSchema(
+        legacyParameters: List<Map<String, Any?>>,
+    ): Map<String, Any?> {
+        val properties = linkedMapOf<String, Any?>()
+        val required = mutableListOf<String>()
+        legacyParameters.forEach { parameter ->
+            val name = firstNonBlank(parameter["name"])
+            if (name.isBlank()) return@forEach
+            val bindings = listArg(parameter["bindings"]) +
+                listArg(parameter["bindings"]).mapNotNull(::actionBindingForExecutionBinding)
+            val property = linkedMapOf<String, Any?>(
+                "type" to jsonSchemaType(firstNonBlank(parameter["type"]).ifBlank { "string" }),
+            )
+            firstNonBlank(parameter["description"]).takeIf { it.isNotBlank() }?.let {
+                property["description"] = it
+            }
+            if (parameter.containsKey("default")) {
+                property["default"] = parameter["default"]
+            }
+            listArg(parameter["enum"]).ifEmpty { listArg(parameter["values"]) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { property["enum"] = it }
+            if (bindings.isNotEmpty()) {
+                property["x_oob_bindings"] = bindings.distinct()
+            }
+            properties[name] = property
+            if (isTruthy(parameter["required"])) {
+                required += name
+            }
+        }
+        return linkedMapOf(
+            "type" to "object",
+            "properties" to properties,
+            "required" to required,
+            "additionalProperties" to false,
+        )
+    }
+
+    private fun canonicalActionsForSteps(
+        steps: List<Map<String, Any?>>,
+        legacyParameters: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        val templates = parameterTemplatesByStepArg(legacyParameters)
+        return steps.mapIndexedNotNull { index, step ->
+            canonicalActionForStep(step, index, templates)
+        }
+    }
+
+    private fun parameterTemplatesByStepArg(
+        legacyParameters: List<Map<String, Any?>>,
+    ): Map<Pair<Int, String>, String> {
+        val output = linkedMapOf<Pair<Int, String>, String>()
+        legacyParameters.forEach { parameter ->
+            val name = firstNonBlank(parameter["name"])
+            if (name.isBlank()) return@forEach
+            listArg(parameter["bindings"]).forEach { rawBinding ->
+                val binding = rawBinding?.toString()?.trim().orEmpty()
+                val match = EXECUTION_ARG_BINDING_REGEX.matchEntire(binding) ?: return@forEach
+                val stepIndex = match.groupValues[1].toIntOrNull() ?: return@forEach
+                val argKey = match.groupValues[2]
+                output[stepIndex to argKey] = "\${$name}"
+            }
+        }
+        return output
+    }
+
+    private fun actionBindingForExecutionBinding(rawBinding: Any?): String? {
+        val binding = rawBinding?.toString()?.trim().orEmpty()
+        val match = EXECUTION_ARG_BINDING_REGEX.matchEntire(binding) ?: return null
+        val stepIndex = match.groupValues[1].toIntOrNull() ?: return null
+        val argKey = match.groupValues[2]
+        val actionPath = when (argKey) {
+            "text", "content", "value" -> "text"
+            else -> argKey
+        }
+        return "$.actions[$stepIndex].$actionPath"
+    }
+
+    private fun canonicalActionForStep(
+        step: Map<String, Any?>,
+        index: Int,
+        parameterTemplates: Map<Pair<Int, String>, String>,
+    ): Map<String, Any?>? {
+        val args = asMap(step["args"])
+        val rawTool = firstNonBlank(
+            step["omniflow_action"],
+            step["local_action"],
+            step["tool"],
+            step["callable_tool"],
+        )
+        val action = RunLogReplayPolicy.omniflowActionForToolName(rawTool)
+            ?: RunLogReplayPolicy.normalizeToolName(rawTool)
+        val description = firstNonBlank(step["title"], step["summary"]).takeIf { it.isNotBlank() }
+        val sourceContext = asMap(step["source_context"]).ifEmpty { asMap(args["source_context"]) }
+        return when {
+            action == "click" -> canonicalPointAction(
+                type = "click",
+                args = args,
+                description = description,
+                sourceContext = sourceContext,
+            )
+            action == "long_press" -> canonicalPointAction(
+                type = "long_press",
+                args = args,
+                description = description,
+                sourceContext = sourceContext,
+            )
+            action == "type" || action == "input_text" -> nullableMap(
+                "type" to "input_text",
+                "text" to inputTextValue(args, index, parameterTemplates),
+                "params" to nullableMap(
+                    "selector" to firstNonBlank(args["selector"]).takeIf { it.isNotBlank() },
+                    "clear" to args["clear"],
+                ).takeIf { it.isNotEmpty() },
+                "description" to description,
+            )
+            action == "scroll" || action == "swipe" -> {
+                val target = coordinateTarget(args)
+                nullableMap(
+                    "type" to "swipe",
+                    "target" to target,
+                    "direction" to firstNonBlank(args["direction"], args["scroll_direction"]).ifBlank { "down" },
+                    "distance" to firstPresent(args["distance"], args["scroll_distance"]),
+                    "end_x" to firstPresent(args["end_x"], args["endX"]),
+                    "end_y" to firstPresent(args["end_y"], args["endY"]),
+                    "duration_ms" to firstPresent(args["duration_ms"], args["durationMs"]),
+                    "params" to nullableMap(
+                        "source_context" to sourceContext.takeIf { it.isNotEmpty() },
+                    ).takeIf { it.isNotEmpty() },
+                    "description" to description,
+                )
+            }
+            action == "open_app" -> nullableMap(
+                "type" to "open_app",
+                "packageName" to firstNonBlank(args["package_name"], args["packageName"]),
+                "description" to description,
+            )
+            action == "press_home" -> nullableMap(
+                "type" to "press_key",
+                "key" to "home",
+                "description" to description,
+            )
+            action == "press_back" -> nullableMap(
+                "type" to "press_key",
+                "key" to "back",
+                "description" to description,
+            )
+            action == "hot_key" || action == "press_key" -> nullableMap(
+                "type" to "press_key",
+                "key" to firstNonBlank(args["key"], args["hotkey"], args["hot_key"]),
+                "description" to description,
+            )
+            action == "finished" -> nullableMap(
+                "type" to "finished",
+                "content" to firstPresent(args["content"], args["summary"]),
+                "enableSummary" to firstPresent(args["enable_summary"], args["enableSummary"]),
+                "summaryPrompt" to firstPresent(args["summary_prompt"], args["summaryPrompt"]),
+                "description" to description,
+            )
+            RunLogReplayPolicy.isOmniflowFunctionTool(action) ||
+                RunLogReplayPolicy.isOmniflowToolCallTool(action) -> {
+                val functionId = firstNonBlank(
+                    args["function_id"],
+                    args["functionId"],
+                    args["oob_function_id"],
+                    args["oobFunctionId"],
+                    args["function_name"],
+                    args["functionName"],
+                )
+                nullableMap(
+                    "type" to "call_function",
+                    "params" to nullableMap(
+                        "node_id" to firstNonBlank(args["node_id"], args["nodeId"]),
+                        "function_name" to functionId,
+                        "function_id" to functionId,
+                        "arguments" to asMap(args["arguments"]).ifEmpty { asMap(args["args"]) },
+                    ),
+                    "description" to description,
+                )
+            }
+            RunLogReplayPolicy.isOmniflowGraphTool(action) -> nullableMap(
+                "type" to "click_node",
+                "params" to nullableMap(
+                    "node_id" to firstNonBlank(args["node_id"], args["nodeId"]),
+                    "path" to listArg(args["path"]).takeIf { it.isNotEmpty() },
+                ),
+                "description" to description,
+            )
+            action == "wait" -> nullableMap(
+                "type" to "wait",
+                "timeMs" to firstPresent(args["timeMs"], args["time_ms"]),
+                "params" to nullableMap(
+                    "time_s" to firstPresent(args["time_s"], args["seconds"]),
+                    "selector" to firstNonBlank(args["selector"]).takeIf { it.isNotBlank() },
+                    "url" to firstNonBlank(args["url"]).takeIf { it.isNotBlank() },
+                ).takeIf { it.isNotEmpty() },
+                "description" to description,
+            )
+            else -> nullableMap(
+                "type" to "external_tool",
+                "toolName" to firstNonBlank(step["callable_tool"], step["tool"], rawTool),
+                "arguments" to args,
+                "description" to description,
+            )
+        }
+    }
+
+    private fun canonicalPointAction(
+        type: String,
+        args: Map<String, Any?>,
+        description: String?,
+        sourceContext: Map<String, Any?>,
+    ): Map<String, Any?> {
+        val target = coordinateTarget(args).takeIf {
+            it["x"] != null && it["y"] != null
+        } ?: nullableMap(
+            "kind" to "prompt",
+            "prompt" to firstNonBlank(
+                args["target_description"],
+                args["targetDescription"],
+                args["clickPrompt"],
+                args["label"],
+            )
+        )
+        return nullableMap(
+            "type" to type,
+            "target" to target,
+            "prompt" to firstNonBlank(
+                args["target_description"],
+                args["targetDescription"],
+                args["clickPrompt"],
+                args["label"],
+            ).takeIf { it.isNotBlank() },
+            "params" to nullableMap(
+                "source_context" to sourceContext.takeIf { it.isNotEmpty() },
+                "selector" to firstNonBlank(args["selector"]).takeIf { it.isNotBlank() },
+            ).takeIf { it.isNotEmpty() },
+            "description" to description,
+        )
+    }
+
+    private fun coordinateTarget(args: Map<String, Any?>): Map<String, Any?> =
+        nullableMap(
+            "kind" to "coords",
+            "x" to firstPresent(args["x"], args["center_x"], args["centerX"]),
+            "y" to firstPresent(args["y"], args["center_y"], args["centerY"]),
+            "xmlRef" to firstPresent(args["xml_ref"], args["xmlRef"]),
+        )
+
+    private fun inputTextValue(
+        args: Map<String, Any?>,
+        stepIndex: Int,
+        parameterTemplates: Map<Pair<Int, String>, String>,
+    ): Any? {
+        INPUT_TEXT_ARG_KEYS.forEach { key ->
+            parameterTemplates[stepIndex to key]?.let { return it }
+        }
+        return firstPresent(args["text"], args["content"], args["value"])
+    }
+
+    private fun jsonSchemaType(type: String): String =
+        when (type.lowercase()) {
+            "int", "integer" -> "integer"
+            "number", "float", "double" -> "number"
+            "bool", "boolean" -> "boolean"
+            "array", "object" -> type.lowercase()
+            else -> "string"
+        }
+
+    private fun isTruthy(value: Any?): Boolean =
+        when (value) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            is String -> value.trim().equals("true", ignoreCase = true)
+            else -> false
+        }
 
     private fun parameterNameForInputStep(step: Map<String, Any?>, index: Int): String {
         val rawLabel = firstNonBlank(
@@ -1040,6 +1339,13 @@ object RunLogReusableFunctionCompiler {
         return decoded.entries.associate { (key, item) -> key.toString() to item }
     }
 
+    private fun listArg(value: Any?): List<Any?> =
+        when (value) {
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> emptyList()
+        }
+
     private fun jsonSafeMap(value: Any?): Map<String, Any?> = asMap(jsonSafe(value))
 
     private fun jsonSafe(value: Any?): Any? {
@@ -1101,6 +1407,7 @@ object RunLogReusableFunctionCompiler {
 
     private val INPUT_TEXT_ACTIONS = setOf("type", "input_text")
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
+    private val EXECUTION_ARG_BINDING_REGEX = Regex("""^\$\.execution\.steps\[(\d+)]\.args\.([A-Za-z0-9_]+)$""")
     private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+""")
     private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
     private const val TRANSIENT_BRIDGE_SAME_PAGE_SCORE = 0.92f

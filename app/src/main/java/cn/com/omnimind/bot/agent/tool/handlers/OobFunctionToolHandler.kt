@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.assists.task.vlmserver.VLMSettingsToggleCompletionChecker
+import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
@@ -1604,13 +1605,7 @@ class OobFunctionToolHandler(
     }
 
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
-        val rawSteps = (materializedSpec["execution"] as? Map<*, *>)?.get("steps") as? List<*>
-            ?: return emptyList()
-        return rawSteps.mapNotNull { rawStep ->
-            (rawStep as? Map<*, *>)?.entries?.associate { (key, value) ->
-                key.toString() to value
-            }
-        }
+        return OobFunctionSchemaBuilder.materializedSteps(materializedSpec)
     }
 
     private fun failureStepResult(
