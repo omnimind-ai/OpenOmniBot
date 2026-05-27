@@ -72,13 +72,15 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
                     "run_requested" to shouldRun,
                 )
             }.getOrElse { error ->
+                OmniLog.e(TAG, "debug runlog function replay failed: ${error.fullMessage()}", error)
                 linkedMapOf<String, Any?>(
                     "success" to false,
                     "phase" to "exception",
                     "run_id" to runId,
                     "function_id" to functionId,
-                    "error_message" to error.message.orEmpty(),
+                    "error_message" to error.fullMessage(),
                     "error_type" to error.javaClass.name,
+                    "error_cause_chain" to error.causeChain(),
                 )
             }
             val json = gson.toJson(result)
@@ -99,5 +101,32 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
             String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8).trim()
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
+    }
+
+    private fun Throwable.fullMessage(): String {
+        val parts = mutableListOf<String>()
+        var current: Throwable? = this
+        val seen = mutableSetOf<Throwable>()
+        while (current != null && seen.add(current)) {
+            parts += current.message?.takeIf(String::isNotBlank)
+                ?.let { "${current.javaClass.name}: $it" }
+                ?: current.javaClass.name
+            current = current.cause
+        }
+        return parts.joinToString(" <- ")
+    }
+
+    private fun Throwable.causeChain(): List<Map<String, String>> {
+        val output = mutableListOf<Map<String, String>>()
+        var current: Throwable? = this
+        val seen = mutableSetOf<Throwable>()
+        while (current != null && seen.add(current)) {
+            output += linkedMapOf(
+                "type" to current.javaClass.name,
+                "message" to current.message.orEmpty(),
+            )
+            current = current.cause
+        }
+        return output
     }
 }

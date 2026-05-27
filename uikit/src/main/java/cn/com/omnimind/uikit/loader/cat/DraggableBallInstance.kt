@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.view.View
 import android.view.WindowManager.BadTokenException
 import cn.com.omnimind.accessibility.service.AssistsService
+import cn.com.omnimind.assists.HumanTrajectoryLearningSession
 import cn.com.omnimind.baselib.util.DisplayUtil
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.dpToPx
@@ -32,21 +33,29 @@ object DraggableBallInstance {
 
     private const val TAG = "DraggableBallInstance"
 
+    private fun shouldUseApplicationOverlay(preferApplicationOverlay: Boolean): Boolean {
+        return preferApplicationOverlay || HumanTrajectoryLearningSession.isActive()
+    }
+
     fun getInstance(preferApplicationOverlay: Boolean = false): DraggableBallLoader? {
+        val forceApplicationOverlay = shouldUseApplicationOverlay(preferApplicationOverlay)
         val accessibilityService = AssistsService.instance
-        val useAccessibilityOverlay = accessibilityService != null && !preferApplicationOverlay
+        val useAccessibilityOverlay = accessibilityService != null && !forceApplicationOverlay
         val context = if (useAccessibilityOverlay) {
             accessibilityService
         } else {
             UIKit.appContext ?: accessibilityService
         } ?: return null
-        return dragBall ?: synchronized(this) {
+        return synchronized(this) {
             val current = dragBall
-            if (current != null && current.useAccessibilityOverlay != useAccessibilityOverlay) {
+            if (current != null && current.useAccessibilityOverlay == useAccessibilityOverlay) {
+                return@synchronized current
+            }
+            if (current != null) {
                 current.destroy()
                 dragBall = null
             }
-            dragBall ?: DraggableBallLoader(
+            DraggableBallLoader(
                     context,
                     useAccessibilityOverlay = useAccessibilityOverlay,
                     UIKit.catLayoutApi,
@@ -62,8 +71,9 @@ object DraggableBallInstance {
         preferApplicationOverlay: Boolean = false
     ) {
         val current = dragBall ?: return
+        val forceApplicationOverlay = shouldUseApplicationOverlay(preferApplicationOverlay)
         val shouldUseAccessibilityOverlay =
-            AssistsService.instance != null && !preferApplicationOverlay
+            AssistsService.instance != null && !forceApplicationOverlay
         if (current.useAccessibilityOverlay == shouldUseAccessibilityOverlay) {
             return
         }
@@ -74,10 +84,11 @@ object DraggableBallInstance {
      * 加载小猫
      */
     fun loadBall(preferApplicationOverlay: Boolean = false): Boolean {
-        refreshOverlayContextIfAccessibilityStateChanged(preferApplicationOverlay)
-        val instance = getInstance(preferApplicationOverlay) ?: return false
+        val forceApplicationOverlay = shouldUseApplicationOverlay(preferApplicationOverlay)
+        refreshOverlayContextIfAccessibilityStateChanged(forceApplicationOverlay)
+        val instance = getInstance(forceApplicationOverlay) ?: return false
         instance.loadBall()
-        if (!preferApplicationOverlay &&
+        if (!forceApplicationOverlay &&
             instance.useAccessibilityOverlay &&
             !instance.isAttachedToWindow
         ) {
@@ -103,12 +114,13 @@ object DraggableBallInstance {
     private fun getLoadedInstance(
         preferApplicationOverlay: Boolean = false
     ): DraggableBallLoader? {
-        refreshOverlayContextIfAccessibilityStateChanged(preferApplicationOverlay)
-        val instance = getInstance(preferApplicationOverlay) ?: return null
+        val forceApplicationOverlay = shouldUseApplicationOverlay(preferApplicationOverlay)
+        refreshOverlayContextIfAccessibilityStateChanged(forceApplicationOverlay)
+        val instance = getInstance(forceApplicationOverlay) ?: return null
         if (!instance.isAttachedToWindow) {
             instance.loadBall()
         }
-        if (!preferApplicationOverlay &&
+        if (!forceApplicationOverlay &&
             instance.useAccessibilityOverlay &&
             !instance.isAttachedToWindow
         ) {

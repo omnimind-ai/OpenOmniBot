@@ -112,6 +112,7 @@ import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import cn.com.omnimind.bot.workspace.WorkspaceStorageAccess
 import cn.com.omnimind.uikit.UIKit
+import cn.com.omnimind.uikit.loader.ManualRecordingControlOverlay
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import com.google.gson.Gson
@@ -3281,6 +3282,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             )?.toString()?.trim().orEmpty()
             val learningResult = runCatching {
                 withContext(Dispatchers.Main) {
+                    val preparingControlShown = ManualRecordingControlOverlay.show(
+                        context,
+                        ManualRecordingControlOverlay.State.PREPARING
+                    )
+                    OmniLog.d(TAG, "manual recording preparing overlay shown=$preparingControlShown")
                     DraggableBallInstance.setDoing(
                         message = "正在准备手动录制",
                         isShowTakeOver = false,
@@ -3298,15 +3304,27 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     description = description
                 )
                 withContext(Dispatchers.Main) {
-                    DraggableBallInstance.learningTask(
-                        message = "正在学习你的操作",
-                        subMessage = "人工学习中 · 完成后点完成学习",
-                        preferApplicationOverlay = true
+                    val controlShown = ManualRecordingControlOverlay.show(
+                        context,
+                        ManualRecordingControlOverlay.State.RECORDING
                     )
+                    ManualRecordingControlOverlay.markRecording()
+                    OmniLog.d(TAG, "manual recording control overlay shown=$controlShown")
+                    runCatching {
+                        DraggableBallInstance.learningTask(
+                            message = "正在学习你的操作",
+                            subMessage = "人工学习中 · 完成后点完成学习",
+                            preferApplicationOverlay = true
+                        )
+                    }.onFailure { error ->
+                        OmniLog.w(TAG, "manual recording cat learning UI failed: ${error.message}")
+                    }
                 }
                 sessionResult.await()
             }.getOrElse { error ->
+                OmniLog.e(TAG, "start human trajectory learning failed: ${error.message}", error)
                 withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.dismiss()
                     DraggableBallInstance.finishDoingTask("手动录制失败")
                     result.success(
                         linkedMapOf(
@@ -3327,6 +3345,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     InternalRunLogStore.timelinePayload(context, learningResult.runId)
                 }.getOrNull()
                 withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.dismiss()
                     DraggableBallInstance.finishDoingTask(
                         if (errorMessage.contains("取消")) "学习已取消" else "学习失败"
                     )
@@ -3355,10 +3374,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         descriptionOverride = learningResult.description
                     )
                 }.getOrElse { error ->
+                    OmniLog.e(TAG, "human trajectory conversion failed: ${error.fullCauseMessage()}", error)
                     linkedMapOf(
                         "success" to false,
                         "error_code" to "HUMAN_TRAJECTORY_CONVERT_FAILED",
-                        "error_message" to error.message.orEmpty(),
+                        "error_message" to error.fullCauseMessage(),
+                        "error_type" to error.javaClass.name,
+                        "error_cause_chain" to error.causeChainPayload(),
                         "run_id" to learningResult.runId,
                         "function_kind" to "oob_reusable_function",
                         "asset_state" to "native_local"
@@ -3372,17 +3394,21 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     manualRecordedActionPayload(index + 1, action)
                 }
                 withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.dismiss()
                     DraggableBallInstance.finishDoingTask(
-                        if (conversionSuccess) "学习完成" else "学习失败"
+                        if (conversionSuccess) "学习完成" else "录制完成"
                     )
                 }
+                val recordingSuccess = learningResult.actionCount > 0
                 linkedMapOf<String, Any?>(
-                    "success" to conversionSuccess,
+                    "success" to recordingSuccess,
+                    "recording_success" to recordingSuccess,
+                    "conversion_success" to conversionSuccess,
                     "error_code" to if (conversionSuccess) null else {
                         conversion["error_code"] ?: "HUMAN_TRAJECTORY_CONVERT_FAILED"
                     },
                     "error_message" to if (conversionSuccess) null else {
-                        conversion["error_message"] ?: "学习轨迹无法转换为复用指令"
+                        conversion["error_message"] ?: "录制已完成，但生成复用指令失败"
                     },
                     "run_id" to learningResult.runId,
                     "name" to learningResult.name,
@@ -3469,6 +3495,33 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 )
             )
         ).filterValues { it != null }
+    }
+
+    private fun Throwable.fullCauseMessage(): String {
+        val parts = mutableListOf<String>()
+        var current: Throwable? = this
+        val seen = mutableSetOf<Throwable>()
+        while (current != null && seen.add(current)) {
+            parts += current.message?.takeIf(String::isNotBlank)
+                ?.let { "${current.javaClass.name}: $it" }
+                ?: current.javaClass.name
+            current = current.cause
+        }
+        return parts.joinToString(" <- ")
+    }
+
+    private fun Throwable.causeChainPayload(): List<Map<String, String>> {
+        val output = mutableListOf<Map<String, String>>()
+        var current: Throwable? = this
+        val seen = mutableSetOf<Throwable>()
+        while (current != null && seen.add(current)) {
+            output += linkedMapOf(
+                "type" to current.javaClass.name,
+                "message" to current.message.orEmpty()
+            )
+            current = current.cause
+        }
+        return output
     }
 
     fun getOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {

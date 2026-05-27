@@ -1236,9 +1236,14 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       if (!mounted) return;
       _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
       final success = result['success'] == true;
+      final conversionSuccess = result['conversion_success'] == true ||
+          result['conversionSuccess'] == true ||
+          (result['function_id'] ?? result['functionId']).toString().trim().isNotEmpty;
       final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
       showToast(
-        success ? '手动录制完成，RunLog 已生成' : '手动录制失败',
+        success
+            ? (conversionSuccess ? '手动录制完成，复用指令已生成' : '手动录制完成，RunLog 已生成')
+            : '手动录制失败',
         type: success ? ToastType.success : ToastType.error,
       );
       if (success && runId.trim().isNotEmpty && mounted) {
@@ -1280,6 +1285,10 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     Map<String, dynamic> result,
   ) {
     final success = result['success'] == true;
+    final recordingSuccess =
+        result['recording_success'] ?? result['recordingSuccess'] ?? success;
+    final conversionSuccess =
+        result['conversion_success'] ?? result['conversionSuccess'];
     final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
     final actionCount = result['action_count'] ?? result['actionCount'] ?? 0;
     final functionId = result['function_id'] ?? result['functionId'];
@@ -1288,6 +1297,10 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       'type': 'manual_recording_result',
       'cardId': messageId,
       'success': success,
+      'recordingSuccess': recordingSuccess,
+      'recording_success': recordingSuccess,
+      'conversionSuccess': conversionSuccess,
+      'conversion_success': conversionSuccess,
       'runId': runId,
       'run_id': runId,
       'actionCount': actionCount,

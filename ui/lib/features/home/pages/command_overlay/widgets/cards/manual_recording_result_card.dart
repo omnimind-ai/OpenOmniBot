@@ -13,6 +13,11 @@ class ManualRecordingResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final success = cardData['success'] == true;
+    final recordingSuccess = cardData['recordingSuccess'] == true ||
+        cardData['recording_success'] == true ||
+        success;
+    final conversionSuccess = cardData['conversionSuccess'] == true ||
+        cardData['conversion_success'] == true;
     final runId = (cardData['runId'] ?? cardData['run_id'] ?? '')
         .toString()
         .trim();
@@ -25,7 +30,7 @@ class ManualRecordingResultCard extends StatelessWidget {
     final error = (cardData['errorMessage'] ?? cardData['error_message'] ?? '')
         .toString()
         .trim();
-    final statusColor = success
+    final statusColor = recordingSuccess
         ? const Color(0xFF5B21B6)
         : const Color(0xFFE05243);
     final backgroundColor = context.isDarkTheme
@@ -72,7 +77,7 @@ class ManualRecordingResultCard extends StatelessWidget {
                     Row(
                       children: [
                         Icon(
-                          success
+                          recordingSuccess
                               ? Icons.gesture_rounded
                               : Icons.error_outline_rounded,
                           size: 18,
@@ -81,7 +86,9 @@ class ManualRecordingResultCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            success ? '手动录制完成' : '手动录制失败',
+                            recordingSuccess
+                                ? (conversionSuccess ? '手动录制完成' : '手动录制已保存')
+                                : '手动录制失败',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -119,10 +126,12 @@ class ManualRecordingResultCard extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (success && runId.isNotEmpty) ...[
+                    if (recordingSuccess && runId.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '点击查看完整 RunLog 和可编辑步骤',
+                        conversionSuccess
+                            ? '点击查看完整 RunLog 和可编辑步骤'
+                            : '点击查看 RunLog；复用指令可稍后重新生成',
                         style: TextStyle(
                           fontSize: 12,
                           color: palette.textSecondary,

@@ -1802,14 +1802,23 @@ Future<void> _startHumanTrajectoryLearningFlow({
     if (!context.mounted) return;
     if (result['success'] == true) {
       final functionId = (result['function_id'] ?? '').toString();
+      final conversionSuccess = result['conversion_success'] == true ||
+          result['conversionSuccess'] == true ||
+          functionId.isNotEmpty;
       showToast(
-        functionId.isEmpty
-            ? _text(context, '已学习为复用指令', 'Learned as reusable command')
-            : _text(
+        !conversionSuccess
+            ? _text(
                 context,
-                '已学习为复用指令：$functionId',
-                'Learned as reusable command: $functionId',
-              ),
+                '手动录制完成，RunLog 已生成；复用指令生成失败',
+                'Recording completed and RunLog was created; reusable command conversion failed',
+              )
+            : functionId.isEmpty
+                ? _text(context, '已学习为复用指令', 'Learned as reusable command')
+                : _text(
+                    context,
+                    '已学习为复用指令：$functionId',
+                    'Learned as reusable command: $functionId',
+                  ),
         type: ToastType.success,
         duration: const Duration(seconds: 3),
       );
