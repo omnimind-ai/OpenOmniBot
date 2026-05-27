@@ -700,5 +700,7 @@ object OobReusableFunctionStore {
         return ""
     }
 
-    private val PARAMETER_TOKEN_REGEX = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)}""")
+    private val PARAMETER_TOKEN_REGEX by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)\}""")
+    }
 }
