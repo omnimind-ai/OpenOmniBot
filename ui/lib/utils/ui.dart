@@ -6,6 +6,7 @@ import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/theme/omni_theme_palette.dart';
 import 'package:ui/theme/theme_context.dart';
+import 'package:ui/widgets/omni_glass.dart';
 
 /// 把 #RRGGBB / #AARRGGBB 转换成 [Color]
 Color hexToColor(String hex) {
@@ -516,11 +517,12 @@ class AppDialog {
     bool barrierDismissible = true,
     double? buttonTextSize,
     Color? confirmButtonColor,
+    bool glassStyle = false,
   }) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: barrierDismissible,
-      barrierColor: Colors.black.withValues(alpha: 0.2),
+      barrierColor: Colors.black.withValues(alpha: glassStyle ? 0.34 : 0.2),
       builder: (context) => _AppDialogWidget(
         title: title,
         content: content,
@@ -529,6 +531,7 @@ class AppDialog {
         confirmText: LegacyTextLocalizer.localize(confirmText),
         confirmButtonColor: confirmButtonColor,
         buttonTextSize: buttonTextSize,
+        glassStyle: glassStyle,
       ),
     );
   }
@@ -664,6 +667,7 @@ class _AppDialogWidget extends StatefulWidget {
   final List<String>? options;
   final int? selectedIndex;
   final double? buttonTextSize;
+  final bool glassStyle;
 
   const _AppDialogWidget({
     required this.title,
@@ -679,6 +683,7 @@ class _AppDialogWidget extends StatefulWidget {
     this.options,
     this.selectedIndex,
     this.buttonTextSize,
+    this.glassStyle = false,
   });
 
   @override
@@ -706,50 +711,58 @@ class _AppDialogWidgetState extends State<_AppDialogWidget> {
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildTitle(),
+        if (widget.content != null) ...[
+          const SizedBox(height: 8),
+          _buildContent(),
+        ],
+        if (widget.type == DialogType.input ||
+            widget.type == DialogType.select ||
+            widget.type == DialogType.loading) ...[
+          const SizedBox(height: 16),
+          _buildBody(),
+        ],
+        if (widget.type != DialogType.loading) ...[
+          const SizedBox(height: 16),
+          _buildButtons(),
+        ],
+      ],
+    );
     return Dialog(
       backgroundColor: Colors.transparent,
       alignment: Alignment.center,
       insetPadding: const EdgeInsets.symmetric(horizontal: 25, vertical: 50),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-          child: Container(
-            width: 325,
-            padding: const EdgeInsets.all(24),
-            decoration: ShapeDecoration(
-              color: (isDark ? palette.surfacePrimary : Colors.white)
-                  .withValues(alpha: isDark ? 0.94 : 0.88),
-              shape: RoundedRectangleBorder(
-                side: isDark
-                    ? BorderSide(color: palette.borderSubtle)
-                    : BorderSide.none,
-                borderRadius: BorderRadius.circular(16),
+      child: widget.glassStyle
+          ? OmniGlassPanel(
+              width: 325,
+              borderRadius: BorderRadius.circular(20),
+              padding: const EdgeInsets.all(24),
+              child: body,
+            )
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                child: Container(
+                  width: 325,
+                  padding: const EdgeInsets.all(24),
+                  decoration: ShapeDecoration(
+                    color: (isDark ? palette.surfacePrimary : Colors.white)
+                        .withValues(alpha: isDark ? 0.94 : 0.88),
+                    shape: RoundedRectangleBorder(
+                      side: isDark
+                          ? BorderSide(color: palette.borderSubtle)
+                          : BorderSide.none,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: body,
+                ),
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTitle(),
-                if (widget.content != null) ...[
-                  const SizedBox(height: 8),
-                  _buildContent(),
-                ],
-                if (widget.type == DialogType.input ||
-                    widget.type == DialogType.select ||
-                    widget.type == DialogType.loading) ...[
-                  const SizedBox(height: 16),
-                  _buildBody(),
-                ],
-                if (widget.type != DialogType.loading) ...[
-                  const SizedBox(height: 16),
-                  _buildButtons(),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 

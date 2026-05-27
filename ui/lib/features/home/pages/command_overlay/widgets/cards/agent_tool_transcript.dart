@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/command_overlay/widgets/cards/terminal_output_utils.dart';
+import 'package:ui/services/chat_detail_sheet_preferences.dart';
 import 'package:ui/theme/app_colors.dart';
+import 'package:ui/widgets/omni_glass.dart';
 
 const Color _kTimeoutStatusColor = Color(0xFFFF8A3D);
 const Color _kInterruptedStatusColor = Color(0xFFFFC04D);
@@ -773,12 +776,30 @@ class _AgentToolDetailSheetFrameState
     setState(() {
       final current =
           _heightFactor ??
-          _initialHeightFactor(MediaQuery.sizeOf(context).height);
+          ChatDetailSheetPreferences.resolveHeightFactor(
+            fallback: _initialHeightFactor(MediaQuery.sizeOf(context).height),
+            min: _minHeightFactor,
+            max: _maxHeightFactor,
+          );
       _heightFactor = (current - delta / availableHeight).clamp(
         _minHeightFactor,
         _maxHeightFactor,
       );
     });
+  }
+
+  void _persistHeightFactor() {
+    final heightFactor = _heightFactor;
+    if (heightFactor == null) {
+      return;
+    }
+    unawaited(
+      ChatDetailSheetPreferences.saveHeightFactor(
+        heightFactor,
+        min: _minHeightFactor,
+        max: _maxHeightFactor,
+      ),
+    );
   }
 
   @override
@@ -791,7 +812,12 @@ class _AgentToolDetailSheetFrameState
           mediaQuery.viewInsets.bottom,
     );
     final heightFactor =
-        _heightFactor ?? _initialHeightFactor(mediaQuery.size.height);
+        _heightFactor ??
+        ChatDetailSheetPreferences.resolveHeightFactor(
+          fallback: _initialHeightFactor(mediaQuery.size.height),
+          min: _minHeightFactor,
+          max: _maxHeightFactor,
+        );
     const borderRadius = BorderRadius.vertical(top: Radius.circular(24));
 
     return SafeArea(
@@ -800,57 +826,44 @@ class _AgentToolDetailSheetFrameState
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
-        child: SizedBox(
+        child: OmniGlassPanel(
           key: kAgentToolDetailSheetKey,
           height: availableHeight * heightFactor,
           width: double.infinity,
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              color: kTerminalSurfaceBlack,
-              borderRadius: borderRadius,
-              boxShadow: [
-                BoxShadow(
-                  color: kTerminalSurfaceShadow,
-                  blurRadius: 32,
-                  offset: Offset(0, -8),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: borderRadius,
-              child: Material(
-                color: kTerminalSurfaceBlack,
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) =>
-                          _handleDragUpdate(details, availableHeight),
-                      child: SizedBox(
-                        height: 22,
-                        width: double.infinity,
-                        child: Center(
-                          child: Container(
-                            width: 42,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.24),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
+          borderRadius: borderRadius,
+          forceDark: true,
+          child: Material(
+            color: Colors.transparent,
+            child: Column(
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (details) =>
+                      _handleDragUpdate(details, availableHeight),
+                  onVerticalDragEnd: (_) => _persistHeightFactor(),
+                  child: SizedBox(
+                    height: 22,
+                    width: double.infinity,
+                    child: Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.34),
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
                     ),
-                    Expanded(
-                      child: _AgentToolDetailContent(
-                        cardData: widget.cardData,
-                        headerPadding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                        scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: _AgentToolDetailContent(
+                    cardData: widget.cardData,
+                    headerPadding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                    scrollPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

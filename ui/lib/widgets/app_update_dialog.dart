@@ -24,6 +24,7 @@ Future<void> showAppUpdateDialog(
         : palette.accentPrimary,
     content: _AppUpdateDialogContent(status: status),
     barrierDismissible: true,
+    glassStyle: true,
   );
 
   if (confirmed != true || !context.mounted) {
