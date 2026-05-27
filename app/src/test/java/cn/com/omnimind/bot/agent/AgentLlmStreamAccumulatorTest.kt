@@ -96,6 +96,19 @@ class AgentLlmStreamAccumulatorTest {
     }
 
     @Test
+    fun `strips leaked think tags from default visible content`() {
+        val accumulator = AgentLlmStreamAccumulator(json = json)
+
+        accumulator.consume("""{"choices":[{"delta":{"content":"</think>最终回答"}}]}""")
+
+        assertEquals("最终回答", accumulator.currentContent())
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("最终回答", turn.message.contentText())
+    }
+
+    @Test
     fun `can retain reasoning content on assistant message for deepseek tool rounds`() {
         val accumulator = AgentLlmStreamAccumulator(
             json = json,

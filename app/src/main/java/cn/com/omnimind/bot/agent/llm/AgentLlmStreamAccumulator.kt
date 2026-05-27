@@ -204,7 +204,8 @@ class AgentLlmStreamAccumulator(
 
     fun currentReasoningLength(): Int = reasoningBuffer.length
 
-    fun currentContent(): String = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
+    fun currentContent(): String =
+        AgentTextSanitizer.sanitizeVisibleAssistantText(contentBuffer.toString())
 
     fun hasDoneSignal(): Boolean = seenDoneSignal
 
@@ -244,7 +245,7 @@ class AgentLlmStreamAccumulator(
             )
         }
 
-        val content = AgentTextSanitizer.sanitizeUtf16(contentBuffer.toString())
+        val content = AgentTextSanitizer.sanitizeVisibleAssistantText(contentBuffer.toString())
         val reasoning = AgentTextSanitizer.sanitizeUtf16(reasoningBuffer.toString())
         if (finishReasonIndicatesToolCall(finishReason) && toolCalls.isEmpty()) {
             throw IllegalStateException(

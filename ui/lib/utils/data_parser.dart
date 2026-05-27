@@ -1,5 +1,11 @@
 import 'dart:convert';
 
+final RegExp _thinkBlockPattern = RegExp(
+  r'<think>[\s\S]*?</think>',
+  caseSensitive: false,
+);
+final RegExp _thinkTagPattern = RegExp(r'</?think>', caseSensitive: false);
+
 /// 安全解析 JSON：
 /// - 能解析就返回解析结果（Map/List/num/bool/null/字符串…）
 /// - 不能解析就返回 `fallback`（若未提供则返回原始字符串）
@@ -145,9 +151,11 @@ String extractChatTaskText(String? input, {bool fallbackToRawText = true}) {
   }
 
   final decoded = safeJsonDecode(normalized, fallback: rawInput);
-  return _extractChatTaskTextPayload(
-    decoded,
-    fallbackRawText: fallbackToRawText ? rawInput : '',
+  return _sanitizeVisibleAssistantText(
+    _extractChatTaskTextPayload(
+      decoded,
+      fallbackRawText: fallbackToRawText ? rawInput : '',
+    ),
   );
 }
 
@@ -275,6 +283,35 @@ String _extractChatTaskTextPayload(dynamic raw, {String fallbackRawText = ''}) {
   }
 
   return fallbackRawText;
+}
+
+String _sanitizeVisibleAssistantText(String text) {
+  final withoutThinkTags = text.toLowerCase().contains('think>')
+      ? text.replaceAll(_thinkBlockPattern, '').replaceAll(_thinkTagPattern, '')
+      : text;
+  return _stripTrailingUsageOnlyJson(withoutThinkTags);
+}
+
+String _stripTrailingUsageOnlyJson(String text) {
+  for (var index = 0; index < text.length; index += 1) {
+    if (text.codeUnitAt(index) != 123) {
+      continue;
+    }
+    final suffix = text.substring(index).trim();
+    final decoded = safeJsonDecode(suffix, fallback: null);
+    if (decoded is Map && _isUsageOnlyStreamPayload(decoded)) {
+      return text.substring(0, index).trimRight();
+    }
+  }
+  return text;
+}
+
+bool _isUsageOnlyStreamPayload(Map<dynamic, dynamic> payload) {
+  if (!payload.containsKey('usage')) {
+    return false;
+  }
+  final choices = payload['choices'];
+  return choices is List && choices.isEmpty;
 }
 
 double? _extractChatTaskNumericMetric(

@@ -22,6 +22,54 @@ class HttpControllerAnthropicTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
+    fun `stream log extraction ignores usage-only chunks`() {
+        val method = HttpController::class.java.getDeclaredMethod(
+            "extractStreamLogChunk",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val result = method.invoke(
+            HttpController,
+            """{"choices":[],"usage":{"prompt_tokens":15,"completion_tokens":100,"total_tokens":115}}"""
+        ) as String
+
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `stream log extraction removes usage json glued to think tag`() {
+        val method = HttpController::class.java.getDeclaredMethod(
+            "extractStreamLogChunk",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val result = method.invoke(
+            HttpController,
+            """</think>{"choices":[],"usage":{"prompt_tokens":15,"completion_tokens":100,"total_tokens":115}}"""
+        ) as String
+
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `stream log extraction strips leaked think tags`() {
+        val method = HttpController::class.java.getDeclaredMethod(
+            "extractStreamLogChunk",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val result = method.invoke(
+            HttpController,
+            """{"choices":[{"delta":{"content":"</think>最终回答"}}]}"""
+        ) as String
+
+        assertEquals("最终回答", result)
+    }
+
+    @Test
     fun `automatic anthropic cache control is added for regular payloads`() {
         val method = HttpController::class.java.getDeclaredMethod(
             "applyAnthropicAutomaticCacheControl",

@@ -125,6 +125,39 @@ class AssistsCoreManagerChatOnlyTest {
     }
 
     @Test
+    fun `extractChatTaskTextPayload strips leaked think tags`() {
+        val chunk = """
+            {"choices":[{"delta":{"content":"</think>最终回答"}}]}
+        """.trimIndent()
+
+        val result = extractChatTaskTextPayload(chunk)
+
+        assertEquals("最终回答", result)
+    }
+
+    @Test
+    fun `extractChatTaskTextPayload removes usage json glued to think tag`() {
+        val chunk = """
+            </think>{"choices":[],"usage":{"prompt_tokens":15,"completion_tokens":100,"total_tokens":115}}
+        """.trimIndent()
+
+        val result = extractChatTaskTextPayload(chunk)
+
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `extractChatTaskTextPayload strips inline think blocks`() {
+        val chunk = """
+            {"choices":[{"delta":{"content":"<think>先分析</think>最终回答"}}]}
+        """.trimIndent()
+
+        val result = extractChatTaskTextPayload(chunk)
+
+        assertEquals("最终回答", result)
+    }
+
+    @Test
     fun `extractChatTaskTextPayload preserves array chunk order`() {
         val chunk = """
             [

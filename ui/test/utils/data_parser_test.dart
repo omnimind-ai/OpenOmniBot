@@ -42,4 +42,33 @@ void main() {
       expect(result, '先想：\n  再做。');
     },
   );
+
+  test('extractChatTaskText strips leaked think tags', () {
+    const chunk = '''
+{"choices":[{"delta":{"content":"</think>最终回答"}}]}
+''';
+
+    final result = extractChatTaskText(chunk, fallbackToRawText: false);
+
+    expect(result, '最终回答');
+  });
+
+  test('extractChatTaskText removes usage json glued to think tag', () {
+    const chunk =
+        '</think>{"choices":[],"usage":{"prompt_tokens":15,"completion_tokens":100,"total_tokens":115}}';
+
+    final result = extractChatTaskText(chunk, fallbackToRawText: false);
+
+    expect(result, '');
+  });
+
+  test('extractChatTaskText strips inline think blocks', () {
+    const chunk = '''
+{"choices":[{"delta":{"content":"<think>先分析</think>最终回答"}}]}
+''';
+
+    final result = extractChatTaskText(chunk, fallbackToRawText: false);
+
+    expect(result, '最终回答');
+  });
 }

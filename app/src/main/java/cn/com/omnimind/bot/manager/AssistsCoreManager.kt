@@ -266,13 +266,14 @@ internal fun extractChatTaskTextPayload(content: String): String {
         return ""
     }
     if (!normalized.startsWith("{") && !normalized.startsWith("[")) {
-        return content
+        return sanitizeChatTaskVisibleText(content)
     }
     val parsed = runCatching {
         extractChatTaskTextValue(chatTaskPayloadJson.parseToJsonElement(normalized))
     }.getOrElse { "" }
-    if (parsed.isNotEmpty()) {
-        return parsed
+    val sanitizedParsed = sanitizeChatTaskVisibleText(parsed)
+    if (sanitizedParsed.isNotEmpty()) {
+        return sanitizedParsed
     }
 
     val contentMatch = Regex(""""(?:content|text)"\s*:\s*"((?:\\.|[^"\\])*)"""")
@@ -287,7 +288,32 @@ internal fun extractChatTaskTextPayload(content: String): String {
             }.getOrDefault(raw)
         }
         .orEmpty()
-    return contentMatch
+    return sanitizeChatTaskVisibleText(contentMatch)
+}
+
+private fun sanitizeChatTaskVisibleText(text: String): String {
+    val withoutThinkTags = AgentTextSanitizer.sanitizeVisibleAssistantText(text)
+    return stripTrailingUsageOnlyJson(withoutThinkTags)
+}
+
+private fun stripTrailingUsageOnlyJson(text: String): String {
+    text.forEachIndexed { index, char ->
+        if (char != '{') return@forEachIndexed
+        val suffix = text.substring(index).trim()
+        val json = runCatching { JSONObject(suffix) }.getOrNull() ?: return@forEachIndexed
+        if (isUsageOnlyStreamPayload(json)) {
+            return text.substring(0, index).trimEnd()
+        }
+    }
+    return text
+}
+
+private fun isUsageOnlyStreamPayload(json: JSONObject): Boolean {
+    if (!json.has("usage")) {
+        return false
+    }
+    val choices = json.optJSONArray("choices")
+    return choices != null && choices.length() == 0
 }
 
 private fun extractChatTaskTextValue(raw: JsonElement?): String {

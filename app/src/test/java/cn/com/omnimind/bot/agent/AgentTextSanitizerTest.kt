@@ -27,4 +27,16 @@ class AgentTextSanitizerTest {
             AgentTextSanitizer.sanitizeUtf16("前缀\uDE00后缀")
         )
     }
+
+    @Test
+    fun `removes think tags from visible assistant text`() {
+        assertEquals(
+            "最终回答",
+            AgentTextSanitizer.sanitizeVisibleAssistantText("</think>最终回答")
+        )
+        assertEquals(
+            "最终回答",
+            AgentTextSanitizer.sanitizeVisibleAssistantText("<think>先分析</think>最终回答")
+        )
+    }
 }

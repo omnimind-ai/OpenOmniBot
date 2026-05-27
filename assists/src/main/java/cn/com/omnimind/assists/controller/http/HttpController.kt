@@ -59,6 +59,14 @@ object HttpController {
     private const val ANTHROPIC_EPHEMERAL_CACHE_TYPE = "ephemeral"
     private const val ANTHROPIC_MAX_CACHE_BREAKPOINTS = 4
     private const val LOCAL_BACKEND_MAX_COMPLETION_TOKENS = 4096
+    private val thinkBlockPattern = Regex(
+        pattern = "<think>.*?</think>",
+        options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
+    private val thinkTagPattern = Regex(
+        pattern = "</?think>",
+        options = setOf(RegexOption.IGNORE_CASE)
+    )
 
     data class ChatCompletionRouteInfo(
         val requestedModel: String,
@@ -244,14 +252,15 @@ object HttpController {
         return runCatching {
             val json = JSONObject(trimmed)
             when {
-                json.has("text") -> json.optString("text")
-                json.has("message") && json.opt("message") is String -> json.optString("message")
+                json.has("text") -> sanitizeVisibleAssistantText(json.optString("text"))
+                json.has("message") && json.opt("message") is String ->
+                    sanitizeVisibleAssistantText(json.optString("message"))
                 json.has("choices") -> {
                     val firstChoice = json.optJSONArray("choices")?.optJSONObject(0)
                     val delta = firstChoice?.optJSONObject("delta")
                     val message = firstChoice?.optJSONObject("message")
 
-                    when {
+                    val chunk = when {
                         delta != null -> {
                             extractTextPayload(delta.opt("content")).ifBlank {
                                 listOf(
@@ -278,12 +287,67 @@ object HttpController {
                                     .orEmpty()
                             }
                         }
-                        else -> trimmed
+                        firstChoice != null -> {
+                            extractTextPayload(firstChoice.opt("text"))
+                                .ifBlank { extractTextPayload(firstChoice.opt("content")) }
+                                .ifBlank {
+                                    listOf(
+                                        firstChoice.opt("reasoning_content"),
+                                        firstChoice.opt("reasoning"),
+                                        firstChoice.opt("thinking")
+                                    )
+                                        .asSequence()
+                                        .map { extractTextPayload(it) }
+                                        .firstOrNull { it.isNotBlank() }
+                                        .orEmpty()
+                                }
+                        }
+                        else -> ""
                     }
+                    sanitizeVisibleAssistantText(chunk)
                 }
-                else -> trimmed
+                json.has("usage") -> ""
+                else -> sanitizeRawStreamLogText(trimmed)
             }
-        }.getOrElse { trimmed }
+        }.getOrElse { sanitizeRawStreamLogText(trimmed) }
+    }
+
+    private fun sanitizeVisibleAssistantText(text: String): String {
+        if (
+            !text.contains("<think", ignoreCase = true) &&
+            !text.contains("</think", ignoreCase = true)
+        ) {
+            return text
+        }
+        return thinkTagPattern.replace(
+            thinkBlockPattern.replace(text, ""),
+            ""
+        )
+    }
+
+    private fun sanitizeRawStreamLogText(text: String): String {
+        val withoutThinkTags = sanitizeVisibleAssistantText(text)
+        return stripTrailingUsageOnlyJson(withoutThinkTags)
+    }
+
+    private fun stripTrailingUsageOnlyJson(text: String): String {
+        text.forEachIndexed { index, char ->
+            if (char != '{') return@forEachIndexed
+            val suffix = text.substring(index).trim()
+            val json = runCatching { JSONObject(suffix) }.getOrNull() ?: return@forEachIndexed
+            if (isUsageOnlyStreamLogEvent(json)) {
+                return text.substring(0, index).trimEnd()
+            }
+        }
+        return text
+    }
+
+    private fun isUsageOnlyStreamLogEvent(json: JSONObject): Boolean {
+        if (!json.has("usage")) {
+            return false
+        }
+        val choices = json.optJSONArray("choices")
+        return choices == null || choices.length() == 0
     }
 
     private fun logResponseBody(label: String, body: String?) {
@@ -2493,7 +2557,9 @@ object HttpController {
                 )
 
             val message = firstChoice.optJSONObject("message")
-            val content = extractTextPayload(message?.opt("content") ?: firstChoice.opt("text"))
+            val content = sanitizeVisibleAssistantText(
+                extractTextPayload(message?.opt("content") ?: firstChoice.opt("text"))
+            )
             val reasoning = listOf(
                 message?.opt("reasoning_content"),
                 message?.opt("reasoning"),
