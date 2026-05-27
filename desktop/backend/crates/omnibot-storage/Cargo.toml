@@ -1,0 +1,16 @@
+[package]
+name = "omnibot-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omnibot-common.workspace = true
+tokio = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true
+tracing.workspace = true

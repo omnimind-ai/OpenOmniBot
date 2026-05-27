@@ -1,0 +1,40 @@
+[package]
+name = "omnibot-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "omnibot-backend"
+path = "src/main.rs"
+
+[dependencies]
+omnibot-common.workspace = true
+omnibot-storage.workspace = true
+omnibot-db.workspace = true
+omnibot-llm.workspace = true
+omnibot-tools.workspace = true
+omnibot-mcp.workspace = true
+omnibot-agent.workspace = true
+tokio.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+sqlx.workspace = true
+walkdir.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+directories.workspace = true

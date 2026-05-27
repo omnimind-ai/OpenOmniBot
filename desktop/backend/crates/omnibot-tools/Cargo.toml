@@ -1,0 +1,26 @@
+[package]
+name = "omnibot-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omnibot-common.workspace = true
+omnibot-storage.workspace = true
+omnibot-mcp.workspace = true
+tokio = { workspace = true, features = ["full", "process"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+tracing.workspace = true
+walkdir.workspace = true
+globset.workspace = true
+portable-pty.workspace = true
+encoding_rs.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true

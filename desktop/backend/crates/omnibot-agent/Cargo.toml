@@ -1,0 +1,26 @@
+[package]
+name = "omnibot-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omnibot-common.workspace = true
+omnibot-storage.workspace = true
+omnibot-db.workspace = true
+omnibot-llm.workspace = true
+omnibot-tools.workspace = true
+omnibot-mcp.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+once_cell.workspace = true

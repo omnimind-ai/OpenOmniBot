@@ -1,0 +1,22 @@
+[package]
+name = "omnibot-llm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+omnibot-common.workspace = true
+omnibot-storage.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+eventsource-stream.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+parking_lot.workspace = true
+uuid.workspace = true

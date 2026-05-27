@@ -1,0 +1,39 @@
+name: omnibot_desktop_runner
+description: "Omnibot desktop runner — Flutter UI shell that hosts the Rust backend subprocess."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  ui:
+    path: ../../ui
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/avatar/
+    - assets/home/
+    - assets/home/chat/
+    - assets/home/date_header_icons/
+    - assets/welcome/
+    - assets/common/
+    - assets/memory/
+    - assets/my/
+    - assets/app_icons/
+    - assets/webview/
+    - assets/feedback/
+    - assets/loading/
+    - assets/course/
+    - assets/chatbot/
+    - assets/execution_history/

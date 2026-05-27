@@ -1522,204 +1522,44 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
         const paneCurve = Curves.easeInOutCubic;
         return Padding(
           padding: shellPadding,
-          child: Row(
-            children: [
-              AnimatedContainer(
-                duration: paneDuration,
-                curve: paneCurve,
-                width: layout.leftWidth,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    minWidth: expandedLayout.leftWidth,
-                    maxWidth: expandedLayout.leftWidth,
-                    child: SizedBox(
-                      width: expandedLayout.leftWidth,
-                      child: IgnorePointer(
-                        ignoring: _hdPadLeftPaneCollapsed,
-                        child: AnimatedSlide(
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeInOutCubic,
-                          offset: _hdPadLeftPaneCollapsed
-                              ? const Offset(-0.08, 0)
-                              : Offset.zero,
-                          child: _buildPaneSurface(
-                            translucent: backgroundActive,
-                            visualProfile: visualProfile,
-                            child: HomeDrawer(
-                              key: _drawerKey,
-                              embedded: true,
-                              closeOnNavigate: false,
-                              newConversationMode: _conversationModeForPageMode(
-                                _activeMode,
-                              ),
-                              onThreadTargetSelected:
-                                  _handleEmbeddedDrawerThreadTargetSelected,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              AnimatedContainer(
-                duration: paneDuration,
-                curve: paneCurve,
-                width: _hdPadLeftPaneCollapsed
-                    ? 0
-                    : HdPadPaneLayoutResolver.dividerHitWidth,
-                child: _hdPadLeftPaneCollapsed
-                    ? const SizedBox.shrink()
-                    : _PaneResizeHandle(
-                        onDragStart: () {
-                          setState(() {
-                            _isHdPadPaneDragging = true;
-                            _hdPadPaneDragStartWidth = layout.leftWidth;
-                            _hdPadPaneDragDelta = 0;
-                          });
-                        },
-                        onDragUpdate: (delta) {
-                          _hdPadPaneDragDelta += delta;
-                          final nextWidth =
-                              (_hdPadPaneDragStartWidth ?? layout.leftWidth) +
-                              _hdPadPaneDragDelta;
-                          final shouldCollapse =
-                              nextWidth <= leftCollapseThreshold;
-                          setState(() {
-                            if (shouldCollapse) {
-                              _hdPadLeftPaneCollapsed = true;
-                              _resetHdPadPaneDragState();
-                            } else {
-                              _hdPadLeftPaneCollapsed = false;
-                              _hdPadLeftPaneWidth = nextWidth;
-                            }
-                          });
-                          if (shouldCollapse) {
-                            _persistHdPadPanePreferences();
-                          }
-                        },
-                        onDragEnd: () {
-                          setState(_resetHdPadPaneDragState);
-                          _persistHdPadPanePreferences();
-                        },
-                      ),
-              ),
-              AnimatedContainer(
-                duration: paneDuration,
-                curve: paneCurve,
-                width: layout.centerWidth,
-                child: _buildPaneSurface(
-                  translucent: backgroundActive,
-                  visualProfile: visualProfile,
-                  child: Listener(
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: _handlePagePointerDown,
-                    onPointerMove: _handlePagePointerMove,
-                    onPointerUp: _handlePagePointerUp,
-                    onPointerCancel: _handlePagePointerCancel,
-                    child: LayoutBuilder(
-                      builder: (context, paneConstraints) {
-                        return _buildChatPaneShell(
-                          layoutContext: context,
-                          constraints: paneConstraints,
-                          backgroundConfig: backgroundConfig,
-                          visualProfile: visualProfile,
-                          backgroundActive: backgroundActive,
-                          inputBottomPadding: inputBottomPadding,
-                          keyboardSpacer: keyboardSpacer,
-                          commandPanelBottomOffset: commandPanelBottomOffset,
-                          conversationBody: _buildModeMessagePage(
-                            _primaryChatMessagePageMode,
-                            backgroundConfig,
-                            visualProfile,
-                            bottomOverlayInset:
-                                _resolveNormalSurfaceComposerInset(
-                                  inputBottomPadding: inputBottomPadding,
-                                  keyboardSpacer: keyboardSpacer,
-                                ),
-                          ),
-                          hideWorkspaceOverlays: false,
-                          showMenuButton: true,
-                          showSurfaceSwitcher: false,
-                          onMenuTap: _toggleHdPadLeftPaneCollapsed,
-                          showWorkspacePaneButton: _hdPadRightPaneCollapsed,
-                          onWorkspacePaneTap: _toggleHdPadRightPaneCollapsed,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              AnimatedContainer(
-                duration: paneDuration,
-                curve: paneCurve,
-                width: _hdPadRightPaneCollapsed
-                    ? 0
-                    : HdPadPaneLayoutResolver.dividerHitWidth,
-                child: _hdPadRightPaneCollapsed
-                    ? const SizedBox.shrink()
-                    : _PaneResizeHandle(
-                        onDragStart: () {
-                          setState(() {
-                            _isHdPadPaneDragging = true;
-                            _hdPadPaneDragStartWidth = layout.rightWidth;
-                            _hdPadPaneDragDelta = 0;
-                          });
-                        },
-                        onDragUpdate: (delta) {
-                          _hdPadPaneDragDelta += delta;
-                          final nextWidth =
-                              (_hdPadPaneDragStartWidth ?? layout.rightWidth) -
-                              _hdPadPaneDragDelta;
-                          final shouldCollapse =
-                              nextWidth <= rightCollapseThreshold;
-                          setState(() {
-                            if (shouldCollapse) {
-                              _hdPadRightPaneCollapsed = true;
-                              _resetHdPadPaneDragState();
-                            } else {
-                              _hdPadRightPaneCollapsed = false;
-                              _hdPadRightPaneWidth = nextWidth;
-                            }
-                          });
-                          if (shouldCollapse) {
-                            _persistHdPadPanePreferences();
-                          }
-                        },
-                        onDragEnd: () {
-                          setState(_resetHdPadPaneDragState);
-                          _persistHdPadPanePreferences();
-                        },
-                      ),
-              ),
-              AnimatedContainer(
-                duration: paneDuration,
-                curve: paneCurve,
-                width: layout.rightWidth,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.centerRight,
-                    minWidth: expandedLayout.rightWidth,
-                    maxWidth: expandedLayout.rightWidth,
-                    child: SizedBox(
-                      width: expandedLayout.rightWidth,
-                      child: IgnorePointer(
-                        ignoring: _hdPadRightPaneCollapsed,
-                        child: AnimatedSlide(
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeInOutCubic,
-                          offset: _hdPadRightPaneCollapsed
-                              ? const Offset(0.08, 0)
-                              : Offset.zero,
-                          child: _buildPaneSurface(
-                            translucent: backgroundActive,
-                            visualProfile: visualProfile,
-                            showBorder: false,
-                            showShadow: false,
-                            child: _buildHdPadWorkspacePane(
-                              backgroundActive: backgroundActive,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            clipBehavior: Clip.hardEdge,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: paneDuration,
+                  curve: paneCurve,
+                  width: layout.leftWidth,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.centerLeft,
+                      minWidth: expandedLayout.leftWidth,
+                      maxWidth: expandedLayout.leftWidth,
+                      child: SizedBox(
+                        width: expandedLayout.leftWidth,
+                        child: IgnorePointer(
+                          ignoring: _hdPadLeftPaneCollapsed,
+                          child: AnimatedSlide(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeInOutCubic,
+                            offset: _hdPadLeftPaneCollapsed
+                                ? const Offset(-0.08, 0)
+                                : Offset.zero,
+                            child: _buildPaneSurface(
+                              translucent: backgroundActive,
                               visualProfile: visualProfile,
+                              child: HomeDrawer(
+                                key: _drawerKey,
+                                embedded: true,
+                                closeOnNavigate: false,
+                                newConversationMode:
+                                    _conversationModeForPageMode(_activeMode),
+                                onThreadTargetSelected:
+                                    _handleEmbeddedDrawerThreadTargetSelected,
+                              ),
                             ),
                           ),
                         ),
@@ -1727,8 +1567,174 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                     ),
                   ),
                 ),
-              ),
-            ],
+                AnimatedContainer(
+                  duration: paneDuration,
+                  curve: paneCurve,
+                  width: _hdPadLeftPaneCollapsed
+                      ? 0
+                      : HdPadPaneLayoutResolver.dividerHitWidth,
+                  child: _hdPadLeftPaneCollapsed
+                      ? const SizedBox.shrink()
+                      : _PaneResizeHandle(
+                          onDragStart: () {
+                            setState(() {
+                              _isHdPadPaneDragging = true;
+                              _hdPadPaneDragStartWidth = layout.leftWidth;
+                              _hdPadPaneDragDelta = 0;
+                            });
+                          },
+                          onDragUpdate: (delta) {
+                            _hdPadPaneDragDelta += delta;
+                            final nextWidth =
+                                (_hdPadPaneDragStartWidth ?? layout.leftWidth) +
+                                _hdPadPaneDragDelta;
+                            final shouldCollapse =
+                                nextWidth <= leftCollapseThreshold;
+                            setState(() {
+                              if (shouldCollapse) {
+                                _hdPadLeftPaneCollapsed = true;
+                                _resetHdPadPaneDragState();
+                              } else {
+                                _hdPadLeftPaneCollapsed = false;
+                                _hdPadLeftPaneWidth = nextWidth;
+                              }
+                            });
+                            if (shouldCollapse) {
+                              _persistHdPadPanePreferences();
+                            }
+                          },
+                          onDragEnd: () {
+                            setState(_resetHdPadPaneDragState);
+                            _persistHdPadPanePreferences();
+                          },
+                        ),
+                ),
+                AnimatedContainer(
+                  duration: paneDuration,
+                  curve: paneCurve,
+                  width: layout.centerWidth,
+                  child: _buildPaneSurface(
+                    translucent: backgroundActive,
+                    visualProfile: visualProfile,
+                    child: Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _handlePagePointerDown,
+                      onPointerMove: _handlePagePointerMove,
+                      onPointerUp: _handlePagePointerUp,
+                      onPointerCancel: _handlePagePointerCancel,
+                      child: LayoutBuilder(
+                        builder: (context, paneConstraints) {
+                          return _buildChatPaneShell(
+                            layoutContext: context,
+                            constraints: paneConstraints,
+                            backgroundConfig: backgroundConfig,
+                            visualProfile: visualProfile,
+                            backgroundActive: backgroundActive,
+                            inputBottomPadding: inputBottomPadding,
+                            keyboardSpacer: keyboardSpacer,
+                            commandPanelBottomOffset: commandPanelBottomOffset,
+                            conversationBody: _buildModeMessagePage(
+                              _primaryChatMessagePageMode,
+                              backgroundConfig,
+                              visualProfile,
+                              bottomOverlayInset:
+                                  _resolveNormalSurfaceComposerInset(
+                                    inputBottomPadding: inputBottomPadding,
+                                    keyboardSpacer: keyboardSpacer,
+                                  ),
+                            ),
+                            hideWorkspaceOverlays: false,
+                            showMenuButton: true,
+                            showSurfaceSwitcher: false,
+                            onMenuTap: _toggleHdPadLeftPaneCollapsed,
+                            showWorkspacePaneButton: _hdPadRightPaneCollapsed,
+                            onWorkspacePaneTap: _toggleHdPadRightPaneCollapsed,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                AnimatedContainer(
+                  duration: paneDuration,
+                  curve: paneCurve,
+                  width: _hdPadRightPaneCollapsed
+                      ? 0
+                      : HdPadPaneLayoutResolver.dividerHitWidth,
+                  child: _hdPadRightPaneCollapsed
+                      ? const SizedBox.shrink()
+                      : _PaneResizeHandle(
+                          onDragStart: () {
+                            setState(() {
+                              _isHdPadPaneDragging = true;
+                              _hdPadPaneDragStartWidth = layout.rightWidth;
+                              _hdPadPaneDragDelta = 0;
+                            });
+                          },
+                          onDragUpdate: (delta) {
+                            _hdPadPaneDragDelta += delta;
+                            final nextWidth =
+                                (_hdPadPaneDragStartWidth ??
+                                    layout.rightWidth) -
+                                _hdPadPaneDragDelta;
+                            final shouldCollapse =
+                                nextWidth <= rightCollapseThreshold;
+                            setState(() {
+                              if (shouldCollapse) {
+                                _hdPadRightPaneCollapsed = true;
+                                _resetHdPadPaneDragState();
+                              } else {
+                                _hdPadRightPaneCollapsed = false;
+                                _hdPadRightPaneWidth = nextWidth;
+                              }
+                            });
+                            if (shouldCollapse) {
+                              _persistHdPadPanePreferences();
+                            }
+                          },
+                          onDragEnd: () {
+                            setState(_resetHdPadPaneDragState);
+                            _persistHdPadPanePreferences();
+                          },
+                        ),
+                ),
+                AnimatedContainer(
+                  duration: paneDuration,
+                  curve: paneCurve,
+                  width: layout.rightWidth,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.centerRight,
+                      minWidth: expandedLayout.rightWidth,
+                      maxWidth: expandedLayout.rightWidth,
+                      child: SizedBox(
+                        width: expandedLayout.rightWidth,
+                        child: IgnorePointer(
+                          ignoring: _hdPadRightPaneCollapsed,
+                          child: AnimatedSlide(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeInOutCubic,
+                            offset: _hdPadRightPaneCollapsed
+                                ? const Offset(0.08, 0)
+                                : Offset.zero,
+                            child: _buildPaneSurface(
+                              translucent: backgroundActive,
+                              visualProfile: visualProfile,
+                              showBorder: false,
+                              showShadow: false,
+                              child: _buildHdPadWorkspacePane(
+                                backgroundActive: backgroundActive,
+                                visualProfile: visualProfile,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
