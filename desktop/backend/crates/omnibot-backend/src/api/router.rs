@@ -24,9 +24,7 @@ impl ChannelRouter {
             "cn.com.omnimind.bot/McpServer" => {
                 handlers::mcp_server::route(method, args, session).await
             }
-            "cn.com.omnimind.bot/network" => {
-                handlers::network::route(method, args, session).await
-            }
+            "cn.com.omnimind.bot/network" => handlers::network::route(method, args, session).await,
             "cn.com.omnimind.bot/CodexAppServer" => {
                 handlers::codex_app_server::route(method, args, session).await
             }
@@ -43,7 +41,16 @@ impl ChannelRouter {
             "cn.com.omnimind.bot/RemoteMcpConfig" => {
                 handlers::remote_mcp_config::route(method, args, session).await
             }
-            other => Err(AppError::method_not_implemented(format!("{other}.{method}"))),
+            "cn.com.omnimind.bot/AgentBrowserSession" => {
+                session
+                    .state
+                    .browser_sessions
+                    .handle_channel_method(method, args)
+                    .await
+            }
+            other => Err(AppError::method_not_implemented(format!(
+                "{other}.{method}"
+            ))),
         }
     }
 
@@ -57,8 +64,7 @@ impl ChannelRouter {
             "cn.com.omnimind.bot/AssistCoreEvent" => {
                 handlers::assist_core::subscribe(sub_id, args, session).await
             }
-            "cn.com.omnimind.bot/CodexAppServer"
-            | "cn.com.omnimind.bot/CodexAppServerEvents" => {
+            "cn.com.omnimind.bot/CodexAppServer" | "cn.com.omnimind.bot/CodexAppServerEvents" => {
                 handlers::codex_app_server::subscribe(sub_id, args, session).await
             }
             _ => {

@@ -12,8 +12,9 @@ use omnibot_llm::{HttpAgentLlmClient, ModelProviderConfigStore, SceneModelRegist
 use omnibot_mcp::{RemoteMcpClient, RemoteMcpConfigStore};
 use omnibot_storage::{AppPaths, KvStore, WorkspaceStore};
 use omnibot_tools::handlers::{
-    ContextToolHandler, FileToolHandler, ImageGenerationToolHandler, McpToolHandler,
-    MemoryToolHandler, SkillsToolHandler, SubagentToolHandler, TerminalToolHandler,
+    BrowserSessionManager, BrowserToolHandler, ContextToolHandler, FileToolHandler,
+    ImageGenerationToolHandler, McpToolHandler, MemoryToolHandler, ScheduleToolHandler,
+    SkillsToolHandler, SubagentToolHandler, TerminalToolHandler,
 };
 use omnibot_tools::{ToolHandler, ToolRouter};
 use tokio::net::TcpListener;
@@ -48,18 +49,23 @@ pub async fn run(config: BackendConfig) -> anyhow::Result<()> {
     // Ensure default workspace skeleton exists.
     let _ = workspaces.default();
 
-    let db = DbHandle::open(&paths.db_path()).await.context("open sqlite")?;
+    let db = DbHandle::open(&paths.db_path())
+        .await
+        .context("open sqlite")?;
     let llm_client = Arc::new(HttpAgentLlmClient::new());
     let model_providers = ModelProviderConfigStore::new(kv.clone());
     let scene_registry = SceneModelRegistry::new(kv.clone());
     let mcp_client = Arc::new(RemoteMcpClient::new());
     let mcp_config = RemoteMcpConfigStore::new(kv.clone());
+    let browser_sessions = BrowserSessionManager::new();
 
     let handlers: Vec<Arc<dyn ToolHandler>> = vec![
         Arc::new(FileToolHandler::new()),
         Arc::new(TerminalToolHandler::new()),
+        Arc::new(BrowserToolHandler::new(browser_sessions.clone())),
         Arc::new(MemoryToolHandler::new()),
         Arc::new(SkillsToolHandler::new()),
+        Arc::new(ScheduleToolHandler::new()),
         Arc::new(ContextToolHandler::new()),
         Arc::new(ImageGenerationToolHandler::new()),
         Arc::new(McpToolHandler::new(mcp_client.clone(), mcp_config.clone())),
@@ -78,6 +84,7 @@ pub async fn run(config: BackendConfig) -> anyhow::Result<()> {
         mcp_client,
         mcp_config,
         tool_router,
+        browser_sessions,
         active_tasks: Arc::new(DashMap::new()),
     };
 

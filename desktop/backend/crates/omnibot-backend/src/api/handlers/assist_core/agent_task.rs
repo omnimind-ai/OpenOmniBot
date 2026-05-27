@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use omnibot_agent::{
@@ -84,8 +85,10 @@ async fn spawn_task(
 
     // Register active task with cancellation handle.
     let cancel = Arc::new(tokio::sync::Notify::new());
+    let cancelled = Arc::new(AtomicBool::new(false));
     session.state.active_tasks.insert(task_id.clone(), ActiveTaskHandle {
         cancel: cancel.clone(),
+        cancelled: cancelled.clone(),
         conversation_id,
         started_at_ms: now_unix_ms(),
     });
@@ -123,6 +126,10 @@ async fn spawn_task(
                 session_for_task.state.tool_router.clone(),
                 endpoint.clone(),
                 model.clone(),
+            )
+            .with_mcp_catalog(
+                session_for_task.state.mcp_client.clone(),
+                session_for_task.state.mcp_config.clone(),
             );
             orchestrator.run(AgentRunInput {
                 task_id: task_id.clone(),
@@ -131,6 +138,8 @@ async fn spawn_task(
                 environment: env.clone(),
                 max_rounds: 16,
                 conversation_id,
+                cancel: Some(cancel.clone()),
+                cancel_flag: Some(cancelled.clone()),
             }).await
         } else {
             // Chat-only path: single LLM stream_turn, no tool catalog.
@@ -205,6 +214,7 @@ async fn spawn_task(
 pub async fn cancel(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
     let task_id = args.get("taskId").and_then(|v| v.as_str()).unwrap_or("");
     if let Some((_, handle)) = session.state.active_tasks.remove(task_id) {
+        handle.cancelled.store(true, Ordering::SeqCst);
         handle.cancel.notify_waiters();
     }
     Ok(serde_json::json!({"ok": true}))

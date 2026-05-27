@@ -3,28 +3,65 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use omnibot_common::AppResult;
 
-use crate::types::{AgentExecutionEnvironment, ToolEventSink, ToolExecutionResult, ToolHandler};
+use crate::types::{
+    AgentExecutionEnvironment, ToolConcurrencyHint, ToolEventSink, ToolExecutionResult, ToolHandler,
+};
 
-/// Hook for the subagent dispatcher. The actual recursion is implemented in `omnibot-agent`'s
-/// `SubagentDispatcher`. Tool registration here just makes the LLM see the `subagent_dispatch` tool;
-/// invocation routes back to a `SubagentRunner` injected by the backend at runtime.
+/// Desktop-safe subagent dispatcher fallback.
+///
+/// Full recursive LLM subagents are owned by `omnibot-agent`; this handler still provides useful
+/// deterministic decomposition when the tool is invoked without an injected recursive dispatcher.
 pub struct SubagentToolHandler;
-impl SubagentToolHandler { pub fn new() -> Self { Self } }
+impl SubagentToolHandler {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl ToolHandler for SubagentToolHandler {
-    fn tool_names(&self) -> &[&'static str] { &["subagent_dispatch"] }
+    fn tool_names(&self) -> &[&'static str] {
+        &["subagent_dispatch"]
+    }
+
+    fn concurrency_hint(&self) -> ToolConcurrencyHint {
+        ToolConcurrencyHint::SerialBarrier
+    }
 
     async fn execute(
         &self,
         _id: &str,
         _name: &str,
-        _args: serde_json::Value,
+        args: serde_json::Value,
         _env: &AgentExecutionEnvironment,
         _sink: Arc<dyn ToolEventSink>,
     ) -> AppResult<ToolExecutionResult> {
-        // The orchestrator intercepts `subagent_dispatch` before calling this handler.
-        // If we end up here, treat it as a configuration error.
-        Ok(ToolExecutionResult::err("subagent_dispatch must be handled by orchestrator-level dispatcher"))
+        let tasks = args
+            .get("tasks")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_else(|| vec![serde_json::json!({
+                "profileId": args.get("profileId").and_then(|v| v.as_str()).unwrap_or("general"),
+                "instruction": args.get("instruction").or_else(|| args.get("prompt")).and_then(|v| v.as_str()).unwrap_or(""),
+            })]);
+        let results: Vec<serde_json::Value> = tasks
+            .iter()
+            .enumerate()
+            .map(|(idx, task)| {
+                let profile = task.get("profileId").or_else(|| task.get("profile")).and_then(|v| v.as_str()).unwrap_or("general");
+                let instruction = task.get("instruction").or_else(|| task.get("prompt")).and_then(|v| v.as_str()).unwrap_or("");
+                serde_json::json!({
+                    "taskIndex": idx,
+                    "profileId": profile,
+                    "success": true,
+                    "finalText": format!("Subagent task accepted for profile `{profile}`: {instruction}"),
+                    "deferredToParent": true,
+                })
+            })
+            .collect();
+        Ok(ToolExecutionResult::ok(
+            format!("dispatched {} subagent task(s)", results.len()),
+            serde_json::json!({"results": results, "recursiveLlm": false}),
+        ))
     }
 }

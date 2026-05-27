@@ -44,6 +44,7 @@ class BridgedChannels {
     'cn.com.omnimind.bot/app_update',
     'cn.com.omnimind.bot/file_save',
     'cn.com.omnimind.bot/RemoteMcpConfig',
+    'cn.com.omnimind.bot/AgentBrowserSession',
     'device_info',
   };
 
@@ -70,6 +71,5 @@ class BridgedChannels {
     'cn.com.omnimind.bot/pdf_preview',
     'cn.com.omnimind.bot/screen_dialog',
     'cn.com.omnimind.bot/ScreenDialogEvent',
-    'cn.com.omnimind.bot/AgentBrowserSession',
   };
 }

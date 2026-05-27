@@ -26,18 +26,34 @@ pub struct ToolExecutionResult {
 
 impl ToolExecutionResult {
     pub fn ok(summary: impl Into<String>, structured: serde_json::Value) -> Self {
-        Self { success: true, summary: summary.into(), stdout: String::new(), structured, error: None, artifacts: vec![] }
+        Self {
+            success: true,
+            summary: summary.into(),
+            stdout: String::new(),
+            structured,
+            error: None,
+            artifacts: vec![],
+        }
     }
     pub fn err(message: impl Into<String>) -> Self {
         let m = message.into();
-        Self { success: false, summary: m.clone(), stdout: String::new(), structured: serde_json::Value::Null, error: Some(m), artifacts: vec![] }
+        Self {
+            success: false,
+            summary: m.clone(),
+            stdout: String::new(),
+            structured: serde_json::Value::Null,
+            error: Some(m),
+            artifacts: vec![],
+        }
     }
 
     pub fn to_payload(&self) -> serde_json::Value {
         serde_json::json!({
+            "ok": self.success,
             "success": self.success,
             "summary": self.summary,
             "stdout": self.stdout,
+            "data": self.structured,
             "structured": self.structured,
             "error": self.error,
             "artifacts": self.artifacts,
@@ -59,8 +75,8 @@ pub struct ToolEvent {
     pub task_id: String,
     pub tool_call_id: String,
     pub tool_name: String,
-    pub kind: String,            // "start" | "progress" | "complete" | "partial"
-    pub status: String,          // "pending" | "running" | "succeeded" | "failed"
+    pub kind: String,   // "start" | "progress" | "complete" | "partial"
+    pub status: String, // "pending" | "running" | "succeeded" | "failed"
     pub args_json: String,
     pub progress: String,
     pub partial_text: String,
@@ -75,7 +91,9 @@ pub trait ToolEventSink: Send + Sync {
 #[async_trait]
 pub trait ToolHandler: Send + Sync {
     fn tool_names(&self) -> &[&'static str];
-    fn concurrency_hint(&self) -> ToolConcurrencyHint { ToolConcurrencyHint::ParallelSafe }
+    fn concurrency_hint(&self) -> ToolConcurrencyHint {
+        ToolConcurrencyHint::ParallelSafe
+    }
     async fn execute(
         &self,
         tool_call_id: &str,

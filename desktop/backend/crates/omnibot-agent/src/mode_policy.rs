@@ -19,7 +19,8 @@ fn restricted_for(mode: &str) -> &'static [&'static str] {
         &[
             "subagent_dispatch",
             "schedule_task_create",
-            "schedule_task_list",
+            "schedule_task_update",
+            "schedule_task_delete",
             "calendar_event_create",
             "alarm_create",
         ]

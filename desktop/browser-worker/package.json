@@ -1,0 +1,12 @@
+{
+  "name": "omnibot-browser-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.52.0"
+  },
+  "scripts": {
+    "install-browsers": "playwright install chromium"
+  }
+}

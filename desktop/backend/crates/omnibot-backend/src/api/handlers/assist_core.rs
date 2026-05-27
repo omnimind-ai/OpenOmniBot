@@ -1,6 +1,7 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use omnibot_common::{AppError, AppResult};
+use omnibot_common::{AppError, AppResult, now_unix_ms};
 
 use crate::api::ws::WsSession;
 
@@ -20,7 +21,9 @@ pub async fn route(
         // --- Chat & Agent tasks ---
         "createChatTask" => agent_task::create_chat_task(args, session).await,
         "createAgentTask" => agent_task::create_agent_task(args, session).await,
-        "cancelChatTask" | "cancelTask" | "cancelRunningTask" => agent_task::cancel(args, session).await,
+        "cancelChatTask" | "cancelTask" | "cancelRunningTask" => {
+            agent_task::cancel(args, session).await
+        }
 
         // --- Conversation CRUD ---
         "getConversations" => conversation::list(args, session).await,
@@ -83,29 +86,26 @@ pub async fn route(
         "listRuntimeLogs" => runtime_log::list_runtime_logs(args, session).await,
 
         // --- Misc stubs ---
-        "getInstalledApplications" => Ok(serde_json::json!([])),
-        "setCurrentConversationId" | "setVisibleChatConversation" => Ok(serde_json::json!("SUCCESS")),
+        "getInstalledApplications" => Ok(serde_json::json!(list_desktop_apps())),
+        "setCurrentConversationId" | "setVisibleChatConversation" => {
+            Ok(serde_json::json!("SUCCESS"))
+        }
         "notifySummarySheetReady" => Ok(serde_json::json!("SUCCESS")),
         "isCompanionTaskRunning" => Ok(serde_json::json!(false)),
         "completeConversation" => Ok(serde_json::json!("SUCCESS")),
         "generateConversationSummary" => Ok(serde_json::json!("")),
-        "syncWorkspaceScheduledTasks" => Ok(serde_json::json!({
-            "count": args.get("tasks").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0),
-        })),
-        "upsertWorkspaceScheduledTask" => Ok(serde_json::json!({
-            "ok": true,
-            "task": args.get("task").cloned().unwrap_or(serde_json::Value::Null),
-        })),
-        "deleteWorkspaceScheduledTask" => Ok(serde_json::json!({
-            "deleted": true,
-        })),
+        "syncWorkspaceScheduledTasks" => sync_workspace_scheduled_tasks(args, session).await,
+        "upsertWorkspaceScheduledTask" => upsert_workspace_scheduled_task(args, session).await,
+        "deleteWorkspaceScheduledTask" => delete_workspace_scheduled_task(args, session).await,
         "showScheduledTaskReminder" | "hideScheduledTaskReminder" => {
             Ok(serde_json::json!({"ok": true}))
         }
         "createCompanionTask" | "createVLMOperationTask" | "createLearningTask" => Err(
             AppError::method_not_implemented(format!("assist_core.{method} (desktop)")),
         ),
-        other => Err(AppError::method_not_implemented(format!("assist_core.{other}"))),
+        other => Err(AppError::method_not_implemented(format!(
+            "assist_core.{other}"
+        ))),
     }
 }
 
@@ -121,6 +121,118 @@ pub async fn subscribe(sub_id: &str, args: serde_json::Value, session: Arc<WsSes
     // here. Keep the subscription handle alive so `event_cancel` can clean up.
     session.subscriptions.insert(
         sub_id.to_string(),
-        crate::api::ws::SubscriptionHandle { cancel: tokio::sync::Notify::new(), channel: kind },
+        crate::api::ws::SubscriptionHandle {
+            cancel: tokio::sync::Notify::new(),
+            channel: kind,
+        },
     );
+}
+
+async fn schedule_store_path(session: &WsSession) -> AppResult<PathBuf> {
+    Ok(
+        PathBuf::from(session.state.workspaces.default()?.current_cwd)
+            .join(".omnibot/scheduled_tasks.json"),
+    )
+}
+
+async fn read_scheduled_tasks(path: &PathBuf) -> AppResult<Vec<serde_json::Value>> {
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let text = tokio::fs::read_to_string(path).await?;
+    Ok(serde_json::from_str(&text).unwrap_or_default())
+}
+
+async fn write_scheduled_tasks(path: &PathBuf, tasks: &[serde_json::Value]) -> AppResult<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    tokio::fs::write(path, serde_json::to_vec_pretty(tasks)?).await?;
+    Ok(())
+}
+
+async fn sync_workspace_scheduled_tasks(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
+    let tasks = args
+        .get("tasks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let path = schedule_store_path(&session).await?;
+    write_scheduled_tasks(&path, &tasks).await?;
+    Ok(serde_json::json!({"ok": true, "count": tasks.len(), "firesOnlyWhileAppRunning": true}))
+}
+
+async fn upsert_workspace_scheduled_task(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
+    let mut task = args.get("task").cloned().unwrap_or(args);
+    let id = task
+        .get("id")
+        .or_else(|| task.get("taskId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("sched_{}", uuid::Uuid::new_v4().simple()));
+    if let Some(obj) = task.as_object_mut() {
+        obj.insert("id".into(), serde_json::Value::String(id.clone()));
+        obj.insert("updatedAtMs".into(), serde_json::json!(now_unix_ms()));
+        obj.entry("createdAtMs")
+            .or_insert(serde_json::json!(now_unix_ms()));
+        obj.entry("runtime").or_insert(serde_json::json!({
+            "desktop": true,
+            "firesOnlyWhileAppRunning": true,
+        }));
+    }
+    let path = schedule_store_path(&session).await?;
+    let mut tasks = read_scheduled_tasks(&path).await?;
+    tasks.retain(|existing| existing.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
+    tasks.push(task.clone());
+    write_scheduled_tasks(&path, &tasks).await?;
+    Ok(serde_json::json!({"ok": true, "task": task, "firesOnlyWhileAppRunning": true}))
+}
+
+async fn delete_workspace_scheduled_task(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
+    let id = args
+        .get("id")
+        .or_else(|| args.get("taskId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let path = schedule_store_path(&session).await?;
+    let mut tasks = read_scheduled_tasks(&path).await?;
+    let before = tasks.len();
+    tasks.retain(|existing| existing.get("id").and_then(|v| v.as_str()) != Some(id));
+    write_scheduled_tasks(&path, &tasks).await?;
+    Ok(serde_json::json!({"deleted": before != tasks.len(), "id": id}))
+}
+
+fn list_desktop_apps() -> Vec<serde_json::Value> {
+    let mut dirs = vec![];
+    if cfg!(target_os = "macos") {
+        dirs.push(PathBuf::from("/Applications"));
+        if let Some(home) = std::env::var_os("HOME") {
+            dirs.push(PathBuf::from(home).join("Applications"));
+        }
+    }
+    let mut apps = vec![];
+    for dir in dirs {
+        if let Ok(read_dir) = std::fs::read_dir(dir) {
+            for entry in read_dir.flatten().take(500) {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("app") {
+                    apps.push(serde_json::json!({
+                        "name": path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
+                        "path": path.display().to_string(),
+                        "platform": std::env::consts::OS,
+                    }));
+                }
+            }
+        }
+    }
+    apps
 }
