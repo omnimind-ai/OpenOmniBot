@@ -30,6 +30,7 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
   final bool showLeading;
   final bool glassSurface;
   final VoidCallback? onClose;
+  final ValueChanged<bool>? onEditingChanged;
 
   const OmnibotArtifactPreviewPage({
     super.key,
@@ -46,6 +47,7 @@ class OmnibotArtifactPreviewPage extends StatefulWidget {
     this.showLeading = true,
     this.glassSurface = false,
     this.onClose,
+    this.onEditingChanged,
   });
 
   @override
@@ -85,6 +87,12 @@ class _OmnibotArtifactPreviewPageState
     _loadIfNeeded();
     _fileChangedSubscription = AssistsMessageService.agentAiConfigChangedStream
         .listen(_handleExternalFileChanged);
+    if (_isEditing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onEditingChanged?.call(true);
+      });
+    }
   }
 
   @override
@@ -181,6 +189,7 @@ class _OmnibotArtifactPreviewPageState
         selection: TextSelection.collapsed(offset: (_textContent ?? '').length),
       );
     });
+    widget.onEditingChanged?.call(true);
   }
 
   Future<void> _handleCancelEditing() async {
@@ -213,6 +222,7 @@ class _OmnibotArtifactPreviewPageState
         selection: TextSelection.collapsed(offset: (_textContent ?? '').length),
       );
     });
+    widget.onEditingChanged?.call(false);
   }
 
   Future<void> _handleSaveText() async {
@@ -382,21 +392,6 @@ class _OmnibotArtifactPreviewPageState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: palette.surfaceSecondary,
-          child: Text(
-            _isDirty
-                ? (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Editing with unsaved changes'
-                      : '编辑中，存在未保存修改')
-                : (Localizations.localeOf(context).languageCode == 'en'
-                      ? 'Editing. Save will write back to workspace immediately'
-                      : '编辑中，保存后会立即写回 workspace'),
-            style: TextStyle(fontSize: 12, color: palette.textSecondary),
-          ),
-        ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -620,6 +615,7 @@ class _OmnibotArtifactPreviewPageState
       canPop: _allowPop || !(_isEditing && _isDirty),
       onPopInvokedWithResult: (didPop, _) => _handleBackNavigation(didPop),
       child: Scaffold(
+        resizeToAvoidBottomInset: !widget.glassSurface,
         backgroundColor: widget.glassSurface
             ? Colors.transparent
             : palette.pageBackground,
@@ -715,9 +711,12 @@ class _OmnibotArtifactPreviewSheetFrame extends StatefulWidget {
 class _OmnibotArtifactPreviewSheetFrameState
     extends State<_OmnibotArtifactPreviewSheetFrame> {
   static const double _minHeightFactor = 0.36;
+  static const double _editingMinHeightFactor = 0.58;
+  static const double _keyboardEditingMinHeightFactor = 0.82;
   static const double _maxHeightFactor = 0.94;
 
   double? _heightFactor;
+  bool _isEditing = false;
 
   double _initialHeightFactor(double viewportHeight) {
     return viewportHeight < 720 ? 0.72 : 0.62;
@@ -727,23 +726,65 @@ class _OmnibotArtifactPreviewSheetFrameState
     if (availableHeight <= 0) {
       return;
     }
+    final mediaQuery = MediaQuery.of(context);
+    final minHeightFactor = _effectiveMinHeightFactor(
+      keyboardVisible: mediaQuery.viewInsets.bottom > 0,
+    );
     final delta = details.primaryDelta ?? details.delta.dy;
     setState(() {
       final current =
-          _heightFactor ??
-          ChatDetailSheetPreferences.resolveHeightFactor(
-            fallback: _initialHeightFactor(MediaQuery.sizeOf(context).height),
-            min: _minHeightFactor,
-            max: _maxHeightFactor,
-          );
+          (_heightFactor ??
+                  ChatDetailSheetPreferences.resolveHeightFactor(
+                    fallback: _initialHeightFactor(
+                      MediaQuery.sizeOf(context).height,
+                    ),
+                    min: _minHeightFactor,
+                    max: _maxHeightFactor,
+                  ))
+              .clamp(minHeightFactor, _maxHeightFactor);
       _heightFactor = (current - delta / availableHeight).clamp(
-        _minHeightFactor,
+        minHeightFactor,
         _maxHeightFactor,
       );
     });
   }
 
+  double _effectiveMinHeightFactor({required bool keyboardVisible}) {
+    if (!_isEditing) {
+      return _minHeightFactor;
+    }
+    return keyboardVisible
+        ? _keyboardEditingMinHeightFactor
+        : _editingMinHeightFactor;
+  }
+
+  double _resolveHeightFactor(MediaQueryData mediaQuery) {
+    final minHeightFactor = _effectiveMinHeightFactor(
+      keyboardVisible: mediaQuery.viewInsets.bottom > 0,
+    );
+    return (_heightFactor ??
+            ChatDetailSheetPreferences.resolveHeightFactor(
+              fallback: _initialHeightFactor(MediaQuery.sizeOf(context).height),
+              min: _minHeightFactor,
+              max: _maxHeightFactor,
+            ))
+        .clamp(minHeightFactor, _maxHeightFactor)
+        .toDouble();
+  }
+
+  void _handleEditingChanged(bool isEditing) {
+    if (_isEditing == isEditing) {
+      return;
+    }
+    setState(() {
+      _isEditing = isEditing;
+    });
+  }
+
   void _persistHeightFactor() {
+    if (_isEditing) {
+      return;
+    }
     final heightFactor = _heightFactor;
     if (heightFactor == null) {
       return;
@@ -767,13 +808,8 @@ class _OmnibotArtifactPreviewSheetFrameState
           mediaQuery.padding.top -
           mediaQuery.viewInsets.bottom,
     );
-    final heightFactor =
-        _heightFactor ??
-        ChatDetailSheetPreferences.resolveHeightFactor(
-          fallback: _initialHeightFactor(mediaQuery.size.height),
-          min: _minHeightFactor,
-          max: _maxHeightFactor,
-        );
+    final heightFactor = _resolveHeightFactor(mediaQuery);
+    final sheetHeight = availableHeight * heightFactor;
     const borderRadius = BorderRadius.vertical(top: Radius.circular(24));
     return SafeArea(
       top: false,
@@ -781,52 +817,62 @@ class _OmnibotArtifactPreviewSheetFrameState
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
-        child: OmniGlassPanel(
-          height: availableHeight * heightFactor,
-          width: double.infinity,
-          borderRadius: borderRadius,
-          child: Material(
-            color: Colors.transparent,
-            child: Column(
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragUpdate: (details) =>
-                      _handleDragUpdate(details, availableHeight),
-                  onVerticalDragEnd: (_) => _persistHeightFactor(),
-                  child: SizedBox(
-                    height: 22,
-                    width: double.infinity,
-                    child: Center(
-                      child: Container(
-                        width: 42,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: palette.textSecondary.withValues(alpha: 0.34),
-                          borderRadius: BorderRadius.circular(999),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: sheetHeight),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          builder: (context, animatedHeight, _) {
+            return OmniGlassPanel(
+              height: animatedHeight,
+              width: double.infinity,
+              borderRadius: borderRadius,
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) =>
+                          _handleDragUpdate(details, availableHeight),
+                      onVerticalDragEnd: (_) => _persistHeightFactor(),
+                      child: SizedBox(
+                        height: 22,
+                        width: double.infinity,
+                        child: Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: palette.textSecondary.withValues(
+                                alpha: 0.34,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: OmnibotArtifactPreviewPage(
+                        path: widget.metadata.path,
+                        uri: widget.metadata.uri,
+                        title: widget.metadata.title,
+                        previewKind: widget.metadata.previewKind,
+                        mimeType: widget.metadata.mimeType,
+                        shellPath: widget.metadata.shellPath,
+                        exists: widget.metadata.exists,
+                        showPathBar: false,
+                        appBarPrimary: false,
+                        showLeading: false,
+                        glassSurface: true,
+                        onEditingChanged: _handleEditingChanged,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: OmnibotArtifactPreviewPage(
-                    path: widget.metadata.path,
-                    uri: widget.metadata.uri,
-                    title: widget.metadata.title,
-                    previewKind: widget.metadata.previewKind,
-                    mimeType: widget.metadata.mimeType,
-                    shellPath: widget.metadata.shellPath,
-                    exists: widget.metadata.exists,
-                    showPathBar: false,
-                    appBarPrimary: false,
-                    showLeading: false,
-                    glassSurface: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
