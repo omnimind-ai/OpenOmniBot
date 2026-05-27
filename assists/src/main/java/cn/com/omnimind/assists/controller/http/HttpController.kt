@@ -248,7 +248,6 @@ object HttpController {
                 json.has("message") && json.opt("message") is String -> json.optString("message")
                 json.has("choices") -> {
                     val firstChoice = json.optJSONArray("choices")?.optJSONObject(0)
-                        ?: return@runCatching ""
                     val delta = firstChoice?.optJSONObject("delta")
                     val message = firstChoice?.optJSONObject("message")
 
@@ -279,19 +278,7 @@ object HttpController {
                                     .orEmpty()
                             }
                         }
-                        else -> {
-                            extractTextPayload(firstChoice.opt("text")).ifBlank {
-                                listOf(
-                                    firstChoice.opt("reasoning_content"),
-                                    firstChoice.opt("reasoning"),
-                                    firstChoice.opt("thinking")
-                                )
-                                    .asSequence()
-                                    .map { extractTextPayload(it) }
-                                    .firstOrNull { it.isNotBlank() }
-                                    .orEmpty()
-                            }
-                        }
+                        else -> trimmed
                     }
                 }
                 else -> trimmed

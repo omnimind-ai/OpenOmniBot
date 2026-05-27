@@ -42,7 +42,6 @@ class AgentLlmStreamAccumulator(
     private var lastChunkPreview: String = ""
     private var thinkSectionOpen = false
     private var inlineThinkTagObserved = false
-    private var autoInlineThinkTagMode = false
 
     private var chunkIndex = 0
 
@@ -510,20 +509,23 @@ class AgentLlmStreamAccumulator(
         if (text.isEmpty()) {
             return
         }
-        if (!preferInlineThinkTags && !autoInlineThinkTagMode && !thinkSectionOpen) {
-            val containsThinkTag = text.contains(THINK_OPEN_TAG) || text.contains(THINK_CLOSE_TAG)
-            val hasTrailingTagPrefix = partialInlineTagSuffixLength(text) > 0
-            if (!containsThinkTag && !hasTrailingTagPrefix) {
-                contentBuffer.append(text)
-                return
-            }
-            autoInlineThinkTagMode = true
+        if (!preferInlineThinkTags) {
+            contentBuffer.append(text)
+            return
         }
         inlineTextBuffer.append(text)
         flushInlineTextBuffer(final = false)
     }
 
     private fun flushInlineTextBuffer(final: Boolean) {
+        if (!preferInlineThinkTags) {
+            if (inlineTextBuffer.isNotEmpty()) {
+                appendVisibleText(inlineTextBuffer.toString())
+                inlineTextBuffer.setLength(0)
+            }
+            return
+        }
+
         while (inlineTextBuffer.isNotEmpty()) {
             val bufferText = inlineTextBuffer.toString()
             if (thinkSectionOpen) {
@@ -563,12 +565,8 @@ class AgentLlmStreamAccumulator(
                 continue
             }
 
-            if (closeIndex >= 0) {
-                if (contentBuffer.isEmpty()) {
-                    appendReasoningText(bufferText.substring(0, closeIndex))
-                } else {
-                    appendVisibleText(bufferText.substring(0, closeIndex))
-                }
+            if (closeIndex >= 0 && contentBuffer.isEmpty()) {
+                appendReasoningText(bufferText.substring(0, closeIndex))
                 inlineTextBuffer.delete(0, closeIndex + THINK_CLOSE_TAG.length)
                 inlineThinkTagObserved = true
                 continue
@@ -580,7 +578,7 @@ class AgentLlmStreamAccumulator(
                 return
             }
 
-            if (preferInlineThinkTags && !inlineThinkTagObserved && contentBuffer.isEmpty()) {
+            if (!inlineThinkTagObserved && contentBuffer.isEmpty()) {
                 return
             }
 
