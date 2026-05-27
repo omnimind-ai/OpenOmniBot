@@ -9,6 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:ui/services/office_preview_service.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/services/pdf_preview_service.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/image_preview_overlay.dart';
 import 'package:ui/l10n/legacy_text_localizer.dart';
@@ -101,6 +102,18 @@ class OmnibotResourceLinkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final surfaceColor = plainStyle
+        ? Colors.transparent
+        : (isDark ? palette.surfaceSecondary : Colors.white);
+    final borderColor = isDark ? palette.borderSubtle : const Color(0xFFD8E4F8);
+    final iconBackgroundColor = isDark
+        ? palette.surfaceElevated
+        : const Color(0xFFEAF3FF);
+    final iconColor = isDark ? palette.accentPrimary : const Color(0xFF1F4ED8);
+    final titleColor = isDark ? palette.textPrimary : const Color(0xFF0F172A);
+    final metaColor = isDark ? palette.textSecondary : const Color(0xFF64748B);
     final icon = switch (metadata.previewKind) {
       'pdf' => Icons.picture_as_pdf_outlined,
       'html' => Icons.language_outlined,
@@ -118,11 +131,9 @@ class OmnibotResourceLinkCard extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: plainStyle ? Colors.transparent : Colors.white,
+          color: surfaceColor,
           borderRadius: BorderRadius.circular(14),
-          border: plainStyle
-              ? null
-              : Border.all(color: const Color(0xFFD8E4F8)),
+          border: plainStyle ? null : Border.all(color: borderColor),
           boxShadow: plainStyle
               ? null
               : const [
@@ -140,10 +151,10 @@ class OmnibotResourceLinkCard extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF3FF),
+                color: iconBackgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 20, color: const Color(0xFF1F4ED8)),
+              child: Icon(icon, size: 20, color: iconColor),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -155,10 +166,10 @@ class OmnibotResourceLinkCard extends StatelessWidget {
                     metadata.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF0F172A),
+                      color: titleColor,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -166,9 +177,9 @@ class OmnibotResourceLinkCard extends StatelessWidget {
                     metadata.shellPath,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF64748B),
+                      color: metaColor,
                       fontFamily: 'monospace',
                     ),
                   ),
@@ -176,11 +187,7 @@ class OmnibotResourceLinkCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(
-              Icons.open_in_new_rounded,
-              size: 18,
-              color: Color(0xFF64748B),
-            ),
+            Icon(Icons.open_in_new_rounded, size: 18, color: metaColor),
           ],
         ),
       ),

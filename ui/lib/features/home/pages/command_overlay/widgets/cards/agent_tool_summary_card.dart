@@ -50,13 +50,9 @@ class _AgentToolSummaryCardState extends State<AgentToolSummaryCard> {
             palette.surfaceSecondary,
           )
         : statusColor.withValues(alpha: 0.08);
-    final cardBorderColor = context.isDarkTheme
-        ? Color.lerp(
-            palette.borderSubtle,
-            statusColor,
-            0.18,
-          )!.withValues(alpha: 0.92)
-        : Colors.transparent;
+    final cardBorder = context.isDarkTheme
+        ? null
+        : Border.all(color: Colors.transparent);
     final statusTagBackgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
             statusColor.withValues(alpha: 0.14),
@@ -94,7 +90,7 @@ class _AgentToolSummaryCardState extends State<AgentToolSummaryCard> {
       typeLabel: typeLabel,
       statusLabel: statusLabel,
       cardBackgroundColor: cardBackgroundColor,
-      cardBorderColor: cardBorderColor,
+      cardBorder: cardBorder,
       statusTagBackgroundColor: statusTagBackgroundColor,
       statusTagTextColor: statusTagTextColor,
     );
@@ -150,7 +146,7 @@ class _AgentToolSummaryCardState extends State<AgentToolSummaryCard> {
     required String typeLabel,
     required String statusLabel,
     required Color cardBackgroundColor,
-    required Color cardBorderColor,
+    required Border? cardBorder,
     required Color statusTagBackgroundColor,
     required Color statusTagTextColor,
   }) {
@@ -162,7 +158,7 @@ class _AgentToolSummaryCardState extends State<AgentToolSummaryCard> {
         decoration: BoxDecoration(
           color: cardBackgroundColor,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: cardBorderColor),
+          border: cardBorder,
         ),
         child: InkWell(
           onTap: () =>

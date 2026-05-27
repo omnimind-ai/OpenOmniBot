@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:ui/services/app_update_service.dart';
 import 'package:ui/services/special_permission.dart';
-import 'package:ui/theme/app_colors.dart';
+import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 
 Future<void> showAppUpdateDialog(
@@ -12,6 +11,7 @@ Future<void> showAppUpdateDialog(
 ) async {
   final hasDirectInstall = status.canInstall;
   final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+  final palette = context.omniPalette;
   final confirmed = await AppDialog.confirm(
     context,
     title: isEnglish ? 'New version available' : '发现新版本',
@@ -19,7 +19,9 @@ Future<void> showAppUpdateDialog(
     confirmText: hasDirectInstall
         ? (isEnglish ? 'Update now' : '立即更新')
         : (isEnglish ? 'Go to Release' : '前往 Release'),
-    confirmButtonColor: AppColors.buttonPrimary,
+    confirmButtonColor: context.isDarkTheme
+        ? Color.lerp(palette.accentPrimary, palette.pageBackground, 0.42)!
+        : palette.accentPrimary,
     content: _AppUpdateDialogContent(status: status),
     barrierDismissible: true,
   );
@@ -31,9 +33,7 @@ Future<void> showAppUpdateDialog(
   if (!hasDirectInstall) {
     if (status.releaseUrl.isEmpty) {
       showToast(
-        isEnglish
-            ? 'No available Release URL'
-            : '缺少可用的 Release 地址',
+        isEnglish ? 'No available Release URL' : '缺少可用的 Release 地址',
         type: ToastType.error,
       );
       return;
@@ -68,7 +68,10 @@ Future<void> showAppUpdateDialog(
         : result.message;
     showToast(message, type: toastType);
   } catch (_) {
-    showToast(isEnglish ? 'Failed to start update' : '拉起更新失败', type: ToastType.error);
+    showToast(
+      isEnglish ? 'Failed to start update' : '拉起更新失败',
+      type: ToastType.error,
+    );
   }
 }
 
@@ -79,6 +82,15 @@ class _AppUpdateDialogContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    final notesSurfaceColor = isDark
+        ? palette.surfaceSecondary.withValues(alpha: 0.82)
+        : const Color(0xFFF6F8FA);
+    final notesBorderColor = isDark
+        ? palette.borderSubtle.withValues(alpha: 0.72)
+        : const Color(0xFFE6EDF5);
     final publishedAt = status.publishedAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(status.publishedAt)
         : null;
@@ -87,24 +99,18 @@ class _AppUpdateDialogContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _InfoRow(
-          label: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Current version'
-              : '当前版本',
+          label: isEnglish ? 'Current version' : '当前版本',
           value: status.currentVersionLabel,
         ),
         const SizedBox(height: 8),
         _InfoRow(
-          label: Localizations.localeOf(context).languageCode == 'en'
-              ? 'Latest version'
-              : '最新版本',
+          label: isEnglish ? 'Latest version' : '最新版本',
           value: status.latestVersionLabel,
         ),
         if (publishedAt != null) ...[
           const SizedBox(height: 8),
           _InfoRow(
-            label: Localizations.localeOf(context).languageCode == 'en'
-                ? 'Published at'
-                : '发布时间',
+            label: isEnglish ? 'Published at' : '发布时间',
             value:
                 '${publishedAt.year.toString().padLeft(4, '0')}-${publishedAt.month.toString().padLeft(2, '0')}-${publishedAt.day.toString().padLeft(2, '0')}',
           ),
@@ -112,13 +118,11 @@ class _AppUpdateDialogContent extends StatelessWidget {
         if (status.releaseNotes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            Localizations.localeOf(context).languageCode == 'en'
-                ? 'Release notes'
-                : '更新说明',
-            style: const TextStyle(
+            isEnglish ? 'Release notes' : '更新说明',
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: AppColors.text,
+              color: palette.textPrimary,
             ),
           ),
           const SizedBox(height: 6),
@@ -127,17 +131,17 @@ class _AppUpdateDialogContent extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF6F8FA),
+              color: notesSurfaceColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE6EDF5)),
+              border: Border.all(color: notesBorderColor),
             ),
             child: SingleChildScrollView(
               child: Text(
                 status.releaseNotes,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.6,
-                  color: AppColors.text70,
+                  color: palette.textSecondary,
                 ),
               ),
             ),
@@ -152,22 +156,20 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow({
-    required this.label,
-    required this.value,
-  });
+  const _InfoRow({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
     return Row(
       children: [
         SizedBox(
           width: 68,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.text50,
+              color: palette.textTertiary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -175,9 +177,9 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: AppColors.text,
+              color: palette.textPrimary,
               fontWeight: FontWeight.w600,
             ),
           ),
