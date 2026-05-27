@@ -25,27 +25,57 @@ pub struct SubscriptionHandle {
 
 impl WsSession {
     pub async fn send_response_ok(&self, request_id: String, value: serde_json::Value) {
-        let _ = self.out.send(OutgoingFrame::MethodResponse {
-            request_id, ok: true, value: Some(value), error: None,
-        }).await;
+        let _ = self
+            .out
+            .send(OutgoingFrame::MethodResponse {
+                request_id,
+                ok: true,
+                value: Some(value),
+                error: None,
+            })
+            .await;
     }
     pub async fn send_response_err(&self, request_id: String, code: &str, message: String) {
-        let _ = self.out.send(OutgoingFrame::MethodResponse {
-            request_id, ok: false, value: None,
-            error: Some(ErrorPayload { code: code.into(), message }),
-        }).await;
+        let _ = self
+            .out
+            .send(OutgoingFrame::MethodResponse {
+                request_id,
+                ok: false,
+                value: None,
+                error: Some(ErrorPayload {
+                    code: code.into(),
+                    message,
+                }),
+            })
+            .await;
     }
     /// Backend-initiated method call to Dart.
     pub async fn invoke_method(&self, channel: &str, method: &str, args: serde_json::Value) {
-        let _ = self.out.send(OutgoingFrame::MethodInvoke {
-            channel: channel.into(), method: method.into(), arguments: args,
-        }).await;
+        let _ = self
+            .out
+            .send(OutgoingFrame::MethodInvoke {
+                channel: channel.into(),
+                method: method.into(),
+                arguments: args,
+            })
+            .await;
     }
     pub async fn event_data(&self, sub_id: &str, data: serde_json::Value) {
-        let _ = self.out.send(OutgoingFrame::EventData { subscription_id: sub_id.into(), data }).await;
+        let _ = self
+            .out
+            .send(OutgoingFrame::EventData {
+                subscription_id: sub_id.into(),
+                data,
+            })
+            .await;
     }
     pub async fn event_end(&self, sub_id: &str) {
-        let _ = self.out.send(OutgoingFrame::EventEnd { subscription_id: sub_id.into() }).await;
+        let _ = self
+            .out
+            .send(OutgoingFrame::EventEnd {
+                subscription_id: sub_id.into(),
+            })
+            .await;
     }
     pub fn cancel_subscription(&self, sub_id: &str) {
         if let Some((_, handle)) = self.subscriptions.remove(sub_id) {
@@ -76,7 +106,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     continue;
                 }
             };
-            if sender.send(Message::Text(text.into())).await.is_err() { break; }
+            if sender.send(Message::Text(text.into())).await.is_err() {
+                break;
+            }
         }
     });
 
@@ -95,20 +127,30 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
         };
         match frame {
-            IncomingFrame::MethodCall { request_id, channel, method, arguments } => {
+            IncomingFrame::MethodCall {
+                request_id,
+                channel,
+                method,
+                arguments,
+            } => {
                 let session = session.clone();
                 tokio::spawn(async move {
-                    match ChannelRouter::route(&channel, &method, arguments, session.clone()).await {
+                    match ChannelRouter::route(&channel, &method, arguments, session.clone()).await
+                    {
                         Ok(value) => session.send_response_ok(request_id, value).await,
-                        Err(e) => session.send_response_err(
-                            request_id,
-                            e.code(),
-                            e.to_string(),
-                        ).await,
+                        Err(e) => {
+                            session
+                                .send_response_err(request_id, e.code(), e.to_string())
+                                .await
+                        }
                     }
                 });
             }
-            IncomingFrame::EventListen { subscription_id, channel, arguments } => {
+            IncomingFrame::EventListen {
+                subscription_id,
+                channel,
+                arguments,
+            } => {
                 let session = session.clone();
                 tokio::spawn(async move {
                     ChannelRouter::subscribe(&channel, &subscription_id, arguments, session).await;

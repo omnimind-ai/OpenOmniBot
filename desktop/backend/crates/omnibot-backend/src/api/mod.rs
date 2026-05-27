@@ -6,5 +6,13 @@ pub mod ws;
 use axum::{Json, response::IntoResponse};
 
 pub async fn health() -> impl IntoResponse {
-    Json(serde_json::json!({"ok": true, "name": "omnibot-backend"}))
+    Json(serde_json::json!({
+        "ok": true,
+        "name": "omnibot-backend",
+        "bridgeSchema": 2,
+        "capabilities": {
+            "agentBrowserSession": true,
+            "modelProviderListContract": "list",
+        },
+    }))
 }

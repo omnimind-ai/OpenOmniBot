@@ -3,13 +3,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
 
 /// 对话历史持久化服务
 class ConversationHistoryService {
-  static const MethodChannel _assistCore = MethodChannel(
+  static const BridgeMethodChannel _assistCore = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
   static const String _legacyConversationIdKey = 'current_conversation_id';

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/models/conversation_model.dart';
 import 'package:ui/models/conversation_thread_target.dart';
@@ -7,7 +8,7 @@ import 'package:ui/services/codex_app_server_service.dart';
 import 'package:ui/services/conversation_history_service.dart';
 
 class ConversationService {
-  static const MethodChannel _assistCore = MethodChannel(
+  static const BridgeMethodChannel _assistCore = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
   static const String _hiddenCodexConversationIdsKey =

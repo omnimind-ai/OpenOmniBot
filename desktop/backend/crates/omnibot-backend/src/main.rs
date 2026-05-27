@@ -11,7 +11,9 @@ async fn main() -> anyhow::Result<()> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data-dir" => {
-                if let Some(p) = args.next() { config.data_dir = Some(PathBuf::from(p)); }
+                if let Some(p) = args.next() {
+                    config.data_dir = Some(PathBuf::from(p));
+                }
             }
             "--bind" => {
                 if let Some(addr) = args.next() {
@@ -31,7 +33,9 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn parse_bind(s: &str) -> anyhow::Result<SocketAddr> {
-    if let Ok(addr) = s.parse::<SocketAddr>() { return Ok(addr); }
+    if let Ok(addr) = s.parse::<SocketAddr>() {
+        return Ok(addr);
+    }
     // Allow host:port without IPv6 brackets.
     let mut parts = s.rsplitn(2, ':');
     let port: u16 = parts.next().context("missing port")?.parse()?;

@@ -14,9 +14,17 @@ pub async fn route(
     match method {
         "sendRequest" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            let http_method = args.get("method").and_then(|v| v.as_str()).unwrap_or("GET").to_uppercase();
+            let http_method = args
+                .get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("GET")
+                .to_uppercase();
             let body = args.get("body");
-            let headers = args.get("headers").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+            let headers = args
+                .get("headers")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
 
             let client = reqwest::Client::new();
             let mut req = client.request(
@@ -25,18 +33,32 @@ pub async fn route(
                 url,
             );
             for (k, v) in headers {
-                if let Some(s) = v.as_str() { req = req.header(k.as_str(), s); }
+                if let Some(s) = v.as_str() {
+                    req = req.header(k.as_str(), s);
+                }
             }
             if let Some(b) = body {
-                let serialized = if b.is_string() { b.as_str().unwrap().to_string() } else { b.to_string() };
+                let serialized = if b.is_string() {
+                    b.as_str().unwrap().to_string()
+                } else {
+                    b.to_string()
+                };
                 req = req.body(serialized);
             }
-            let resp = req.send().await.map_err(|e| omnibot_common::AppError::backend(format!("send: {e}")))?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| omnibot_common::AppError::backend(format!("send: {e}")))?;
             let status = resp.status().as_u16();
-            let headers_out = resp.headers().iter()
+            let headers_out = resp
+                .headers()
+                .iter()
                 .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.to_string(), s.to_string())))
                 .collect::<std::collections::BTreeMap<_, _>>();
-            let bytes = resp.bytes().await.map_err(|e| omnibot_common::AppError::backend(format!("read body: {e}")))?;
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| omnibot_common::AppError::backend(format!("read body: {e}")))?;
             let body_text = String::from_utf8_lossy(&bytes).into_owned();
             Ok(serde_json::json!({
                 "status": status,

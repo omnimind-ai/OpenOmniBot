@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 
 class TokenUsageRecord {
   final int id;
@@ -49,7 +50,7 @@ class TokenUsageRecord {
 }
 
 class TokenUsageService {
-  static const MethodChannel _assistCore = MethodChannel(
+  static const BridgeMethodChannel _assistCore = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 
@@ -63,9 +64,8 @@ class TokenUsageService {
       return result
           .whereType<Map>()
           .map(
-            (item) => TokenUsageRecord.fromJson(
-              Map<String, dynamic>.from(item),
-            ),
+            (item) =>
+                TokenUsageRecord.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList();
     } on PlatformException catch (e) {

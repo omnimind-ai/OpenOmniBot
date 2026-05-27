@@ -40,7 +40,7 @@ class BridgeWebsocketClient {
   final Map<String, _PendingCall> _pendingCalls = {};
   final Map<String, _Subscription> _subscriptions = {};
   final Map<String, Future<dynamic> Function(String method, dynamic args)>
-      _nativeHandlers = {};
+  _nativeHandlers = {};
 
   Future<void> ensureConnected() async {
     if (_disposed) return;
@@ -54,14 +54,17 @@ class BridgeWebsocketClient {
     }
     _connecting = true;
     try {
-      final socket = await WebSocket.connect('ws://127.0.0.1:$port/channel')
-          .timeout(const Duration(seconds: 8));
+      final socket = await WebSocket.connect(
+        'ws://127.0.0.1:$port/channel',
+      ).timeout(const Duration(seconds: 8));
       _socket = socket;
       _backoffMs = 250;
-      socket.listen(_onMessage,
-          onError: (Object e) => _onClosed(e),
-          onDone: () => _onClosed(null),
-          cancelOnError: true);
+      socket.listen(
+        _onMessage,
+        onError: (Object e) => _onClosed(e),
+        onDone: () => _onClosed(null),
+        cancelOnError: true,
+      );
       // Replay subscriptions.
       for (final entry in _subscriptions.entries) {
         _sendRaw({
@@ -80,12 +83,21 @@ class BridgeWebsocketClient {
   }
 
   void registerNativeMethodHandler(
-      String channel, Future<dynamic> Function(String method, dynamic args) handler) {
+    String channel,
+    Future<dynamic> Function(String method, dynamic args) handler,
+  ) {
     _nativeHandlers[channel] = handler;
   }
 
+  void unregisterNativeMethodHandler(String channel) {
+    _nativeHandlers.remove(channel);
+  }
+
   Future<Object?> invokeMethod(
-      String channel, String method, dynamic arguments) async {
+    String channel,
+    String method,
+    dynamic arguments,
+  ) async {
     await ensureConnected();
     final pending = _PendingCall(channel, method);
     final requestId = _newId('m');
@@ -110,16 +122,18 @@ class BridgeWebsocketClient {
       },
     );
     _subscriptions[id] = _Subscription(channel, arguments, controller);
-    ensureConnected().then((_) {
-      _sendRaw({
-        'type': BridgeFrameType.eventListen,
-        'subscriptionId': id,
-        'channel': channel,
-        'arguments': arguments ?? const <String, Object?>{},
-      });
-    }).catchError((Object e) {
-      controller.addError(e);
-    });
+    ensureConnected()
+        .then((_) {
+          _sendRaw({
+            'type': BridgeFrameType.eventListen,
+            'subscriptionId': id,
+            'channel': channel,
+            'arguments': arguments ?? const <String, Object?>{},
+          });
+        })
+        .catchError((Object e) {
+          controller.addError(e);
+        });
     return controller.stream;
   }
 
@@ -152,10 +166,14 @@ class BridgeWebsocketClient {
           if (map['ok'] == true) {
             pending.completer.complete(map['value']);
           } else {
-            final err = (map['error'] as Map?)?.cast<String, dynamic>() ?? const {};
+            final err =
+                (map['error'] as Map?)?.cast<String, dynamic>() ?? const {};
             pending.completer.completeError(
-                _BridgeError(err['code'] as String? ?? 'ERROR',
-                    err['message'] as String? ?? 'unknown'));
+              _BridgeError(
+                err['code'] as String? ?? 'ERROR',
+                err['message'] as String? ?? 'unknown',
+              ),
+            );
           }
           break;
         case BridgeFrameType.methodInvoke:

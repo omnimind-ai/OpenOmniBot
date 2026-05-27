@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/agent_schedule_bridge_service.dart';
 import 'package:ui/services/app_state_service.dart';
@@ -216,7 +217,7 @@ class AgentAiConfigChangedEvent {
 }
 
 class AssistsMessageService {
-  static const MethodChannel assistCore = MethodChannel(
+  static const BridgeMethodChannel assistCore = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 
@@ -1473,7 +1474,9 @@ class AssistsMessageService {
       );
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
-      print('Failed to sync task completion notification setting: ${e.message}');
+      print(
+        'Failed to sync task completion notification setting: ${e.message}',
+      );
       return false;
     }
   }
@@ -1484,14 +1487,12 @@ class AssistsMessageService {
     bool visible = true,
   }) async {
     try {
-      final result = await assistCore.invokeMethod<String>(
-        'setVisibleChatConversation',
-        {
-          'conversationId': conversationId ?? 0,
-          'visible': visible,
-          if (conversationMode != null) 'mode': conversationMode,
-        },
-      );
+      final result = await assistCore
+          .invokeMethod<String>('setVisibleChatConversation', {
+            'conversationId': conversationId ?? 0,
+            'visible': visible,
+            if (conversationMode != null) 'mode': conversationMode,
+          });
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
       print('Failed to sync visible chat conversation: ${e.message}');
@@ -1506,15 +1507,13 @@ class AssistsMessageService {
     String? conversationMode,
   }) async {
     try {
-      final result = await assistCore.invokeMethod<String>(
-        'showTaskCompletionNotification',
-        {
-          'title': title,
-          'message': message,
-          if (conversationId != null) 'conversationId': conversationId,
-          if (conversationMode != null) 'conversationMode': conversationMode,
-        },
-      );
+      final result = await assistCore
+          .invokeMethod<String>('showTaskCompletionNotification', {
+            'title': title,
+            'message': message,
+            if (conversationId != null) 'conversationId': conversationId,
+            if (conversationMode != null) 'conversationMode': conversationMode,
+          });
       return result == 'SUCCESS';
     } on PlatformException catch (e) {
       print('Failed to show task completion notification: ${e.message}');

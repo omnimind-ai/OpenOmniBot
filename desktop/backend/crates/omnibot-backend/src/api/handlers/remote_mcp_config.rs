@@ -23,7 +23,10 @@ pub async fn route(
         }
         "listTools" => {
             let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let cfg = store.list()?.into_iter().find(|c| c.id == id)
+            let cfg = store
+                .list()?
+                .into_iter()
+                .find(|c| c.id == id)
                 .ok_or_else(|| AppError::NotFound(format!("mcp server {id}")))?;
             let _ = session.state.mcp_client.initialize(&cfg).await;
             let tools = session.state.mcp_client.list_tools(&cfg).await?;

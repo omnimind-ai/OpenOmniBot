@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use omnibot_common::AppResult;
+use omnibot_common::{AppError, AppResult};
 use omnibot_llm::{ModelProviderProfile, ScenarioBinding};
 use uuid::Uuid;
 
 use crate::api::ws::WsSession;
 
-pub async fn get_config(_args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn get_config(
+    _args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let cfg = session.state.model_providers.load()?;
     let selected = cfg
         .editing_id
@@ -18,11 +21,17 @@ pub async fn get_config(_args: serde_json::Value, session: Arc<WsSession>) -> Ap
     Ok(profile_to_dart(selected))
 }
 
-pub async fn save_config(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn save_config(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     save_profile(args, session).await
 }
 
-pub async fn list_profiles(_args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn list_profiles(
+    _args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let cfg = session.state.model_providers.load()?;
     Ok(serde_json::json!({
         "profiles": cfg.profiles.into_iter().map(profile_to_dart).collect::<Vec<_>>(),
@@ -30,7 +39,10 @@ pub async fn list_profiles(_args: serde_json::Value, session: Arc<WsSession>) ->
     }))
 }
 
-pub async fn save_profile(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn save_profile(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let id = args
         .get("id")
         .and_then(|v| v.as_str())
@@ -80,7 +92,10 @@ pub async fn save_profile(args: serde_json::Value, session: Arc<WsSession>) -> A
     Ok(profile_to_dart(existing))
 }
 
-pub async fn delete_profile(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn delete_profile(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let id = args
         .get("profileId")
         .or_else(|| args.get("id"))
@@ -93,7 +108,10 @@ pub async fn delete_profile(args: serde_json::Value, session: Arc<WsSession>) ->
     }))
 }
 
-pub async fn set_editing(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn set_editing(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let id = args
         .get("profileId")
         .or_else(|| args.get("id"))
@@ -110,33 +128,84 @@ pub async fn set_editing(args: serde_json::Value, session: Arc<WsSession>) -> Ap
     Ok(profile_to_dart(selected))
 }
 
-/// Fetch available models for the given profile. Tries OpenAI-compatible `/models` endpoint.
-pub async fn fetch_models(args: serde_json::Value, _session: Arc<WsSession>) -> AppResult<serde_json::Value> {
-    let base_url = args.get("baseUrl").and_then(|v| v.as_str()).unwrap_or("");
-    let api_key = args.get("apiKey").and_then(|v| v.as_str()).unwrap_or("");
-    // Build the /models URL from base completion endpoint heuristically.
-    let models_url = if base_url.contains("/chat/completions") {
-        base_url.replace("/chat/completions", "/models")
-    } else if base_url.ends_with('/') {
-        format!("{base_url}models")
-    } else {
-        format!("{base_url}/models")
+/// Fetch available models for the given profile. Matches Android's channel contract:
+/// returns a list of `{id, displayName, ownedBy}` maps and throws on request errors.
+pub async fn fetch_models(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
+    let profile_id = args
+        .get("profileId")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let cfg = session.state.model_providers.load()?;
+    let profile = profile_id
+        .and_then(|id| cfg.profiles.iter().find(|p| p.id == id))
+        .or_else(|| {
+            cfg.editing_id
+                .as_deref()
+                .and_then(|id| cfg.profiles.iter().find(|p| p.id == id))
+        })
+        .or_else(|| cfg.profiles.first());
+
+    let base_url = args
+        .get("apiBase")
+        .or_else(|| args.get("baseUrl"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .or_else(|| profile.map(|p| p.base_url.as_str()))
+        .unwrap_or("");
+    let api_key = args
+        .get("apiKey")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .or_else(|| profile.map(|p| p.api_key.as_str()))
+        .unwrap_or("");
+    let protocol_type = args
+        .get("protocolType")
+        .or_else(|| args.get("providerKind"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .or_else(|| profile.map(|p| p.provider_kind.as_str()))
+        .unwrap_or("openai_compatible");
+
+    let Some(models_url) = build_models_url(base_url, protocol_type) else {
+        return Ok(serde_json::json!([]));
     };
     let mut req = reqwest::Client::new().get(&models_url);
-    if !api_key.is_empty() { req = req.bearer_auth(api_key); }
-    match req.send().await {
-        Ok(r) => {
-            let status = r.status();
-            match r.json::<serde_json::Value>().await {
-                Ok(json) => Ok(serde_json::json!({ "ok": status.is_success(), "data": json })),
-                Err(e) => Ok(serde_json::json!({ "ok": false, "error": e.to_string() })),
-            }
-        }
-        Err(e) => Ok(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    if !api_key.is_empty() {
+        req = req.bearer_auth(api_key);
     }
+    if protocol_type == "anthropic" {
+        req = req.header("anthropic-version", "2023-06-01");
+    }
+
+    let response = req
+        .send()
+        .await
+        .map_err(|e| AppError::backend(format!("fetch provider models failed: {e}")))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(AppError::backend(format!(
+            "fetch provider models failed ({}): {}",
+            status.as_u16(),
+            extract_error_message(&body)
+        )));
+    }
+
+    let payload: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    Ok(serde_json::Value::Array(parse_provider_models(payload)))
 }
 
-pub async fn check_availability(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn check_availability(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     // Probe the chat completion endpoint with a minimal request.
     let id = args.get("profileId").and_then(|v| v.as_str()).unwrap_or("");
     if let Some(profile) = session.state.model_providers.find(id)? {
@@ -145,10 +214,13 @@ pub async fn check_availability(args: serde_json::Value, session: Arc<WsSession>
             "messages": [{"role": "user", "content": "ping"}],
             "max_tokens": 1,
         });
-        let mut req = reqwest::Client::new().post(&profile.base_url)
+        let mut req = reqwest::Client::new()
+            .post(&profile.base_url)
             .header("content-type", "application/json")
             .json(&body);
-        if !profile.api_key.is_empty() { req = req.bearer_auth(&profile.api_key); }
+        if !profile.api_key.is_empty() {
+            req = req.bearer_auth(&profile.api_key);
+        }
         match req.send().await {
             Ok(r) => {
                 let status = r.status();
@@ -158,14 +230,19 @@ pub async fn check_availability(args: serde_json::Value, session: Arc<WsSession>
                     "message": if status.is_success() { String::from("ok") } else { r.text().await.unwrap_or_default() }
                 }))
             }
-            Err(e) => Ok(serde_json::json!({"available": false, "code": null, "message": e.to_string()})),
+            Err(e) => {
+                Ok(serde_json::json!({"available": false, "code": null, "message": e.to_string()}))
+            }
         }
     } else {
         Ok(serde_json::json!({"available": false, "code": null, "message": "profile not found"}))
     }
 }
 
-pub async fn list_scene_bindings(_args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn list_scene_bindings(
+    _args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     Ok(serde_json::Value::Array(
         session
             .state
@@ -177,16 +254,26 @@ pub async fn list_scene_bindings(_args: serde_json::Value, session: Arc<WsSessio
     ))
 }
 
-pub async fn save_scene_binding(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn save_scene_binding(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let binding = binding_from_dart(&args);
     let updated = session.state.scene_registry.save(binding)?;
-    Ok(serde_json::Value::Array(updated.into_iter().map(binding_to_dart).collect()))
+    Ok(serde_json::Value::Array(
+        updated.into_iter().map(binding_to_dart).collect(),
+    ))
 }
 
-pub async fn clear_scene_binding(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn clear_scene_binding(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let scene = args.get("sceneId").and_then(|v| v.as_str()).unwrap_or("");
     let updated = session.state.scene_registry.delete(scene)?;
-    Ok(serde_json::Value::Array(updated.into_iter().map(binding_to_dart).collect()))
+    Ok(serde_json::Value::Array(
+        updated.into_iter().map(binding_to_dart).collect(),
+    ))
 }
 
 pub async fn list_scene_overrides(
@@ -229,19 +316,48 @@ pub async fn save_scene_voice_config(
     Ok(args)
 }
 
-pub async fn scene_catalog(_args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn scene_catalog(
+    _args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let cfg = session.state.model_providers.load()?;
     let default_profile = cfg.profiles.first();
     let default_profile_id = default_profile.map(|p| p.id.clone()).unwrap_or_default();
     let default_profile_name = default_profile
         .map(|p| p.display_name.clone())
         .unwrap_or_default();
-    let default_model = default_profile.map(|p| p.model_id.clone()).unwrap_or_default();
+    let default_model = default_profile
+        .map(|p| p.model_id.clone())
+        .unwrap_or_default();
     Ok(serde_json::json!([
-        scene_item("agent_main", "Agent Main", &default_profile_id, &default_profile_name, &default_model),
-        scene_item("agent_compaction", "Context Compaction", &default_profile_id, &default_profile_name, &default_model),
-        scene_item("chat", "Chat Only", &default_profile_id, &default_profile_name, &default_model),
-        scene_item("subagent", "Subagent", &default_profile_id, &default_profile_name, &default_model),
+        scene_item(
+            "agent_main",
+            "Agent Main",
+            &default_profile_id,
+            &default_profile_name,
+            &default_model
+        ),
+        scene_item(
+            "agent_compaction",
+            "Context Compaction",
+            &default_profile_id,
+            &default_profile_name,
+            &default_model
+        ),
+        scene_item(
+            "chat",
+            "Chat Only",
+            &default_profile_id,
+            &default_profile_name,
+            &default_model
+        ),
+        scene_item(
+            "subagent",
+            "Subagent",
+            &default_profile_id,
+            &default_profile_name,
+            &default_model
+        ),
     ]))
 }
 
@@ -259,6 +375,141 @@ fn profile_to_dart(profile: ModelProviderProfile) -> serde_json::Value {
         "configured": configured,
         "statusText": if configured { "Configured" } else { "" },
     })
+}
+
+fn build_models_url(api_base: &str, protocol_type: &str) -> Option<String> {
+    let normalized = normalize_api_base(api_base)?;
+    let direct = normalized.ends_with('#');
+    let base = normalized.trim_end_matches('#');
+    if direct {
+        return Some(base.to_string());
+    }
+    if protocol_type == "anthropic" || base.to_ascii_lowercase().ends_with("/v1") {
+        Some(format!("{base}/models"))
+    } else {
+        Some(format!("{base}/v1/models"))
+    }
+}
+
+fn normalize_api_base(value: &str) -> Option<String> {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let direct = normalized.ends_with('#');
+    let mut result = normalized
+        .trim_end_matches('#')
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    let parsed = result.parse::<reqwest::Url>().ok()?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return None;
+    }
+
+    if !direct {
+        for suffix in [
+            "/v1/chat/completions",
+            "/chat/completions",
+            "/v1/models",
+            "/models",
+            "/v1/messages",
+            "/messages",
+        ] {
+            if result.to_ascii_lowercase().ends_with(suffix) {
+                let next_len = result.len().saturating_sub(suffix.len());
+                result.truncate(next_len);
+                result = result.trim_end_matches('/').to_string();
+                break;
+            }
+        }
+    }
+
+    if result.is_empty() {
+        None
+    } else if direct {
+        Some(format!("{result}#"))
+    } else {
+        Some(result)
+    }
+}
+
+fn parse_provider_models(payload: serde_json::Value) -> Vec<serde_json::Value> {
+    let data = payload
+        .get("data")
+        .or_else(|| payload.get("models"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut models = data
+        .into_iter()
+        .filter_map(|item| {
+            let id = item.get("id").and_then(|v| v.as_str())?.trim();
+            if id.is_empty() {
+                return None;
+            }
+            let display_name = item
+                .get("display_name")
+                .or_else(|| item.get("displayName"))
+                .or_else(|| item.get("name"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .unwrap_or(id);
+            let owned_by = item
+                .get("owned_by")
+                .or_else(|| item.get("ownedBy"))
+                .or_else(|| item.get("type"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty());
+            Some(serde_json::json!({
+                "id": id,
+                "displayName": display_name,
+                "ownedBy": owned_by,
+            }))
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|a, b| {
+        let lhs = a
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let rhs = b
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        lhs.cmp(&rhs)
+    });
+    models
+}
+
+fn extract_error_message(body: &str) -> String {
+    let fallback = body.trim();
+    let json = serde_json::from_str::<serde_json::Value>(body).ok();
+    let extracted = json
+        .as_ref()
+        .and_then(|v| v.get("error"))
+        .and_then(|err| {
+            err.get("message")
+                .or_else(|| err.get("code"))
+                .and_then(|v| v.as_str())
+                .or_else(|| err.as_str())
+        })
+        .or_else(|| {
+            json.as_ref()
+                .and_then(|v| v.get("message"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or(fallback);
+    if extracted.is_empty() {
+        "empty response".to_string()
+    } else {
+        extracted.chars().take(500).collect()
+    }
 }
 
 fn binding_from_dart(value: &serde_json::Value) -> ScenarioBinding {

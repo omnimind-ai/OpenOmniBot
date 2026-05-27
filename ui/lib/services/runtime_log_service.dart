@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 
 class RuntimeLogEntry {
   final String id;
@@ -43,7 +43,7 @@ class RuntimeLogEntry {
 }
 
 class RuntimeLogService {
-  static const MethodChannel _assistCore = MethodChannel(
+  static const BridgeMethodChannel _assistCore = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 

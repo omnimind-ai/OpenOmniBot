@@ -15,6 +15,8 @@ import 'package:ui/theme/app_theme.dart';
 import 'package:ui/widgets/embedded_terminal_init_overlay.dart';
 
 import 'core/router/go_router_manager.dart';
+import 'desktop/channel_bridge/bridge_bootstrap_stub.dart'
+    if (dart.library.io) 'desktop/channel_bridge/bridge_bootstrap_io.dart';
 import 'services/event_bus.dart';
 
 Future<void> bootstrapMain(List<String> args) async {
@@ -39,7 +41,7 @@ Future<void> bootstrapMain(List<String> args) async {
   if (initialRoute != null) {
     GoRouterManager.setInitialRoute(initialRoute);
   }
-  WidgetsFlutterBinding.ensureInitialized();
+  await ensureDesktopChannelBridge(args);
   WidgetsBinding.instance.deferFirstFrame();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
@@ -77,7 +79,7 @@ Future<void> bootstrapSubEngine(List<String> args) async {
   if (initialRoute != null) {
     GoRouterManager.setInitialRoute(initialRoute);
   }
-  WidgetsFlutterBinding.ensureInitialized();
+  await ensureDesktopChannelBridge(args);
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   final container = ProviderContainer();

@@ -10,7 +10,9 @@ pub async fn route(
     _session: Arc<WsSession>,
 ) -> AppResult<serde_json::Value> {
     match method {
-        "initHalfScreenEngine" => Ok(serde_json::json!({"ok": true, "note": "desktop has single engine"})),
+        "initHalfScreenEngine" => {
+            Ok(serde_json::json!({"ok": true, "note": "desktop has single engine"}))
+        }
         "exitApp" => Ok(serde_json::json!({"ok": true})),
         "getPendingShareDraft" => Ok(serde_json::Value::Null),
         "clearPendingShareDraft" => Ok(serde_json::json!({"ok": true})),

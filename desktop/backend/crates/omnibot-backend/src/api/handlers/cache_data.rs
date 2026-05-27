@@ -13,25 +13,23 @@ pub async fn route(
 ) -> AppResult<serde_json::Value> {
     let kv = &session.state.kv;
     match method {
-        "doMMKVEncodeString"
-        | "doMMKVEncodeBool"
-        | "doMMKVEncodeInt"
-        | "doMMKVEncodeDouble"
+        "doMMKVEncodeString" | "doMMKVEncodeBool" | "doMMKVEncodeInt" | "doMMKVEncodeDouble"
         | "doMMKVEncode" => {
             let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
-            let value = args.get("value").cloned().unwrap_or(serde_json::Value::Null);
+            let value = args
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             kv.put_raw(key, &value)?;
             Ok(serde_json::json!({"ok": true}))
         }
-        "doMMKVDecodeString"
-        | "doMMKVDecodeBoole"
-        | "doMMKVDecodeBool"
-        | "doMMKVDecodeInt"
-        | "doMMKVDecodeDouble"
-        | "doMMKVDecode" => {
+        "doMMKVDecodeString" | "doMMKVDecodeBoole" | "doMMKVDecodeBool" | "doMMKVDecodeInt"
+        | "doMMKVDecodeDouble" | "doMMKVDecode" => {
             let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
             Ok(kv.get_raw(key)?.unwrap_or_else(|| {
-                args.get("defaultValue").cloned().unwrap_or(serde_json::Value::Null)
+                args.get("defaultValue")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
             }))
         }
         "doMMKVRemove" => {

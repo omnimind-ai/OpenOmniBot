@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 
 class QuickLogItem {
   final String id;
@@ -39,14 +40,11 @@ class QuickLogSnapshot {
   final List<QuickLogItem> items;
   final int totalCount;
 
-  const QuickLogSnapshot({
-    required this.items,
-    required this.totalCount,
-  });
+  const QuickLogSnapshot({required this.items, required this.totalCount});
 }
 
 class QuickLogService {
-  static const MethodChannel _channel = MethodChannel(
+  static const BridgeMethodChannel _channel = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 
@@ -73,10 +71,7 @@ class QuickLogService {
   }) async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'addQuickLog',
-      {
-        'content': content,
-        'source': source,
-      },
+      {'content': content, 'source': source},
     );
     final item = result?['item'];
     if (item is! Map) {
@@ -91,10 +86,7 @@ class QuickLogService {
   static Future<QuickLogItem> updateLog(String id, String content) async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'updateQuickLog',
-      {
-        'id': id,
-        'content': content,
-      },
+      {'id': id, 'content': content},
     );
     final item = result?['item'];
     if (item is! Map) {

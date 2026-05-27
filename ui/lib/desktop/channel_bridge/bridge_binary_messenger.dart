@@ -44,12 +44,16 @@ class BridgingBinaryMessenger implements BinaryMessenger {
     // For bridged channels also subscribe to backend-initiated method_invoke frames.
     if (BridgedChannels.methodChannels.contains(channel) ||
         BridgedChannels.eventChannels.contains(channel)) {
+      if (handler == null) {
+        _ws.unregisterNativeMethodHandler(channel);
+        return;
+      }
       _ws.registerNativeMethodHandler(channel, (method, args) async {
         // Encode as a MethodCall via the standard codec and pass to Dart handler.
         const codec = StandardMethodCodec();
         final call = MethodCall(method, args);
         final bytes = codec.encodeMethodCall(call);
-        final reply = await handler?.call(bytes);
+        final reply = await handler.call(bytes);
         return reply == null ? null : codec.decodeEnvelope(reply);
       });
     }

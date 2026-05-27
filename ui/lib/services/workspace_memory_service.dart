@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+import 'package:ui/desktop/channel_bridge/bridge_method_channel.dart';
 
 class WorkspaceMemoryEmbeddingConfig {
   final bool enabled;
@@ -97,7 +97,7 @@ class WorkspaceShortMemoryItem {
 }
 
 class WorkspaceMemoryService {
-  static const MethodChannel _channel = MethodChannel(
+  static const BridgeMethodChannel _channel = BridgeMethodChannel(
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 

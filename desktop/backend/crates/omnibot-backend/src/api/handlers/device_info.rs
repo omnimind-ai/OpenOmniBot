@@ -22,10 +22,14 @@ pub async fn route(
         })),
         "getAndroidId" => Ok(serde_json::json!({"androidId": ""})),
         "getIpAddress" => Ok(serde_json::json!({"ip": "127.0.0.1"})),
-        other => Err(AppError::method_not_implemented(format!("device_info.{other}"))),
+        other => Err(AppError::method_not_implemented(format!(
+            "device_info.{other}"
+        ))),
     }
 }
 
 fn hostname() -> String {
-    std::env::var("HOSTNAME").or_else(|_| std::env::var("COMPUTERNAME")).unwrap_or_else(|_| "localhost".into())
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "localhost".into())
 }

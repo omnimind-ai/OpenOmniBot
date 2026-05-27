@@ -5,13 +5,19 @@ use omnibot_common::AppResult;
 
 use crate::api::ws::WsSession;
 
-pub async fn load_soul(_args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn load_soul(
+    _args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     let path = memory_dir(&session)?.join("soul.md");
     let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
     Ok(serde_json::json!({"content": content}))
 }
 
-pub async fn save_soul(args: serde_json::Value, session: Arc<WsSession>) -> AppResult<serde_json::Value> {
+pub async fn save_soul(
+    args: serde_json::Value,
+    session: Arc<WsSession>,
+) -> AppResult<serde_json::Value> {
     save_named("soul.md", args, session).await
 }
 

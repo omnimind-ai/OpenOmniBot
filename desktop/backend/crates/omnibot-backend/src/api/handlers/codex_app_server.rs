@@ -30,10 +30,6 @@ pub async fn route(
     }
 }
 
-pub async fn subscribe(
-    _sub_id: &str,
-    _args: serde_json::Value,
-    _session: Arc<WsSession>,
-) {
+pub async fn subscribe(_sub_id: &str, _args: serde_json::Value, _session: Arc<WsSession>) {
     // No events emitted; the subscription stays idle until Dart cancels.
 }
