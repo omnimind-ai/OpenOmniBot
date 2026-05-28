@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,6 +12,78 @@ import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 import 'package:ui/widgets/omnibot_resource_widgets.dart';
+
+// ── Module-level reusable singletons ──
+// flutter_markdown 通过 `!=` 检测 styleSheet 变化触发 _parseMarkdown()，
+// 因此 styleSheet 必须保持引用稳定，否则每个 build 都会触发整段 AST 重解析。
+// 同理，inline/block 语法和 codeTapHandler 也可全局共享，避免分配开销。
+
+const OmnibotCodeTapHandler _kOmnibotCodeTapHandler = OmnibotCodeTapHandler();
+
+final OmnibotInlineMathSyntax _kOmnibotInlineMathSyntax =
+    OmnibotInlineMathSyntax();
+final OmnibotInlineLinkSyntax _kOmnibotInlineLinkSyntax =
+    OmnibotInlineLinkSyntax();
+final OmnibotTrailingInlineSyntax _kOmnibotTrailingInlineSyntax =
+    OmnibotTrailingInlineSyntax();
+
+final List<md.InlineSyntax> _kInlineSyntaxesWithoutTrailing =
+    List<md.InlineSyntax>.unmodifiable(<md.InlineSyntax>[
+      _kOmnibotInlineMathSyntax,
+      _kOmnibotInlineLinkSyntax,
+    ]);
+
+final List<md.InlineSyntax> _kInlineSyntaxesWithTrailing =
+    List<md.InlineSyntax>.unmodifiable(<md.InlineSyntax>[
+      _kOmnibotInlineMathSyntax,
+      _kOmnibotInlineLinkSyntax,
+      _kOmnibotTrailingInlineSyntax,
+    ]);
+
+const List<md.BlockSyntax> _kBlockSyntaxes = <md.BlockSyntax>[
+  OmnibotTableSyntax(),
+  OmnibotMathBlockSyntax(),
+];
+
+// ── StyleSheet LRU cache ──
+// `MarkdownStyleSheet.fromTheme(...).copyWith(...)` 是重型操作；同等条件下
+// 复用同一引用可以让 flutter_markdown 在 didUpdateWidget 中跳过 _parseMarkdown，
+// 从而避免每次父级 setState 都重新解析整段 markdown。
+const int _kStyleSheetCacheCapacity = 8;
+final LinkedHashMap<int, MarkdownStyleSheet> _styleSheetCache =
+    LinkedHashMap<int, MarkdownStyleSheet>();
+
+MarkdownStyleSheet _resolveMarkdownStyleSheet(
+  BuildContext context,
+  TextStyle baseStyle,
+) {
+  final theme = Theme.of(context);
+  final scheme = theme.colorScheme;
+  final key = Object.hashAll(<Object?>[
+    theme.brightness,
+    scheme.primary,
+    scheme.onSurface,
+    scheme.surface,
+    scheme.surfaceContainerHighest,
+    scheme.onSurfaceVariant,
+    scheme.outlineVariant,
+    baseStyle.color,
+    baseStyle.fontSize,
+    baseStyle.height,
+    baseStyle.fontWeight,
+    baseStyle.fontFamily,
+  ]);
+  final cached = _styleSheetCache[key];
+  if (cached != null) {
+    return cached;
+  }
+  if (_styleSheetCache.length >= _kStyleSheetCacheCapacity) {
+    _styleSheetCache.remove(_styleSheetCache.keys.first);
+  }
+  final styleSheet = buildOmnibotMarkdownStyleSheet(context, baseStyle);
+  _styleSheetCache[key] = styleSheet;
+  return styleSheet;
+}
 
 class OmnibotMarkdownBody extends StatelessWidget {
   static const String _trailingInlineToken = '[[omnibot-trailing-inline]]';
@@ -34,50 +107,46 @@ class OmnibotMarkdownBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final codeTapHandler = OmnibotCodeTapHandler();
-    final styleSheet = buildOmnibotMarkdownStyleSheet(context, baseStyle);
-    return MarkdownBody(
-      data: _linkifyBareOmnibotUris(_withTrailingInlineToken(data)),
-      selectable: selectable,
-      onTapLink: (text, href, title) {
-        if (href == null) return;
-        _handleMarkdownLinkTap(context, href, onResourceOpen);
-      },
-      blockSyntaxes: const <md.BlockSyntax>[
-        OmnibotTableSyntax(),
-        OmnibotMathBlockSyntax(),
-      ],
-      inlineSyntaxes: <md.InlineSyntax>[
-        OmnibotInlineMathSyntax(),
-        OmnibotInlineLinkSyntax(),
-        if (trailingInline != null) OmnibotTrailingInlineSyntax(),
-      ],
-      builders: buildOmnibotMarkdownBuilders(
-        baseStyle: baseStyle,
+    final styleSheet = _resolveMarkdownStyleSheet(context, baseStyle);
+    return RepaintBoundary(
+      child: MarkdownBody(
+        data: _linkifyBareOmnibotUris(_withTrailingInlineToken(data)),
         selectable: selectable,
-        inlineResourcePlainStyle: inlineResourcePlainStyle,
-        codeTapHandler: codeTapHandler,
-        trailingInline: trailingInline,
-        onResourceOpen: onResourceOpen,
-      ),
-      sizedImageBuilder: (config) {
-        final uri = config.uri;
-        if (uri.scheme == 'omnibot') {
-          final metadata = OmnibotResourceService.resolveUri(uri.toString());
-          if (metadata != null) {
-            return OmnibotInlineResourceEmbed(
-              metadata: metadata,
-              plainStyle: inlineResourcePlainStyle,
-              onOpen: onResourceOpen,
-            );
+        onTapLink: (text, href, title) {
+          if (href == null) return;
+          _handleMarkdownLinkTap(context, href, onResourceOpen);
+        },
+        blockSyntaxes: _kBlockSyntaxes,
+        inlineSyntaxes: trailingInline != null
+            ? _kInlineSyntaxesWithTrailing
+            : _kInlineSyntaxesWithoutTrailing,
+        builders: buildOmnibotMarkdownBuilders(
+          baseStyle: baseStyle,
+          selectable: selectable,
+          inlineResourcePlainStyle: inlineResourcePlainStyle,
+          codeTapHandler: _kOmnibotCodeTapHandler,
+          trailingInline: trailingInline,
+          onResourceOpen: onResourceOpen,
+        ),
+        sizedImageBuilder: (config) {
+          final uri = config.uri;
+          if (uri.scheme == 'omnibot') {
+            final metadata = OmnibotResourceService.resolveUri(uri.toString());
+            if (metadata != null) {
+              return OmnibotInlineResourceEmbed(
+                metadata: metadata,
+                plainStyle: inlineResourcePlainStyle,
+                onOpen: onResourceOpen,
+              );
+            }
           }
-        }
-        if (uri.scheme == 'file') {
-          return Image.file(File.fromUri(uri));
-        }
-        return Image.network(uri.toString());
-      },
-      styleSheet: styleSheet,
+          if (uri.scheme == 'file') {
+            return Image.file(File.fromUri(uri));
+          }
+          return Image.network(uri.toString());
+        },
+        styleSheet: styleSheet,
+      ),
     );
   }
 
@@ -461,7 +530,7 @@ class OmnibotTableBuilder extends MarkdownElementBuilder {
     TextStyle? preferredStyle,
     TextStyle? parentStyle,
   ) {
-    final styleSheet = buildOmnibotMarkdownStyleSheet(context, baseStyle);
+    final styleSheet = _resolveMarkdownStyleSheet(context, baseStyle);
     final tableRows = _buildTableRows(styleSheet, element);
     if (tableRows.isEmpty) {
       return const SizedBox.shrink();

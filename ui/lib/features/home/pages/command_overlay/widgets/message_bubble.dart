@@ -908,8 +908,11 @@ class MessageBubble extends StatelessWidget {
   /// Cache decoded data-URL bytes so that repeated [build] calls reuse
   /// the same [Uint8List] instance.  This prevents [Image.memory] from
   /// treating each rebuild as a brand-new image (cache-miss → flicker).
+  ///
+  /// 上限保持小一些：单条图片可能是几百 KB ~ 数 MB，过大的 LRU 会显著
+  /// 抬升内存基线（多次实测后调整为 40 条，覆盖一次对话内的典型用量）。
   static final Map<int, Uint8List> _dataUrlBytesCache = {};
-  static const int _maxCacheEntries = 200;
+  static const int _maxCacheEntries = 40;
 
   static Uint8List? _decodeDataUrlBytes(String value) {
     final key = value.hashCode;
