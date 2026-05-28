@@ -20,7 +20,8 @@ import java.util.TreeMap
 class AgentLlmStreamAccumulator(
     private val json: Json,
     private val preferInlineThinkTags: Boolean = false,
-    private val includeReasoningInAssistantMessage: Boolean = false
+    private val includeReasoningInAssistantMessage: Boolean = false,
+    private val bufferLeadingTextUntilInlineThinkTag: Boolean = false
 ) {
     companion object {
         private const val TAG = "AgentLlmStreamAccumulator"
@@ -510,6 +511,11 @@ class AgentLlmStreamAccumulator(
         if (text.isEmpty()) {
             return
         }
+        if (shouldBufferLeadingInlineText()) {
+            inlineTextBuffer.append(text)
+            flushInlineTextBuffer(final = false)
+            return
+        }
         if (!preferInlineThinkTags && !autoInlineThinkTagMode && !thinkSectionOpen) {
             val containsThinkTag = text.contains(THINK_OPEN_TAG) || text.contains(THINK_CLOSE_TAG)
             val hasTrailingTagPrefix = partialInlineTagSuffixLength(text) > 0
@@ -580,7 +586,7 @@ class AgentLlmStreamAccumulator(
                 return
             }
 
-            if (preferInlineThinkTags && !inlineThinkTagObserved && contentBuffer.isEmpty()) {
+            if (shouldDelayVisibleInlineBufferCommit()) {
                 return
             }
 
@@ -593,6 +599,21 @@ class AgentLlmStreamAccumulator(
             inlineTextBuffer.delete(0, safeLength)
             return
         }
+    }
+
+    private fun shouldBufferLeadingInlineText(): Boolean {
+        return bufferLeadingTextUntilInlineThinkTag &&
+            !preferInlineThinkTags &&
+            !autoInlineThinkTagMode &&
+            !thinkSectionOpen &&
+            !inlineThinkTagObserved &&
+            contentBuffer.isEmpty()
+    }
+
+    private fun shouldDelayVisibleInlineBufferCommit(): Boolean {
+        return !inlineThinkTagObserved &&
+            contentBuffer.isEmpty() &&
+            (preferInlineThinkTags || bufferLeadingTextUntilInlineThinkTag)
     }
 
     private fun partialInlineTagSuffixLength(text: String): Int {

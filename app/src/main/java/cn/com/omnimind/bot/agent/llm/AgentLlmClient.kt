@@ -186,6 +186,24 @@ class HttpAgentLlmClient(
                 || error.reason.contains("stream was reset", ignoreCase = true)
     }
 
+    private fun shouldBufferLeadingInlineThinkTag(
+        routeInfo: HttpController.ChatCompletionRouteInfo
+    ): Boolean {
+        val protocolType = routeInfo.protocolType.trim().ifEmpty { "openai_compatible" }
+        if (!protocolType.equals("openai_compatible", ignoreCase = true)) {
+            return false
+        }
+        return sequenceOf(routeInfo.resolvedModel, routeInfo.requestedModel)
+            .map { it.trim().lowercase() }
+            .any { model ->
+                model.startsWith("qwen") ||
+                    model.contains("/qwen") ||
+                    model.contains(":qwen") ||
+                    model.contains("_qwen") ||
+                    model.contains("-qwen")
+            }
+    }
+
     private suspend fun doStreamTurnOnce(
         model: String,
         requestJson: String,
@@ -208,7 +226,8 @@ class HttpAgentLlmClient(
                 modelOverride?.providerProfileId,
                 modelOverride?.apiBase
             ),
-            includeReasoningInAssistantMessage = routeInfo?.requiresReasoningEcho == true
+            includeReasoningInAssistantMessage = routeInfo.requiresReasoningEcho,
+            bufferLeadingTextUntilInlineThinkTag = shouldBufferLeadingInlineThinkTag(routeInfo)
         )
         var lastReasoning = ""
         var lastReasoningEmitLength = 0
