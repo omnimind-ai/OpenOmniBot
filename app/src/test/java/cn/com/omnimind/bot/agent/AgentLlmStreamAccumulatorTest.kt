@@ -168,4 +168,52 @@ class AgentLlmStreamAccumulatorTest {
 
         assertEquals("前缀后缀", turn.message.contentText())
     }
+    @Test
+    fun `route-gated leading buffer reclassifies text before close tag for non local providers`() {
+        val accumulator = AgentLlmStreamAccumulator(
+            json = json,
+            preferInlineThinkTags = false,
+            bufferLeadingTextUntilInlineThinkTag = true
+        )
+
+        accumulator.consume("""{"choices":[{"delta":{"content":"inner reasoning</think>final answer"}}]}""")
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("inner reasoning", turn.reasoning)
+        assertEquals("final answer", turn.message.contentText())
+    }
+
+    @Test
+    fun `route-gated leading buffer reclassifies split close tag for non local providers`() {
+        val accumulator = AgentLlmStreamAccumulator(
+            json = json,
+            preferInlineThinkTags = false,
+            bufferLeadingTextUntilInlineThinkTag = true
+        )
+
+        accumulator.consume("""{"choices":[{"delta":{"content":"inner reasoning</th"}}]}""")
+        accumulator.consume("""{"choices":[{"delta":{"content":"ink>final answer"}}]}""")
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("inner reasoning", turn.reasoning)
+        assertEquals("final answer", turn.message.contentText())
+    }
+
+    @Test
+    fun `route-gated leading buffer flushes normal content when no think tag appears`() {
+        val accumulator = AgentLlmStreamAccumulator(
+            json = json,
+            preferInlineThinkTags = false,
+            bufferLeadingTextUntilInlineThinkTag = true
+        )
+
+        accumulator.consume("""{"choices":[{"delta":{"content":"normal answer"}}]}""")
+
+        val turn = accumulator.buildTurn()
+
+        assertEquals("", turn.reasoning)
+        assertEquals("normal answer", turn.message.contentText())
+    }
 }
