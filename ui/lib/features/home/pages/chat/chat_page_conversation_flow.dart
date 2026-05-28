@@ -1225,6 +1225,41 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     await _startManualRecordingFlow('录制轨迹');
   }
 
+  @override
+  Future<void> _openRunLogListFromShortcut() async {
+    GoRouterManager.push('/task/run_logs');
+  }
+
+  @override
+  Future<void> _openLatestRunLogFromShortcut() async {
+    if (_isAiResponding) return;
+    try {
+      final snapshot = await AssistsMessageService.getInternalRunLogs(limit: 1);
+      if (!mounted) return;
+      UtgRunLogSummary? latest;
+      for (final run in snapshot.runs) {
+        if (run.runId.trim().isNotEmpty) {
+          latest = run;
+          break;
+        }
+      }
+      if (latest == null) {
+        showToast('暂无可查看的轨迹', type: ToastType.warning);
+        return;
+      }
+      unawaited(
+        showRunLogTimelineSheet(
+          context,
+          runId: latest.runId.trim(),
+          title: latest.goal.trim().isEmpty ? '当前轨迹' : latest.goal.trim(),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showToast(error.toString(), type: ToastType.error);
+    }
+  }
+
   Future<void> _startManualRecordingFlow(String messageText) async {
     _inputFocusNode.unfocus();
     final messageIds = addUserMessage(messageText);
@@ -1236,9 +1271,13 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
       if (!mounted) return;
       _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
       final success = result['success'] == true;
-      final conversionSuccess = result['conversion_success'] == true ||
+      final conversionSuccess =
+          result['conversion_success'] == true ||
           result['conversionSuccess'] == true ||
-          (result['function_id'] ?? result['functionId']).toString().trim().isNotEmpty;
+          (result['function_id'] ?? result['functionId'])
+              .toString()
+              .trim()
+              .isNotEmpty;
       final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
       showToast(
         success

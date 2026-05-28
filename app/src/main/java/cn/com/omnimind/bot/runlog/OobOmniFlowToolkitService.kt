@@ -1197,13 +1197,22 @@ class OobOmniFlowToolkitService(
             errorMessage = firstNonBlank(resultMap["error"], runLog["error_message"]),
             cards = cards,
         )
+        if (record.success != true) {
+            return errorPayload(
+                code = "RUN_LOG_NOT_SUCCESSFUL",
+                message = "RunLog did not finish successfully: ${record.runId}"
+            )
+        }
         val spec = RunLogReusableFunctionCompiler.compile(record)
             ?: return errorPayload(
                 code = "RUN_LOG_NO_REPLAYABLE_STEPS",
                 message = "RunLog has no replayable steps"
             )
         workspaceFunctionStore.mirrorRunLog(record)
-        return replayService.registerFunctionSpec(spec) + linkedMapOf("run_id" to record.runId)
+        return replayService.registerFunctionSpec(spec) + linkedMapOf(
+            "run_id" to record.runId,
+            "function_spec" to spec
+        )
     }
 
     private suspend fun executeFunction(

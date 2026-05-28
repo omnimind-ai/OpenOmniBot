@@ -66,6 +66,14 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".debug.DebugHumanRunRecordingReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.com.omnimind.bot.debug.HUMAN_RUN_RECORDING" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".debug.DebugModelProviderConfigReceiver"
             android:enabled="true"
             android:exported="true">

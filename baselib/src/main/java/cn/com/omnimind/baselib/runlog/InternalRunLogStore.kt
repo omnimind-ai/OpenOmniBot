@@ -22,6 +22,7 @@ data class InternalRunLogRecord(
     val success: Boolean? = null,
     val doneReason: String = "",
     val errorMessage: String = "",
+    val diagnostics: Map<String, Any?> = emptyMap(),
     val cards: List<Map<String, Any?>> = emptyList(),
     val eventSeq: Long = 0L
 )
@@ -120,6 +121,24 @@ object InternalRunLogStore {
             payload = linkedMapOf("cards" to sanitizedCards)
         )
         saveRunLocked(context, record.copy(cards = record.cards + sanitizedCards, eventSeq = eventSeq))
+        pruneLocked(context)
+    }
+
+    @Synchronized
+    fun updateDiagnostics(context: Context, runId: String, diagnostics: Map<String, Any?>) {
+        val normalizedRunId = runId.trim()
+        if (normalizedRunId.isEmpty() || diagnostics.isEmpty()) return
+        val record = readRunLocked(context, normalizedRunId)
+            ?: InternalRunLogRecord(runId = normalizedRunId)
+        val sanitizedDiagnostics = sanitizeMap(diagnostics)
+        val mergedDiagnostics = sanitizeMap(record.diagnostics + sanitizedDiagnostics)
+        val eventSeq = appendRunEventLocked(
+            context = context,
+            runId = normalizedRunId,
+            eventType = "diagnostics_updated",
+            payload = linkedMapOf("diagnostics" to sanitizedDiagnostics)
+        )
+        saveRunLocked(context, record.copy(diagnostics = mergedDiagnostics, eventSeq = eventSeq))
         pruneLocked(context)
     }
 
@@ -275,6 +294,7 @@ object InternalRunLogStore {
             "event_log_path" to runEventsFile(runFile(context, normalizedRunId)).absolutePath,
             "done_reason" to record.doneReason,
             "error_message" to record.errorMessage,
+            "diagnostics" to record.diagnostics.takeIf { it.isNotEmpty() },
             "token_usage" to tokenUsage,
             "token_usage_total" to tokenUsage["total_tokens"],
             "token_usage_by_step" to tokenUsageByStep(record.cards),
@@ -304,6 +324,7 @@ object InternalRunLogStore {
             "source" to record.source,
             "operation_description" to record.operationDescription,
             "error_message" to record.errorMessage,
+            "diagnostics" to record.diagnostics.takeIf { it.isNotEmpty() },
             "token_usage" to tokenUsage,
             "token_usage_total" to tokenUsage["total_tokens"],
             "raw_run" to linkedMapOf(
@@ -664,6 +685,11 @@ object InternalRunLogStore {
                     success = booleanValue(payload["success"]),
                     doneReason = textValue(payload["done_reason"]),
                     errorMessage = textValue(payload["error_message"])
+                )
+                "diagnostics_updated" -> record.copy(
+                    diagnostics = sanitizeMap(
+                        record.diagnostics + stringMap(payload["diagnostics"])
+                    )
                 )
                 else -> record
             }.copy(eventSeq = eventSeq)

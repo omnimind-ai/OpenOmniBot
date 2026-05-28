@@ -108,7 +108,6 @@ void main() {
       'click',
       'long_press',
       'scroll',
-      'type',
       'input_text',
       'swipe',
       'open_app',
@@ -172,7 +171,8 @@ void main() {
     );
 
     final steps = stepsFrom(spec);
-    expect(steps.map((step) => step['tool']), ['click', 'type']);
+    expect(steps.map((step) => step['tool']), ['click', 'input_text']);
+    expect(steps.last['source_tool'], 'type');
     expect(steps.map((step) => step['id']), ['step_1', 'step_2']);
     expect(
       steps.any(
@@ -180,6 +180,32 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('deduplicates repeated legacy type input events', () {
+    final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+      runId: 'run-duplicate-type',
+      title: 'Type once',
+      payload: const {'goal': 'Type once'},
+      cards: [
+        card('type', const {
+          'content': 'hello',
+          'target_description': 'Search',
+          'node_resource_id': 'search_box',
+        }),
+        card('input_text', const {
+          'text': 'hello',
+          'target_description': 'Search',
+          'node_resource_id': 'search_box',
+        }),
+      ],
+      useEnglish: true,
+    );
+
+    final steps = stepsFrom(spec);
+    expect(steps, hasLength(1));
+    expect(steps.single['tool'], 'input_text');
+    expect((steps.single['args'] as Map)['content'], 'hello');
   });
 
   test('normalizes Omniflow action aliases before export', () {
@@ -661,6 +687,399 @@ void main() {
     expect(zhPrompt, isNot(contains('Function ID:')));
     expect(zhPrompt, isNot(contains('Function JSON:')));
   });
+
+  test('JSON extractor unwraps common model response envelopes', () async {
+    final wrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'content': jsonEncode({
+              'name': 'Wrapped command',
+              'steps': [
+                {'index': 0, 'title': 'Tap target'},
+              ],
+            }),
+          }),
+        );
+
+    expect(wrapped?['name'], 'Wrapped command');
+    expect(wrapped?['steps'], isA<List>());
+
+    final listWrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode([
+            {
+              'enhancement': {'description': 'Recovered from array envelope'},
+            },
+          ]),
+        );
+
+    expect(listWrapped?['description'], 'Recovered from array envelope');
+
+    final openAiWrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'id': 'chatcmpl-test',
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'name': 'OpenAI wrapped command',
+                    'steps': [
+                      {'index': 0, 'title': 'Open app'},
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+        );
+
+    expect(openAiWrapped?['name'], 'OpenAI wrapped command');
+
+    final objectContent =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': {
+                    'name': 'Object content command',
+                    'steps': [
+                      {'index': 0, 'title': 'Tap target'},
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+        );
+
+    expect(objectContent?['name'], 'Object content command');
+
+    final outputWrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'output': [
+              {
+                'content': [
+                  {
+                    'type': 'output_text',
+                    'text': jsonEncode({
+                      'name': 'Responses wrapped command',
+                      'steps': [
+                        {'index': 0, 'title': 'Use output text'},
+                      ],
+                    }),
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+
+    expect(outputWrapped?['name'], 'Responses wrapped command');
+
+    final parsedWrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'parsed': {
+                    'name': 'Parsed object command',
+                    'steps': [
+                      {'index': 0, 'title': 'Use parsed object'},
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+        );
+
+    expect(parsedWrapped?['name'], 'Parsed object command');
+
+    final toolCallWrapped =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'tool_calls': [
+                    {
+                      'function': {
+                        'name': 'emit_json',
+                        'arguments': jsonEncode({
+                          'name': 'Tool call command',
+                          'steps': [
+                            {'index': 0, 'title': 'Use tool args'},
+                          ],
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        );
+
+    expect(toolCallWrapped?['name'], 'Tool call command');
+
+    final doubleEncoded =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode(
+            jsonEncode({
+              'name': 'Double encoded command',
+              'steps': [
+                {'index': 0, 'title': 'Decode twice'},
+              ],
+            }),
+          ),
+        );
+
+    expect(doubleEncoded?['name'], 'Double encoded command');
+
+    final multiObjectText =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync('''
+Example shape:
+{"name":"short reusable command name","description":"one sentence","steps":[{"index":0,"title":"short action title"}]}
+
+Actual output:
+{"name":"Actual enhanced command","description":"真实增强结果","steps":[{"index":0,"title":"执行真实动作"}]}
+''');
+
+    expect(multiObjectText?['name'], 'Actual enhanced command');
+
+    final irrelevantJson =
+        await RunLogReusableFunctionConverter.extractJsonObjectAsync(
+          jsonEncode({'status': 'ok', 'message': 'success'}),
+        );
+
+    expect(irrelevantJson, isNull);
+  });
+
+  test(
+    'label enhancement prompt uses sample JSON and compact candidates',
+    () async {
+      final spec = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-enhance-prompt',
+        title: 'Create contact',
+        payload: const {'goal': 'Create contact'},
+        cards: [
+          card('click', const {
+            'target_description': 'Name field',
+            'x': 120,
+            'y': 240,
+          }),
+          card('type', const {'content': '妈妈'}),
+        ],
+        useEnglish: true,
+      );
+
+      final prompt =
+          await RunLogReusableFunctionConverter.buildLabelEnhancementPromptAsync(
+            spec,
+            useEnglish: true,
+          );
+
+      expect(prompt, contains('Use this example shape'));
+      expect(prompt, contains('candidate_bindings'));
+      expect(prompt, contains(r'$.execution.steps[1].args.content'));
+      expect(prompt, contains('Work one section at a time'));
+      expect(prompt, isNot(contains(sourceXml)));
+      expect(prompt, isNot(contains('source_context')));
+      expect(prompt, isNot(contains('Reusable command JSON:')));
+    },
+  );
+
+  test(
+    'agent enhancement adds safe runtime slots and reuse metadata',
+    () async {
+      final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-contact',
+        title: 'Create contact',
+        payload: const {'goal': 'Create a contact'},
+        cards: [
+          card('type', const {
+            'content': '妈妈',
+            'target_description': 'Name field',
+          }),
+          card('input_text', const {
+            'text': '13800138000',
+            'target_description': 'Phone field',
+          }),
+        ],
+        useEnglish: true,
+      );
+
+      final enhanced =
+          await RunLogReusableFunctionConverter.applyLabelEnhancementAsync({
+            'name': 'Create contact',
+            'description': 'Create or update a contact with runtime fields.',
+            'parameters': [
+              {
+                'name': 'contact_name',
+                'type': 'string',
+                'description': 'Contact name to enter at runtime',
+                'default': '妈妈',
+                'bindings': [r'$.execution.steps[0].args.content'],
+              },
+              {
+                'name': 'phone_number',
+                'type': 'string',
+                'description': 'Phone number to enter at runtime',
+                'default': '13800138000',
+                'bindings': [r'$.execution.steps[1].args.text'],
+              },
+            ],
+            'steps': [
+              {
+                'index': 0,
+                'title': 'Enter contact name',
+                'description': 'Fill the contact name field.',
+              },
+              {
+                'index': 1,
+                'title': 'Enter phone number',
+                'description': 'Fill the phone field.',
+              },
+            ],
+            'agent_reuse': {
+              'reuse_when': ['The current page shows the same contact fields.'],
+              'avoid_when': ['The target page is not a contact editor.'],
+              'success_signal': 'Saved contact details are visible.',
+              'key_actions': [
+                {
+                  'step_index': 0,
+                  'reason': 'Binds the runtime contact name.',
+                  'parameter_names': ['contact_name'],
+                },
+              ],
+              'segments': [
+                {
+                  'name': 'Fill contact fields',
+                  'start_step_index': 0,
+                  'end_step_index': 1,
+                  'description': 'A contiguous slice for future split.',
+                  'inputs': ['contact_name', 'phone_number'],
+                },
+              ],
+            },
+          }, fallback);
+
+      final steps = stepsFrom(enhanced);
+      expect((steps[0]['args'] as Map)['content'], '妈妈');
+      expect((steps[1]['args'] as Map)['text'], '13800138000');
+
+      final parameters = (enhanced['parameters'] as List).cast<Map>();
+      final contact = parameters.firstWhere(
+        (item) => item['name'] == 'contact_name',
+      );
+      final phone = parameters.firstWhere(
+        (item) => item['name'] == 'phone_number',
+      );
+      expect(contact['default'], '妈妈');
+      expect(
+        contact['bindings'],
+        contains(r'$.execution.steps[0].args.content'),
+      );
+      expect(phone['default'], '13800138000');
+      expect(phone['bindings'], contains(r'$.execution.steps[1].args.text'));
+
+      final reuse = enhanced['agent_reuse'] as Map;
+      expect(reuse['mode'], 'metadata_only');
+      expect(reuse['execution_rewrite_allowed'], isFalse);
+      final keyActions = (reuse['key_actions'] as List).cast<Map>();
+      expect(keyActions.single['step_id'], steps[0]['id']);
+      expect(keyActions.single['parameter_names'], ['contact_name']);
+      final segments = (reuse['segments'] as List).cast<Map>();
+      expect(segments.single['materialization'], 'metadata_only');
+      expect(segments.single['step_ids'], [steps[0]['id'], steps[1]['id']]);
+      expect(segments.single['input_parameters'], [
+        'contact_name',
+        'phone_number',
+      ]);
+    },
+  );
+
+  test(
+    'agent enhancement ignores unsafe paths and execution rewrites',
+    () async {
+      final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-unsafe-enhancement',
+        title: 'Tap and type',
+        payload: const {'goal': 'Tap and type'},
+        cards: [
+          card('click', const {
+            'target_description': 'Name',
+            'x': 120,
+            'y': 240,
+          }),
+          card('input_text', const {'text': 'hello'}),
+        ],
+        useEnglish: true,
+      );
+
+      final enhanced =
+          await RunLogReusableFunctionConverter.applyLabelEnhancementAsync({
+            'parameters': [
+              {
+                'name': 'tap_x',
+                'type': 'number',
+                'default': 120,
+                'bindings': [r'$.execution.steps[0].args.x'],
+              },
+              {
+                'name': 'missing_value',
+                'type': 'string',
+                'bindings': [r'$.execution.steps[99].args.text'],
+              },
+            ],
+            'steps': [
+              {
+                'index': 0,
+                'title': 'Unsafe label only',
+                'tool': 'shell_exec',
+                'args': {'cmd': 'rm -rf /'},
+              },
+            ],
+            'execution': {
+              'steps': [
+                {
+                  'tool': 'shell_exec',
+                  'args': {'cmd': 'rm -rf /'},
+                },
+              ],
+            },
+            'agent_reuse': {
+              'key_actions': [
+                {'step_index': 99, 'reason': 'invalid'},
+              ],
+              'segments': [
+                {
+                  'name': 'bad slice',
+                  'start_step_index': 1,
+                  'end_step_index': 0,
+                },
+              ],
+            },
+          }, fallback);
+
+      final steps = stepsFrom(enhanced);
+      expect(steps.first['tool'], 'click');
+      expect((steps.first['args'] as Map)['x'], 120);
+      expect((steps.first['args'] as Map).containsKey('cmd'), isFalse);
+
+      final parameterNames = (enhanced['parameters'] as List)
+          .cast<Map>()
+          .map((item) => item['name'])
+          .toSet();
+      expect(parameterNames.contains('tap_x'), isFalse);
+      expect(parameterNames.contains('missing_value'), isFalse);
+      expect(enhanced.containsKey('agent_reuse'), isFalse);
+    },
+  );
 }
 
 Set<String> _stringSet(Object? value) {

@@ -47,7 +47,6 @@ Omniflow:
 - `click`
 - `long_press`
 - `scroll`
-- `type`
 - `input_text`
 - `swipe`
 - `open_app`
@@ -59,7 +58,7 @@ Omniflow:
 
 Compatibility aliases from provider/exported OmniFlow assets are normalized
 before execution: `tap/click_at/click_element -> click`,
-`type_text/set_text/inputtext -> input_text`, `scroll_* -> swipe`,
+`type/type_text/set_text/inputtext -> input_text`, `scroll_* -> swipe`,
 `presskey/key_event -> press_key`, `openapp/launch_app -> open_app`, and
 `finish/done/complete -> finished`. `source_context.page` and OOB's
 `source_context.src_ctx.page` are both valid coordinate remap inputs.

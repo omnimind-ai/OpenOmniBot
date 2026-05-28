@@ -107,7 +107,8 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         subMessage: String,
         catDialogShowInfoView: CatDialogShowInfoView,
         layoutParams: WindowManager.LayoutParams,
-        windowManager: WindowManager
+        windowManager: WindowManager,
+        isPaused: Boolean = false
     ) {
         setMessage(message)
         setSubMessage(subMessage)
@@ -116,7 +117,8 @@ class CatDialogShowInfoView @JvmOverloads constructor(
         showInfoView.learningTask(
             catDialogShowInfoView,
             layoutParams,
-            windowManager
+            windowManager,
+            isPaused
         )
         CatDialogStateData.viewState = CatDialogViewState.TASK_DOING
     }

@@ -280,7 +280,8 @@ object DraggableBallInstance {
     fun learningTask(
         message: String,
         subMessage: String,
-        preferApplicationOverlay: Boolean = false
+        preferApplicationOverlay: Boolean = false,
+        isPaused: Boolean = false
     ) {
         resetTaskCompletionHintState()
         val instance = getLoadedInstance(preferApplicationOverlay) ?: return
@@ -346,7 +347,8 @@ object DraggableBallInstance {
             subMessage = subMessage,
             layoutParams = instance.catDialogShowInfoViewParams,
             catDialogShowInfoView = instance.catDialogShowInfoView,
-            windowManager = instance.getWindowManager()
+            windowManager = instance.getWindowManager(),
+            isPaused = isPaused
         )
     }
 

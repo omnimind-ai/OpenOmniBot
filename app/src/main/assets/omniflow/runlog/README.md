@@ -14,6 +14,11 @@ RunLog is a runtime contract, not just a UI feature. Keep these boundaries align
 
 Read `references/runlog-contract.md` before changing conversion or replay behavior.
 
+Home input exposes RunLog entry points through one compact trajectory icon below
+the composer. Tapping it opens a transient three-action popup: existing
+trajectories, the current/latest trajectory, and record trajectory. Do not
+restore a persistent large action panel above the input.
+
 ## Storage Model
 
 `InternalRunLogStore` stores every mutation as append-only NDJSON events using
@@ -35,6 +40,7 @@ record. Do not read only the snapshot when correctness matters.
 - Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Flutter timeline: `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
+- Flutter reusable command card: `ui/lib/features/task/pages/execution_history/widgets/reusable_command_card.dart`
 - Flutter converter: `ui/lib/features/task/run_log/run_log_reusable_function_converter.dart`
 - Flutter service bridge: `ui/lib/services/assists_core_service.dart`
 
@@ -46,7 +52,7 @@ together.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
-  `scroll`, `type`, `input_text`, `swipe`, `open_app`, `press_home`,
+  `scroll`, `input_text`, `swipe`, `open_app`, `press_home`,
   `press_back`, `press_key`, `hot_key`, and `finished`. Legacy `wait` cards are
   skipped because page settling is handled internally by the replay backend. OOB-native
   OmniFlow graph/function commands such as `go_to_node`, `click_node`, and
@@ -65,9 +71,26 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   VLM fallback if the only local action failed.
 - `android_privileged_action` cards that wrap a supported local UI action should
   flatten nested `arguments` into the emitted OmniFlow step args.
+- Treat legacy `type` as an import alias for `input_text`; do not emit it as a
+  final replay tool. Drop adjacent duplicate input-text steps when noisy
+  accessibility events report the same final text on the same target.
 - Keep parameter bindings aligned with actual `execution.steps` indexes after skipping wrapper cards.
 - For agent steps, bind runtime parameters into both `step.args` and `step.agent_call.args.original_args`.
 - AI normalization may rename and parameterize, but must not change executor policy. Normalize data-flow tools back to `executor=agent`.
+- Agent enhancement may refine the reusable command name, description, per-step
+  descriptions, parameter names/descriptions/bindings, and `agent_reuse`
+  metadata. It must not rewrite `execution.steps`, tool names, executors,
+  step order, validation, fallback, or concrete tool args. New parameter
+  bindings are accepted only when they point to existing non-coordinate leaf
+  args, so a recorded "妈妈 + 手机号" flow can become a reusable
+  "联系人 + 手机号" command without changing the replay structure.
+- The enhancement prompt should send a compact digest with step summaries and
+  `candidate_bindings`, plus a valid example output JSON. Do not send the full
+  executable spec, source XML, screenshots, or `source_context` to the label
+  enhancer.
+- `agent_reuse.key_actions` and `agent_reuse.segments` are planning metadata
+  only. Segment candidates are contiguous step slices for future selection or
+  split review; they are not auto-registered as new reusable commands.
 - OmniFlow graph/reusable-command tools convert to `kind=omniflow_graph` or
   `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
 
@@ -83,6 +106,41 @@ OmniFlow reusable-command calls are resolved against the local OOB reusable
 command stores and execute recursively with a bounded call stack. OmniFlow graph calls
 execute explicit `path` entries or UTG edges by lowering them to supported
 primitive local actions.
+
+Manual human recording shows a compact top control only after the recorder has
+started, but action capture is initially paused. The user can navigate to the
+target screen first; tapping the same pause/resume control starts capture and
+refreshes the current screen baseline before recording the first action. The
+manual recording flow does not show the lower cat learning popup; the compact
+top control is the only recording control surface. The control can be dragged;
+drag movement temporarily pauses capture, does not enter the RunLog, and resumes
+by capturing the current screen again so the next recorded step uses a fresh
+source context. Manual recording can also be paused
+explicitly while transient UI issues are handled. The top control's
+`截图` action is a full get-state capture, not a replay action: it hides the
+control, persists XML, screenshot, PageVector observation, page analysis,
+decision context, node skill, and state manifest through `OobUdegNodeStore`,
+then appends a skipped `get_state` evidence card to the active RunLog.
+Registered reusable-command steps can be edited from the command library and
+are saved back under the same `function_id`. Manual action cards retain
+`event_context` for conversion diagnostics. Click and long-click actions
+require an Accessibility source node; scroll events without movement/index
+signal are not emitted as replayable swipe steps.
+
+RunLog save results, the command library page, and the memory-center embedded
+command list share the same reusable-command summary card. Keep the primary run
+entry on that card; secondary controls may enhance or schedule the command, but
+must not introduce another summary-card layout or duplicate run button. If the
+RunLog already maps to a registered reusable command, open that command directly
+instead of registering it again. The save-result sheet's default primary action
+is `增强`: it asks Agent to improve the reusable command name, description,
+per-step descriptions, safe runtime parameter slots, and non-executable
+`agent_reuse` metadata, then saves the enhanced spec back to the same
+`function_id`. Enhancement never changes executor/tool/args/validation/fallback
+or step order. This is an asynchronous UI state: the button shows `增强中`
+while the Agent/update work is pending and `已增强` after the enhanced spec has
+been saved. A save button should only appear after unsaved manual edits.
+Raw JSON and agent prompt details stay under the advanced section by default.
 
 ## OmniFlow Compatibility Boundary
 

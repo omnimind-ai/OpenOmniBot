@@ -167,8 +167,30 @@ object OobFunctionSchemaBuilder {
                 action = "input_text",
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("text", action["text"], params["text"], action["content"], params["content"])
+                    putFirstPresent(
+                        "target_description",
+                        action["prompt"],
+                        target["prompt"],
+                        params["target_description"],
+                        params["targetDescription"],
+                        action["target_description"],
+                        action["targetDescription"],
+                    )
+                    putFirstPresent("x", target["x"], params["x"], action["x"])
+                    putFirstPresent("y", target["y"], params["y"], action["y"])
+                    putFirstPresent(
+                        "node_resource_id",
+                        params["node_resource_id"],
+                        params["nodeResourceId"],
+                        params["resource_id"],
+                        params["resourceId"],
+                        action["node_resource_id"],
+                        action["nodeResourceId"],
+                    )
+                    putFirstPresent("bounds", params["bounds"], action["bounds"])
                     putFirstPresent("selector", params["selector"], action["selector"])
                     putFirstPresent("clear", params["clear"], action["clear"])
+                    if (sourceContext.isNotEmpty()) put("source_context", sourceContext)
                 },
                 sourceContext = sourceContext,
             )

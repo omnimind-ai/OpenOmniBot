@@ -1,6 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:ui/features/task/pages/execution_history/function_run_result_sheet.dart';
+import 'package:ui/features/task/pages/execution_history/widgets/reusable_command_card.dart';
+import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
+import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/theme/app_colors.dart';
 import 'package:ui/theme/theme_context.dart';
@@ -181,6 +186,7 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
           context,
           result: result,
           title: _text(context, '复用指令执行结果', 'Reusable command result'),
+          arguments: arguments,
         );
       }
       if (result.success && mounted) {
@@ -203,8 +209,12 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) =>
-          _FunctionDetailSheet(group: group, specFuture: future),
+      builder: (sheetContext) => _CommandFunctionDetailSheet(
+        group: group,
+        specFuture: future,
+        onSaved: _load,
+        onRun: () => _run(group),
+      ),
     );
   }
 
@@ -458,6 +468,7 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
           context,
           result: result,
           title: _text(context, '复用指令执行结果', 'Reusable command result'),
+          arguments: arguments,
         );
       }
       if (result.success && mounted) {
@@ -480,8 +491,12 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) =>
-          _FunctionDetailSheet(group: group, specFuture: future),
+      builder: (sheetContext) => _CommandFunctionDetailSheet(
+        group: group,
+        specFuture: future,
+        onSaved: _load,
+        onRun: () => _run(group),
+      ),
     );
   }
 
@@ -564,266 +579,157 @@ class _FunctionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final function = group.primary;
     final palette = context.omniPalette;
-    final summaryText = group.displayDescription.trim();
-    final previewText = _buildUserStepPreview(context, function.stepSummaries);
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.isDarkTheme ? palette.surfacePrimary : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: palette.borderSubtle),
-          boxShadow: context.isDarkTheme
-              ? const []
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _RunActionButton(isRunning: isRunning, onTap: onRun),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          group.displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: palette.textPrimary,
-                            height: 1.35,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                        if (summaryText.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            summaryText,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: palette.textSecondary,
-                              height: 1.35,
-                              letterSpacing: 0,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  if (isDeleting)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else ...[
-                    _IconBtn(
-                      icon: Icons.info_outline_rounded,
-                      color: palette.textSecondary,
-                      backgroundColor: palette.surfaceSecondary,
-                      tooltip: _text(context, '详情', 'Details'),
-                      onTap: onOpenDetails,
-                    ),
-                    const SizedBox(width: 4),
-                    _IconBtn(
-                      icon: Icons.delete_outline_rounded,
-                      color: AppColors.alertRed,
-                      backgroundColor: AppColors.alertRed.withValues(
-                        alpha: 0.08,
-                      ),
-                      tooltip: _text(context, '删除', 'Delete'),
-                      onTap: onDelete,
-                    ),
-                  ],
-                ],
-              ),
-              if (previewText.isNotEmpty) ...[
-                const SizedBox(height: 9),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.subject_rounded,
-                      size: 14,
-                      color: palette.textTertiary,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        previewText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: palette.textTertiary,
-                          height: 1.35,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  _MetricPill(
-                    label: _text(context, '步骤', 'Steps'),
-                    value: function.stepCount.toString(),
-                  ),
-                  _MetricPill(
-                    label: _text(context, '参数', 'Params'),
-                    value: function.parameterNames.length.toString(),
-                  ),
-                  if (group.sourceRunIds.isNotEmpty)
-                    _MetricPill(
-                      label: 'RunLogs',
-                      value: group.sourceRunIds.length.toString(),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RunActionButton extends StatelessWidget {
-  const _RunActionButton({required this.isRunning, required this.onTap});
-
-  final bool isRunning;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = isRunning
-        ? _text(context, '执行中', 'Running')
-        : _text(context, '执行', 'Run');
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: FilledButton.icon(
-        onPressed: isRunning ? null : onTap,
-        icon: isRunning
-            ? SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.play_arrow_rounded, size: 17),
-        label: Text(label),
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          textStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0,
-          ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
-}
-
-class _MetricPill extends StatelessWidget {
-  const _MetricPill({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: context.isDarkTheme
-            ? palette.surfaceSecondary
-            : palette.accentPrimary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Text(
-        '$label $value',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+    return ReusableCommandCard(
+      title: group.displayName,
+      description: group.displayDescription,
+      steps: function.stepSummaries
+          .map(
+            (step) => ReusableCommandStepPreview(
+              index: step.index,
+              title: step.title,
+              tool: step.tool,
+              executor: step.executor,
+              kind: step.kind,
+            ),
+          )
+          .toList(growable: false),
+      stepCount: function.stepCount,
+      parameterCount: function.parameterNames.length,
+      sourceRunCount: group.sourceRunIds.length,
+      isRunning: isRunning,
+      onRun: onRun,
+      isBusy: isDeleting,
+      actions: [
+        ReusableCommandCardAction(
+          icon: Icons.info_outline_rounded,
           color: palette.textSecondary,
-          letterSpacing: 0,
+          backgroundColor: palette.surfaceSecondary,
+          tooltip: _text(context, '详情', 'Details'),
+          onTap: onOpenDetails,
         ),
-      ),
+        ReusableCommandCardAction(
+          icon: Icons.delete_outline_rounded,
+          color: AppColors.alertRed,
+          backgroundColor: AppColors.alertRed.withValues(alpha: 0.08),
+          tooltip: _text(context, '删除', 'Delete'),
+          onTap: onDelete,
+        ),
+      ],
     );
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  const _IconBtn({
-    required this.icon,
-    required this.color,
-    required this.tooltip,
-    required this.onTap,
-    this.backgroundColor,
+class _CommandFunctionDetailSheet extends StatefulWidget {
+  const _CommandFunctionDetailSheet({
+    required this.group,
+    required this.specFuture,
+    required this.onSaved,
+    required this.onRun,
   });
-
-  final IconData icon;
-  final Color color;
-  final String tooltip;
-  final VoidCallback onTap;
-  final Color? backgroundColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: backgroundColor ?? Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Icon(icon, size: 20, color: color),
-        ),
-      ),
-    );
-  }
-}
-
-class _FunctionDetailSheet extends StatelessWidget {
-  const _FunctionDetailSheet({required this.group, required this.specFuture});
 
   final _FunctionGroup group;
   final Future<Map<String, dynamic>?> specFuture;
+  final Future<void> Function() onSaved;
+  final Future<void> Function() onRun;
+
+  @override
+  State<_CommandFunctionDetailSheet> createState() =>
+      _CommandFunctionDetailSheetState();
+}
+
+class _CommandFunctionDetailSheetState
+    extends State<_CommandFunctionDetailSheet> {
+  Map<String, dynamic>? _savedSpec;
+  bool _isSaving = false;
+
+  Future<void> _editStep(
+    _FunctionDetailSnapshot detail,
+    _StepSummary step,
+  ) async {
+    if (_isSaving || detail.spec.isEmpty) return;
+    final editedStep = await _showFunctionStepEditorDialog(context, step.raw);
+    if (editedStep == null || !mounted) return;
+    final updatedSpec = _replaceFunctionStep(detail.spec, step, editedStep);
+    if (updatedSpec == null) {
+      showToast(
+        context.l10n.functionLibraryStepEditMissing,
+        type: ToastType.error,
+      );
+      return;
+    }
+    await _saveSpec(updatedSpec, context.l10n.functionLibraryStepSaved);
+  }
+
+  Future<void> _deleteStep(
+    _FunctionDetailSnapshot detail,
+    _StepSummary step,
+  ) async {
+    if (_isSaving || detail.steps.length <= 1) {
+      showToast(context.l10n.functionLibraryStepKeepOne, type: ToastType.error);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(dialogContext.l10n.functionLibraryStepDeleteTitle),
+        content: Text(
+          dialogContext.l10n.functionLibraryStepDeleteConfirm(
+            step.displayTitle,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(dialogContext.l10n.omniflowCancel),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            label: Text(dialogContext.l10n.functionLibraryDelete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final updatedSpec = _removeFunctionStep(detail.spec, step);
+    if (updatedSpec == null) {
+      showToast(
+        context.l10n.functionLibraryStepDeleteMissing,
+        type: ToastType.error,
+      );
+      return;
+    }
+    await _saveSpec(updatedSpec, context.l10n.functionLibraryStepDeleted);
+  }
+
+  Future<void> _saveSpec(
+    Map<String, dynamic> updatedSpec,
+    String successMessage,
+  ) async {
+    setState(() => _isSaving = true);
+    try {
+      final result = await AssistsMessageService.registerOobReusableFunction(
+        functionSpec: updatedSpec,
+      );
+      if (!mounted) return;
+      if (!result.success) {
+        showToast(
+          result.errorMessage ?? context.l10n.functionLibraryStepSaveFailed,
+          type: ToastType.error,
+        );
+        return;
+      }
+      setState(() => _savedSpec = updatedSpec);
+      await widget.onSaved();
+      if (mounted) {
+        showToast(successMessage, type: ToastType.success);
+      }
+    } catch (error) {
+      if (mounted) showToast(error.toString(), type: ToastType.error);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -845,188 +751,195 @@ class _FunctionDetailSheet extends StatelessWidget {
               border: Border(top: BorderSide(color: palette.borderSubtle)),
             ),
             child: FutureBuilder<Map<String, dynamic>?>(
-              future: specFuture,
+              future: widget.specFuture,
               builder: (context, snapshot) {
                 final detail = _FunctionDetailSnapshot.from(
-                  group: group,
-                  spec: snapshot.data,
+                  group: widget.group,
+                  spec: _savedSpec ?? snapshot.data,
                 );
                 if (snapshot.connectionState != ConnectionState.done &&
                     snapshot.data == null) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                return SingleChildScrollView(
-                  controller: controller,
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: palette.borderSubtle,
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        _text(context, '复用指令详情', 'Reusable Command Details'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: palette.textTertiary,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                      child: Column(
                         children: [
                           Container(
-                            width: 42,
-                            height: 42,
+                            width: 40,
+                            height: 4,
                             decoration: BoxDecoration(
-                              color: palette.accentPrimary.withValues(
-                                alpha: 0.12,
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.functions_rounded,
-                              size: 22,
-                              color: palette.accentPrimary,
+                              color: palette.borderSubtle,
+                              borderRadius: BorderRadius.circular(99),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  detail.summary.displayName,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                    color: palette.textPrimary,
-                                    height: 1.25,
-                                  ),
-                                ),
-                                if (detail
-                                    .summary
-                                    .displayDescription
-                                    .isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    detail.summary.displayDescription,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: palette.textSecondary,
-                                      height: 1.4,
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _text(
+                                        context,
+                                        '复用指令详情',
+                                        'Reusable Command Details',
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: palette.textSecondary,
+                                        letterSpacing: 0,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                                const SizedBox(height: 6),
-                                Text(
-                                  detail.summary.functionId,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                    color: palette.textTertiary,
-                                  ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      detail.summary.displayName,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: palette.textPrimary,
+                                        height: 1.25,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                color: palette.textSecondary,
+                                onPressed: () =>
+                                    Navigator.of(context).maybePop(),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 7,
-                        children: [
-                          _MetricPill(
-                            label: _text(context, '状态', 'State'),
-                            value: _text(context, '已注册', 'Registered'),
-                          ),
-                          _MetricPill(
-                            label: _text(context, '步骤', 'Steps'),
-                            value:
-                                (detail.steps.isNotEmpty
-                                        ? detail.steps.length
-                                        : detail.summary.stepCount)
-                                    .toString(),
-                          ),
-                          _MetricPill(
-                            label: _text(context, '参数', 'Params'),
-                            value: detail.parameters.length.toString(),
-                          ),
-                          if (detail.group.variantCount > 1)
-                            _MetricPill(
-                              label: _text(context, '变体', 'Variants'),
-                              value: detail.group.variantCount.toString(),
+                    ),
+                    Divider(height: 1, color: palette.borderSubtle),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: controller,
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ReusableCommandCard(
+                              title: detail.summary.displayName,
+                              description: detail.summary.displayDescription,
+                              steps: detail.steps
+                                  .map(
+                                    (step) => ReusableCommandStepPreview(
+                                      index: step.index,
+                                      title: step.displayTitle,
+                                      tool: step.displayTool,
+                                      executor: step.executor,
+                                      kind: step.kind,
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                              stepCount: detail.steps.isNotEmpty
+                                  ? detail.steps.length
+                                  : detail.summary.stepCount,
+                              parameterCount: detail.parameters.length,
+                              sourceRunCount: detail.sourceRunIds.length,
+                              isRunning: _isSaving,
+                              onRun: _isSaving ? null : () => widget.onRun(),
                             ),
-                          if (detail.sourceRunIds.isNotEmpty)
-                            _MetricPill(
-                              label: 'RunLog',
-                              value: detail.sourceRunIds.length.toString(),
-                            ),
-                        ],
-                      ),
-                      if (detail.sourceRunIds.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _DetailSectionTitle(zh: '离线来源', en: 'Offline Source'),
-                        const SizedBox(height: 10),
-                        _FunctionSourcePanel(sourceRunIds: detail.sourceRunIds),
-                      ],
-                      const SizedBox(height: 18),
-                      _DetailSectionTitle(zh: '动作预览', en: 'Action Preview'),
-                      const SizedBox(height: 10),
-                      _FunctionPreviewPanel(
-                        steps: detail.steps,
-                        parameters: detail.parameters,
-                      ),
-                      const SizedBox(height: 18),
-                      _DetailSectionTitle(zh: '步骤', en: 'Steps'),
-                      const SizedBox(height: 10),
-                      if (detail.steps.isEmpty)
-                        _DetailEmptyText(
-                          text: _text(context, '暂无步骤', 'No steps'),
-                        )
-                      else
-                        Column(
-                          children: detail.steps
-                              .map(
-                                (step) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: _StepDetailTile(step: step),
-                                ),
+                            const SizedBox(height: 14),
+                            if (detail.steps.isEmpty)
+                              _DetailEmptyText(
+                                text: _text(context, '暂无步骤', 'No steps'),
                               )
-                              .toList(growable: false),
-                        ),
-                      const SizedBox(height: 12),
-                      _DetailSectionTitle(zh: '参数', en: 'Parameters'),
-                      const SizedBox(height: 10),
-                      if (detail.parameters.isEmpty)
-                        _DetailEmptyText(
-                          text: _text(context, '暂无参数', 'No parameters'),
-                        )
-                      else
-                        Column(
-                          children: detail.parameters
-                              .map(
-                                (param) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: _ParameterDetailTile(parameter: param),
-                                ),
+                            else
+                              FunctionRunStepList(
+                                title:
+                                    '${_text(context, '执行步骤', 'Step results')} · ${detail.steps.length}',
+                                steps: detail.steps
+                                    .map((step) => step.raw)
+                                    .toList(growable: false),
+                                initiallyExpanded: true,
+                                showStatusIcon: false,
+                                actionBuilder: (context, index, rawStep) {
+                                  if (index < 0 ||
+                                      index >= detail.steps.length) {
+                                    return null;
+                                  }
+                                  final step = detail.steps[index];
+                                  final canEdit = !_isSaving;
+                                  final canDelete =
+                                      canEdit && detail.steps.length > 1;
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Tooltip(
+                                        message: context
+                                            .l10n
+                                            .functionLibraryStepEditTitle,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.edit_outlined,
+                                            size: 18,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          color: palette.textSecondary,
+                                          onPressed: canEdit
+                                              ? () => _editStep(detail, step)
+                                              : null,
+                                        ),
+                                      ),
+                                      Tooltip(
+                                        message: context
+                                            .l10n
+                                            .functionLibraryStepDeleteTitle,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          color: palette.textSecondary,
+                                          onPressed: canDelete
+                                              ? () => _deleteStep(detail, step)
+                                              : null,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            const SizedBox(height: 16),
+                            _DetailSectionTitle(zh: '参数', en: 'Parameters'),
+                            const SizedBox(height: 10),
+                            if (detail.parameters.isEmpty)
+                              _DetailEmptyText(
+                                text: _text(context, '暂无参数', 'No parameters'),
                               )
-                              .toList(growable: false),
+                            else
+                              Column(
+                                children: detail.parameters
+                                    .map(
+                                      (param) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: _ParameterDetailTile(
+                                          parameter: param,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -1071,206 +984,6 @@ class _DetailEmptyText extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(fontSize: 13, color: palette.textTertiary),
-      ),
-    );
-  }
-}
-
-class _FunctionPreviewPanel extends StatelessWidget {
-  const _FunctionPreviewPanel({required this.steps, required this.parameters});
-
-  final List<_StepSummary> steps;
-  final List<_ParameterSummary> parameters;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final stepPreview = _buildStepPreview(context, steps);
-    final parameterPreview = _previewNames(
-      parameters.map((parameter) => parameter.name).toList(growable: false),
-    );
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: context.isDarkTheme
-            ? palette.surfaceSecondary
-            : palette.accentPrimary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (stepPreview.isEmpty)
-            Text(
-              _text(context, '暂无动作预览', 'No action preview'),
-              style: TextStyle(
-                fontSize: 12,
-                color: palette.textTertiary,
-                height: 1.4,
-                letterSpacing: 0,
-              ),
-            )
-          else
-            Text(
-              stepPreview,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: palette.textPrimary,
-                height: 1.4,
-                letterSpacing: 0,
-              ),
-            ),
-          if (parameterPreview.isNotEmpty) ...[
-            const SizedBox(height: 7),
-            Text(
-              '${_text(context, '参数', 'Params')}: $parameterPreview',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: palette.textSecondary,
-                height: 1.35,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _FunctionSourcePanel extends StatelessWidget {
-  const _FunctionSourcePanel({required this.sourceRunIds});
-
-  final List<String> sourceRunIds;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final preview = sourceRunIds.take(3).join(' · ');
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: context.isDarkTheme
-            ? palette.surfaceSecondary
-            : palette.accentPrimary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.history_toggle_off_rounded,
-            size: 17,
-            color: palette.accentPrimary,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _text(
-                    context,
-                    '由 RunLog 注册，可通过复用指令库本地执行。',
-                    'Registered from RunLog and executable from Reusable Commands.',
-                  ),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                    height: 1.35,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  preview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: palette.textTertiary,
-                    fontFamily: 'monospace',
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StepDetailTile extends StatelessWidget {
-  const _StepDetailTile({required this.step});
-
-  final _StepSummary step;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final actionLabel = _localizedToolAction(context, step.displayTool).trim();
-    final subtitle = actionLabel.isNotEmpty ? actionLabel : step.displayTool;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: context.isDarkTheme ? palette.surfaceSecondary : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: palette.accentPrimary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '${step.index + 1}',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: palette.accentPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  step.displayTitle,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 11, color: palette.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1588,16 +1301,37 @@ class _StepSummary {
     required this.kind,
     required this.executor,
     required this.tool,
+    required this.raw,
   });
 
-  factory _StepSummary.fromMap(Map<String, dynamic> map) {
+  factory _StepSummary.fromMap(Map<String, dynamic> map, {int? fallbackIndex}) {
+    final index = map.containsKey('index')
+        ? _FunctionSummary._asInt(map['index'])
+        : (fallbackIndex ?? 0);
+    final normalized = Map<String, dynamic>.from(map);
+    normalized.putIfAbsent('index', () => index);
+    normalized.putIfAbsent('step_id', () => map['id'] ?? 'step_${index + 1}');
+    normalized.putIfAbsent(
+      'summary',
+      () =>
+          [
+                map['summary'],
+                map['title'],
+                map['tool'],
+                map['omniflow_action'],
+                map['step_id'],
+              ]
+              .map((value) => value?.toString().trim() ?? '')
+              .firstWhere((value) => value.isNotEmpty, orElse: () => ''),
+    );
     return _StepSummary(
-      index: _FunctionSummary._asInt(map['index']),
+      index: index,
       id: (map['id'] ?? '').toString(),
       title: (map['title'] ?? '').toString(),
       kind: (map['kind'] ?? '').toString(),
       executor: (map['executor'] ?? '').toString(),
       tool: (map['tool'] ?? '').toString(),
+      raw: normalized,
     );
   }
 
@@ -1607,6 +1341,7 @@ class _StepSummary {
   final String kind;
   final String executor;
   final String tool;
+  final Map<String, dynamic> raw;
 
   String get displayTitle {
     final text = title.trim();
@@ -1710,6 +1445,55 @@ class _ParameterSummary {
   final String defaultValue;
 }
 
+List<_ParameterSummary> _parameterSummariesFromSpec(
+  dynamic rawParameters,
+  List<String> fallbackNames,
+) {
+  if (rawParameters is List) {
+    final parameters = rawParameters
+        .whereType<Map>()
+        .map(
+          (item) => _ParameterSummary.fromMap(
+            Map<String, dynamic>.from(
+              item.map((key, value) => MapEntry(key.toString(), value)),
+            ),
+          ),
+        )
+        .toList(growable: false);
+    if (parameters.isNotEmpty) return parameters;
+  }
+
+  final schema = _FunctionSummary._asMap(rawParameters);
+  final properties = _FunctionSummary._asMap(schema['properties']);
+  if (properties.isNotEmpty) {
+    final requiredNames = schema['required'] is List
+        ? (schema['required'] as List).map((item) => item.toString()).toSet()
+        : const <String>{};
+    return properties.entries
+        .map((entry) {
+          final property = _FunctionSummary._asMap(entry.value);
+          return _ParameterSummary.fromMap({
+            ...property,
+            'name': entry.key,
+            'required': requiredNames.contains(entry.key),
+          });
+        })
+        .toList(growable: false);
+  }
+
+  return fallbackNames
+      .map(
+        (name) => _ParameterSummary(
+          name: name,
+          type: '',
+          required: false,
+          description: '',
+          defaultValue: '',
+        ),
+      )
+      .toList(growable: false);
+}
+
 class _FunctionDetailSnapshot {
   const _FunctionDetailSnapshot({
     required this.summary,
@@ -1717,6 +1501,7 @@ class _FunctionDetailSnapshot {
     required this.parameters,
     required this.steps,
     required this.sourceRunIds,
+    required this.spec,
   });
 
   final _FunctionSummary summary;
@@ -1724,6 +1509,7 @@ class _FunctionDetailSnapshot {
   final List<_ParameterSummary> parameters;
   final List<_StepSummary> steps;
   final List<String> sourceRunIds;
+  final Map<String, dynamic> spec;
 
   factory _FunctionDetailSnapshot.from({
     required _FunctionGroup group,
@@ -1733,37 +1519,22 @@ class _FunctionDetailSnapshot {
     final execution = _FunctionSummary._asMap(raw['execution']);
     final parametersRaw = raw['parameters'];
     final stepsRaw = execution['steps'];
-    final parameters = parametersRaw is List
-        ? parametersRaw
-              .whereType<Map>()
-              .map(
-                (item) => _ParameterSummary.fromMap(
-                  Map<String, dynamic>.from(
-                    item.map((k, v) => MapEntry(k.toString(), v)),
-                  ),
-                ),
-              )
-              .toList(growable: false)
-        : group.primary.parameterNames
-              .map(
-                (name) => _ParameterSummary(
-                  name: name,
-                  type: '',
-                  required: false,
-                  description: '',
-                  defaultValue: '',
-                ),
-              )
-              .toList(growable: false);
+    final parameters = _parameterSummariesFromSpec(
+      parametersRaw,
+      group.primary.parameterNames,
+    );
     late final List<_StepSummary> steps;
     if (stepsRaw is List) {
       steps = stepsRaw
-          .whereType<Map>()
+          .asMap()
+          .entries
+          .where((entry) => entry.value is Map)
           .map(
-            (item) => _StepSummary.fromMap(
+            (entry) => _StepSummary.fromMap(
               Map<String, dynamic>.from(
-                item.map((k, v) => MapEntry(k.toString(), v)),
+                (entry.value as Map).map((k, v) => MapEntry(k.toString(), v)),
               ),
+              fallbackIndex: entry.key,
             ),
           )
           .toList(growable: false);
@@ -1776,8 +1547,415 @@ class _FunctionDetailSnapshot {
       parameters: parameters,
       steps: steps,
       sourceRunIds: group.sourceRunIds,
+      spec: raw,
     );
   }
+}
+
+Future<Map<String, dynamic>?> _showFunctionStepEditorDialog(
+  BuildContext context,
+  Map<String, dynamic> rawStep,
+) {
+  return showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (dialogContext) => _FunctionStepEditorDialog(rawStep: rawStep),
+  );
+}
+
+class _FunctionStepEditorDialog extends StatefulWidget {
+  const _FunctionStepEditorDialog({required this.rawStep});
+
+  final Map<String, dynamic> rawStep;
+
+  @override
+  State<_FunctionStepEditorDialog> createState() =>
+      _FunctionStepEditorDialogState();
+}
+
+class _FunctionStepEditorDialogState extends State<_FunctionStepEditorDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _toolController;
+  late final TextEditingController _argsController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: (widget.rawStep['title'] ?? '').toString(),
+    );
+    _toolController = TextEditingController(
+      text: (widget.rawStep['tool'] ?? widget.rawStep['omniflow_action'] ?? '')
+          .toString(),
+    );
+    _argsController = TextEditingController(
+      text: const JsonEncoder.withIndent('  ').convert(
+        widget.rawStep['args'] is Map ? widget.rawStep['args'] : const {},
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _toolController.dispose();
+    _argsController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final enteredTool = _toolController.text.trim();
+    if (enteredTool.isEmpty) {
+      setState(() {
+        _errorText = context.l10n.functionLibraryStepToolRequired;
+      });
+      return;
+    }
+    final tool =
+        RunLogReplayPolicy.omniflowActionForToolName(enteredTool) ??
+        enteredTool;
+    final dynamic decodedArgs;
+    try {
+      decodedArgs = jsonDecode(
+        _argsController.text.trim().isEmpty ? '{}' : _argsController.text,
+      );
+    } catch (_) {
+      setState(() {
+        _errorText = context.l10n.functionLibraryStepArgsInvalid;
+      });
+      return;
+    }
+    if (decodedArgs is! Map) {
+      setState(() {
+        _errorText = context.l10n.functionLibraryStepArgsObjectRequired;
+      });
+      return;
+    }
+    final updated = Map<String, dynamic>.from(widget.rawStep);
+    final title = _titleController.text.trim();
+    updated['title'] = title;
+    updated['summary'] = title;
+    updated['tool'] = tool;
+    updated['args'] = Map<String, dynamic>.from(
+      decodedArgs.map((key, value) => MapEntry(key.toString(), value)),
+    );
+    final executor = (updated['executor'] ?? '').toString().trim();
+    if (executor == 'omniflow') {
+      updated['omniflow_action'] = tool;
+      updated['local_action'] = tool;
+      updated['callable_tool'] = tool;
+    } else if (executor != 'agent') {
+      updated['callable_tool'] = tool;
+    }
+    Navigator.of(context).pop(updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(context.l10n.functionLibraryStepEditTitle),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepTitleLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _toolController,
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepToolLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _argsController,
+                keyboardType: TextInputType.multiline,
+                minLines: 5,
+                maxLines: 10,
+                style: const TextStyle(fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepArgsLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _errorText!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.alertRed,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(context.l10n.omniflowCancel),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.save_outlined, size: 18),
+          label: Text(context.l10n.omniflowSaveConfig),
+          onPressed: _save,
+        ),
+      ],
+    );
+  }
+}
+
+Map<String, dynamic>? _replaceFunctionStep(
+  Map<String, dynamic> spec,
+  _StepSummary step,
+  Map<String, dynamic> replacement,
+) {
+  final cloned = jsonDecode(jsonEncode(spec));
+  if (cloned is! Map) return null;
+  final updatedSpec = Map<String, dynamic>.from(
+    cloned.map((key, value) => MapEntry(key.toString(), value)),
+  );
+  final execution = _FunctionSummary._asMap(updatedSpec['execution']);
+  final rawSteps = execution['steps'];
+  if (rawSteps is! List) return null;
+  final steps = rawSteps
+      .whereType<Map>()
+      .map(
+        (item) => Map<String, dynamic>.from(
+          item.map((key, value) => MapEntry(key.toString(), value)),
+        ),
+      )
+      .toList();
+  var index = step.id.trim().isEmpty
+      ? -1
+      : steps.indexWhere((candidate) => candidate['id']?.toString() == step.id);
+  if (index < 0 && step.index >= 0 && step.index < steps.length) {
+    index = step.index;
+  }
+  if (index < 0 || index >= steps.length) return null;
+  steps[index] = replacement;
+  execution['steps'] = steps;
+  execution['step_count'] = steps.length;
+  updatedSpec['execution'] = execution;
+  _syncCanonicalInputActionAfterStepEdit(updatedSpec, index, replacement);
+  _updateBoundParameterDefaults(updatedSpec, index, replacement);
+  final metadata = _FunctionSummary._asMap(updatedSpec['metadata']);
+  if (metadata.isNotEmpty) {
+    metadata['step_count'] = steps.length;
+    updatedSpec['metadata'] = metadata;
+  }
+  return updatedSpec;
+}
+
+void _syncCanonicalInputActionAfterStepEdit(
+  Map<String, dynamic> spec,
+  int index,
+  Map<String, dynamic> step,
+) {
+  final rawActions = spec['actions'];
+  if (rawActions is! List || index < 0 || index >= rawActions.length) return;
+  final tool =
+      RunLogReplayPolicy.omniflowActionForToolName(
+        (step['tool'] ?? step['omniflow_action'] ?? '').toString(),
+      ) ??
+      (step['tool'] ?? step['omniflow_action'] ?? '').toString();
+  if (tool != 'input_text') return;
+  final rawAction = rawActions[index];
+  if (rawAction is! Map) return;
+  final action = Map<String, dynamic>.from(
+    rawAction.map((key, value) => MapEntry(key.toString(), value)),
+  );
+  action['type'] = 'input_text';
+  final title = (step['title'] ?? '').toString().trim();
+  if (title.isNotEmpty) action['description'] = title;
+  final existingText = (action['text'] ?? '').toString();
+  if (!existingText.contains(r'${')) {
+    final args = _FunctionSummary._asMap(step['args']);
+    for (final key in const ['text', 'content', 'value']) {
+      if (args.containsKey(key)) {
+        action['text'] = args[key];
+        break;
+      }
+    }
+  }
+  final actions = List<dynamic>.from(rawActions);
+  actions[index] = action;
+  spec['actions'] = actions;
+}
+
+Map<String, dynamic>? _removeFunctionStep(
+  Map<String, dynamic> spec,
+  _StepSummary step,
+) {
+  final cloned = jsonDecode(jsonEncode(spec));
+  if (cloned is! Map) return null;
+  final updatedSpec = Map<String, dynamic>.from(
+    cloned.map((key, value) => MapEntry(key.toString(), value)),
+  );
+  final execution = _FunctionSummary._asMap(updatedSpec['execution']);
+  final rawSteps = execution['steps'];
+  if (rawSteps is! List || rawSteps.length <= 1) return null;
+  final steps = rawSteps
+      .whereType<Map>()
+      .map(
+        (item) => Map<String, dynamic>.from(
+          item.map((key, value) => MapEntry(key.toString(), value)),
+        ),
+      )
+      .toList();
+  var index = step.id.trim().isEmpty
+      ? -1
+      : steps.indexWhere((candidate) => candidate['id']?.toString() == step.id);
+  if (index < 0 && step.index >= 0 && step.index < steps.length) {
+    index = step.index;
+  }
+  if (index < 0 || index >= steps.length) return null;
+  steps.removeAt(index);
+  for (var stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+    steps[stepIndex]['id'] = 'step_${stepIndex + 1}';
+    steps[stepIndex]['index'] = stepIndex;
+  }
+  execution['steps'] = steps;
+  execution['step_count'] = steps.length;
+  updatedSpec['execution'] = execution;
+  final actions = updatedSpec['actions'];
+  if (actions is List && index < actions.length) {
+    final updatedActions = List<dynamic>.from(actions)..removeAt(index);
+    updatedSpec['actions'] = updatedActions;
+  }
+  _shiftBindingsAfterStepRemoval(updatedSpec, index);
+  final metadata = _FunctionSummary._asMap(updatedSpec['metadata']);
+  if (metadata.isNotEmpty) {
+    metadata['step_count'] = steps.length;
+    updatedSpec['metadata'] = metadata;
+  }
+  return updatedSpec;
+}
+
+void _updateBoundParameterDefaults(
+  Map<String, dynamic> spec,
+  int stepIndex,
+  Map<String, dynamic> step,
+) {
+  final args = _FunctionSummary._asMap(step['args']);
+  if (args.isEmpty) return;
+  final parameters = spec['parameters'];
+  if (parameters is List) {
+    for (final raw in parameters) {
+      if (raw is! Map) continue;
+      final parameter = raw.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final argKey = _boundArgKeyForStep(parameter['bindings'], stepIndex);
+      if (argKey != null && args.containsKey(argKey)) {
+        raw['default'] = args[argKey];
+      }
+    }
+    return;
+  }
+  final schema = _FunctionSummary._asMap(parameters);
+  final properties = _FunctionSummary._asMap(schema['properties']);
+  for (final raw in properties.values) {
+    if (raw is! Map) continue;
+    final property = raw.map((key, value) => MapEntry(key.toString(), value));
+    final argKey = _boundArgKeyForStep(property['x_oob_bindings'], stepIndex);
+    if (argKey != null && args.containsKey(argKey)) {
+      raw['default'] = args[argKey];
+    }
+  }
+}
+
+String? _boundArgKeyForStep(dynamic rawBindings, int stepIndex) {
+  if (rawBindings is! List) return null;
+  for (final rawBinding in rawBindings) {
+    final match = RegExp(
+      r'^\$\.execution\.steps\[(\d+)\]\.args\.([A-Za-z0-9_]+)$',
+    ).firstMatch(rawBinding?.toString() ?? '');
+    if (match != null && int.tryParse(match.group(1) ?? '') == stepIndex) {
+      return match.group(2);
+    }
+  }
+  return null;
+}
+
+void _shiftBindingsAfterStepRemoval(
+  Map<String, dynamic> spec,
+  int removedIndex,
+) {
+  final parameters = spec['parameters'];
+  if (parameters is List) {
+    parameters.removeWhere((raw) {
+      if (raw is! Map) return false;
+      final hadBindings = raw['bindings'] is List;
+      final bindings = _shiftBindings(raw['bindings'], removedIndex);
+      if (hadBindings) raw['bindings'] = bindings;
+      return hadBindings && bindings.isEmpty;
+    });
+    return;
+  }
+  final schema = _FunctionSummary._asMap(parameters);
+  final properties = _FunctionSummary._asMap(schema['properties']);
+  final removedNames = <String>[];
+  for (final entry in properties.entries) {
+    final raw = entry.value;
+    if (raw is! Map) continue;
+    final hadBindings = raw['x_oob_bindings'] is List;
+    final bindings = _shiftBindings(raw['x_oob_bindings'], removedIndex);
+    if (hadBindings) raw['x_oob_bindings'] = bindings;
+    if (hadBindings && bindings.isEmpty) removedNames.add(entry.key);
+  }
+  for (final name in removedNames) {
+    properties.remove(name);
+  }
+  final required = schema['required'];
+  if (required is List && removedNames.isNotEmpty) {
+    required.removeWhere((name) => removedNames.contains(name?.toString()));
+  }
+}
+
+List<String> _shiftBindings(dynamic rawBindings, int removedIndex) {
+  if (rawBindings is! List) return const [];
+  final output = <String>[];
+  final bindingPattern = RegExp(
+    r'^\$\.(execution\.steps|actions)\[(\d+)\](.*)$',
+  );
+  for (final value in rawBindings) {
+    final binding = value?.toString() ?? '';
+    final match = bindingPattern.firstMatch(binding);
+    if (match == null) {
+      output.add(binding);
+      continue;
+    }
+    final index = int.tryParse(match.group(2) ?? '');
+    if (index == null) {
+      output.add(binding);
+      continue;
+    }
+    if (index == removedIndex) continue;
+    if (index > removedIndex) {
+      output.add('\$.${match.group(1)}[${index - 1}]${match.group(3)}');
+    } else {
+      output.add(binding);
+    }
+  }
+  return output;
 }
 
 Future<void> _startHumanTrajectoryLearningFlow({
@@ -1802,7 +1980,8 @@ Future<void> _startHumanTrajectoryLearningFlow({
     if (!context.mounted) return;
     if (result['success'] == true) {
       final functionId = (result['function_id'] ?? '').toString();
-      final conversionSuccess = result['conversion_success'] == true ||
+      final conversionSuccess =
+          result['conversion_success'] == true ||
           result['conversionSuccess'] == true ||
           functionId.isNotEmpty;
       showToast(
@@ -1813,12 +1992,12 @@ Future<void> _startHumanTrajectoryLearningFlow({
                 'Recording completed and RunLog was created; reusable command conversion failed',
               )
             : functionId.isEmpty
-                ? _text(context, '已学习为复用指令', 'Learned as reusable command')
-                : _text(
-                    context,
-                    '已学习为复用指令：$functionId',
-                    'Learned as reusable command: $functionId',
-                  ),
+            ? _text(context, '已学习为复用指令', 'Learned as reusable command')
+            : _text(
+                context,
+                '已学习为复用指令：$functionId',
+                'Learned as reusable command: $functionId',
+              ),
         type: ToastType.success,
         duration: const Duration(seconds: 3),
       );
@@ -2098,38 +2277,6 @@ String _normalizeSignatureText(String value) {
   return normalized.replaceAll(RegExp(r'\s+'), ' ');
 }
 
-String _buildStepPreview(BuildContext context, List<_StepSummary> steps) {
-  final parts = <String>[];
-  for (final step in steps.take(3)) {
-    final title = step.displayTitle.trim();
-    final tool = _localizedToolAction(context, step.displayTool).trim();
-    final body = title.isNotEmpty && tool.isNotEmpty && title != tool
-        ? '$title · $tool'
-        : (title.isNotEmpty ? title : tool);
-    if (body.isEmpty) continue;
-    parts.add('${step.index + 1}. $body');
-  }
-  if (parts.isEmpty) return '';
-  final preview = parts.join('  ');
-  return steps.length > 3 ? '$preview …' : preview;
-}
-
-String _buildUserStepPreview(BuildContext context, List<_StepSummary> steps) {
-  final parts = <String>[];
-  for (final step in steps.take(3)) {
-    final title = step.title.trim();
-    final tool = step.displayTool.trim();
-    final text = title.isNotEmpty
-        ? title
-        : _localizedToolAction(context, tool).trim();
-    if (text.isEmpty) continue;
-    parts.add('${step.index + 1}. $text');
-  }
-  if (parts.isEmpty) return '';
-  final preview = parts.join('  ');
-  return steps.length > 3 ? '$preview …' : preview;
-}
-
 String _previewNames(List<String> values, {int maxItems = 3}) {
   final names = <String>[];
   for (final value in values) {
@@ -2140,31 +2287,6 @@ String _previewNames(List<String> values, {int maxItems = 3}) {
   if (names.isEmpty) return '';
   if (names.length <= maxItems) return names.join(' · ');
   return '${names.take(maxItems).join(' · ')} +${names.length - maxItems}';
-}
-
-String _localizedToolAction(BuildContext context, String tool) {
-  switch (tool.trim().toLowerCase()) {
-    case 'open_app':
-      return _text(context, '打开应用', 'Open app');
-    case 'click':
-      return _text(context, '点击', 'Tap');
-    case 'long_press':
-      return _text(context, '长按', 'Long press');
-    case 'input_text':
-    case 'type':
-      return _text(context, '输入文本', 'Enter text');
-    case 'swipe':
-      return _text(context, '滑动', 'Swipe');
-    case 'press_back':
-    case 'back':
-      return _text(context, '返回', 'Go back');
-    case 'press_home':
-    case 'home':
-      return _text(context, '回到桌面', 'Go home');
-    case 'wait':
-      return _text(context, '等待', 'Wait');
-  }
-  return tool.trim();
 }
 
 bool _asBool(dynamic value) {

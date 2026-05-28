@@ -348,6 +348,61 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
+    fun `local omniflow failure does not invoke vlm fallback when disabled`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingBackend(
+            currentXml = CURRENT_PAGE_XML,
+            currentPackage = "com.example.current",
+            currentActivity = "CurrentActivity",
+        )
+        try {
+            val spec = functionSpec(
+                functionId = "bad_click_no_fallback",
+                steps = listOf(
+                    mapOf(
+                        "id" to "bad_click",
+                        "title" to "Bad click",
+                        "kind" to "omniflow_action",
+                        "executor" to "omniflow",
+                        "model_free" to true,
+                        "scriptable" to true,
+                        "tool" to "click",
+                        "callable_tool" to "click",
+                        "args" to mapOf(
+                            "y" to 240,
+                            "target_description" to "visible target",
+                        ),
+                    )
+                ),
+            )
+            val handler = handler(context, WorkspaceFunctionStore(context.root))
+            val router = CapturingRouter()
+            handler.router = router
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler.runMaterializedFunction(
+                    functionId = "bad_click_no_fallback",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    callback = RecordingToolCardCallback(),
+                    toolHandle = NoOpAgentRunControl.beginToolExecution("click", "bad-click"),
+                    env = FakeEnv(context),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(false, run["success"])
+                assertEquals(false, run["model_required"])
+                assertEquals("", router.toolName)
+                val step = stepResults(run).single()
+                assertEquals(false, step["fallback_available"])
+                assertEquals(false, step["needs_agent"])
+                assertEquals("OOB_OMNIFLOW_STEP_FAILED", step["error_code"])
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `legacy provider-owned agent call_function spec is executed locally`() = runBlocking {
         val context = TempFilesContext()
         try {

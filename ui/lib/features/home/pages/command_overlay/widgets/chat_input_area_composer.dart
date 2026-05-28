@@ -184,7 +184,9 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
           ),
           const SizedBox(width: 4),
         ],
-        if (widget.onManualRecordingTap != null) ...[
+        if (widget.onViewTrajectoriesTap != null ||
+            widget.onViewCurrentTrajectoryTap != null ||
+            widget.onManualRecordingTap != null) ...[
           SizedBox(
             width: 28,
             height: 28,
@@ -683,7 +685,9 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
           ),
           const SizedBox(width: 2),
         ],
-        if (widget.onManualRecordingTap != null) ...[
+        if (widget.onViewTrajectoriesTap != null ||
+            widget.onViewCurrentTrajectoryTap != null ||
+            widget.onManualRecordingTap != null) ...[
           SizedBox(
             width: 24,
             height: 24,
@@ -765,34 +769,32 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
     final color = context.isDarkTheme
         ? palette.accentPrimary
         : const Color(0xFF6D5BD0);
+    final hasActions =
+        widget.onViewTrajectoriesTap != null ||
+        widget.onViewCurrentTrajectoryTap != null ||
+        widget.onManualRecordingTap != null;
     return IconButton(
       key: const ValueKey('chat-input-manual-recording-button'),
       padding: EdgeInsets.zero,
       iconSize: iconSize,
-      tooltip: AppTextLocalizer.choose(
-        zh: '录制轨迹',
-        en: 'Record steps',
-        locale: Localizations.localeOf(context),
-      ),
+      tooltip: context.l10n.chatInputTrajectoryTooltip,
       icon: AnimatedContainer(
         duration: _buttonAnimationDuration,
         curve: _buttonAnimationCurve,
         width: 24,
         height: 24,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
+          color: color.withValues(alpha: _isPopupVisible ? 0.2 : 0.12),
           shape: BoxShape.circle,
         ),
         child: Icon(Icons.gesture_rounded, size: iconSize, color: color),
       ),
-      onPressed: widget.onManualRecordingTap == null
+      onPressed: !hasActions
           ? null
           : () {
-              if (_isPopupVisible) {
-                setState(() => _isPopupVisible = false);
-                widget.onPopupVisibilityChanged?.call(false);
-              }
-              unawaited(Future<void>.sync(widget.onManualRecordingTap!));
+              final nextVisible = !_isPopupVisible;
+              setState(() => _isPopupVisible = nextVisible);
+              widget.onPopupVisibilityChanged?.call(nextVisible);
             },
     );
   }

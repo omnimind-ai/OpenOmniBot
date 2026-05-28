@@ -15,7 +15,6 @@ object RunLogReplayPolicy {
         "click",
         "long_press",
         "scroll",
-        "type",
         "input_text",
         "swipe",
         "open_app",
@@ -34,6 +33,7 @@ object RunLogReplayPolicy {
         "longclick" to "long_press",
         "long_click" to "long_press",
         "longpress" to "long_press",
+        "type" to "input_text",
         "type_text" to "input_text",
         "set_text" to "input_text",
         "settext" to "input_text",
@@ -53,7 +53,7 @@ object RunLogReplayPolicy {
         "complete" to "finished",
     )
 
-    val coordinateActions: Set<String> = setOf("click", "long_press", "scroll", "swipe")
+    val coordinateActions: Set<String> = setOf("click", "long_press", "input_text", "scroll", "swipe")
 
     val perceptionTools: Set<String> = setOf(
         "vlm_task",

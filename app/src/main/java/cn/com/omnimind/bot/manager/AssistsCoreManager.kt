@@ -55,6 +55,7 @@ import cn.com.omnimind.baselib.llm.SceneVoiceConfigStore
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.baselib.util.APPPackageUtil
+import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.RuntimeLogStore
 import cn.com.omnimind.baselib.util.exception.PermissionException
@@ -95,6 +96,7 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
+import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
@@ -3281,20 +3283,6 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 args["description"] ?: args["goal"] ?: call.argument<String>("description")
             )?.toString()?.trim().orEmpty()
             val learningResult = runCatching {
-                withContext(Dispatchers.Main) {
-                    val preparingControlShown = ManualRecordingControlOverlay.show(
-                        context,
-                        ManualRecordingControlOverlay.State.PREPARING
-                    )
-                    OmniLog.d(TAG, "manual recording preparing overlay shown=$preparingControlShown")
-                    DraggableBallInstance.setDoing(
-                        message = "正在准备手动录制",
-                        isShowTakeOver = false,
-                        subMessage = "正在连接无障碍服务",
-                        isShowStop = false,
-                        preferApplicationOverlay = true
-                    )
-                }
                 if (!awaitHumanTrajectoryRecordingBackend()) {
                     throw IllegalStateException("无障碍服务未就绪，无法开始手动录制")
                 }
@@ -3303,22 +3291,22 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     name = name,
                     description = description
                 )
+                if (sessionResult.isCompleted) {
+                    sessionResult.await()
+                }
+                if (!HumanTrajectoryLearningSession.pauseActive()) {
+                    throw IllegalStateException("手动录制初始化失败，无法进入待机状态")
+                }
                 withContext(Dispatchers.Main) {
                     val controlShown = ManualRecordingControlOverlay.show(
                         context,
-                        ManualRecordingControlOverlay.State.RECORDING
+                        ManualRecordingControlOverlay.State.READY,
+                        onCaptureState = {
+                            captureCurrentUdegStateForManualRecording(description)
+                        }
                     )
-                    ManualRecordingControlOverlay.markRecording()
+                    ManualRecordingControlOverlay.markReady()
                     OmniLog.d(TAG, "manual recording control overlay shown=$controlShown")
-                    runCatching {
-                        DraggableBallInstance.learningTask(
-                            message = "正在学习你的操作",
-                            subMessage = "人工学习中 · 完成后点完成学习",
-                            preferApplicationOverlay = true
-                        )
-                    }.onFailure { error ->
-                        OmniLog.w(TAG, "manual recording cat learning UI failed: ${error.message}")
-                    }
                 }
                 sessionResult.await()
             }.getOrElse { error ->
@@ -3339,11 +3327,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
 
+            withContext(Dispatchers.Main) {
+                ManualRecordingControlOverlay.dismiss()
+            }
             val payload = if (!learningResult.success) {
                 val errorMessage = learningResult.errorMessage.ifBlank { "未记录到可复用的人类操作" }
-                val runLog = runCatching {
-                    InternalRunLogStore.timelinePayload(context, learningResult.runId)
-                }.getOrNull()
+                val runLog = withContext(Dispatchers.Default) {
+                    runCatching {
+                        InternalRunLogStore.timelinePayload(context, learningResult.runId)
+                    }.getOrNull()
+                }
                 withContext(Dispatchers.Main) {
                     ManualRecordingControlOverlay.dismiss()
                     DraggableBallInstance.finishDoingTask(
@@ -3354,6 +3347,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "success" to false,
                     "error_code" to if (errorMessage.contains("取消")) {
                         "HUMAN_TRAJECTORY_CANCELLED"
+                    } else if (errorMessage.contains("raw touch") || errorMessage.contains("遗漏")) {
+                        "HUMAN_TRAJECTORY_INCOMPLETE"
                     } else {
                         "HUMAN_TRAJECTORY_EMPTY"
                     },
@@ -3361,38 +3356,53 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "run_id" to learningResult.runId,
                     "action_count" to learningResult.actionCount,
                     "summary" to learningResult.summary,
+                    "diagnostics" to learningResult.diagnostics.takeIf { it.isNotEmpty() },
                     "run_log" to runLog,
                     "function_kind" to "oob_reusable_function",
                     "asset_state" to "native_local"
                 )
             } else {
-                val conversion = runCatching {
-                    OobRunLogReplayService(context).convertRunLog(
-                        runId = learningResult.runId,
-                        register = true,
-                        nameOverride = learningResult.name,
-                        descriptionOverride = learningResult.description
-                    )
-                }.getOrElse { error ->
-                    OmniLog.e(TAG, "human trajectory conversion failed: ${error.fullCauseMessage()}", error)
-                    linkedMapOf(
-                        "success" to false,
-                        "error_code" to "HUMAN_TRAJECTORY_CONVERT_FAILED",
-                        "error_message" to error.fullCauseMessage(),
-                        "error_type" to error.javaClass.name,
-                        "error_cause_chain" to error.causeChainPayload(),
-                        "run_id" to learningResult.runId,
-                        "function_kind" to "oob_reusable_function",
-                        "asset_state" to "native_local"
+                withContext(Dispatchers.Main) {
+                    DraggableBallInstance.setDoing(
+                        message = "正在整理复用指令",
+                        isShowTakeOver = false,
+                        subMessage = "请稍候",
+                        isShowStop = false
                     )
                 }
+                val conversion = withContext(Dispatchers.Default) {
+                    runCatching {
+                        OobRunLogReplayService(context).convertRunLog(
+                            runId = learningResult.runId,
+                            register = true,
+                            nameOverride = learningResult.name,
+                            descriptionOverride = learningResult.description
+                        )
+                    }.getOrElse { error ->
+                        OmniLog.e(TAG, "human trajectory conversion failed: ${error.fullCauseMessage()}", error)
+                        linkedMapOf(
+                            "success" to false,
+                            "error_code" to "HUMAN_TRAJECTORY_CONVERT_FAILED",
+                            "error_message" to error.fullCauseMessage(),
+                            "error_type" to error.javaClass.name,
+                            "error_cause_chain" to error.causeChainPayload(),
+                            "run_id" to learningResult.runId,
+                            "function_kind" to "oob_reusable_function",
+                            "asset_state" to "native_local"
+                        )
+                    }
+                }
                 val conversionSuccess = conversion["success"] == true
-                val runLog = runCatching {
-                    InternalRunLogStore.timelinePayload(context, learningResult.runId)
-                }.getOrNull()
+                val runLog = withContext(Dispatchers.Default) {
+                    runCatching {
+                        InternalRunLogStore.timelinePayload(context, learningResult.runId)
+                    }.getOrNull()
+                }
                 val actionList = learningResult.actions.mapIndexed { index, action ->
                     manualRecordedActionPayload(index + 1, action)
                 }
+                val recordingWarning = learningResult.errorMessage
+                    .takeIf { learningResult.success && it.isNotBlank() }
                 withContext(Dispatchers.Main) {
                     ManualRecordingControlOverlay.dismiss()
                     DraggableBallInstance.finishDoingTask(
@@ -3410,6 +3420,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "error_message" to if (conversionSuccess) null else {
                         conversion["error_message"] ?: "录制已完成，但生成复用指令失败"
                     },
+                    "warning_message" to recordingWarning,
+                    "recording_warning" to recordingWarning,
                     "run_id" to learningResult.runId,
                     "name" to learningResult.name,
                     "description" to learningResult.description,
@@ -3417,6 +3429,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "actions" to actionList,
                     "editable_actions" to actionList,
                     "summary" to learningResult.summary,
+                    "diagnostics" to learningResult.diagnostics.takeIf { it.isNotEmpty() },
                     "run_log" to runLog,
                     "function_id" to conversion["function_id"],
                     "created_function_id" to conversion["created_function_id"],
@@ -3424,6 +3437,301 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "conversion" to conversion,
                     "function_kind" to "oob_reusable_function",
                     "asset_state" to "native_local"
+                )
+            }
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    fun pauseHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val paused = HumanTrajectoryLearningSession.pauseActive()
+            withContext(Dispatchers.Main) {
+                if (paused) {
+                    ManualRecordingControlOverlay.markPaused()
+                }
+                result.success(
+                    linkedMapOf(
+                        "success" to paused,
+                        "recording_active" to HumanTrajectoryLearningSession.isActive(),
+                        "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+                        "error_code" to if (paused) null else "NO_ACTIVE_RECORDING",
+                        "error_message" to if (paused) null else "No active human recording session",
+                        "source" to "human_trajectory_learning"
+                    ).filterValues { it != null }
+                )
+            }
+        }
+    }
+
+    fun resumeHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val resumed = HumanTrajectoryLearningSession.resumeActive()
+            withContext(Dispatchers.Main) {
+                if (resumed) {
+                    ManualRecordingControlOverlay.markRecording()
+                }
+                result.success(
+                    linkedMapOf(
+                        "success" to resumed,
+                        "recording_active" to HumanTrajectoryLearningSession.isActive(),
+                        "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+                        "error_code" to if (resumed) null else "NO_ACTIVE_RECORDING",
+                        "error_message" to if (resumed) null else "No active human recording session",
+                        "source" to "human_trajectory_learning"
+                    ).filterValues { it != null }
+                )
+            }
+        }
+    }
+
+    fun saveCurrentUdegState(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val goal = firstNonBlankString(
+                args["goal"],
+                args["description"],
+                call.argument<String>("goal")
+            )
+            val payload = withContext(Dispatchers.Default) {
+                runCatching {
+                    captureCurrentUdegState(goal = goal)
+                }.getOrElse { error ->
+                    OmniLog.e(TAG, "save current UDEG state failed: ${error.fullCauseMessage()}", error)
+                    udegStateCaptureErrorPayload(error)
+                }
+            }
+            withContext(Dispatchers.Main) {
+                result.success(payload)
+            }
+        }
+    }
+
+    /**
+     * Captures the current screen as a persisted UDEG get-state artifact during
+     * manual recording and appends a non-replay RunLog evidence card.
+     *
+     * @param goal Current recording goal used to annotate the observed page.
+     * @return Capture payload with state artifact paths, node id, page analysis,
+     * decision context, node skill, and error fields when capture fails.
+     */
+    private suspend fun captureCurrentUdegStateForManualRecording(goal: String): Map<String, Any?> {
+        val activeRunId = HumanTrajectoryLearningSession.activeRunId()
+        val payload = runCatching {
+            captureCurrentUdegState(goal = goal)
+        }.getOrElse { error ->
+            OmniLog.e(TAG, "manual recording UDEG state capture failed: ${error.fullCauseMessage()}", error)
+            udegStateCaptureErrorPayload(error)
+        }
+        if (!activeRunId.isNullOrBlank()) {
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = activeRunId,
+                card = buildManualUdegStateCaptureCard(
+                    runId = activeRunId,
+                    payload = payload,
+                )
+            )
+        }
+        return payload
+    }
+
+    /**
+     * Captures the live accessibility state and persists the UDEG node inputs.
+     *
+     * @param goal Optional task goal stored with the page observation.
+     * @return A `oob.udeg.capture_result.v1` payload containing the captured
+     * XML/screenshot manifest, UDEG node id, PageVector observation, page
+     * analysis, decision context, node skill, and artifact paths.
+     */
+    private suspend fun captureCurrentUdegState(goal: String?): Map<String, Any?> {
+        if (!awaitHumanTrajectoryRecordingBackend(timeoutMs = 8_000L)) {
+            throw IllegalStateException("无障碍服务未就绪，无法保存当前页面状态")
+        }
+        val capturedAtMs = System.currentTimeMillis()
+        val pageXml = AccessibilityController.getCaptureScreenShotXml(true)
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("当前页面 XML 为空")
+        val packageName = AccessibilityController.getPackageName().orEmpty()
+        val activityName = AccessibilityController.getCurrentActivity().orEmpty()
+        val screenshot = AccessibilityController.captureScreenshotImage(
+            isBitmap = false,
+            isBase64 = true,
+            isFilterOverlay = true,
+            compressQuality = ImageQuality.MEDIUM
+        )
+        val screenshotBase64 = screenshot.imageBase64
+            ?.takeIf { screenshot.isSuccess && it.isNotBlank() }
+        val store = OobUdegNodeStore(context)
+        val observedPage = OobUdegNodeStore.ObservedPage(
+            pageXml = pageXml,
+            packageName = packageName,
+            activityName = activityName,
+            screenshotBase64 = screenshotBase64,
+            goal = goal.orEmpty(),
+            stepIndex = 0,
+        )
+        val observation = store.observePage(observedPage)
+            ?: throw IllegalStateException("当前页面无法生成 UDEG PageVector")
+        val stateArtifact = store.saveCapturedState(
+            observedPage = observedPage,
+            observation = observation,
+            screenshotBytes = screenshotBase64?.let(::decodeDataUrlBase64),
+            capturedAtMs = capturedAtMs,
+        )
+        return linkedMapOf<String, Any?>(
+            "success" to true,
+            "schema_version" to "oob.udeg.capture_result.v1",
+            "kind" to "oob_udeg_state_capture",
+            "captured_at_ms" to capturedAtMs,
+            "node_id" to observation.node["node_id"],
+            "page_similarity" to observation.pageSimilarity,
+            "first_seen" to observation.firstSeen,
+            "reason" to observation.reason,
+            "package_name" to packageName,
+            "activity_name" to activityName.takeIf { it.isNotBlank() },
+            "xml_chars" to pageXml.length,
+            "screenshot_present" to (screenshotBase64 != null),
+            "screenshot_original_width" to screenshot.originalWidth,
+            "screenshot_original_height" to screenshot.originalHeight,
+            "screenshot_width" to screenshot.compressedWidth,
+            "screenshot_height" to screenshot.compressedHeight,
+            "state_artifact" to stateArtifact.toMap(),
+            "page_observation" to observation.toMap(),
+            "page_analysis" to OobUdegNodeStore.mapArg(observation.node["page_analysis"])
+                .takeIf { it.isNotEmpty() },
+            "decision_context" to OobUdegNodeStore.mapArg(observation.node["decision_context"])
+                .takeIf { it.isNotEmpty() },
+            "node_skill" to OobUdegNodeStore.mapArg(observation.node["skill"])
+                .takeIf { it.isNotEmpty() },
+            "skill_artifact" to OobUdegNodeStore.mapArg(observation.node["skill_artifact"])
+                .takeIf { it.isNotEmpty() },
+            "decision_path" to OobUdegNodeStore.UDEG_DECISION_PATH,
+            "source" to "oob_udeg_manual_capture",
+        ).filterValues { it != null }
+    }
+
+    /**
+     * Builds the MethodChannel-compatible failure payload for UDEG state capture.
+     *
+     * @param error Failure raised while reading screen state or persisting assets.
+     * @return Structured error payload that matches `oob.udeg.capture_result.v1`.
+     */
+    private fun udegStateCaptureErrorPayload(error: Throwable): Map<String, Any?> {
+        return linkedMapOf(
+            "success" to false,
+            "schema_version" to "oob.udeg.capture_result.v1",
+            "kind" to "oob_udeg_state_capture",
+            "error_code" to "OOB_UDEG_STATE_CAPTURE_FAILED",
+            "error_message" to error.fullCauseMessage(),
+            "error_type" to error.javaClass.name,
+            "error_cause_chain" to error.causeChainPayload(),
+            "source" to "oob_udeg_manual_capture",
+        )
+    }
+
+    /**
+     * Creates a RunLog evidence card for manual get-state capture.
+     *
+     * @param runId Active manual recording run id.
+     * @param payload Capture result produced by [captureCurrentUdegState].
+     * @return A successful or failed `get_state` card that is persisted in the
+     * RunLog but skipped by reusable-function conversion.
+     */
+    private fun buildManualUdegStateCaptureCard(
+        runId: String,
+        payload: Map<String, Any?>
+    ): Map<String, Any?> {
+        val capturedAtMs = (payload["captured_at_ms"] as? Number)?.toLong()
+            ?: System.currentTimeMillis()
+        val cardId = "$runId-udeg-state-$capturedAtMs"
+        val stateArtifact = normalizeMethodCallMap(payload["state_artifact"])
+        val success = payload["success"] == true
+        val title = if (success) "人工截图" else "人工截图失败"
+        val summary = if (success) {
+            "已保存当前屏幕 get state / UDEG node 信息"
+        } else {
+            firstNonBlankString(payload["error_message"], "保存当前屏幕状态失败")
+        }
+        val artifactRefs = linkedMapOf<String, Any?>(
+            "state_artifact" to stateArtifact.takeIf { it.isNotEmpty() },
+            "manifest_path" to stateArtifact["manifest_path"],
+            "xml_path" to stateArtifact["xml_path"],
+            "screenshot_path" to stateArtifact["screenshot_path"],
+        ).filterValues { it != null }
+        return linkedMapOf<String, Any?>(
+            "card_id" to cardId,
+            "tool_call_id" to cardId,
+            "header" to linkedMapOf<String, Any?>(
+                "step_index" to 0,
+                "title" to title,
+                "tool_name" to "get_state",
+                "status" to if (success) "success" else "error",
+                "success" to success,
+            ),
+            "step_index" to 0,
+            "title" to title,
+            "summary" to summary,
+            "tool_name" to "get_state",
+            "toolName" to "get_state",
+            "tool_type" to "manual_recording_evidence",
+            "toolType" to "manual_recording_evidence",
+            "status" to if (success) "success" else "error",
+            "success" to success,
+            "started_at_ms" to capturedAtMs,
+            "finished_at_ms" to capturedAtMs,
+            "package_name" to payload["package_name"],
+            "activity_name" to payload["activity_name"],
+            "compile_kind" to "manual_recording_evidence",
+            "source" to "human_trajectory",
+            "asset_refs" to artifactRefs.takeIf { it.isNotEmpty() },
+            "tool_call" to linkedMapOf(
+                "id" to cardId,
+                "name" to "get_state",
+                "arguments" to linkedMapOf(
+                    "capture_kind" to "manual_udeg_state_capture",
+                    "node_id" to payload["node_id"],
+                    "state_artifact" to stateArtifact.takeIf { it.isNotEmpty() },
+                    "decision_path" to payload["decision_path"],
+                ).filterValues { it != null }
+            ),
+            "params" to linkedMapOf(
+                "capture_kind" to "manual_udeg_state_capture",
+                "node_id" to payload["node_id"],
+                "state_artifact" to stateArtifact.takeIf { it.isNotEmpty() },
+                "decision_path" to payload["decision_path"],
+                "recording_backend" to "manual_recording_control"
+            ).filterValues { it != null },
+            "result" to payload,
+            "_oob_meta" to linkedMapOf(
+                "mode" to "manual_operation_recording",
+                "recording_backend" to "manual_recording_control",
+                "replayable" to false,
+                "state_capture_kind" to "get_state_udeg_node",
+            )
+        ).filterValues { it != null }
+    }
+
+    fun exportOobUdeg(call: MethodCall, result: MethodChannel.Result) {
+        mainJob.launch {
+            val args = normalizeMethodCallMap(call.arguments)
+            val limit = ((args["limit"] ?: call.argument<Number>("limit")) as? Number)?.toInt()
+                ?: 1_000
+            val payload = runCatching {
+                OobUdegNodeStore(context).exportBundle(limit = limit)
+            }.getOrElse { error ->
+                OmniLog.e(TAG, "export OOB UDEG failed: ${error.fullCauseMessage()}", error)
+                linkedMapOf(
+                    "success" to false,
+                    "schema_version" to "oob.udeg.export.v1",
+                    "kind" to "oob_udeg_export",
+                    "error_code" to "OOB_UDEG_EXPORT_FAILED",
+                    "error_message" to error.fullCauseMessage(),
+                    "error_type" to error.javaClass.name,
+                    "error_cause_chain" to error.causeChainPayload(),
+                    "source" to "oob_udeg_node_store",
                 )
             }
             withContext(Dispatchers.Main) {
@@ -3467,6 +3775,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "started_at_ms" to action.startedAtMs,
             "finished_at_ms" to action.finishedAtMs,
             "duration_ms" to (action.finishedAtMs - action.startedAtMs).coerceAtLeast(0L),
+            "event_context" to action.eventContext.takeIf { it.isNotEmpty() },
             "before" to linkedMapOf(
                 "observation_xml" to action.beforeXml,
                 "package_name" to action.packageName
@@ -3491,8 +3800,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 "_oob_meta" to linkedMapOf(
                     "mode" to "manual_operation_recording",
                     "recording_backend" to "accessibility_event",
+                    "event_context" to action.eventContext.takeIf { it.isNotEmpty() },
                     "editable" to true
-                )
+                ).filterValues { it != null }
             )
         ).filterValues { it != null }
     }
@@ -3522,6 +3832,15 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             current = current.cause
         }
         return output
+    }
+
+    private fun decodeDataUrlBase64(dataUrl: String): ByteArray? {
+        val normalized = dataUrl.trim()
+        if (normalized.isBlank()) return null
+        val encoded = normalized.substringAfter(",", normalized).trim()
+        return runCatching {
+            android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+        }.getOrNull()
     }
 
     fun getOobReusableFunction(call: MethodCall, result: MethodChannel.Result) {
@@ -3655,6 +3974,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
             val materializedSpec = OobReusableFunctionStore.materialize(spec, callArguments)
+            val allowVlmFallback = booleanMethodCallValue(
+                args["allowVlmFallback"] ?: args["allow_vlm_fallback"]
+            )
+            val providedLocalReplayResult = normalizeProvidedLocalReplayResult(
+                args["localReplayResult"] ?: args["local_replay_result"]
+            )
             val runner = OobFunctionToolHandler(
                 context = context,
                 helper = SharedHelper(context, chatTaskPayloadJson)
@@ -3665,38 +3990,37 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             // Phase 1 for direct UI calls: execute the deterministic local prefix only.
             // Tool/data-flow/agent steps need the full Agent runtime, so the runner marks
             // the first such step as needs_agent instead of failing a synthetic tool call.
-            val runPayload = runCatching {
-                withContext(Dispatchers.Default) {
-                    runner.runMaterializedFunction(
-                        functionId = functionId,
-                        spec = spec,
-                        materializedSpec = materializedSpec,
-                        allowAgentFallback = true,
-                        allowToolDelegationWithoutRouter = false
+            val runPayload = providedLocalReplayResult ?: runCatching {
+                    withContext(Dispatchers.Default) {
+                        runner.runMaterializedFunction(
+                            functionId = functionId,
+                            spec = spec,
+                            materializedSpec = materializedSpec,
+                            allowAgentFallback = true,
+                            allowToolDelegationWithoutRouter = false
+                        )
+                    }
+                }.getOrElse { error ->
+                    linkedMapOf(
+                        "success" to false,
+                        "function_id" to functionId,
+                        "runner" to "oob_mixed_runner",
+                        "step_count" to 0,
+                        "success_step_count" to 0,
+                        "model_used" to false,
+                        "error_message" to error.message.orEmpty(),
+                        "step_results" to emptyList<Map<String, Any?>>()
                     )
                 }
-            }.getOrElse { error ->
-                linkedMapOf(
-                    "success" to false,
-                    "function_id" to functionId,
-                    "runner" to "oob_mixed_runner",
-                    "step_count" to 0,
-                    "success_step_count" to 0,
-                    "model_used" to false,
-                    "error_message" to error.message.orEmpty(),
-                    "step_results" to emptyList<Map<String, Any?>>()
-                )
-            }
 
             val stepResults = (runPayload["step_results"] as? List<*>)
                 ?.filterIsInstance<Map<*, *>>() ?: emptyList()
             val pendingAgentSteps = stepResults.filter(::isOobReusableFunctionPendingAgentStep)
 
-            // Phase 2: if local replay reaches a step that needs visual
-            // reasoning, run the device VLM directly. Returning SUCCESS from
-            // createAgentTask only meant the agent job was scheduled; it did
-            // not guarantee that the model had actually called vlm_task.
-            if (pendingAgentSteps.isNotEmpty()) {
+            // Phase 2 is explicit only: direct UI replay returns the local
+            // failure by default, and starts VLM continuation only when the
+            // caller passes allowVlmFallback=true.
+            if (pendingAgentSteps.isNotEmpty() && allowVlmFallback) {
                 val completedCount = stepResults.indexOfFirst(::isOobReusableFunctionPendingAgentStep)
                 val taskId = args["taskId"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                     ?: "${System.currentTimeMillis()}-vlm"
@@ -3717,7 +4041,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 return@launch
             }
 
-            // All steps executed locally.
+            // All steps executed locally, or local replay stopped with an
+            // explicit failure that the UI may offer to continue with VLM.
             val localSuccess = runPayload["success"] != false
             OobReusableFunctionStore.recordRun(
                 context = context,
@@ -5831,6 +6156,66 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
     private fun normalizeCallArgumentMap(value: Any?): Map<String, Any?> {
         return normalizeMethodCallMap(value)
+    }
+
+    private fun normalizeProvidedLocalReplayResult(value: Any?): Map<String, Any?>? {
+        val raw = normalizeMethodCallMap(value)
+        if (raw.isEmpty()) return null
+        val contextPayload = normalizeMethodCallMap(raw["context"])
+        val stepResults = normalizeStepResultList(
+            contextPayload["step_results"] ?: raw["step_results"]
+        )
+        val runPayload = LinkedHashMap<String, Any?>().apply {
+            putAll(raw)
+            if (stepResults.isNotEmpty()) {
+                put("step_results", stepResults)
+            }
+            putIfAbsent("function_id", raw["function_id"])
+            putIfAbsent("runner", raw["runner"] ?: contextPayload["runner"] ?: "oob_mixed_runner")
+            putIfAbsent("model_used", raw["model_used"] ?: contextPayload["model_used"] ?: false)
+            putIfAbsent(
+                "model_required",
+                raw["model_required"] ?: contextPayload["model_required"]
+            )
+            putIfAbsent(
+                "fallback_available",
+                raw["fallback_available"] ?: contextPayload["fallback_available"]
+            )
+            putIfAbsent("timing", raw["timing"] ?: contextPayload["timing"])
+            putIfAbsent(
+                "step_count",
+                raw["step_count"] ?: contextPayload["step_count"] ?: stepResults.size
+            )
+            putIfAbsent(
+                "success_step_count",
+                raw["success_step_count"] ?: contextPayload["success_step_count"]
+                    ?: stepResults.count { it["success"] != false }
+            )
+            putIfAbsent(
+                "error_message",
+                raw["error_message"] ?: raw["errorMessage"] ?: contextPayload["error_message"]
+            )
+            putIfAbsent("error_code", raw["error_code"] ?: contextPayload["error_code"])
+        }
+        return runPayload
+    }
+
+    private fun normalizeStepResultList(value: Any?): List<Map<String, Any?>> {
+        val rawList = value as? List<*> ?: return emptyList()
+        return rawList.mapNotNull { item ->
+            normalizeMethodCallMap(item).takeIf { it.isNotEmpty() }
+        }
+    }
+
+    private fun booleanMethodCallValue(value: Any?): Boolean {
+        return when (value) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            is String -> value.trim().lowercase().let { normalized ->
+                normalized == "true" || normalized == "1" || normalized == "yes"
+            }
+            else -> false
+        }
     }
 
     private suspend fun executeOobReusableFunctionVlmFallback(

@@ -1,11 +1,38 @@
 package cn.com.omnimind.assists
 
 import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
+import cn.com.omnimind.assists.task.vlmserver.ManualRecordingDiagnostics
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HumanTrajectoryLearningSessionTest {
+    @Test
+    fun `manual recording diagnostics require active raw touch for no-miss guarantee`() {
+        val semanticOnly = ManualRecordingDiagnostics.completeness(
+            rawTouchAvailable = false,
+            rawTouchActiveAtStop = null,
+        )
+        val rawInterrupted = ManualRecordingDiagnostics.completeness(
+            rawTouchAvailable = true,
+            rawTouchActiveAtStop = false,
+        )
+        val rawComplete = ManualRecordingDiagnostics.completeness(
+            rawTouchAvailable = true,
+            rawTouchActiveAtStop = true,
+        )
+
+        assertEquals(ManualRecordingDiagnostics.MISSING_RAW_TOUCH, semanticOnly)
+        assertEquals(ManualRecordingDiagnostics.RAW_TOUCH_INTERRUPTED, rawInterrupted)
+        assertEquals(ManualRecordingDiagnostics.COMPLETE_RAW_TOUCH, rawComplete)
+        assertFalse(ManualRecordingDiagnostics.guaranteesNoMissingClicks(false, null))
+        assertFalse(ManualRecordingDiagnostics.guaranteesNoMissingClicks(true, false))
+        assertTrue(ManualRecordingDiagnostics.guaranteesNoMissingClicks(true, true))
+        assertTrue(ManualRecordingDiagnostics.warningMessage(semanticOnly)!!.contains("raw touch"))
+    }
+
     @Test
     fun `manual recording run log card keeps replay context and timing`() {
         val beforeXml = "<hierarchy package=\"com.android.settings\"><node text=\"Bluetooth\" bounds=\"[0,0][100,100]\" /></hierarchy>"
@@ -27,6 +54,12 @@ class HumanTrajectoryLearningSessionTest {
             startedAtMs = 1000L,
             finishedAtMs = 1250L,
             summary = "人工点击 Bluetooth",
+            eventContext = linkedMapOf(
+                "event_type" to "TYPE_VIEW_CLICKED",
+                "event_has_source" to true,
+                "recording_backend" to "accessibility_event",
+                "target_resolution" to "event_source",
+            ),
         )
 
         val card = buildRunLogCardForTest("human-test-run", 1, action)
@@ -56,6 +89,9 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(84f, sourceAction["y"])
         assertEquals("manual_operation_recording", meta["mode"])
         assertEquals("accessibility_event", meta["recording_backend"])
+        assertEquals("accessibility_event", meta["action_source"])
+        assertEquals(action.eventContext, card["event_context"])
+        assertEquals(action.eventContext, meta["event_context"])
         assertNotNull(card["tool_call"])
     }
 

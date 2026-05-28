@@ -70,6 +70,18 @@ class AssistsCoreChannel {
                 "startHumanTrajectoryLearning" -> {
                     assistsCoreManager!!.startHumanTrajectoryLearning(call, result)
                 }
+                "pauseHumanTrajectoryLearning" -> {
+                    assistsCoreManager!!.pauseHumanTrajectoryLearning(call, result)
+                }
+                "resumeHumanTrajectoryLearning" -> {
+                    assistsCoreManager!!.resumeHumanTrajectoryLearning(call, result)
+                }
+                "saveCurrentUdegState" -> {
+                    assistsCoreManager!!.saveCurrentUdegState(call, result)
+                }
+                "exportOobUdeg" -> {
+                    assistsCoreManager!!.exportOobUdeg(call, result)
+                }
                 "getOobReusableFunction" -> {
                     assistsCoreManager!!.getOobReusableFunction(call, result)
                 }

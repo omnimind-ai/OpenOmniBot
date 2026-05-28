@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVICE_SERIAL="${ANDROID_SERIAL:-emulator-5556}"
+DEVICE_SERIAL="${ANDROID_SERIAL:-}"
 PACKAGE_NAME="${PACKAGE_NAME:-cn.com.omnimind.bot.debug}"
 ACTION="cn.com.omnimind.bot.debug.RUN_MANUAL_TRACE"
 RECEIVER="$PACKAGE_NAME/cn.com.omnimind.bot.debug.DebugManualTraceReceiver"
@@ -41,8 +41,11 @@ while [[ $# -gt 0 ]]; do
 Usage: scripts/oob-device-manual-trace-validation.sh [--device SERIAL] [--package PACKAGE]
 
 Starts the debug ManualVlmTraceRecorder, performs adb-driven tap and swipe
-gestures on Android Settings, and verifies semantic click/swipe actions plus
+gestures on Android Settings, and verifies A11/raw click/swipe actions plus
 duration/phase timing in the result payload.
+
+This script intentionally selects a USB device by default and never defaults to
+emulator-5554/5556. Pass --device explicitly when multiple real devices exist.
 USAGE
       exit 0
       ;;
@@ -52,6 +55,14 @@ USAGE
       ;;
   esac
 done
+
+if [[ -z "${DEVICE_SERIAL// }" ]]; then
+  DEVICE_SERIAL="$(adb devices | awk 'NR > 1 && $2 == "device" && $1 !~ /^emulator-/ { print $1; exit }')"
+fi
+if [[ -z "${DEVICE_SERIAL// }" ]]; then
+  echo "No USB device selected. Pass --device SERIAL or set ANDROID_SERIAL." >&2
+  exit 2
+fi
 
 ADB=(adb -s "$DEVICE_SERIAL")
 
@@ -75,6 +86,27 @@ wait_for_file() {
   done
   echo "Timed out waiting for $label: $path" >&2
   return 1
+}
+
+is_device_locked() {
+  local trust window
+  trust="$("${ADB[@]}" shell dumpsys trust 2>/dev/null | tr -d '\r' || true)"
+  if grep -Eq '\(current\).*deviceLocked=1' <<<"$trust"; then
+    return 0
+  fi
+  window="$("${ADB[@]}" shell dumpsys window 2>/dev/null | tr -d '\r' || true)"
+  grep -Eq 'isKeyguardShowing=true|mDreamingLockscreen=true|mIsShowing=true' <<<"$window"
+}
+
+require_unlocked_device() {
+  "${ADB[@]}" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+  if is_device_locked; then
+    cat >&2 <<EOF
+Device $DEVICE_SERIAL is locked. Unlock the phone before validation; otherwise
+Accessibility events and optional raw touch diagnostics are not reliable.
+EOF
+    exit 1
+  fi
 }
 
 find_click_target() {
@@ -149,6 +181,8 @@ dump_window_xml() {
   "${ADB[@]}" shell uiautomator dump "$remote" >/dev/null
   "${ADB[@]}" exec-out cat "$remote" >"$xml_file"
 }
+
+require_unlocked_device
 
 size="$("${ADB[@]}" shell wm size | tr -d '\r' | awk -F': ' '/Physical size/ {print $2; exit}')"
 width="${size%x*}"
@@ -225,6 +259,21 @@ if "swipe" not in names:
     fail("manual trace missing swipe action")
 if data.get("token_usage_total") != 0:
     fail("manual trace should have token_usage_total=0")
+
+diagnostics = data.get("diagnostics") or {}
+manual = diagnostics.get("manual_recording") or {}
+if manual.get("a11_replay_actions_enabled") is False:
+    fail("A11 replay action source should be enabled")
+
+for action in actions:
+    event_context = action.get("event_context") or {}
+    params = action.get("params") or {}
+    backend = params.get("recording_backend")
+    if backend not in ("accessibility_event", "device_getevent"):
+        fail(f"manual trace action has unexpected backend: {backend}")
+    event_type = str(event_context.get("event_type") or "")
+    if backend == "device_getevent" and not event_type.startswith("RAW_GETEVENT_"):
+        fail("raw manual trace event_context is not RAW_GETEVENT")
 
 timing = data.get("timing") or {}
 phase_ms = timing.get("phase_ms") or {}

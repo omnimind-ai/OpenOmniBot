@@ -1,7 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
 import android.content.Context
-import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import com.google.gson.GsonBuilder
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -54,6 +53,35 @@ class OobUdegNodeStore(
             ),
             "function_ids" to functionIds(node),
             "source" to "oob_udeg_node_store",
+        ).filterValues { it != null }
+    }
+
+    data class CapturedStateArtifact(
+        val stateId: String,
+        val nodeId: String,
+        val rootPath: String,
+        val xmlPath: String,
+        val screenshotPath: String?,
+        val manifestPath: String,
+        val xmlChars: Int,
+        val screenshotBytes: Long,
+    ) {
+        fun toMap(): Map<String, Any?> = linkedMapOf(
+            "schema_version" to STATE_ARTIFACT_SCHEMA_VERSION,
+            "kind" to "oob_udeg_captured_state",
+            "state_id" to stateId,
+            "node_id" to nodeId,
+            "root_path" to rootPath,
+            "xml_path" to xmlPath,
+            "screenshot_path" to screenshotPath,
+            "manifest_path" to manifestPath,
+            "xml_chars" to xmlChars,
+            "screenshot_bytes" to screenshotBytes,
+            "privacy" to linkedMapOf(
+                "raw_xml_stored" to true,
+                "raw_screenshot_stored" to (screenshotPath != null),
+                "storage" to "app_private_files",
+            ),
         ).filterValues { it != null }
     }
 
@@ -286,6 +314,113 @@ class OobUdegNodeStore(
             .take(normalizedLimit)
     }
 
+    fun saveCapturedState(
+        observedPage: ObservedPage,
+        observation: PageObservationResult,
+        screenshotBytes: ByteArray?,
+        capturedAtMs: Long = System.currentTimeMillis(),
+    ): CapturedStateArtifact {
+        val nodeId = firstNonBlank(observation.node["node_id"]).ifBlank {
+            "udeg_node_${sha256(observedPage.pageXml).take(16)}"
+        }
+        val stateId = "state_${capturedAtMs}_${sha256("$nodeId:${observedPage.pageXml}").take(12)}"
+        val stateDir = File(udegStatesRoot(), "${safePathSegment(nodeId)}/${safePathSegment(stateId)}")
+        stateDir.mkdirs()
+        val xmlFile = File(stateDir, "page.xml")
+        val screenshotFile = screenshotBytes
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { File(stateDir, "screenshot.jpg").apply { writeBytes(it) } }
+        xmlFile.writeText(observedPage.pageXml)
+        val manifest = linkedMapOf(
+            "schema_version" to STATE_ARTIFACT_SCHEMA_VERSION,
+            "kind" to "oob_udeg_captured_state",
+            "state_id" to stateId,
+            "node_id" to nodeId,
+            "package_name" to observedPage.packageName.takeIf { it.isNotBlank() },
+            "activity_name" to observedPage.activityName.takeIf { it.isNotBlank() },
+            "captured_at_ms" to capturedAtMs,
+            "page_similarity" to observation.pageSimilarity,
+            "first_seen" to observation.firstSeen,
+            "reason" to observation.reason,
+            "paths" to linkedMapOf(
+                "root_path" to stateDir.absolutePath,
+                "xml_path" to xmlFile.absolutePath,
+                "screenshot_path" to screenshotFile?.absolutePath,
+            ).filterValues { it != null },
+            "artifacts" to linkedMapOf(
+                "xml_chars" to observedPage.pageXml.length,
+                "screenshot_bytes" to (screenshotFile?.length() ?: 0L),
+            ),
+            "node_ref" to linkedMapOf(
+                "node_id" to observation.node["node_id"],
+                "skill_id" to mapArg(observation.node["skill"])["id"],
+                "skill_artifact" to mapArg(observation.node["skill_artifact"]).takeIf { it.isNotEmpty() },
+            ).filterValues { it != null },
+            "privacy" to linkedMapOf(
+                "raw_xml_stored" to true,
+                "raw_screenshot_stored" to (screenshotFile != null),
+                "storage" to "app_private_files",
+            ),
+            "source" to "oob_udeg_manual_capture",
+        ).filterValues { it != null }
+        val manifestFile = File(stateDir, "state.json")
+        manifestFile.writeText(gson.toJson(manifest))
+        return CapturedStateArtifact(
+            stateId = stateId,
+            nodeId = nodeId,
+            rootPath = stateDir.absolutePath,
+            xmlPath = xmlFile.absolutePath,
+            screenshotPath = screenshotFile?.absolutePath,
+            manifestPath = manifestFile.absolutePath,
+            xmlChars = observedPage.pageXml.length,
+            screenshotBytes = screenshotFile?.length() ?: 0L,
+        )
+    }
+
+    fun exportBundle(limit: Int = MAX_NODE_SCAN): Map<String, Any?> {
+        val normalizedLimit = limit.coerceIn(1, MAX_NODE_SCAN)
+        val nodes = listNodes(normalizedLimit)
+        val exportedAt = System.currentTimeMillis()
+        val root = udegExportsRoot().apply { mkdirs() }
+        val exportFile = File(root, "oob-udeg-export-$exportedAt.json")
+        val sanitizedNodes = nodes.map(::exportNodePayload)
+        val edges = sanitizedNodes.flatMap(::exportEdgesForNode)
+        val payload = linkedMapOf<String, Any?>(
+            "schema_version" to EXPORT_SCHEMA_VERSION,
+            "kind" to "oob_udeg_export",
+            "exported_at_ms" to exportedAt,
+            "node_count" to sanitizedNodes.size,
+            "edge_count" to edges.size,
+            "decision_path" to UDEG_DECISION_PATH,
+            "nodes" to sanitizedNodes,
+            "edges" to edges,
+            "path" to edges.mapNotNull { it["edge_id"]?.toString() },
+            "artifact_roots" to linkedMapOf(
+                "node_skill_root" to udegSkillArtifactsRoot().absolutePath,
+                "captured_state_root" to udegStatesRoot().absolutePath,
+            ),
+            "privacy" to linkedMapOf(
+                "export_contains_raw_xml" to false,
+                "export_contains_raw_screenshot" to false,
+                "captured_state_artifacts_stay_local" to true,
+            ),
+            "source" to "oob_native_udeg",
+        )
+        exportFile.writeText(gson.toJson(payload))
+        return linkedMapOf(
+            "success" to true,
+            "schema_version" to EXPORT_SCHEMA_VERSION,
+            "kind" to "oob_udeg_export",
+            "exported_at_ms" to exportedAt,
+            "node_count" to sanitizedNodes.size,
+            "edge_count" to edges.size,
+            "decision_path" to UDEG_DECISION_PATH,
+            "export_path" to exportFile.absolutePath,
+            "payload" to payload,
+            "source" to "oob_udeg_node_store",
+        )
+    }
+
     fun getNode(nodeId: String): Map<String, Any?> {
         return getNodeFromPreferences(nodeId).takeIf { it.isNotEmpty() }
             ?: getNodeFromArtifact(nodeId)
@@ -430,7 +565,7 @@ class OobUdegNodeStore(
                 "skill_file_path" to skillFile.absolutePath,
                 "payload_path" to payloadFile.absolutePath,
             ),
-            "indexed_by" to "AgentWorkspaceManager.skillsRoot",
+            "indexed_by" to "OobUdegNodeStore.memoryRoot",
             "updated_at" to updatedAt,
         ).filterValues { it != null }
 
@@ -619,11 +754,90 @@ class OobUdegNodeStore(
     }
 
     private fun udegSkillArtifactsRoot(): File {
-        return runCatching {
-            File(AgentWorkspaceManager(context).skillsRoot(), UDEG_SKILL_ARTIFACTS_DIR)
-        }.getOrElse {
-            File(context.filesDir, "workspace/.omnibot/skills/$UDEG_SKILL_ARTIFACTS_DIR")
+        return File(context.filesDir, "workspace/.omnibot/memory/omniflow/$UDEG_NODE_CONTEXTS_DIR")
+    }
+
+    private fun udegStatesRoot(): File =
+        File(context.filesDir, "oob-udeg/states")
+
+    private fun udegExportsRoot(): File =
+        File(context.filesDir, "exports/oob-udeg")
+
+    private fun exportNodePayload(node: Map<String, Any?>): Map<String, Any?> {
+        val nodeId = firstNonBlank(node["node_id"])
+        val vectorSet = mapArg(node["page_vector_set"])
+        val registry = mapArg(node["_oob_registry"])
+        return linkedMapOf(
+            "schema_version" to firstNonBlank(node["schema_version"], NODE_SCHEMA_VERSION),
+            "kind" to "oob_udeg_node",
+            "node_id" to nodeId,
+            "package_name" to firstNonBlank(node["package_name"]).takeIf { it.isNotBlank() },
+            "activity_name" to firstNonBlank(node["activity_name"]).takeIf { it.isNotBlank() },
+            "first_seen_at" to longArg(node["first_seen_at"], registry["first_seen_at"], defaultValue = 0L).takeIf { it > 0L },
+            "last_seen_at" to longArg(node["last_seen_at"], registry["last_seen_at"], defaultValue = 0L).takeIf { it > 0L },
+            "updated_at" to longArg(node["updated_at"], registry["updated_at"], defaultValue = 0L).takeIf { it > 0L },
+            "page_match" to linkedMapOf(
+                "schema_version" to vectorSet["schema_version"],
+                "node_id" to firstNonBlank(vectorSet["node_id"], nodeId).takeIf { it.isNotBlank() },
+                "package_name" to firstNonBlank(vectorSet["package_name"], node["package_name"]).takeIf { it.isNotBlank() },
+                "page_vector_dim" to vectorSet["page_vector_dim"],
+                "page_vector" to OobPageVectorSet.vectorFrom(vectorSet["page_vector"]),
+                "element_count" to vectorSet["element_count"],
+                "actionable_count" to vectorSet["actionable_count"],
+                "focus_target_count" to vectorSet["focus_target_count"],
+                "display_text_count" to vectorSet["display_text_count"],
+                "signature" to vectorSet["signature"],
+                "privacy" to vectorSet["privacy"],
+            ).filterValues { it != null },
+            "page_analysis" to mapArg(node["page_analysis"]).takeIf { it.isNotEmpty() },
+            "skill" to mapArg(node["skill"]).takeIf { it.isNotEmpty() },
+            "decision_context" to mapArg(node["decision_context"]).takeIf { it.isNotEmpty() },
+            "skill_artifact" to mapArg(node["skill_artifact"]).takeIf { it.isNotEmpty() },
+            "functions" to functionSummaries(node),
+            "segments" to segmentSummaries(node),
+            "registry" to registry.takeIf { it.isNotEmpty() },
+            "source" to firstNonBlank(node["source"], "oob_native_udeg"),
+        ).filterValues { it != null }
+    }
+
+    private fun exportEdgesForNode(node: Map<String, Any?>): List<Map<String, Any?>> {
+        val nodeId = firstNonBlank(node["node_id"])
+        if (nodeId.isBlank()) return emptyList()
+        val functionEdges = functionSummaries(node).mapNotNull { function ->
+            val functionId = firstNonBlank(function["function_id"])
+            if (functionId.isBlank()) return@mapNotNull null
+            linkedMapOf(
+                "schema_version" to "oob.udeg.edge.v1",
+                "kind" to "function_transition",
+                "edge_id" to "edge_${nodeId}_${functionId}",
+                "from_node_id" to nodeId,
+                "function_id" to functionId,
+                "name" to function["name"],
+                "description" to function["description"],
+                "step_count" to listArg(function["step_summaries"]).size.takeIf { it > 0 },
+                "source" to "attached_function",
+            ).filterValues { it != null }
         }
+        val segmentEdges = segmentSummaries(node).mapNotNull { segment ->
+            val functionId = firstNonBlank(segment["function_id"])
+            val startStepIndex = firstNonBlank(segment["start_step_index"], segment["matched_step_index"])
+            if (functionId.isBlank()) return@mapNotNull null
+            linkedMapOf(
+                "schema_version" to "oob.udeg.edge.v1",
+                "kind" to "function_segment_transition",
+                "edge_id" to "edge_${nodeId}_${functionId}_segment_$startStepIndex",
+                "from_node_id" to nodeId,
+                "function_id" to functionId,
+                "name" to segment["name"],
+                "description" to segment["description"],
+                "matched_boundary" to segment["matched_boundary"],
+                "matched_step_index" to segment["matched_step_index"],
+                "start_step_index" to segment["start_step_index"],
+                "remaining_step_count" to segment["remaining_step_count"],
+                "source" to "attached_function_segment",
+            ).filterValues { it != null }
+        }
+        return functionEdges + segmentEdges
     }
 
     private fun buildNodeSkill(
@@ -1467,7 +1681,9 @@ class OobUdegNodeStore(
         private const val NODE_SKILL_ARTIFACT_SCHEMA_VERSION = "oob.udeg.node_skill_artifact.v1"
         private const val NODE_DECISION_CONTEXT_SCHEMA_VERSION = "oob.udeg.decision_context.v1"
         private const val PAGE_ANALYSIS_SCHEMA_VERSION = "oob.udeg.page_analysis.v1"
-        private const val UDEG_SKILL_ARTIFACTS_DIR = "oob-udeg-node-skills"
+        private const val STATE_ARTIFACT_SCHEMA_VERSION = "oob.udeg.state_artifact.v1"
+        private const val EXPORT_SCHEMA_VERSION = "oob.udeg.export.v1"
+        private const val UDEG_NODE_CONTEXTS_DIR = "udeg-node-contexts"
         private const val ARTIFACT_INDEX_FILE = "index.json"
         const val UDEG_DECISION_PATH =
             "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"

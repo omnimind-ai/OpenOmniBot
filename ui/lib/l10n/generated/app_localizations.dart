@@ -4220,6 +4220,96 @@ abstract class AppLocalizations {
   /// **'更新失败'**
   String get functionLibraryEditFailed;
 
+  /// No description provided for @functionLibraryStepEditTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑步骤'**
+  String get functionLibraryStepEditTitle;
+
+  /// No description provided for @functionLibraryStepTitleLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤标题'**
+  String get functionLibraryStepTitleLabel;
+
+  /// No description provided for @functionLibraryStepToolLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作工具'**
+  String get functionLibraryStepToolLabel;
+
+  /// No description provided for @functionLibraryStepArgsLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'参数 JSON'**
+  String get functionLibraryStepArgsLabel;
+
+  /// No description provided for @functionLibraryStepToolRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作工具不能为空'**
+  String get functionLibraryStepToolRequired;
+
+  /// No description provided for @functionLibraryStepArgsInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'参数必须是有效的 JSON 对象'**
+  String get functionLibraryStepArgsInvalid;
+
+  /// No description provided for @functionLibraryStepArgsObjectRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'参数必须是 JSON 对象'**
+  String get functionLibraryStepArgsObjectRequired;
+
+  /// No description provided for @functionLibraryStepEditMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到要修改的步骤'**
+  String get functionLibraryStepEditMissing;
+
+  /// No description provided for @functionLibraryStepSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤已保存'**
+  String get functionLibraryStepSaved;
+
+  /// No description provided for @functionLibraryStepKeepOne.
+  ///
+  /// In zh, this message translates to:
+  /// **'复用指令至少保留一个步骤'**
+  String get functionLibraryStepKeepOne;
+
+  /// No description provided for @functionLibraryStepDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除步骤'**
+  String get functionLibraryStepDeleteTitle;
+
+  /// No description provided for @functionLibraryStepDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除「{name}」？保存后该动作不再重放。'**
+  String functionLibraryStepDeleteConfirm(Object name);
+
+  /// No description provided for @functionLibraryStepDeleteMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到要删除的步骤'**
+  String get functionLibraryStepDeleteMissing;
+
+  /// No description provided for @functionLibraryStepDeleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤已删除'**
+  String get functionLibraryStepDeleted;
+
+  /// No description provided for @functionLibraryStepSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存步骤失败'**
+  String get functionLibraryStepSaveFailed;
+
   /// No description provided for @functionLibraryDelete.
   ///
   /// In zh, this message translates to:
@@ -5347,6 +5437,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'命令'**
   String get chatInputCommandTooltip;
+
+  /// No description provided for @chatInputTrajectoryTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'轨迹'**
+  String get chatInputTrajectoryTooltip;
+
+  /// No description provided for @chatInputViewTrajectories.
+  ///
+  /// In zh, this message translates to:
+  /// **'已有轨迹'**
+  String get chatInputViewTrajectories;
+
+  /// No description provided for @chatInputViewTrajectoriesTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看已有轨迹'**
+  String get chatInputViewTrajectoriesTooltip;
+
+  /// No description provided for @chatInputViewCurrentTrajectory.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前轨迹'**
+  String get chatInputViewCurrentTrajectory;
+
+  /// No description provided for @chatInputViewCurrentTrajectoryTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看上一条轨迹'**
+  String get chatInputViewCurrentTrajectoryTooltip;
+
+  /// No description provided for @chatInputRecordTrajectory.
+  ///
+  /// In zh, this message translates to:
+  /// **'录制轨迹'**
+  String get chatInputRecordTrajectory;
+
+  /// No description provided for @chatInputRecordTrajectoryTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始录制一条轨迹'**
+  String get chatInputRecordTrajectoryTooltip;
 
   /// No description provided for @workbenchTitle.
   ///

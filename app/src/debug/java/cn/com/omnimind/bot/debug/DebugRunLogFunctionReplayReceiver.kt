@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Base64
+import com.google.gson.reflect.TypeToken
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import com.google.gson.GsonBuilder
@@ -29,6 +30,9 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
         val goal = intent.decodeBase64Extra("goalBase64")
             ?: intent?.getStringExtra("goal").orEmpty()
         val shouldRun = intent?.getBooleanExtra("run", true) ?: true
+        val rawRunLog = intent.decodeBase64Extra("runLogBase64")
+            ?.let(::decodeRunLog)
+            ?: emptyMap()
 
         scope.launch {
             val result = runCatching {
@@ -37,6 +41,10 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
                     "run_id" to runId,
                     "register" to true,
                 )
+                if (rawRunLog.isNotEmpty()) {
+                    convertArgs.remove("run_id")
+                    convertArgs["run_log"] = rawRunLog
+                }
                 functionId.takeIf { it.isNotBlank() }?.let {
                     convertArgs["function_id"] = it
                 }
@@ -47,10 +55,18 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
                     convertArgs["description"] = it
                 }
 
-                val convert = service.convertRunLog(convertArgs)
+                val convert = if (rawRunLog.isNotEmpty()) {
+                    service.ingestRunLog(linkedMapOf("run_log" to rawRunLog))
+                } else {
+                    service.convertRunLog(convertArgs)
+                }
                 val createdFunctionId = convert["function_id"]?.toString()
                     ?: convert["created_function_id"]?.toString()
                     ?: ""
+                val convertResult = (convert["result"] as? Map<*, *>)
+                    ?.mapKeys { it.key?.toString().orEmpty() }
+                    ?: emptyMap<String, Any?>()
+                val functionSpec = convert["function_spec"] ?: convertResult["function_spec"]
                 val replay = if (shouldRun && convert["success"] == true && createdFunctionId.isNotBlank()) {
                     service.callFunction(
                         linkedMapOf(
@@ -65,9 +81,14 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
 
                 linkedMapOf<String, Any?>(
                     "success" to (convert["success"] == true && (replay?.get("success") != false)),
-                    "run_id" to runId,
+                    "run_id" to (
+                        convert["run_id"] ?: runId.ifBlank {
+                            rawRunLog["run_id"] ?: rawRunLog["runId"]
+                        }
+                    ),
                     "function_id" to createdFunctionId,
                     "convert" to convert,
+                    "function_spec" to functionSpec,
                     "replay" to replay,
                     "run_requested" to shouldRun,
                 )
@@ -92,6 +113,7 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "DebugRunLogFunctionReplayReceiver"
         private val gson = GsonBuilder().disableHtmlEscaping().create()
+        private val mapType = object : TypeToken<Map<String, Any?>>() {}.type
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 
@@ -101,6 +123,13 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
             String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8).trim()
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
+    }
+
+    private fun decodeRunLog(rawJson: String): Map<String, Any?> {
+        return runCatching {
+            val decoded = gson.fromJson<Map<String, Any?>>(rawJson, mapType)
+            decoded ?: emptyMap()
+        }.getOrDefault(emptyMap())
     }
 
     private fun Throwable.fullMessage(): String {

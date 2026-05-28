@@ -13,10 +13,12 @@ class ManualRecordingResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final success = cardData['success'] == true;
-    final recordingSuccess = cardData['recordingSuccess'] == true ||
+    final recordingSuccess =
+        cardData['recordingSuccess'] == true ||
         cardData['recording_success'] == true ||
         success;
-    final conversionSuccess = cardData['conversionSuccess'] == true ||
+    final conversionSuccess =
+        cardData['conversionSuccess'] == true ||
         cardData['conversion_success'] == true;
     final runId = (cardData['runId'] ?? cardData['run_id'] ?? '')
         .toString()
@@ -27,12 +29,41 @@ class ManualRecordingResultCard extends StatelessWidget {
     final functionId = (cardData['functionId'] ?? cardData['function_id'] ?? '')
         .toString()
         .trim();
+    final diagnostics = _asMap(cardData['diagnostics']);
+    final manualDiagnostics = _asMap(diagnostics['manual_recording']);
+    final rawTouchDiagnostics = _asMap(diagnostics['raw_touch']);
+    final completeness = (manualDiagnostics['completeness'] ?? '')
+        .toString()
+        .trim();
+    final actionSource = (manualDiagnostics['action_source'] ?? '')
+        .toString()
+        .trim();
+    final guaranteesNoMissingClicks =
+        manualDiagnostics['guarantees_no_missing_clicks'] == true;
+    final recordingMode = switch (actionSource) {
+      'mixed' => '混合采集',
+      'raw_touch' || 'raw_touch_only' => completeness == 'raw_touch_interrupted'
+          ? 'raw 中断'
+          : 'raw touch',
+      'accessibility_event' => 'A11 事件',
+      _ => rawTouchDiagnostics['available'] == true ? 'raw touch' : 'A11 事件',
+    };
+    final warning =
+        (cardData['warningMessage'] ??
+                cardData['warning_message'] ??
+                cardData['recordingWarning'] ??
+                cardData['recording_warning'] ??
+                manualDiagnostics['warning_message'] ??
+                '')
+            .toString()
+            .trim();
     final error = (cardData['errorMessage'] ?? cardData['error_message'] ?? '')
         .toString()
         .trim();
-    final statusColor = recordingSuccess
-        ? const Color(0xFF5B21B6)
-        : const Color(0xFFE05243);
+    final hasWarning = recordingSuccess && warning.isNotEmpty;
+    final statusColor = !recordingSuccess
+        ? const Color(0xFFE05243)
+        : (hasWarning ? const Color(0xFFD97706) : const Color(0xFF5B21B6));
     final backgroundColor = context.isDarkTheme
         ? Color.alphaBlend(
             statusColor.withValues(alpha: 0.10),
@@ -87,7 +118,11 @@ class ManualRecordingResultCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             recordingSuccess
-                                ? (conversionSuccess ? '手动录制完成' : '手动录制已保存')
+                                ? (hasWarning
+                                      ? '手动录制已保存'
+                                      : (conversionSuccess
+                                            ? '手动录制完成'
+                                            : '手动录制已保存'))
                                 : '手动录制失败',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -107,12 +142,30 @@ class ManualRecordingResultCard extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         _Tag(label: 'steps', value: actionCount.toString()),
+                        if (recordingMode.isNotEmpty)
+                          _Tag(label: 'source', value: recordingMode),
+                        if (recordingSuccess && guaranteesNoMissingClicks)
+                          const _Tag(label: '完整性', value: '无遗漏'),
                         if (runId.isNotEmpty)
                           _Tag(label: 'runlog', value: runId),
                         if (functionId.isNotEmpty)
                           _Tag(label: '复用指令', value: functionId),
                       ],
                     ),
+                    if (warning.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        warning,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                     if (error.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -185,4 +238,12 @@ int _asInt(dynamic value) {
   if (value is int) return value;
   if (value is num) return value.round();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, item) => MapEntry(key.toString(), item));
+  }
+  return const <String, dynamic>{};
 }

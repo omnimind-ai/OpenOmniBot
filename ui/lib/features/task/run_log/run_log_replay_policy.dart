@@ -7,7 +7,6 @@ class RunLogReplayPolicy {
     'click',
     'long_press',
     'scroll',
-    'type',
     'input_text',
     'swipe',
     'open_app',
@@ -26,6 +25,7 @@ class RunLogReplayPolicy {
     'longclick': 'long_press',
     'long_click': 'long_press',
     'longpress': 'long_press',
+    'type': 'input_text',
     'type_text': 'input_text',
     'set_text': 'input_text',
     'settext': 'input_text',
@@ -48,6 +48,7 @@ class RunLogReplayPolicy {
   static const coordinateActions = <String>{
     'click',
     'long_press',
+    'input_text',
     'scroll',
     'swipe',
   };

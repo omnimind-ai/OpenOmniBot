@@ -492,6 +492,7 @@ open class VLMOperationTask(
             "package_name" to action.packageName,
             "compile_kind" to "manual_recording",
             "source" to "human_takeover",
+            "event_context" to action.eventContext.takeIf { it.isNotEmpty() },
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "tool_call" to linkedMapOf(
                 "id" to cardId,
@@ -519,6 +520,9 @@ open class VLMOperationTask(
 
     private fun sourceContextForManualAction(action: ManualVlmRecordedAction): Map<String, Any?> {
         val beforeXml = action.beforeXml?.takeIf { it.isNotBlank() } ?: return emptyMap()
+        val recordingBackend = action.params["recording_backend"]?.toString()
+            ?.takeIf { it.isNotBlank() }
+            ?: "accessibility_event"
         val actionMap = linkedMapOf<String, Any?>("tool" to action.actionName)
         action.params.forEach { (key, value) ->
             if (value != null) actionMap[key] = value
@@ -537,8 +541,9 @@ open class VLMOperationTask(
             "action" to actionMap,
             "_oob_meta" to linkedMapOf(
                 "mode" to "manual_operation_recording",
-                "recording_backend" to "accessibility_event"
-            )
+                "recording_backend" to recordingBackend,
+                "event_context" to action.eventContext.takeIf { it.isNotEmpty() }
+            ).filterValues { it != null }
         ).filterValues { it != null }
     }
 

@@ -463,9 +463,10 @@ class ShowInfoView @JvmOverloads constructor(
         catDialogShowInfoView: CatDialogShowInfoView,
         catDialogShowInfoViewLayoutParams: WindowManager.LayoutParams,
         windowManager: WindowManager,
+        isPaused: Boolean = false,
     ) {
         clearAllAminAndDelay()
-        applyLearningActionStyle()
+        applyLearningActionStyle(isPaused)
         visibility = VISIBLE
         layoutParams?.let { params ->
             params.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -477,7 +478,7 @@ class ShowInfoView @JvmOverloads constructor(
         llResume?.visibility = GONE
         llTakeOver?.visibility = VISIBLE
         llStop?.visibility = VISIBLE
-        llTakeOver?.contentDescription = "取消手动录制"
+        llTakeOver?.contentDescription = if (isPaused) "继续手动录制" else "暂停手动录制"
         llStop?.contentDescription = "完成学习"
         gradientBorderContainer?.cornerRadiusProgress = 0.0f
         innerRelativeLayout?.setPadding(12.dpToPx(), 12.dpToPx(), 12.dpToPx(), 12.dpToPx())
@@ -547,11 +548,11 @@ class ShowInfoView @JvmOverloads constructor(
         llStopTextView?.setTextColor("#16794A".toColorInt())
     }
 
-    private fun applyLearningActionStyle() {
+    private fun applyLearningActionStyle(isPaused: Boolean = false) {
         borderColorType = GradientBorderContainerView.BorderColor.PURPLE
         llTakeOver?.setBackgroundResource(R.drawable.bg_learning_action_cancel)
         llStop?.setBackgroundResource(R.drawable.bg_learning_action_complete)
-        llTakeOverTextView?.text = "取消"
+        llTakeOverTextView?.text = if (isPaused) "继续" else "暂停"
         llTakeOverTextView?.setTextColor("#5F3DC4".toColorInt())
         llStopTextView?.text = "完成学习"
         llStopTextView?.setTextColor("#5B21B6".toColorInt())

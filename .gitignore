@@ -31,6 +31,8 @@ testbot/build
 log.txt
 
 output/
+outputs/
+runtime/
 
 workspace/
 *.egg-info/

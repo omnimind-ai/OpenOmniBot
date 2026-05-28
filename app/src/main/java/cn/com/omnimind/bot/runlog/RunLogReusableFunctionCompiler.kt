@@ -20,13 +20,20 @@ object RunLogReusableFunctionCompiler {
                 cardToStep(
                     card = card,
                     skipPerceptionTools = hasRecordedReplayStep,
-                    nextReplayableCard = compileCards.getOrNull(index + 1),
+                    nextReplayableCard = compileCards
+                        .asSequence()
+                        .drop(index + 1)
+                        .firstOrNull(::hasRecordedReplayStep),
                 )
             }
+        val replaySteps = dropDuplicateTextInputSteps(rawSteps)
         val stepsWithStart = prepareInitialOpenAppStep(
-            prependInitialOpenAppStepIfNeeded(replayableCards, rawSteps)
+            prependInitialOpenAppStepIfNeeded(replayableCards, replaySteps)
         )
-        val steps = stepsWithStart
+        val stepsAfterInitialLaunchBridgeDrop = dropRedundantInjectedLaunchBridgeStep(stepsWithStart)
+        val injectedLaunchBridgeDroppedCount =
+            stepsWithStart.size - stepsAfterInitialLaunchBridgeDrop.size
+        val steps = stepsAfterInitialLaunchBridgeDrop
             .mapIndexed { index, rawStep ->
                 linkedMapOf<String, Any?>().apply {
                     putAll(rawStep)
@@ -82,6 +89,7 @@ object RunLogReusableFunctionCompiler {
                 "replayable_card_count" to replayableCards.size,
                 "compiled_replayable_card_count" to compileCards.size,
                 "transient_startup_bridge_dropped_count" to droppedStartupBridgeCount,
+                "injected_launch_bridge_step_dropped_count" to injectedLaunchBridgeDroppedCount,
                 "converted_at" to now,
                 "converter" to "native_run_log_reusable_function_builder",
                 "parameter_inference" to linkedMapOf(
@@ -121,6 +129,103 @@ object RunLogReusableFunctionCompiler {
                 "goal" to normalizedGoal,
                 "source" to "vlm_settings_toggle_completion",
             )
+        )
+    }
+
+    /**
+     * Drops repeated text-input steps emitted by noisy accessibility text events.
+     *
+     * @param steps Already canonicalized replay steps in source order.
+     * @return A step list where consecutive duplicate text input on the same
+     * target is represented once.
+     */
+    private fun dropDuplicateTextInputSteps(
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.size < 2) return steps
+        val output = mutableListOf<Map<String, Any?>>()
+        steps.forEach { step ->
+            val previous = output.lastOrNull()
+            if (previous != null && isDuplicateTextInputStep(previous, step)) {
+                return@forEach
+            }
+            output += step
+        }
+        return output
+    }
+
+    /**
+     * Checks whether two adjacent steps describe the same final text value.
+     *
+     * @param previous Earlier kept step.
+     * @param current Candidate step immediately after [previous].
+     * @return True when both are input-text actions with identical text and a
+     * compatible target signature.
+     */
+    private fun isDuplicateTextInputStep(
+        previous: Map<String, Any?>,
+        current: Map<String, Any?>,
+    ): Boolean {
+        if (replayActionForStep(previous) !in INPUT_TEXT_ACTIONS) return false
+        if (replayActionForStep(current) !in INPUT_TEXT_ACTIONS) return false
+        val previousText = textInputValue(previous)
+        val currentText = textInputValue(current)
+        if (previousText.isBlank() || previousText != currentText) return false
+        val previousTarget = textInputTargetSignature(previous)
+        val currentTarget = textInputTargetSignature(current)
+        return previousTarget.isNotBlank() && previousTarget == currentTarget
+    }
+
+    /**
+     * Resolves the canonical replay action carried by a compiled step.
+     *
+     * @param step Compiled execution step.
+     * @return Canonical action name, preserving unknown tool names for callers
+     * that need to compare non-OmniFlow steps.
+     */
+    private fun replayActionForStep(step: Map<String, Any?>): String {
+        val rawAction = firstNonBlank(
+            step["omniflow_action"],
+            step["local_action"],
+            step["tool"],
+            step["callable_tool"],
+        )
+        return RunLogReplayPolicy.omniflowActionForToolName(rawAction)
+            ?: RunLogReplayPolicy.normalizeToolName(rawAction)
+    }
+
+    /**
+     * Reads the text payload from a compiled input step.
+     *
+     * @param step Compiled execution step with an args map.
+     * @return The final text value that replay would input.
+     */
+    private fun textInputValue(step: Map<String, Any?>): String {
+        val args = asMap(step["args"])
+        return firstNonBlank(args["text"], args["content"], args["value"])
+    }
+
+    /**
+     * Builds a stable target signature for de-duplicating adjacent input steps.
+     *
+     * @param step Compiled execution step with args/source_context metadata.
+     * @return A compact target signature, or blank when the target is unknown.
+     */
+    private fun textInputTargetSignature(step: Map<String, Any?>): String {
+        val args = asMap(step["args"])
+        val sourceContext = asMap(step["source_context"])
+        val action = asMap(sourceContext["action"])
+        return firstNonBlank(
+            args["node_resource_id"],
+            action["node_resource_id"],
+            args["selector"],
+            action["selector"],
+            args["bounds"],
+            action["bounds"],
+            args["target_description"],
+            args["targetDescription"],
+            action["target_description"],
+            action["targetDescription"],
         )
     }
 
@@ -195,6 +300,103 @@ object RunLogReusableFunctionCompiler {
             putIfAbsent("route_note", "initial_open_app_fresh_launch")
         }
         return listOf(preparedFirst) + steps.drop(1)
+    }
+
+    private fun dropRedundantInjectedLaunchBridgeStep(
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.size < 2) return steps
+        val first = steps.first()
+        if (replayActionForStep(first) != "open_app") return steps
+        if (first["route_note"] != "injected_initial_package_from_runlog") return steps
+
+        val packageName = firstNonBlank(
+            asMap(first["args"])["package_name"],
+            asMap(first["args"])["packageName"],
+        )
+        if (!isLaunchableInitialPackageCandidate(packageName)) return steps
+
+        val candidate = steps[1]
+        if (replayActionForStep(candidate) != "click") return steps
+        if (!isInjectedLaunchBridgeClick(candidate, packageName, steps.drop(2))) {
+            return steps
+        }
+        return listOf(first) + steps.drop(2)
+    }
+
+    private fun isInjectedLaunchBridgeClick(
+        step: Map<String, Any?>,
+        launchedPackage: String,
+        followingSteps: List<Map<String, Any?>>,
+    ): Boolean {
+        val sourceContext = asMap(step["source_context"])
+        val srcCtx = asMap(sourceContext["src_ctx"])
+        val rawSourcePackage = firstNonBlank(
+            srcCtx["package_name"],
+            srcCtx["packageName"],
+        )
+        val sourceXml = firstNonBlank(srcCtx["page"], srcCtx["xml"])
+        val effectiveSourcePackage = RunLogPagePackageInference.effectivePackage(
+            rawSourcePackage,
+            sourceXml,
+        )
+        val followingUsesLaunchedPackage = followingSteps.any { following ->
+            stepMentionsPackage(following, launchedPackage)
+        }
+        if (!followingUsesLaunchedPackage) return false
+
+        if (isLauncherPackage(rawSourcePackage)) {
+            return true
+        }
+        return effectiveSourcePackage == launchedPackage &&
+            isSparseLaunchSurface(sourceXml, launchedPackage)
+    }
+
+    private fun stepMentionsPackage(
+        step: Map<String, Any?>,
+        packageName: String,
+    ): Boolean {
+        val args = asMap(step["args"])
+        val sourceContext = asMap(step["source_context"])
+        val srcCtx = asMap(sourceContext["src_ctx"])
+        val dstCtx = asMap(sourceContext["dst_ctx"])
+        return listOf(
+            firstNonBlank(args["package_name"], args["packageName"]),
+            effectivePackageForContext(srcCtx),
+            effectivePackageForContext(dstCtx),
+        ).any { it == packageName }
+    }
+
+    private fun effectivePackageForContext(context: Map<String, Any?>): String {
+        val rawPackage = firstNonBlank(context["package_name"], context["packageName"])
+        val xml = firstNonBlank(context["page"], context["xml"])
+        return RunLogPagePackageInference.effectivePackage(rawPackage, xml)
+    }
+
+    private fun isLauncherPackage(packageName: String): Boolean {
+        val normalized = packageName.trim().lowercase()
+        if (normalized.isEmpty()) return false
+        if (normalized.contains("launcher")) return true
+        return normalized in setOf(
+            "com.bbk.launcher2",
+            "com.google.android.apps.nexuslauncher",
+            "com.android.launcher",
+            "com.android.launcher2",
+            "com.android.launcher3",
+            "com.miui.home",
+            "com.huawei.android.launcher",
+            "com.oppo.launcher",
+            "com.sec.android.app.launcher",
+        )
+    }
+
+    private fun isSparseLaunchSurface(xml: String, packageName: String): Boolean {
+        if (xml.isBlank()) return false
+        val vector = OobPageVectorSet.encode(xml, packageName) ?: return false
+        return vector.packageName == packageName &&
+            vector.displayTextCount == 0 &&
+            vector.elementCount <= 4 &&
+            vector.actionableCount <= 2
     }
 
     private fun initialReplayPackage(
@@ -386,9 +588,32 @@ object RunLogReusableFunctionCompiler {
             action == "type" || action == "input_text" -> nullableMap(
                 "type" to "input_text",
                 "text" to inputTextValue(args, index, parameterTemplates),
+                "target" to coordinateTarget(args).takeIf {
+                    it["x"] != null && it["y"] != null
+                },
+                "prompt" to firstNonBlank(
+                    args["target_description"],
+                    args["targetDescription"],
+                    args["label"],
+                    args["selector"],
+                ).takeIf { it.isNotBlank() },
                 "params" to nullableMap(
                     "selector" to firstNonBlank(args["selector"]).takeIf { it.isNotBlank() },
                     "clear" to args["clear"],
+                    "target_description" to firstNonBlank(
+                        args["target_description"],
+                        args["targetDescription"],
+                        args["label"],
+                    ).takeIf { it.isNotBlank() },
+                    "node_resource_id" to firstNonBlank(
+                        args["node_resource_id"],
+                        args["nodeResourceId"],
+                        args["resource_id"],
+                        args["resourceId"],
+                    ).takeIf { it.isNotBlank() },
+                    "bounds" to firstNonBlank(args["bounds"]).takeIf { it.isNotBlank() },
+                    "node_class" to firstNonBlank(args["node_class"], args["nodeClass"]).takeIf { it.isNotBlank() },
+                    "source_context" to sourceContext.takeIf { it.isNotEmpty() },
                 ).takeIf { it.isNotEmpty() },
                 "description" to description,
             )
@@ -1056,7 +1281,6 @@ object RunLogReusableFunctionCompiler {
             "kind" to "recorded_after_page_similarity",
             "source" to "run_log_after_observation",
             "min_score" to 0.12,
-            "fallback" to "agent",
         )
         if (isSettingsSearchTransition(replayAction, title, args, sourceContext)) {
             postcondition["allow_package_only_for_transient_search"] = true
@@ -1215,6 +1439,10 @@ object RunLogReusableFunctionCompiler {
             "duration",
             "duration_ms",
             "durationMs",
+            "node_resource_id",
+            "nodeResourceId",
+            "resource_id",
+            "resourceId",
         )) {
             if (actionArgs.containsKey(key) && actionArgs[key] != null) {
                 sourceAction[key] = actionArgs[key]
@@ -1233,7 +1461,7 @@ object RunLogReusableFunctionCompiler {
                     repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank() && repairedAfterXml != afterXml
                 },
             ).filterValues { value ->
-                value != null && value.toString().trim().isNotEmpty()
+                value != null && value.trim().isNotEmpty()
             }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
         ).filterValues { it != null }
@@ -1415,6 +1643,19 @@ object RunLogReusableFunctionCompiler {
     private const val TRANSIENT_BRIDGE_SOURCE_MAX_TEXTS = 3
     private const val TRANSIENT_BRIDGE_SOURCE_MAX_ACTIONABLES = 3
     private const val TRANSIENT_BRIDGE_MIN_STRENGTH_GAIN = 8
+    private const val SPARSE_LAUNCH_SURFACE_MAX_ELEMENTS = 4
+    private const val SPARSE_LAUNCH_SURFACE_MAX_ACTIONABLES = 2
+    private val KNOWN_LAUNCHER_PACKAGES = setOf(
+        "com.bbk.launcher2",
+        "com.google.android.apps.nexuslauncher",
+        "com.android.launcher",
+        "com.android.launcher2",
+        "com.android.launcher3",
+        "com.miui.home",
+        "com.huawei.android.launcher",
+        "com.oppo.launcher",
+        "com.sec.android.app.launcher",
+    )
     private val GENERIC_TARGET_TOKENS = setOf(
         "click",
         "clicked",

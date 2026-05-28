@@ -150,7 +150,6 @@ class ChatAppBar extends StatelessWidget {
         showWorkspacePaneButton && onWorkspacePaneTap != null;
     final showUpdateShortcutButton =
         showAppUpdateIndicator && onAppUpdateTap != null;
-    const showModeShortcutButton = true;
     final appBarBackgroundColor = showSurfaceSwitcher
         ? palette.pageBackground
         : palette.surfacePrimary;
@@ -171,7 +170,7 @@ class ChatAppBar extends StatelessWidget {
               final rightActionCount =
                   (showUpdateShortcutButton ? 1 : 0) +
                   (showWorkspaceButton ? 1 : 0) +
-                  (showModeShortcutButton ? 1 : 0);
+                  1;
               final rightReservedSpace =
                   rightActionCount * _kChatAppBarRightActionSlotWidth +
                   _kChatAppBarAccessoryGap;
@@ -323,27 +322,26 @@ class ChatAppBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (showModeShortcutButton)
-                          SizedBox(
-                            width: _kChatAppBarRightActionSlotWidth,
-                            height: _kChatAppBarRightActionSlotWidth,
-                            child: Center(
-                              child: _ChatAppBarModeShortcutButton(
-                                key: const ValueKey(
-                                  'chat-app-bar-pure-chat-button',
-                                ),
-                                iconTint: iconTint,
-                                isCodexLoading: isCodexLoading,
-                                isCodexSelected: isCodexSelected,
-                                isAgentSelected: isAgentSelected,
-                                isPureChatSelected: isPureChatSelected,
-                                isPureChatToggleLocked: isPureChatToggleLocked,
-                                onAgentTap: onAgentTap,
-                                onCodexTap: onCodexTap,
-                                onPureChatToggleTap: onPureChatToggleTap,
+                        SizedBox(
+                          width: _kChatAppBarRightActionSlotWidth,
+                          height: _kChatAppBarRightActionSlotWidth,
+                          child: Center(
+                            child: _ChatAppBarModeShortcutButton(
+                              key: const ValueKey(
+                                'chat-app-bar-pure-chat-button',
                               ),
+                              iconTint: iconTint,
+                              isCodexLoading: isCodexLoading,
+                              isCodexSelected: isCodexSelected,
+                              isAgentSelected: isAgentSelected,
+                              isPureChatSelected: isPureChatSelected,
+                              isPureChatToggleLocked: isPureChatToggleLocked,
+                              onAgentTap: onAgentTap,
+                              onCodexTap: onCodexTap,
+                              onPureChatToggleTap: onPureChatToggleTap,
                             ),
                           ),
+                        ),
                       ],
                     ),
                   ),
@@ -2405,6 +2403,8 @@ class ChatInputWrapper extends StatelessWidget {
   final ValueChanged<double>? onInputHeightChanged;
   final CodexPermissionMode? codexPermissionMode;
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
+  final FutureOr<void> Function()? onViewTrajectoriesTap;
+  final FutureOr<void> Function()? onViewCurrentTrajectoryTap;
   final FutureOr<void> Function()? onManualRecordingTap;
   final bool useIndependentSendButton;
   final bool translucent;
@@ -2437,6 +2437,8 @@ class ChatInputWrapper extends StatelessWidget {
     this.onInputHeightChanged,
     this.codexPermissionMode,
     this.onCodexPermissionModeChanged,
+    this.onViewTrajectoriesTap,
+    this.onViewCurrentTrajectoryTap,
     this.onManualRecordingTap,
     this.useIndependentSendButton = true,
     this.translucent = false,
@@ -2451,13 +2453,6 @@ class ChatInputWrapper extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (topBanner != null) ...[topBanner!, const SizedBox(height: 8)],
-          if (onManualRecordingTap != null) ...[
-            _ManualRecordingTestBlock(
-              isProcessing: isProcessing,
-              onTap: onManualRecordingTap!,
-            ),
-            const SizedBox(height: 8),
-          ],
           ChatInputArea(
             key: inputAreaKey,
             controller: controller,
@@ -2485,128 +2480,12 @@ class ChatInputWrapper extends StatelessWidget {
             codexPermissionMode: codexPermissionMode,
             onCodexPermissionModeChanged: onCodexPermissionModeChanged,
             onInputHeightChanged: onInputHeightChanged,
+            onViewTrajectoriesTap: onViewTrajectoriesTap,
+            onViewCurrentTrajectoryTap: onViewCurrentTrajectoryTap,
             onManualRecordingTap: onManualRecordingTap,
             useIndependentSendButton: useIndependentSendButton,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ManualRecordingTestBlock extends StatelessWidget {
-  const _ManualRecordingTestBlock({
-    required this.isProcessing,
-    required this.onTap,
-  });
-
-  final bool isProcessing;
-  final FutureOr<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final backgroundColor = context.isDarkTheme
-        ? palette.surfaceSecondary
-        : Colors.white;
-    final borderColor = context.isDarkTheme
-        ? palette.borderSubtle
-        : const Color(0xFFE3EAF4);
-    final accentColor = context.isDarkTheme
-        ? palette.accentPrimary
-        : const Color(0xFF2F65D9);
-    final iconBackground = context.isDarkTheme
-        ? accentColor.withValues(alpha: 0.18)
-        : const Color(0xFFEAF2FF);
-
-    return Semantics(
-      container: true,
-      label: '手动录制测试',
-      child: Container(
-        key: const ValueKey('manual-recording-test-block'),
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadowColor.withValues(alpha: 0.65),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: iconBackground,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.gesture_rounded, size: 19, color: accentColor),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '手动录制测试',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '点击后开始收集点击和简单滑动轨迹',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            SizedBox(
-              height: 34,
-              child: ElevatedButton.icon(
-                key: const ValueKey('manual-recording-start-button'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accentColor,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: context.isDarkTheme
-                      ? palette.surfaceElevated
-                      : const Color(0xFFD8E0EC),
-                  disabledForegroundColor: palette.textTertiary,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: const Text('开始手动录制'),
-                onPressed: isProcessing
-                    ? null
-                    : () => unawaited(Future<void>.sync(onTap)),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

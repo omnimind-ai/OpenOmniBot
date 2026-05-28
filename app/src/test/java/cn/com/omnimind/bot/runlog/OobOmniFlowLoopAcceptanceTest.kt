@@ -5,8 +5,6 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
-import cn.com.omnimind.bot.agent.AgentWorkspaceManager
-import cn.com.omnimind.bot.agent.SkillIndexService
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
@@ -435,6 +433,103 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `failed run logs are rejected before reusable function conversion`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val workspaceStore = WorkspaceFunctionStore(context.root)
+            val toolkit = OobOmniFlowToolkitService(context, workspaceStore)
+            val runId = "failed-run-log-${System.nanoTime()}"
+
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Open About phone settings",
+                source = "vlm_task",
+                toolName = "vlm_task",
+                operationDescription = "Open About phone settings",
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = linkedMapOf(
+                    "card_id" to "$runId-vlm-1",
+                    "tool_name" to "click",
+                    "title" to "点击 About phone",
+                    "success" to true,
+                    "args" to linkedMapOf(
+                        "target_description" to "About phone",
+                        "x" to 360,
+                        "y" to 968,
+                    ),
+                    "before" to linkedMapOf(
+                        "package_name" to "com.android.settings",
+                        "observation_xml" to SOURCE_XML,
+                    ),
+                    "after" to linkedMapOf(
+                        "package_name" to "com.android.settings",
+                        "observation_xml" to AFTER_XML,
+                    ),
+                )
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = false,
+                doneReason = "vlm_error",
+                errorMessage = "stream aborted",
+            )
+
+            val convert = toolkit.convertRunLog(
+                mapOf(
+                    "run_id" to runId,
+                    "register" to true,
+                )
+            )
+            assertEquals(false, convert["success"])
+            assertEquals("RUN_LOG_NOT_SUCCESSFUL", convert["error_code"])
+            assertEquals(null, convert["function_spec"])
+
+            val ingestById = toolkit.ingestRunLog(mapOf("run_id" to runId))
+            assertEquals(false, ingestById["accepted"])
+            assertEquals(false, ingestById["success"])
+            val ingestResult = ingestById["result"] as? Map<*, *>
+            assertEquals("RUN_LOG_NOT_SUCCESSFUL", ingestResult?.get("error_code"))
+
+            val ingestInline = toolkit.ingestRunLog(
+                mapOf(
+                    "run_log" to mapOf(
+                        "run_id" to "${runId}-inline",
+                        "goal" to "Open About phone settings",
+                        "success" to false,
+                        "cards" to listOf(
+                            mapOf(
+                                "tool_name" to "click",
+                                "success" to true,
+                                "args" to mapOf("x" to 360, "y" to 968),
+                            )
+                        ),
+                    )
+                )
+            )
+            assertEquals(false, ingestInline["accepted"])
+            assertEquals(false, ingestInline["success"])
+            val inlineResult = ingestInline["result"] as? Map<*, *>
+            assertEquals("RUN_LOG_NOT_SUCCESSFUL", inlineResult?.get("error_code"))
+
+            val autoRegister = OobRunLogReplayService(
+                context,
+                workspaceStore,
+            ).autoRegisterRecentRunLogs(limit = 20)
+            assertEquals(0, (autoRegister["eligible_count"] as Number).toInt())
+            assertEquals(1, (autoRegister["skipped_count"] as Number).toInt())
+            val listAfter = toolkit.listFunctions(mapOf("limit" to 10))
+            assertEquals(0, (listAfter["count"] as Number).toInt())
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `direct recall ranks functions attached to the page matched UDEG node`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -857,7 +952,7 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
-    fun `observed UDEG page writes structured skill artifact and skill index can scan it`() {
+    fun `observed UDEG page writes structured node context artifact outside skill repository`() {
         val context = TempFilesContext()
         try {
             val nodeStore = OobUdegNodeStore(context)
@@ -885,14 +980,8 @@ class OobOmniFlowLoopAcceptanceTest {
             assertNotNull(nodeFromArtifact["page_vector_set"])
             assertNotNull(nodeFromArtifact["skill_artifact"])
 
-            val workspaceManager = AgentWorkspaceManager(context)
-            val indexed = SkillIndexService(context, workspaceManager)
-                .listInstalledSkills()
-                .firstOrNull { it.metadata["node_id"] == nodeId }
-            assertNotNull(indexed)
-            assertEquals("oob_udeg_node_skill", indexed?.metadata?.get("kind"))
-            assertEquals(nodeId, indexed?.metadata?.get("node_id"))
-            assertEquals("page_match", indexed?.metadata?.get("activation"))
+            val skillRepoArtifactRoot = File(context.root, "workspace/.omnibot/skills/oob-udeg-node-skills")
+            assertFalse(skillRepoArtifactRoot.exists())
         } finally {
             context.root.deleteRecursively()
         }
@@ -928,9 +1017,12 @@ class OobOmniFlowLoopAcceptanceTest {
         assertEquals("oob_udeg_node_skill_artifact", artifact?.get("kind"))
         assertEquals(expectedPackage, artifact?.get("package_name"))
         assertEquals(OobUdegNodeStore.UDEG_DECISION_PATH, artifact?.get("decision_path"))
+        assertEquals("OobUdegNodeStore.memoryRoot", artifact?.get("indexed_by"))
         val paths = artifact?.get("paths") as? Map<*, *>
         val skillFile = File(paths?.get("skill_file_path")?.toString().orEmpty())
         val payloadFile = File(paths?.get("payload_path")?.toString().orEmpty())
+        assertTrue(skillFile.absolutePath.contains("/workspace/.omnibot/memory/omniflow/udeg-node-contexts/"))
+        assertFalse(skillFile.absolutePath.contains("/workspace/.omnibot/skills/"))
         assertTrue(skillFile.exists())
         assertTrue(payloadFile.exists())
         assertTrue(skillFile.readText().contains("metadata:"))
@@ -938,7 +1030,7 @@ class OobOmniFlowLoopAcceptanceTest {
         val payloadText = payloadFile.readText()
         assertTrue(payloadText.contains("\"page_match\""))
         assertTrue(payloadText.contains("\"page_vector\""))
-        val indexFile = File(context.root, "workspace/.omnibot/skills/oob-udeg-node-skills/index.json")
+        val indexFile = File(context.root, "workspace/.omnibot/memory/omniflow/udeg-node-contexts/index.json")
         assertTrue(indexFile.exists())
     }
 

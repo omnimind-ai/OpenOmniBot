@@ -4,7 +4,6 @@
     "click",
     "long_press",
     "scroll",
-    "type",
     "input_text",
     "swipe",
     "open_app",
@@ -22,6 +21,7 @@
     "longclick": "long_press",
     "long_click": "long_press",
     "longpress": "long_press",
+    "type": "input_text",
     "type_text": "input_text",
     "set_text": "input_text",
     "settext": "input_text",
@@ -43,6 +43,7 @@
   "coordinate_actions": [
     "click",
     "long_press",
+    "input_text",
     "scroll",
     "swipe"
   ],

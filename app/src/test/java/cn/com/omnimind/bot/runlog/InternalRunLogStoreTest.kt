@@ -148,6 +148,42 @@ class InternalRunLogStoreTest {
         }
     }
 
+    @Test
+    fun `timeline preserves run level diagnostics`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-diagnostics-${System.nanoTime()}"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Manual diagnostics",
+                source = "human_trajectory",
+                toolName = "human_trajectory"
+            )
+            InternalRunLogStore.updateDiagnostics(
+                context = context,
+                runId = runId,
+                diagnostics = linkedMapOf(
+                    "raw_touch" to linkedMapOf(
+                        "available" to true,
+                        "backend" to "device_getevent",
+                        "access_method" to "shizuku_session"
+                    )
+                )
+            )
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            val diagnostics = timeline["diagnostics"] as Map<*, *>
+            val rawTouch = diagnostics["raw_touch"] as Map<*, *>
+
+            assertEquals(true, rawTouch["available"])
+            assertEquals("device_getevent", rawTouch["backend"])
+            assertEquals("shizuku_session", rawTouch["access_method"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun runningCard(cardId: String, summary: String): Map<String, Any?> {
         return linkedMapOf(
             "card_id" to cardId,

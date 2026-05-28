@@ -80,6 +80,33 @@ the in-app Agent to use OmniFlow UI/native capabilities.
    `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
 2. Treat failed, empty, or non-replayable RunLogs as rejected.
 
+### Enhance a Saved RunLog Command
+
+Enhancement improves reuse ability without changing the execution structure.
+
+Allowed enhancement output:
+
+- Clearer reusable command name and description.
+- Per-step title and description.
+- Runtime parameter descriptors for existing non-coordinate step args, such as
+  contact name, phone number, search term, message text, date, URL, or target
+  object name.
+- `agent_reuse` metadata: `reuse_when`, `avoid_when`, `success_signal`,
+  `key_actions`, and contiguous `segments`.
+
+Hard boundaries:
+
+- Keep `function_id`, tool names, executors, step order, validation, fallback,
+  and concrete tool args unchanged.
+- Bind parameters only to existing args, for example
+  `$.execution.steps[2].args.text`. Do not bind coordinates, bounds, width, or
+  height.
+- Treat `agent_reuse.segments` as metadata for future selection or split review.
+  Do not assume they are already registered standalone commands.
+- Before replay, fill fresh argument values through `parameters.bindings`; a
+  recording with defaults like "妈妈" and a phone number should be reusable for
+  another contact and phone number through those bindings.
+
 ### Explore, Save, and Replay a New Path
 
 Use this only when recall misses and the user wants OOB to discover a reusable
@@ -101,6 +128,9 @@ local UI path. Keep the exploration bounded.
 
 Open OOB, go to Run Logs, select a successful run, inspect timeline cards,
 save it as a reusable command, inspect the generated spec/details, then save.
+If the command is already registered for that RunLog, open the existing command
+instead of registering a duplicate. Use Enhance when the user wants better
+reuse labels, runtime slots, key actions, or segment metadata.
 
 ### Run
 

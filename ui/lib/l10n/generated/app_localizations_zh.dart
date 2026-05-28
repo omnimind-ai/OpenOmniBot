@@ -2194,6 +2194,53 @@ class AppLocalizationsZh extends AppLocalizations {
   String get functionLibraryEditFailed => '更新失败';
 
   @override
+  String get functionLibraryStepEditTitle => '编辑步骤';
+
+  @override
+  String get functionLibraryStepTitleLabel => '步骤标题';
+
+  @override
+  String get functionLibraryStepToolLabel => '动作工具';
+
+  @override
+  String get functionLibraryStepArgsLabel => '参数 JSON';
+
+  @override
+  String get functionLibraryStepToolRequired => '动作工具不能为空';
+
+  @override
+  String get functionLibraryStepArgsInvalid => '参数必须是有效的 JSON 对象';
+
+  @override
+  String get functionLibraryStepArgsObjectRequired => '参数必须是 JSON 对象';
+
+  @override
+  String get functionLibraryStepEditMissing => '找不到要修改的步骤';
+
+  @override
+  String get functionLibraryStepSaved => '步骤已保存';
+
+  @override
+  String get functionLibraryStepKeepOne => '复用指令至少保留一个步骤';
+
+  @override
+  String get functionLibraryStepDeleteTitle => '删除步骤';
+
+  @override
+  String functionLibraryStepDeleteConfirm(Object name) {
+    return '确定删除「$name」？保存后该动作不再重放。';
+  }
+
+  @override
+  String get functionLibraryStepDeleteMissing => '找不到要删除的步骤';
+
+  @override
+  String get functionLibraryStepDeleted => '步骤已删除';
+
+  @override
+  String get functionLibraryStepSaveFailed => '保存步骤失败';
+
+  @override
   String get functionLibraryDelete => '删除';
 
   @override
@@ -2808,6 +2855,27 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatInputCommandTooltip => '命令';
+
+  @override
+  String get chatInputTrajectoryTooltip => '轨迹';
+
+  @override
+  String get chatInputViewTrajectories => '已有轨迹';
+
+  @override
+  String get chatInputViewTrajectoriesTooltip => '查看已有轨迹';
+
+  @override
+  String get chatInputViewCurrentTrajectory => '当前轨迹';
+
+  @override
+  String get chatInputViewCurrentTrajectoryTooltip => '查看上一条轨迹';
+
+  @override
+  String get chatInputRecordTrajectory => '录制轨迹';
+
+  @override
+  String get chatInputRecordTrajectoryTooltip => '开始录制一条轨迹';
 
   @override
   String get workbenchTitle => '工作台';

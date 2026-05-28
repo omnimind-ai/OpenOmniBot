@@ -181,6 +181,45 @@ class OobPageVectorSetTest {
         }
     }
 
+    @Test
+    fun `udeg store saves captured state artifacts and exports sanitized bundle`() {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val store = OobUdegNodeStore(context)
+            val observedPage = OobUdegNodeStore.ObservedPage(
+                pageXml = SOURCE_XML,
+                packageName = "com.example.settings",
+                activityName = "SettingsActivity",
+                screenshotBase64 = "data:image/jpeg;base64,ZmFrZQ==",
+                goal = "save current settings page",
+            )
+            val observed = requireNotNull(store.observePage(observedPage))
+            val artifact = store.saveCapturedState(
+                observedPage = observedPage,
+                observation = observed,
+                screenshotBytes = "fake".toByteArray(),
+                capturedAtMs = 1234L,
+            )
+
+            assertTrue(java.io.File(artifact.xmlPath).exists())
+            assertTrue(java.io.File(artifact.screenshotPath!!).exists())
+            assertTrue(java.io.File(artifact.manifestPath).exists())
+            assertEquals(observed.node["node_id"], artifact.nodeId)
+
+            val export = store.exportBundle()
+            assertEquals(true, export["success"])
+            assertEquals("oob.udeg.export.v1", export["schema_version"])
+            assertTrue(java.io.File(export["export_path"].toString()).exists())
+            val payload = export["payload"] as? Map<*, *>
+            assertEquals("oob_udeg_export", payload?.get("kind"))
+            assertEquals(false, (payload?.get("privacy") as? Map<*, *>)?.get("export_contains_raw_xml"))
+            assertTrue((payload?.get("nodes") as? List<*>)?.isNotEmpty() == true)
+            assertFalse(payload.toString().contains(SOURCE_XML.trim()))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun functionSpecWithSourcePage(functionId: String, xml: String): Map<String, Any?> = mapOf(
         "schema_version" to "oob.reusable_function.v1",
         "function_id" to functionId,

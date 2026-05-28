@@ -165,6 +165,36 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `skipped get state card does not repair previous action with evidence observation`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Open", "x" to 120, "y" to 240),
+                    beforeXml = SOURCE_XML,
+                ),
+                card(
+                    "get_state",
+                    mapOf("reason" to "manual UDEG capture"),
+                    beforeXml = SETTINGS_XML,
+                ),
+                card(
+                    "input_text",
+                    mapOf("target_description" to "Search", "text" to "query"),
+                    beforeXml = AFTER_XML,
+                ),
+            ),
+            runId = "run-get-state-between-actions",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("click", "input_text"), steps.map { it["tool"] })
+        val clickSourceContext = steps.first()["source_context"] as Map<*, *>
+        val clickDstCtx = clickSourceContext["dst_ctx"] as Map<*, *>
+        assertEquals(AFTER_XML, clickDstCtx["page"])
+    }
+
+    @Test
     fun `settings toggle run log exports terminal postcondition`() {
         val spec = compile(
             listOf(
@@ -208,7 +238,7 @@ class RunLogReusableFunctionCompilerTest {
 
         assertEquals(AFTER_XML, dstCtx["page"])
         assertEquals("recorded_after_page_similarity", postcondition["kind"])
-        assertEquals("agent", postcondition["fallback"])
+        assertFalse(postcondition.containsKey("fallback"))
     }
 
     @Test
@@ -728,7 +758,38 @@ class RunLogReusableFunctionCompilerTest {
 
         val steps = stepsFrom(spec)
         assertEquals(1, steps.size)
-        assertEquals("type", steps[0]["tool"])
+        assertEquals("input_text", steps[0]["tool"])
+        assertEquals("type", steps[0]["source_tool"])
+        assertEquals("hello", (steps[0]["args"] as Map<*, *>)["content"])
+    }
+
+    @Test
+    fun `duplicate legacy type events compile to one input text step`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "type",
+                    mapOf(
+                        "content" to "hello",
+                        "target_description" to "Search",
+                        "node_resource_id" to "search_box",
+                    ),
+                ),
+                card(
+                    "input_text",
+                    mapOf(
+                        "text" to "hello",
+                        "target_description" to "Search",
+                        "node_resource_id" to "search_box",
+                    ),
+                ),
+            ),
+            runId = "run-duplicate-type",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(1, steps.size)
+        assertEquals("input_text", steps[0]["tool"])
         assertEquals("hello", (steps[0]["args"] as Map<*, *>)["content"])
     }
 
@@ -793,6 +854,49 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `injected open app drops redundant sparse launch bridge click`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "知乎", "x" to 485, "y" to 2089),
+                    beforeXml = ZHIHU_LAUNCH_XML,
+                    afterXml = ZHIHU_LAUNCH_XML,
+                    beforePackage = "com.bbk.launcher2",
+                    afterPackage = "com.bbk.launcher2",
+                    title = "人工点击 知乎",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+                card(
+                    "input_text",
+                    mapOf(
+                        "target_description" to "搜索知乎内容",
+                        "text" to "2",
+                        "node_resource_id" to "com.zhihu.android:id/input_text",
+                    ),
+                    beforeXml = ZHIHU_SEARCH_XML,
+                    afterXml = ZHIHU_SEARCH_XML,
+                    beforePackage = "com.zhihu.android",
+                    afterPackage = "com.zhihu.android",
+                    title = "人工输入文本",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-human-launcher-bridge",
+        )
+
+        val steps = stepsFrom(spec)
+        assertEquals(listOf("open_app", "input_text"), steps.map { it["tool"] })
+        assertEquals(
+            "com.zhihu.android",
+            (steps[0]["args"] as Map<*, *>)["package_name"],
+        )
+        assertEquals(1, (spec["source"] as Map<*, *>)["injected_launch_bridge_step_dropped_count"])
+    }
+
+    @Test
     fun `text input run log infers callable parameter and materializes changed argument`() {
         val spec = compile(
             listOf(
@@ -825,6 +929,51 @@ class RunLogReusableFunctionCompilerTest {
 
         val defaulted = OobReusableFunctionStore.materialize(spec, emptyMap())
         assertEquals("hello", (stepsFrom(defaulted).single()["args"] as Map<*, *>)["text"])
+    }
+
+    @Test
+    fun `input text action preserves target grounding for action only specs`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "input_text",
+                    mapOf(
+                        "target_description" to "First name",
+                        "text" to "Alice",
+                        "x" to 180,
+                        "y" to 232,
+                        "node_resource_id" to "app:id/first_name",
+                        "bounds" to "[100,200][300,280]",
+                    ),
+                    beforeXml = SOURCE_XML,
+                    afterXml = AFTER_XML,
+                ),
+            ),
+            runId = "run-input-target-grounding",
+        )
+
+        val action = actionsFrom(spec).single()
+        val target = action["target"] as Map<*, *>
+        val params = action["params"] as Map<*, *>
+        assertEquals(180, target["x"])
+        assertEquals(232, target["y"])
+        assertEquals("First name", action["prompt"])
+        assertEquals("app:id/first_name", params["node_resource_id"])
+        assertNotNull(params["source_context"])
+
+        val actionOnlySpec = linkedMapOf<String, Any?>().apply {
+            putAll(spec)
+            remove("execution")
+        }
+        val materializedActionOnly = OobReusableFunctionStore.materialize(actionOnlySpec, emptyMap())
+        val rebuiltStep = OobFunctionSchemaBuilder.materializedSteps(materializedActionOnly).single()
+        val rebuiltArgs = rebuiltStep["args"] as Map<*, *>
+        assertEquals("Alice", rebuiltArgs["text"])
+        assertEquals("First name", rebuiltArgs["target_description"])
+        assertEquals(180, rebuiltArgs["x"])
+        assertEquals(232, rebuiltArgs["y"])
+        assertEquals("app:id/first_name", rebuiltArgs["node_resource_id"])
+        assertEquals("omniflow", rebuiltStep["coordinate_hook"])
     }
 
     @Test
@@ -981,5 +1130,9 @@ class RunLogReusableFunctionCompilerTest {
             "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1280]\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\"><node bounds=\"[0,176][720,1072]\" package=\"com.google.android.deskclock\" class=\"android.view.ViewGroup\" resource-id=\"com.google.android.deskclock:id/desk_clock_pager\"><node bounds=\"[256,420][464,520]\" text=\"Timer\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\" resource-id=\"com.google.android.deskclock:id/timer_title\"/></node><node bounds=\"[288,1072][432,1232]\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" resource-id=\"com.google.android.deskclock:id/tab_menu_timer\"><node bounds=\"[318,1168][402,1209]\" text=\"Timer\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node><node bounds=\"[432,1072][576,1232]\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" content-desc=\"Stopwatch\" resource-id=\"com.google.android.deskclock:id/tab_menu_stopwatch\"><node bounds=\"[433,1168][575,1209]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node></node></hierarchy>"
         private const val CLOCK_STOPWATCH_XML =
             "<hierarchy bounds=\"[0,0][720,1280]\"><node bounds=\"[0,0][720,1280]\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\"><node bounds=\"[0,176][720,1072]\" package=\"com.google.android.deskclock\" class=\"android.view.ViewGroup\" resource-id=\"com.google.android.deskclock:id/desk_clock_pager\"><node bounds=\"[216,370][504,460]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/><node bounds=\"[300,780][420,900]\" content-desc=\"Start\" clickable=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.Button\"/></node><node bounds=\"[432,1072][576,1232]\" clickable=\"true\" selected=\"true\" package=\"com.google.android.deskclock\" class=\"android.widget.FrameLayout\" content-desc=\"Stopwatch\" resource-id=\"com.google.android.deskclock:id/tab_menu_stopwatch\"><node bounds=\"[433,1168][575,1209]\" text=\"Stopwatch\" package=\"com.google.android.deskclock\" class=\"android.widget.TextView\"/></node></node></hierarchy>"
+        private const val ZHIHU_LAUNCH_XML =
+            "<hierarchy><node class=\"android.widget.FrameLayout\" bounds=\"[5,26][1251,2795]\"><node class=\"android.widget.RelativeLayout\" resource-id=\"com.zhihu.android:id/launch_layout\" clickable=\"true\" bounds=\"[5,26][1251,2795]\" /></node></hierarchy>"
+        private const val ZHIHU_SEARCH_XML =
+            "<hierarchy><node class=\"android.widget.FrameLayout\" package=\"com.zhihu.android\" bounds=\"[0,0][1260,2800]\"><node text=\"搜索知乎内容\" class=\"android.widget.EditText\" resource-id=\"com.zhihu.android:id/input_text\" clickable=\"true\" focusable=\"true\" focused=\"true\" editable=\"true\" bounds=\"[193,186][1162,257]\"/><node text=\"搜索\" class=\"android.widget.TextView\" resource-id=\"com.zhihu.android:id/search_button\" clickable=\"true\" bounds=\"[964,309][1162,414]\" /></node></hierarchy>"
     }
 }

@@ -19,6 +19,12 @@ object OmniflowStepExecutor {
         val meta: Map<String, Any?> = emptyMap(),
     )
 
+    class ExecutionException(
+        val errorCode: String,
+        message: String,
+        val diagnostics: Map<String, Any?> = emptyMap(),
+    ) : IllegalStateException(message)
+
     suspend fun currentPageSnapshotForRecovery(reason: String? = null): Map<String, Any?> =
         recoverySnapshotMap(readBackendSnapshot(), reason)
 
@@ -84,29 +90,23 @@ object OmniflowStepExecutor {
         if (actionRequiresAccessibility(action) && !backend.isReady()) {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
-        preActionSatisfiedPostcondition(step, action)?.let { postcondition ->
-            return linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to action,
-                "executor" to "omniflow",
-                "model_free" to true,
-                "success" to true,
-                "skipped" to true,
-                "skip_reason" to "pre_action_postcondition_satisfied",
-                "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: action),
-                "postcondition" to postcondition,
-            )
-        }
+        val preTransferControls = runPreTransferControls(action, normalizeArgsMap(step["args"]))
         val remapResult = remapStepArgsWithRetries(step)
         if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
             val applied = remapResult.meta["applied"] as? Boolean
             if (applied == false) {
                 val reason = remapResult.meta["reason"]?.toString()?.takeIf { it.isNotBlank() }
                     ?: "coordinate_remap_unavailable"
-                throw IllegalStateException("Coordinate remap failed: $reason")
+                throw ExecutionException(
+                    errorCode = "OOB_ACTION_TRANSFER_FAILED",
+                    message = "Action transfer failed: $reason",
+                    diagnostics = remapResult.meta,
+                )
             }
         }
         val args = normalizeArgsMap(remapResult.args)
+        val preActionControls = runBeforeActionControls(action, args)
+        val controlEffects = preTransferControls + preActionControls
         val summary = when (action) {
             "click" -> {
                 val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
@@ -146,7 +146,25 @@ object OmniflowStepExecutor {
             "type", "input_text" -> {
                 val text = stringArg(args, "content", "text", "value")
                     ?: throw IllegalArgumentException("$action requires content")
-                backend.inputTextToFocusedNode(text)
+                backend.inputText(
+                    text = text,
+                    targetDescription = stringArg(
+                        args,
+                        "target_description",
+                        "targetDescription",
+                        "label",
+                        "selector",
+                    ).orEmpty(),
+                    x = numberArg(args, "x", "center_x", "centerX")?.toFloat(),
+                    y = numberArg(args, "y", "center_y", "centerY")?.toFloat(),
+                    nodeResourceId = stringArg(
+                        args,
+                        "node_resource_id",
+                        "nodeResourceId",
+                        "resource_id",
+                        "resourceId",
+                    ).orEmpty(),
+                )
                 action
             }
 
@@ -180,7 +198,7 @@ object OmniflowStepExecutor {
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         delay(POST_STEP_DELAY_MS)
-        val postcondition = verifyPostcondition(step, action, args)
+        val checker = beforeActionCheckerSummary(action, remapResult.meta, controlEffects)
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
@@ -189,8 +207,14 @@ object OmniflowStepExecutor {
             "success" to true,
             "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
         ).apply {
-            if (postcondition.isNotEmpty()) {
-                put("postcondition", postcondition)
+            if (remapResult.meta.isNotEmpty()) {
+                put("action_transfer", remapResult.meta)
+            }
+            if (checker.isNotEmpty()) {
+                put("checker", checker)
+            }
+            if (controlEffects.isNotEmpty()) {
+                put("control_effects", controlEffects)
             }
         }
     }
@@ -238,7 +262,7 @@ object OmniflowStepExecutor {
             )
         }
         return when (tool) {
-            "click", "long_press" -> remapPointActionArgs(tool, args, sourceXml, currentXml)
+            "click", "long_press", "input_text" -> remapPointActionArgs(tool, args, sourceXml, currentXml)
             "scroll", "swipe" -> remapScrollActionArgs(tool, args, sourceXml, currentXml)
             else -> StepArgsResult(args)
         }
@@ -452,6 +476,71 @@ object OmniflowStepExecutor {
                 .takeIf { it.isNotBlank() && it != expectedPackage },
             "current_package" to currentPackage.takeIf { it.isNotBlank() },
         ).filterValues { it != null }
+    }
+
+    private fun beforeActionCheckerSummary(
+        action: String,
+        transfer: Map<String, Any?>,
+        controlEffects: List<Map<String, Any?>>,
+    ): Map<String, Any?> {
+        if (transfer.isEmpty() && controlEffects.isEmpty()) return emptyMap()
+        return mapOf(
+            "phase" to "before_action",
+            "effect" to "continue",
+            "verified" to true,
+            "action" to action,
+            "action_transfer_applied" to transfer["applied"],
+            "action_transfer_reason" to transfer["reason"],
+            "control_effect_count" to controlEffects.size.takeIf { it > 0 },
+            "controllers" to controlEffects.mapNotNull { it["controller"]?.toString() }
+                .takeIf { it.isNotEmpty() },
+        ).filterValues { it != null }
+    }
+
+    private suspend fun runPreTransferControls(
+        action: String,
+        args: Map<String, Any?>,
+    ): List<Map<String, Any?>> {
+        if (action == "finished" || action == "open_app") return emptyList()
+        if (targetLooksLikeDismiss(args)) return emptyList()
+        val snapshot = readBackendSnapshot()
+        val page = parsePageModel(snapshot.xml) ?: return emptyList()
+        val candidate = blockingOverlayDismissCandidate(page) ?: return emptyList()
+        OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return listOf(
+            linkedMapOf(
+                "phase" to "before_action",
+                "effect" to "run_actions",
+                "controller" to "dismiss_blocking_overlay",
+                "action" to "click",
+                "x" to candidate.centerX,
+                "y" to candidate.centerY,
+                "target_element" to summarizeNode(candidate),
+            )
+        )
+    }
+
+    private suspend fun runBeforeActionControls(
+        action: String,
+        args: Map<String, Any?>,
+    ): List<Map<String, Any?>> {
+        if (action !in setOf("click", "long_press", "scroll", "swipe")) return emptyList()
+        val snapshot = readBackendSnapshot()
+        val page = parsePageModel(snapshot.xml) ?: return emptyList()
+        val keyboardTop = keyboardTop(page) ?: return emptyList()
+        if (!actionTargetIntersectsKeyboard(action, args, keyboardTop)) return emptyList()
+        OmniflowActionRuntime.backend.hideKeyboard()
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return listOf(
+            linkedMapOf(
+                "phase" to "before_action",
+                "effect" to "run_actions",
+                "controller" to "hide_keyboard_if_obscuring",
+                "action" to "hide_keyboard",
+                "keyboard_top" to keyboardTop,
+            )
+        )
     }
 
     private suspend fun preActionSatisfiedPostcondition(
@@ -674,6 +763,119 @@ object OmniflowStepExecutor {
             node.contentDesc.isNotBlank() ||
             node.hintText.isNotBlank() ||
             (node.resourceId.isNotBlank() && !isGenericResourceId(node.resourceId))
+
+    private fun blockingOverlayDismissCandidate(page: PageModel): UiNode? {
+        val hasOverlayCue = page.nodes.any(::hasAdOrModalCue)
+        return page.nodes
+            .asSequence()
+            .filter { it.visible && it.enabled && it.area > 1f && it.interactive }
+            .mapNotNull { node ->
+                val score = dismissCandidateScore(node, page.rootBounds, hasOverlayCue)
+                if (score >= MIN_DISMISS_OVERLAY_SCORE) node to score else null
+            }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    private fun dismissCandidateScore(
+        node: UiNode,
+        rootBounds: Rect,
+        hasOverlayCue: Boolean,
+    ): Float {
+        val label = nodeLabelText(node)
+        val resource = node.resourceTail
+        val hasAdCue = hasAdOrModalCue(node)
+        val dismissByLabel = DISMISS_EXACT_LABELS.any { label == it } ||
+            DISMISS_CONTAINS_LABELS.any { label.contains(it) }
+        val dismissByResource = DISMISS_RESOURCE_TAILS.any { resource == it || resource.contains(it) }
+        if (!dismissByLabel && !dismissByResource) return 0f
+        if (!hasOverlayCue && !hasAdCue) return 0f
+
+        val rootArea = rootBounds.area.coerceAtLeast(1f)
+        val relativeArea = node.area / rootArea
+        val smallButtonScore = if (relativeArea <= 0.08f) 160f else -220f
+        val topRightScore = if (
+            node.centerX >= rootBounds.left + rootBounds.width * 0.60f &&
+            node.centerY <= rootBounds.top + rootBounds.height * 0.35f
+        ) {
+            130f
+        } else {
+            0f
+        }
+        val labelScore = when {
+            DISMISS_CONTAINS_LABELS.any { label.contains(it) } -> 520f
+            DISMISS_EXACT_LABELS.any { label == it } -> 420f
+            else -> 0f
+        }
+        val resourceScore = if (dismissByResource) 360f else 0f
+        val overlayScore = if (hasAdCue) 220f else 120f
+        return labelScore + resourceScore + overlayScore + smallButtonScore + topRightScore
+    }
+
+    private fun hasAdOrModalCue(node: UiNode): Boolean {
+        val text = nodeLabelText(node)
+        val classText = node.className.lowercase()
+        val resource = node.resourceId.lowercase()
+        return AD_OR_MODAL_TERMS.any { term ->
+            text.contains(term) || classText.contains(term) || resource.contains(term)
+        }
+    }
+
+    private fun targetLooksLikeDismiss(args: Map<String, Any?>): Boolean {
+        val target = listOf(
+            stringArg(args, "target_description", "targetDescription"),
+            stringArg(args, "label"),
+            stringArg(args, "selector"),
+        ).filterNotNull().joinToString(" ").lowercase()
+        return DISMISS_EXACT_LABELS.any { target == it } ||
+            DISMISS_CONTAINS_LABELS.any { target.contains(it) }
+    }
+
+    private fun keyboardTop(page: PageModel): Float? {
+        val rootHeight = page.rootBounds.height.coerceAtLeast(1f)
+        return page.nodes
+            .asSequence()
+            .filter { node ->
+                node.visible &&
+                    node.bounds.bottom >= page.rootBounds.bottom - rootHeight * 0.04f &&
+                    node.bounds.height >= rootHeight * 0.18f &&
+                    nodeLabelForKeyboard(node).let { label ->
+                        KEYBOARD_TERMS.any { label.contains(it) }
+                    }
+            }
+            .minOfOrNull { it.bounds.top }
+    }
+
+    private fun actionTargetIntersectsKeyboard(
+        action: String,
+        args: Map<String, Any?>,
+        keyboardTop: Float,
+    ): Boolean {
+        val threshold = keyboardTop - KEYBOARD_OBSCURE_MARGIN_PX
+        if (action == "scroll" || action == "swipe") {
+            val y1 = numberArg(args, "y1")?.toFloat()
+            val y2 = numberArg(args, "y2")?.toFloat()
+            return listOfNotNull(y1, y2).any { it >= threshold }
+        }
+        val y = numberArg(args, "y", "center_y", "centerY")?.toFloat() ?: return false
+        return y >= threshold
+    }
+
+    private fun nodeLabelText(node: UiNode): String =
+        listOf(node.text, node.contentDesc, node.hintText, node.resourceTail)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .lowercase()
+
+    private fun nodeLabelForKeyboard(node: UiNode): String =
+        listOf(
+            node.text,
+            node.contentDesc,
+            node.hintText,
+            node.resourceId,
+            node.packageName,
+            node.className,
+        ).filter { it.isNotBlank() }.joinToString(" ").lowercase()
 
     private suspend fun readCurrentObservationForPostcondition(
         expectedXml: String,
@@ -922,7 +1124,11 @@ object OmniflowStepExecutor {
             meta = mapOf("applied" to false, "reason" to "invalid_current_page", "algorithm" to "anchor_projection")
         )
         val mapped = remapPointWithinPages(sourcePage, targetPage, x, y)
-            ?: remapPointWithinRoots(sourcePage, targetPage, x, y)
+            ?: if (coordinateReplayAllowed(args)) {
+                remapPointWithinRoots(sourcePage, targetPage, x, y)
+            } else {
+                null
+            }
             ?: return StepArgsResult(
                 args,
                 meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
@@ -982,7 +1188,14 @@ object OmniflowStepExecutor {
                 meta = mapOf("applied" to false, "reason" to "missing_scroll_source_element", "algorithm" to "anchor_projection")
             )
         val targetMatch = matchTargetNode(sourcePage, targetPage, sourceContainer)
-            ?: return rootProjectionFallbackForScroll(tool, args, sourceContainer, sourcePage.rootBounds, targetPage.rootBounds)
+            ?: return if (coordinateReplayAllowed(args)) {
+                rootProjectionFallbackForScroll(tool, args, sourceContainer, sourcePage.rootBounds, targetPage.rootBounds)
+            } else {
+                StepArgsResult(
+                    args,
+                    meta = mapOf("applied" to false, "reason" to "no_anchor_match", "algorithm" to "anchor_projection")
+                )
+            }
 
         val start = projectPoint(sourceContainer.bounds, targetMatch.node.bounds, x1, y1)
         val end = projectPoint(sourceContainer.bounds, targetMatch.node.bounds, x2, y2)
@@ -1038,6 +1251,14 @@ object OmniflowStepExecutor {
             )
         )
     }
+
+    private fun coordinateReplayAllowed(args: Map<String, Any?>): Boolean =
+        booleanArg(args["coordinate_replay_allowed"]) ||
+            booleanArg(args["coordinateReplayAllowed"]) ||
+            booleanArg(args["raw_coordinate_replay_allowed"]) ||
+            booleanArg(args["allow_raw_coordinate_replay"]) ||
+            stringArg(args, "projection_mode", "projectionMode")
+                ?.equals("fixed", ignoreCase = true) == true
 
     private fun rootProjectionFallbackForScroll(
         tool: String,
@@ -1619,6 +1840,7 @@ object OmniflowStepExecutor {
     private const val POSTCONDITION_XML_RETRY_DELAY_MS = 400L
     private const val COORDINATE_REMAP_XML_READ_ATTEMPTS = 5
     private const val COORDINATE_REMAP_XML_RETRY_DELAY_MS = 300L
+    private const val PRE_ACTION_CONTROL_DELAY_MS = 300L
     private const val DEFAULT_SCREEN_CENTER_X = 540f
     private const val DEFAULT_SCREEN_CENTER_Y = 960f
     private const val DEFAULT_SWIPE_DISTANCE = 600f
@@ -1626,13 +1848,15 @@ object OmniflowStepExecutor {
     private const val MAX_ANCHOR_COUNT = 5
     private const val MIN_ANCHOR_SIMILARITY = 0.45f
     private const val MIN_ANCHOR_MATCH_SCORE = 0.12f
-    private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.58f
+    private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.86f
     private const val MIN_POSTCONDITION_PAGE_SCORE = 0.12f
     private const val MIN_RICH_POSTCONDITION_PAGE_SCORE = 0.70f
     private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
     private const val MAX_POSTCONDITION_NODES = 24
     private const val PRE_ACTION_ALREADY_SATISFIED_MIN_SCORE = 0.72f
     private const val PRE_ACTION_ALREADY_SATISFIED_SOURCE_MARGIN = 0.25f
+    private const val MIN_DISMISS_OVERLAY_SCORE = 760f
+    private const val KEYBOARD_OBSCURE_MARGIN_PX = 16f
     private const val OPEN_APP_STABILITY_ATTEMPTS = 5
     private const val OPEN_APP_STABILITY_DELAY_MS = 350L
     private const val OPEN_APP_RELAUNCH_ATTEMPT_INDEX = 1
@@ -1656,5 +1880,61 @@ object OmniflowStepExecutor {
         "icon",
         "icon_frame",
         "widget_frame",
+    )
+    private val AD_OR_MODAL_TERMS = setOf(
+        "advert",
+        "sponsor",
+        "promo",
+        "promotion",
+        "dialog",
+        "popup",
+        "modal",
+        "广告",
+        "推广",
+        "赞助",
+        "弹窗",
+    )
+    private val DISMISS_EXACT_LABELS = setOf(
+        "close",
+        "dismiss",
+        "skip",
+        "x",
+        "×",
+        "关闭",
+        "跳过",
+    )
+    private val DISMISS_CONTAINS_LABELS = setOf(
+        "close ad",
+        "close ads",
+        "skip ad",
+        "skip ads",
+        "dismiss ad",
+        "not now",
+        "关闭广告",
+        "跳过广告",
+        "关闭弹窗",
+        "稍后再说",
+        "以后再说",
+    )
+    private val DISMISS_RESOURCE_TAILS = setOf(
+        "close",
+        "close_button",
+        "btn_close",
+        "iv_close",
+        "dismiss",
+        "skip",
+        "skip_ad",
+        "ad_close",
+        "close_ad",
+    )
+    private val KEYBOARD_TERMS = setOf(
+        "keyboard",
+        "inputmethod",
+        "input_method",
+        "latin",
+        "gboard",
+        "softinput",
+        "软键盘",
+        "键盘",
     )
 }

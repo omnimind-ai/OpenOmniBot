@@ -54,6 +54,16 @@ select_default_device() {
   echo "$selected"
 }
 
+is_device_locked() {
+  local trust window
+  trust="$("${ADB[@]}" shell dumpsys trust 2>/dev/null | tr -d '\r' || true)"
+  if grep -Eq '\(current\).*deviceLocked=1' <<<"$trust"; then
+    return 0
+  fi
+  window="$("${ADB[@]}" shell dumpsys window 2>/dev/null | tr -d '\r' || true)"
+  grep -Eq 'isKeyguardShowing=true|mDreamingLockscreen=true|mIsShowing=true' <<<"$window"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1 ;;
@@ -94,6 +104,14 @@ if ! "${ADB[@]}" get-state >/dev/null 2>&1; then
 fi
 DEVICE_NAME="$("${ADB[@]}" shell getprop ro.product.model 2>/dev/null | tr -d '\r' || echo 'unknown')"
 echo "  -> $DEVICE_SERIAL ($DEVICE_NAME)"
+"${ADB[@]}" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+if is_device_locked; then
+  cat >&2 <<EOF
+Device $DEVICE_SERIAL is locked. Unlock the phone before installing; otherwise
+the Android package installer can reject the APK with INSTALL_FAILED_ABORTED.
+EOF
+  exit 1
+fi
 
 # ── 2. Build ───────────────────────────────────────────────────────────────────
 if [[ "$SKIP_BUILD" -eq 0 ]]; then

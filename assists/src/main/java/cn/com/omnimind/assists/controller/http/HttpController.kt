@@ -2008,7 +2008,10 @@ object HttpController {
         if (!response.success) {
             throw IllegalStateException(response.message.ifBlank { "LLM request failed" })
         }
-        return@withContext ResultBean(response.content.ifBlank { response.message })
+        val content = response.content.ifBlank {
+            response.toolCalls.firstOrNull()?.function?.arguments.orEmpty()
+        }
+        return@withContext ResultBean(content.ifBlank { response.message })
     }
 
     /**
@@ -2517,7 +2520,7 @@ object HttpController {
                 )
 
             val message = firstChoice.optJSONObject("message")
-            val content = extractTextPayload(message?.opt("content") ?: firstChoice.opt("text"))
+            val content = extractOpenAIChoiceContent(firstChoice, message)
             val reasoning = listOf(
                 message?.opt("reasoning_content"),
                 message?.opt("reasoning"),
@@ -2532,12 +2535,14 @@ object HttpController {
             val finishReason = firstChoice.optString("finish_reason").trim().takeIf { it.isNotEmpty() }
             val toolCalls = parseToolCalls(firstChoice, message)
 
-            OmniLog.i(
-                TAG,
-                "[non-stream openai parse] content_len=${content.length}, " +
-                    "reasoning_len=${reasoning.length}, tool_calls=${toolCalls.size}, " +
-                    "finish=$finishReason, content_preview=${content.take(200)}"
-            )
+            runCatching {
+                OmniLog.i(
+                    TAG,
+                    "[non-stream openai parse] content_len=${content.length}, " +
+                        "reasoning_len=${reasoning.length}, tool_calls=${toolCalls.size}, " +
+                        "finish=$finishReason, content_preview=${content.take(200)}"
+                )
+            }
 
             SceneChatCompletionResponse(
                 success = true,
@@ -2567,36 +2572,120 @@ object HttpController {
         choice: JSONObject,
         message: JSONObject?
     ): List<AssistantToolCall> {
-        val toolCallsArray = message?.optJSONArray("tool_calls") ?: choice.optJSONArray("tool_calls")
-        if (toolCallsArray == null || toolCallsArray.length() == 0) {
-            return emptyList()
-        }
-
         val parsed = mutableListOf<AssistantToolCall>()
-        for (i in 0 until toolCallsArray.length()) {
-            val toolCall = toolCallsArray.optJSONObject(i) ?: continue
-            val functionObj = toolCall.optJSONObject("function") ?: continue
-            val name = functionObj.optString("name").trim()
-            if (name.isEmpty()) continue
-            val argumentsRaw = functionObj.opt("arguments")
-            val arguments = when (argumentsRaw) {
-                null -> "{}"
-                is String -> argumentsRaw
-                is JSONObject, is JSONArray -> argumentsRaw.toString()
-                else -> argumentsRaw.toString()
-            }
-            parsed.add(
-                AssistantToolCall(
-                    id = toolCall.optString("id").ifBlank { "tool_call_$i" },
-                    type = toolCall.optString("type").ifBlank { "function" },
-                    function = AssistantToolCallFunction(
-                        name = name,
-                        arguments = arguments
+        val toolCallsArray = message?.optJSONArray("tool_calls") ?: choice.optJSONArray("tool_calls")
+        if (toolCallsArray != null) {
+            for (i in 0 until toolCallsArray.length()) {
+                val toolCall = toolCallsArray.optJSONObject(i) ?: continue
+                val functionObj = toolCall.optJSONObject("function") ?: continue
+                val name = functionObj.optString("name").trim()
+                if (name.isEmpty()) continue
+                val arguments = stringifyJsonPayload(functionObj.opt("arguments"), "{}")
+                parsed.add(
+                    AssistantToolCall(
+                        id = toolCall.optString("id").ifBlank { "tool_call_$i" },
+                        type = toolCall.optString("type").ifBlank { "function" },
+                        function = AssistantToolCallFunction(
+                            name = name,
+                            arguments = arguments
+                        )
                     )
                 )
-            )
+            }
         }
+
+        val legacyFunction = message?.optJSONObject("function_call")
+            ?: choice.optJSONObject("function_call")
+        if (legacyFunction != null) {
+            val name = legacyFunction.optString("name").trim()
+            if (name.isNotEmpty()) {
+                val arguments = stringifyJsonPayload(legacyFunction.opt("arguments"), "{}")
+                parsed.add(
+                    AssistantToolCall(
+                        id = "function_call_${parsed.size}",
+                        type = "function",
+                        function = AssistantToolCallFunction(
+                            name = name,
+                            arguments = arguments
+                        )
+                    )
+                )
+            }
+        }
+
         return parsed
+    }
+
+    private fun stringifyJsonPayload(value: Any?, fallback: String = ""): String {
+        return when (value) {
+            null, JSONObject.NULL -> fallback
+            is String -> value
+            is JSONObject, is JSONArray -> value.toString()
+            else -> value.toString()
+        }
+    }
+
+    private fun extractJsonPayloadText(value: Any?): String {
+        return when (value) {
+            null, JSONObject.NULL -> ""
+            is JSONObject, is JSONArray -> value.toString()
+            is String -> value
+            else -> value.toString()
+        }.trim()
+    }
+
+    private fun extractOpenAIChoiceContent(choice: JSONObject, message: JSONObject?): String {
+        val roots = listOfNotNull(message, choice)
+        for (root in roots) {
+            for (key in listOf(
+                "content",
+                "parsed",
+                "output_text",
+                "text",
+                "message",
+                "data",
+                "result",
+                "response"
+            )) {
+                val extracted = extractObjectFieldPayload(root, key)
+                if (extracted.isNotBlank()) {
+                    return extracted
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun extractObjectFieldPayload(value: JSONObject, key: String): String {
+        if (!value.has(key)) return ""
+        return extractTextPayload(value.opt(key)).ifBlank {
+            extractJsonPayloadText(value.opt(key))
+        }
+    }
+
+    private fun extractKnownJsonFieldPayload(value: JSONObject): String {
+        for (key in listOf(
+            "text",
+            "output_text",
+            "content",
+            "parsed",
+            "value",
+            "object",
+            "json",
+            "input",
+            "arguments",
+            "arguments_json",
+            "args_json",
+            "data",
+            "result",
+            "response"
+        )) {
+            val extracted = extractObjectFieldPayload(value, key)
+            if (extracted.isNotBlank()) {
+                return extracted
+            }
+        }
+        return ""
     }
 
     private fun extractTextPayload(contentRaw: Any?): String {
@@ -2609,29 +2698,45 @@ object HttpController {
                     when (item) {
                         is String -> buffer.append(item)
                         is JSONObject -> {
-                            val type = item.optString("type", "")
-                            if (type.equals("text", ignoreCase = true)) {
-                                buffer.append(item.optString("text"))
-                            } else if (item.has("text")) {
-                                buffer.append(item.optString("text"))
+                            val fieldPayload = extractKnownJsonFieldPayload(item)
+                            if (fieldPayload.isNotBlank()) {
+                                buffer.append(fieldPayload)
+                            } else if (looksLikeJsonContentObject(item)) {
+                                buffer.append(item.toString())
                             }
                         }
                     }
                 }
                 buffer.toString()
             }
-            is JSONObject -> when {
-                contentRaw.has("text") -> contentRaw.optString("text")
-                contentRaw.has("content") -> contentRaw.optString("content")
-                else -> ""
+            is JSONObject -> extractKnownJsonFieldPayload(contentRaw).ifBlank {
+                if (looksLikeJsonContentObject(contentRaw)) {
+                    contentRaw.toString()
+                } else {
+                    ""
+                }
             }
             else -> ""
         }.trim()
     }
 
+    private fun looksLikeJsonContentObject(value: JSONObject): Boolean {
+        return listOf(
+            "schema_version",
+            "function_id",
+            "name",
+            "title",
+            "description",
+            "summary",
+            "parameters",
+            "steps",
+            "actions",
+            "agent_reuse",
+            "execution"
+        ).any { value.has(it) }
+    }
+
     private fun safeLogError(message: String) {
         runCatching { OmniLog.e(TAG, message) }
     }
-
-
 }

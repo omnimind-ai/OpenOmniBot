@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ui/features/task/pages/execution_history/function_run_result_sheet.dart';
+import 'package:ui/features/task/pages/execution_history/widgets/reusable_command_card.dart';
 import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 import 'package:ui/features/task/pages/scheduled_tasks/widgets/schedule_task_sheet.dart';
@@ -420,7 +421,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _isConvertingFunction = true;
     });
     showToast(
-      _text(context, '正在注册 RunLog...', 'Registering RunLog...'),
+      _text(context, '正在检查 RunLog...', 'Checking RunLog...'),
       type: ToastType.info,
     );
     final registrationFailedText = _text(
@@ -430,6 +431,43 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     );
     final useEnglish = _localeValue(context, zh: false, en: true);
     try {
+      final compileOnlyResult =
+          await AssistsMessageService.convertInternalRunLogToOobFunction(
+            runId: widget.runId,
+            register: false,
+          );
+      if (compileOnlyResult['success'] != true) {
+        final error = _firstNonBlank([
+          compileOnlyResult['error_message'],
+          compileOnlyResult['errorMessage'],
+          registrationFailedText,
+        ]);
+        throw Exception(error);
+      }
+      final existing = await _loadExistingReusableFunctionFromCompileResult(
+        compileOnlyResult,
+        useEnglish: useEnglish,
+      );
+      if (existing != null) {
+        if (!mounted) return;
+        setState(() {
+          _isConvertingFunction = false;
+        });
+        showToast(
+          _text(context, '已打开已有复用指令', 'Opened existing reusable command'),
+          type: ToastType.success,
+        );
+        await _showReusableFunctionSheet(
+          existing.spec,
+          initialImportResult: existing.importResult,
+        );
+        return;
+      }
+      if (!mounted) return;
+      showToast(
+        _text(context, '正在注册 RunLog...', 'Registering RunLog...'),
+        type: ToastType.info,
+      );
       final result =
           await AssistsMessageService.convertInternalRunLogToOobFunction(
             runId: widget.runId,
@@ -493,6 +531,54 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     }
   }
 
+  Future<_ExistingRunLogFunction?>
+  _loadExistingReusableFunctionFromCompileResult(
+    Map<String, dynamic> compileResult, {
+    required bool useEnglish,
+  }) async {
+    final functionId = _firstNonBlank([
+      compileResult['created_function_id'],
+      compileResult['function_id'],
+      _asStringKeyMap(compileResult['function_spec'])['function_id'],
+    ]);
+    if (functionId.isEmpty) return null;
+    final existing = await AssistsMessageService.getOobReusableFunction(
+      functionId,
+    );
+    if (existing == null || existing.isEmpty) return null;
+    final existingFunctionId = _firstNonBlank([
+      existing['function_id'],
+      functionId,
+    ]);
+    final specJson = _asStringKeyMap({
+      ...existing,
+      if (existingFunctionId.isNotEmpty) 'function_id': existingFunctionId,
+    });
+    if (specJson.isEmpty) return null;
+    final agentPrompt =
+        await RunLogReusableFunctionConverter.buildAgentPromptAsync(
+          specJson,
+          useEnglish: useEnglish,
+        );
+    return _ExistingRunLogFunction(
+      spec: RunLogReusableFunctionSpec(
+        json: specJson,
+        agentPrompt: agentPrompt,
+        aiEnhanced: false,
+      ),
+      importResult: UtgRunLogImportResult.fromMap({
+        'success': true,
+        'run_id': widget.runId,
+        'function_id': existingFunctionId,
+        'created_function_id': existingFunctionId,
+        'hit_function_ids': [existingFunctionId],
+        'functions_created': 0,
+        'function_kind': 'oob_reusable_function',
+        'asset_state': 'native_local',
+      }),
+    );
+  }
+
   Future<void> _executeCurrentRunLog() async {
     if (_cards.isEmpty || _isConvertingFunction || _isReplayingRunLog) {
       return;
@@ -551,6 +637,7 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
           context,
           result: result,
           title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
+          arguments: _defaultArgumentsForFunctionSpec(spec),
         );
       }
     } catch (e) {
@@ -648,6 +735,16 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       ),
     );
   }
+}
+
+class _ExistingRunLogFunction {
+  const _ExistingRunLogFunction({
+    required this.spec,
+    required this.importResult,
+  });
+
+  final RunLogReusableFunctionSpec spec;
+  final UtgRunLogImportResult importResult;
 }
 
 class _RunLogTimelineEmptyNotice extends StatelessWidget {
@@ -1951,29 +2048,60 @@ class _ReusableFunctionSpecSheet extends StatefulWidget {
 
 class _ReusableFunctionSpecSheetState
     extends State<_ReusableFunctionSpecSheet> {
+  late RunLogReusableFunctionSpec _draftSpec;
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
   late UtgRunLogImportResult? _importResult;
   UtgManualRunResult? _runResult;
   bool _isImporting = false;
   bool _isExecuting = false;
   bool _isScheduling = false;
+  bool _isEnhancing = false;
+  bool _hasAgentEnhanced = false;
+  bool _hasStructuralEdits = false;
+  late String _lastSavedSpecFingerprint;
   String? _apiError;
 
-  RunLogReusableFunctionSpec get spec => widget.spec;
+  RunLogReusableFunctionSpec get spec =>
+      _draftSpec.copyWith(json: _functionJsonWithHeaderEdits(_draftSpec.json));
 
   @override
   void initState() {
     super.initState();
+    _draftSpec = widget.spec;
+    _nameController = TextEditingController(text: widget.spec.name);
+    _descriptionController = TextEditingController(
+      text: (widget.spec.json['description'] ?? '').toString(),
+    );
     _importResult = widget.initialImportResult;
+    _lastSavedSpecFingerprint = _specFingerprint(spec.json);
+    _nameController.addListener(_onHeaderFieldChanged);
+    _descriptionController.addListener(_onHeaderFieldChanged);
+  }
+
+  @override
+  void dispose() {
+    _nameController.removeListener(_onHeaderFieldChanged);
+    _descriptionController.removeListener(_onHeaderFieldChanged);
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _onHeaderFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
     final isDark = context.isDarkTheme;
-    final sheetHeight = MediaQuery.of(context).size.height * 0.55;
+    final sheetHeight = MediaQuery.of(context).size.height * 0.82;
     final hasRegisteredFunction = _registeredFunctionId.isNotEmpty;
-    final functionJsonForUser = _functionJsonForUser;
-    final agentPromptForUser = _agentPromptForUser;
+    final hasUnsavedEdits = _hasUnsavedEdits;
+    final detail = _ReusableFunctionDraftSnapshot.fromSpec(spec.json);
 
     return GestureDetector(
       onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
@@ -2039,7 +2167,13 @@ class _ReusableFunctionSpecSheetState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  spec.aiEnhanced
+                                  hasUnsavedEdits
+                                      ? _text(
+                                          context,
+                                          '已修改，保存后生效',
+                                          'Edited, save to apply',
+                                        )
+                                      : spec.aiEnhanced
                                       ? _text(
                                           context,
                                           'AI 整理结果',
@@ -2093,39 +2227,36 @@ class _ReusableFunctionSpecSheetState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _SummaryPill(
-                                  label: 'ID',
-                                  value: spec.functionId.isEmpty
-                                      ? _text(context, '未命名', 'Unnamed')
-                                      : spec.functionId,
-                                ),
-                                _SummaryPill(
-                                  label: _text(context, '步骤', 'Steps'),
-                                  value: spec.stepCount.toString(),
-                                ),
-                                _SummaryPill(
-                                  label: _text(context, '参数', 'Params'),
-                                  value: spec.parameterCount.toString(),
-                                ),
-                                _SummaryPill(
-                                  label: _text(context, '来源', 'Source'),
-                                  value: spec.aiEnhanced
-                                      ? _text(context, 'AI 整理', 'AI prepared')
-                                      : hasRegisteredFunction
-                                      ? _text(context, '已保存', 'Saved')
-                                      : _text(context, '本地生成', 'Local'),
-                                ),
-                                _SummaryPill(
-                                  label: _text(context, '状态', 'Status'),
-                                  value: hasRegisteredFunction
-                                      ? _text(context, '可执行', 'Executable')
-                                      : _text(context, '待保存', 'Draft'),
-                                ),
-                              ],
+                            ReusableCommandCard(
+                              title: spec.name.isEmpty
+                                  ? spec.functionId
+                                  : spec.name,
+                              description: (spec.json['description'] ?? '')
+                                  .toString(),
+                              steps: detail.steps
+                                  .map(
+                                    (step) => ReusableCommandStepPreview(
+                                      index: step.index,
+                                      title: step.displayTitle,
+                                      tool:
+                                          (step.raw['tool'] ??
+                                                  step.raw['omniflow_action'] ??
+                                                  '')
+                                              .toString(),
+                                      executor: (step.raw['executor'] ?? '')
+                                          .toString(),
+                                      kind: (step.raw['kind'] ?? '').toString(),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                              stepCount: detail.steps.length,
+                              parameterCount: detail.parameters.length,
+                              sourceRunCount: _sourceRunCount,
+                              isRunning: _isExecuting || _isEnhancing,
+                              onRun:
+                                  _isImporting || _isExecuting || _isEnhancing
+                                  ? null
+                                  : _executeRegisteredFunction,
                             ),
                             if (spec.warning != null &&
                                 spec.warning!.trim().isNotEmpty) ...[
@@ -2142,25 +2273,32 @@ class _ReusableFunctionSpecSheetState
                               children: [
                                 Expanded(
                                   child: _SpecActionButton(
-                                    icon: Icons.cloud_upload_outlined,
-                                    label: _isImporting
+                                    key: const ValueKey(
+                                      'run-log-reusable-primary-action',
+                                    ),
+                                    icon: hasUnsavedEdits
+                                        ? Icons.cloud_upload_outlined
+                                        : Icons.auto_awesome_rounded,
+                                    label: _isEnhancing
+                                        ? _text(context, '增强中', 'Enhancing')
+                                        : _isImporting
                                         ? _text(context, '保存中', 'Saving')
-                                        : _text(context, '保存', 'Save'),
-                                    onTap: _isImporting
+                                        : hasUnsavedEdits
+                                        ? _text(context, '保存修改', 'Save changes')
+                                        : _hasAgentEnhanced || spec.aiEnhanced
+                                        ? _text(context, '已增强', 'Enhanced')
+                                        : _text(context, '增强', 'Enhance'),
+                                    onTap:
+                                        _isImporting ||
+                                            _isExecuting ||
+                                            _isScheduling ||
+                                            _isEnhancing
                                         ? null
-                                        : _registerFunction,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _SpecActionButton(
-                                    icon: Icons.play_arrow_rounded,
-                                    label: _isExecuting
-                                        ? _text(context, '执行中', 'Running')
-                                        : _text(context, '执行', 'Run'),
-                                    onTap: _isImporting || _isExecuting
+                                        : hasUnsavedEdits
+                                        ? _registerFunction
+                                        : _hasAgentEnhanced || spec.aiEnhanced
                                         ? null
-                                        : _executeRegisteredFunction,
+                                        : _enhanceWithAgent,
                                   ),
                                 ),
                                 const SizedBox(width: 10),
@@ -2173,7 +2311,8 @@ class _ReusableFunctionSpecSheetState
                                     onTap:
                                         _isImporting ||
                                             _isExecuting ||
-                                            _isScheduling
+                                            _isScheduling ||
+                                            _isEnhancing
                                         ? null
                                         : _scheduleRegisteredFunction,
                                   ),
@@ -2191,30 +2330,153 @@ class _ReusableFunctionSpecSheetState
                               ),
                             ],
                             const SizedBox(height: 14),
-                            _DetailSection(
-                              title: _text(
-                                context,
-                                '复用指令 JSON',
-                                'Reusable command JSON',
-                              ),
-                              child: _JsonText(text: functionJsonForUser),
+                            _ReusableFunctionHeaderEditor(
+                              nameController: _nameController,
+                              descriptionController: _descriptionController,
                             ),
+                            const SizedBox(height: 14),
+                            _ReusableFunctionSectionTitle(
+                              text: _text(context, '动作预览', 'Action preview'),
+                            ),
+                            const SizedBox(height: 8),
+                            _ReusableFunctionPreviewPanel(
+                              steps: detail.steps,
+                              parameters: detail.parameters,
+                            ),
+                            const SizedBox(height: 16),
+                            if (detail.steps.isEmpty)
+                              _ReusableFunctionEmptyText(
+                                text: _text(context, '暂无步骤', 'No steps'),
+                              )
+                            else
+                              FunctionRunStepList(
+                                title:
+                                    '${_text(context, '执行步骤', 'Step results')} · ${detail.steps.length}',
+                                steps: detail.steps
+                                    .map((step) => step.raw)
+                                    .toList(growable: false),
+                                initiallyExpanded: true,
+                                showStatusIcon: false,
+                                copyValue: _prettyUserJson(
+                                  detail.steps
+                                      .map((step) => step.raw)
+                                      .toList(growable: false),
+                                ),
+                                actionBuilder: (context, index, rawStep) {
+                                  if (index < 0 ||
+                                      index >= detail.steps.length) {
+                                    return null;
+                                  }
+                                  final step = detail.steps[index];
+                                  final canEdit =
+                                      !_isImporting &&
+                                      !_isExecuting &&
+                                      !_isEnhancing;
+                                  final canDelete =
+                                      canEdit && detail.steps.length > 1;
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Tooltip(
+                                        message: context
+                                            .l10n
+                                            .functionLibraryStepEditTitle,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.edit_outlined,
+                                            size: 18,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          color:
+                                              context.omniPalette.textSecondary,
+                                          onPressed: canEdit
+                                              ? () => _editStep(step)
+                                              : null,
+                                        ),
+                                      ),
+                                      Tooltip(
+                                        message: context
+                                            .l10n
+                                            .functionLibraryStepDeleteTitle,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          color:
+                                              context.omniPalette.textSecondary,
+                                          onPressed: canDelete
+                                              ? () => _deleteStep(step)
+                                              : null,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
                             const SizedBox(height: 12),
-                            _DetailSection(
-                              title: _text(
-                                context,
-                                'Agent 复用提示',
-                                'Agent reuse prompt',
-                              ),
-                              child: _JsonText(text: agentPromptForUser),
+                            _ReusableFunctionSectionTitle(
+                              text: _text(context, '参数', 'Parameters'),
                             ),
-                            if (_apiCallJson.trim().isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _DetailSection(
-                                title: _text(context, '执行调用', 'Run call'),
-                                child: _JsonText(text: _apiCallJson),
+                            const SizedBox(height: 8),
+                            if (detail.parameters.isEmpty)
+                              _ReusableFunctionEmptyText(
+                                text: _text(context, '暂无参数', 'No parameters'),
+                              )
+                            else
+                              Column(
+                                children: detail.parameters
+                                    .map(
+                                      (parameter) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: _ReusableFunctionParameterTile(
+                                          parameter: parameter,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
                               ),
-                            ],
+                            const SizedBox(height: 12),
+                            _CollapsibleSection(
+                              title: _text(context, '高级信息', 'Advanced'),
+                              initiallyExpanded: false,
+                              copyValue: _functionJsonForUser,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _ReusableFunctionSectionTitle(
+                                    text: _text(
+                                      context,
+                                      '复用指令 JSON',
+                                      'Reusable command JSON',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _JsonText(text: _functionJsonForUser),
+                                  const SizedBox(height: 12),
+                                  _ReusableFunctionSectionTitle(
+                                    text: _text(
+                                      context,
+                                      'Agent 复用提示',
+                                      'Agent reuse prompt',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _JsonText(text: _agentPromptForUser),
+                                  if (_apiCallJson.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    _ReusableFunctionSectionTitle(
+                                      text: _text(context, '执行调用', 'Run call'),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _JsonText(text: _apiCallJson),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2229,15 +2491,163 @@ class _ReusableFunctionSpecSheetState
     );
   }
 
-  Future<void> _registerFunction() async {
-    if (_isImporting) return;
+  Future<void> _editStep(_ReusableFunctionStepSummary step) async {
+    if (_isImporting || _isExecuting || _isEnhancing) return;
+    final editedStep = await _showReusableFunctionStepEditorDialog(
+      context,
+      step.raw,
+    );
+    if (editedStep == null || !mounted) return;
+    final updatedJson = _replaceReusableFunctionStep(
+      spec.json,
+      step,
+      editedStep,
+    );
+    if (updatedJson == null) {
+      showToast(
+        context.l10n.functionLibraryStepEditMissing,
+        type: ToastType.error,
+      );
+      return;
+    }
+    await _updateDraftJson(updatedJson, structuralEdit: true);
+    if (!mounted) return;
+    showToast(
+      _text(context, '步骤已更新，保存后生效', 'Step updated. Save to apply.'),
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _deleteStep(_ReusableFunctionStepSummary step) async {
+    if (_isImporting || _isExecuting || _isEnhancing) return;
+    final detail = _ReusableFunctionDraftSnapshot.fromSpec(spec.json);
+    if (detail.steps.length <= 1) {
+      showToast(context.l10n.functionLibraryStepKeepOne, type: ToastType.error);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(dialogContext.l10n.functionLibraryStepDeleteTitle),
+        content: Text(
+          dialogContext.l10n.functionLibraryStepDeleteConfirm(
+            step.displayTitle,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(dialogContext.l10n.omniflowCancel),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            label: Text(dialogContext.l10n.functionLibraryDelete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final updatedJson = _removeReusableFunctionStep(spec.json, step);
+    if (updatedJson == null) {
+      showToast(
+        context.l10n.functionLibraryStepDeleteMissing,
+        type: ToastType.error,
+      );
+      return;
+    }
+    await _updateDraftJson(updatedJson, structuralEdit: true);
+    if (!mounted) return;
+    showToast(
+      _text(context, '步骤已删除，保存后生效', 'Step deleted. Save to apply.'),
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _enhanceWithAgent() async {
+    if (_isImporting || _isExecuting || _isScheduling || _isEnhancing) {
+      return;
+    }
+    setState(() {
+      _isEnhancing = true;
+      _apiError = null;
+    });
+    try {
+      final useEnglish = _localeValue(context, zh: false, en: true);
+      final enhanced = await RunLogReusableFunctionConverter.enhanceLabels(
+        functionJson: spec.json,
+        useEnglish: useEnglish,
+      );
+      if (!mounted) return;
+      _nameController.text = enhanced.name;
+      _descriptionController.text = (enhanced.json['description'] ?? '')
+          .toString();
+      setState(() {
+        _draftSpec = enhanced;
+        _runResult = null;
+        if (enhanced.warning?.trim().isEmpty ?? true) {
+          _hasStructuralEdits = true;
+        }
+      });
+      final warning = enhanced.warning?.trim();
+      if (warning != null && warning.isNotEmpty) {
+        setState(() {
+          _isEnhancing = false;
+        });
+        showToast(warning, type: ToastType.warning);
+      } else {
+        final saved = await _registerFunction(
+          successMessage: _text(context, '增强已保存', 'Enhancement saved'),
+          allowWhileEnhancing: true,
+        );
+        if (!mounted) return;
+        setState(() {
+          _isEnhancing = false;
+          _hasAgentEnhanced = saved;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isEnhancing = false;
+        _apiError = e.toString();
+      });
+      showToast(_apiError!, type: ToastType.error);
+    }
+  }
+
+  Future<void> _updateDraftJson(
+    Map<String, dynamic> json, {
+    required bool structuralEdit,
+  }) async {
+    final useEnglish = _localeValue(context, zh: false, en: true);
+    final agentPrompt =
+        await RunLogReusableFunctionConverter.buildAgentPromptAsync(
+          json,
+          useEnglish: useEnglish,
+        );
+    if (!mounted) return;
+    setState(() {
+      _draftSpec = _draftSpec.copyWith(json: json, agentPrompt: agentPrompt);
+      _runResult = null;
+      if (structuralEdit) {
+        _hasStructuralEdits = true;
+      }
+    });
+  }
+
+  Future<bool> _registerFunction({
+    String? successMessage,
+    bool allowWhileEnhancing = false,
+  }) async {
+    if (_isImporting || (_isEnhancing && !allowWhileEnhancing)) return false;
     setState(() {
       _isImporting = true;
       _apiError = null;
     });
     try {
       final nativeRunLogId = _nativeRunLogRegistrationRunId;
-      if (nativeRunLogId.isNotEmpty) {
+      if (nativeRunLogId.isNotEmpty && !_hasStructuralEdits) {
         final result =
             await AssistsMessageService.convertInternalRunLogToOobFunction(
               runId: nativeRunLogId,
@@ -2246,7 +2656,7 @@ class _ReusableFunctionSpecSheetState
               name: spec.name,
               description: (spec.json['description'] ?? '').toString(),
             );
-        if (!mounted) return;
+        if (!mounted) return false;
         final registeredId = _firstNonBlank([
           result['created_function_id'],
           result['function_id'],
@@ -2262,23 +2672,26 @@ class _ReusableFunctionSpecSheetState
             _apiError = message;
           });
           showToast(message, type: ToastType.error);
-          return;
+          return false;
         }
         setState(() {
           _importResult = UtgRunLogImportResult.fromMap(result);
+          _lastSavedSpecFingerprint = _specFingerprint(spec.json);
+          _hasStructuralEdits = false;
           _isImporting = false;
         });
         showToast(
-          _text(context, '已保存为复用指令', 'Reusable command saved'),
+          successMessage ??
+              _text(context, '已保存为复用指令', 'Reusable command saved'),
           type: ToastType.success,
         );
-        return;
+        return true;
       }
 
       final result = await AssistsMessageService.registerOobReusableFunction(
         functionSpec: spec.json,
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       final registeredId = _firstNonBlank([
         result.createdFunctionId,
         result.functionId,
@@ -2294,7 +2707,7 @@ class _ReusableFunctionSpecSheetState
           _apiError = message;
         });
         showToast(message, type: ToastType.error);
-        return;
+        return false;
       }
       setState(() {
         _importResult = UtgRunLogImportResult.fromMap({
@@ -2308,13 +2721,19 @@ class _ReusableFunctionSpecSheetState
           'oob_function_as_tool_enabled':
               result.rawJson['oob_function_as_tool_enabled'] == true,
         });
+        if (result.success) {
+          _lastSavedSpecFingerprint = _specFingerprint(spec.json);
+          _hasStructuralEdits = false;
+        }
         _isImporting = false;
       });
       if (result.success) {
         showToast(
-          _text(context, '已保存为复用指令', 'Reusable command saved'),
+          successMessage ??
+              _text(context, '已保存为复用指令', 'Reusable command saved'),
           type: ToastType.success,
         );
+        return true;
       } else {
         final message = result.errorMessage?.trim();
         setState(() {
@@ -2323,19 +2742,21 @@ class _ReusableFunctionSpecSheetState
               : _text(context, '注册失败', 'Registration failed');
         });
         showToast(_apiError!, type: ToastType.error);
+        return false;
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _isImporting = false;
         _apiError = e.toString();
       });
       showToast(_apiError!, type: ToastType.error);
+      return false;
     }
   }
 
   Future<void> _executeRegisteredFunction() async {
-    if (_isExecuting || _isImporting) return;
+    if (_isExecuting || _isImporting || _isEnhancing) return;
     var functionId = _registeredFunctionId;
     if (functionId.isEmpty) {
       await _registerFunction();
@@ -2376,6 +2797,7 @@ class _ReusableFunctionSpecSheetState
           context,
           result: result,
           title: _text(context, '复用指令执行结果', 'Reusable command result'),
+          arguments: _defaultArguments,
         );
       }
     } catch (e) {
@@ -2389,7 +2811,7 @@ class _ReusableFunctionSpecSheetState
   }
 
   Future<void> _scheduleRegisteredFunction() async {
-    if (_isScheduling || _isImporting || _isExecuting) return;
+    if (_isScheduling || _isImporting || _isExecuting || _isEnhancing) return;
     setState(() {
       _isScheduling = true;
       _apiError = null;
@@ -2463,7 +2885,26 @@ class _ReusableFunctionSpecSheetState
     }
   }
 
+  bool get _hasUnsavedEdits =>
+      _specFingerprint(spec.json) != _lastSavedSpecFingerprint;
+
+  Map<String, dynamic> _functionJsonWithHeaderEdits(
+    Map<String, dynamic> rawJson,
+  ) {
+    final cloned = _deepCopyStringMap(rawJson);
+    final name = _nameController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (name.isNotEmpty) {
+      cloned['name'] = name;
+    }
+    cloned['description'] = description;
+    return cloned;
+  }
+
   String get _registeredFunctionId {
+    if (_hasUnsavedEdits) {
+      return '';
+    }
     final importResult = _importResult;
     return _firstNonBlank([
       if (importResult?.success == true) importResult?.createdFunctionId,
@@ -2496,6 +2937,30 @@ class _ReusableFunctionSpecSheetState
 
   Map<String, dynamic> get _defaultArguments {
     return _defaultArgumentsForFunctionSpec(spec.json);
+  }
+
+  int get _sourceRunCount {
+    final ids = <String>{};
+    final source = _asStringKeyMap(spec.json['source']);
+    final runId = _firstNonBlank([
+      source['run_id'],
+      source['runId'],
+      widget.runId,
+    ]);
+    if (runId.isNotEmpty) {
+      ids.add(runId);
+    }
+    final rawIds =
+        source['run_ids'] ?? source['runIds'] ?? source['source_run_ids'];
+    if (rawIds is Iterable) {
+      for (final value in rawIds) {
+        final id = value.toString().trim();
+        if (id.isNotEmpty) {
+          ids.add(id);
+        }
+      }
+    }
+    return ids.length;
   }
 
   String get _functionJsonForUser => _prettyUserJson(spec.json);
@@ -2606,6 +3071,725 @@ class _ReusableFunctionSpecSheetState
     }
     return _text(context, '复用指令执行失败', 'Reusable command failed');
   }
+}
+
+class _ReusableFunctionHeaderEditor extends StatelessWidget {
+  const _ReusableFunctionHeaderEditor({
+    required this.nameController,
+    required this.descriptionController,
+  });
+
+  final TextEditingController nameController;
+  final TextEditingController descriptionController;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      decoration: BoxDecoration(
+        color: context.isDarkTheme ? palette.surfaceSecondary : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: nameController,
+            decoration: InputDecoration(
+              labelText: _text(context, '名称', 'Name'),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: descriptionController,
+            decoration: InputDecoration(
+              labelText: _text(context, '简介', 'Description'),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            minLines: 2,
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReusableFunctionSectionTitle extends StatelessWidget {
+  const _ReusableFunctionSectionTitle({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: palette.textTertiary,
+        letterSpacing: 0.2,
+      ),
+    );
+  }
+}
+
+class _ReusableFunctionEmptyText extends StatelessWidget {
+  const _ReusableFunctionEmptyText({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 13, color: context.omniPalette.textTertiary),
+      ),
+    );
+  }
+}
+
+class _ReusableFunctionPreviewPanel extends StatelessWidget {
+  const _ReusableFunctionPreviewPanel({
+    required this.steps,
+    required this.parameters,
+  });
+
+  final List<_ReusableFunctionStepSummary> steps;
+  final List<_ReusableFunctionParameterSummary> parameters;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final stepPreview = _reusableFunctionStepPreview(context, steps);
+    final parameterPreview = _previewReusableNames(
+      parameters.map((parameter) => parameter.name).toList(growable: false),
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: context.isDarkTheme
+            ? palette.surfaceSecondary
+            : _routeColor(context).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            stepPreview.isEmpty
+                ? _text(context, '暂无动作预览', 'No action preview')
+                : stepPreview,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: stepPreview.isEmpty
+                  ? FontWeight.w500
+                  : FontWeight.w600,
+              color: stepPreview.isEmpty
+                  ? palette.textTertiary
+                  : palette.textPrimary,
+              height: 1.4,
+            ),
+          ),
+          if (parameterPreview.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Text(
+              '${_text(context, '参数', 'Params')}: $parameterPreview',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: palette.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReusableFunctionParameterTile extends StatelessWidget {
+  const _ReusableFunctionParameterTile({required this.parameter});
+
+  final _ReusableFunctionParameterSummary parameter;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final meta = [
+      if (parameter.type.isNotEmpty) parameter.type,
+      if (parameter.required) _text(context, '必填', 'required'),
+      if (parameter.defaultValue.isNotEmpty)
+        '${_text(context, '默认', 'default')}: ${parameter.defaultValue}',
+    ].join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: context.isDarkTheme ? palette.surfaceSecondary : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            parameter.name,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: palette.textPrimary,
+            ),
+          ),
+          if (meta.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              meta,
+              style: TextStyle(fontSize: 11, color: palette.textSecondary),
+            ),
+          ],
+          if (parameter.description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              parameter.description,
+              style: TextStyle(
+                fontSize: 11,
+                color: palette.textTertiary,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReusableFunctionDraftSnapshot {
+  const _ReusableFunctionDraftSnapshot({
+    required this.parameters,
+    required this.steps,
+  });
+
+  final List<_ReusableFunctionParameterSummary> parameters;
+  final List<_ReusableFunctionStepSummary> steps;
+
+  factory _ReusableFunctionDraftSnapshot.fromSpec(
+    Map<String, dynamic> functionSpec,
+  ) {
+    final execution = _asStringKeyMap(functionSpec['execution']);
+    final rawSteps = execution['steps'];
+    final steps = rawSteps is List
+        ? rawSteps
+              .asMap()
+              .entries
+              .map(
+                (entry) => _ReusableFunctionStepSummary.fromMap(
+                  _asStringKeyMap(entry.value),
+                  fallbackIndex: entry.key,
+                ),
+              )
+              .where((step) => step.raw.isNotEmpty)
+              .toList(growable: false)
+        : const <_ReusableFunctionStepSummary>[];
+    return _ReusableFunctionDraftSnapshot(
+      parameters: _reusableFunctionParameters(functionSpec['parameters']),
+      steps: steps,
+    );
+  }
+}
+
+class _ReusableFunctionStepSummary {
+  const _ReusableFunctionStepSummary({
+    required this.index,
+    required this.id,
+    required this.raw,
+  });
+
+  factory _ReusableFunctionStepSummary.fromMap(
+    Map<String, dynamic> raw, {
+    required int fallbackIndex,
+  }) {
+    final index = _asInt(raw['index']) ?? fallbackIndex;
+    final normalized = Map<String, dynamic>.from(raw);
+    normalized.putIfAbsent('index', () => index);
+    normalized.putIfAbsent('step_id', () => raw['id'] ?? 'step_${index + 1}');
+    normalized.putIfAbsent(
+      'summary',
+      () => _firstNonBlank([
+        raw['summary'],
+        raw['title'],
+        raw['tool'],
+        raw['omniflow_action'],
+      ]),
+    );
+    return _ReusableFunctionStepSummary(
+      index: index,
+      id: (raw['id'] ?? '').toString(),
+      raw: normalized,
+    );
+  }
+
+  final int index;
+  final String id;
+  final Map<String, dynamic> raw;
+
+  String get displayTitle {
+    return _firstNonBlank([
+      raw['summary'],
+      raw['title'],
+      raw['tool'],
+      raw['omniflow_action'],
+      raw['step_id'],
+    ]);
+  }
+}
+
+class _ReusableFunctionParameterSummary {
+  const _ReusableFunctionParameterSummary({
+    required this.name,
+    required this.type,
+    required this.required,
+    required this.description,
+    required this.defaultValue,
+  });
+
+  factory _ReusableFunctionParameterSummary.fromMap(Map<String, dynamic> raw) {
+    return _ReusableFunctionParameterSummary(
+      name: (raw['name'] ?? '').toString(),
+      type: (raw['type'] ?? '').toString(),
+      required: _asBool(raw['required']) == true,
+      description: (raw['description'] ?? '').toString(),
+      defaultValue: (raw['default'] ?? '').toString(),
+    );
+  }
+
+  final String name;
+  final String type;
+  final bool required;
+  final String description;
+  final String defaultValue;
+}
+
+Future<Map<String, dynamic>?> _showReusableFunctionStepEditorDialog(
+  BuildContext context,
+  Map<String, dynamic> rawStep,
+) {
+  return showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (dialogContext) =>
+        _ReusableFunctionStepEditorDialog(rawStep: rawStep),
+  );
+}
+
+class _ReusableFunctionStepEditorDialog extends StatefulWidget {
+  const _ReusableFunctionStepEditorDialog({required this.rawStep});
+
+  final Map<String, dynamic> rawStep;
+
+  @override
+  State<_ReusableFunctionStepEditorDialog> createState() =>
+      _ReusableFunctionStepEditorDialogState();
+}
+
+class _ReusableFunctionStepEditorDialogState
+    extends State<_ReusableFunctionStepEditorDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _toolController;
+  late final TextEditingController _argsController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: (widget.rawStep['title'] ?? widget.rawStep['summary'] ?? '')
+          .toString(),
+    );
+    _toolController = TextEditingController(
+      text: (widget.rawStep['tool'] ?? widget.rawStep['omniflow_action'] ?? '')
+          .toString(),
+    );
+    _argsController = TextEditingController(
+      text: const JsonEncoder.withIndent('  ').convert(
+        widget.rawStep['args'] is Map ? widget.rawStep['args'] : const {},
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _toolController.dispose();
+    _argsController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final enteredTool = _toolController.text.trim();
+    if (enteredTool.isEmpty) {
+      setState(() => _errorText = context.l10n.functionLibraryStepToolRequired);
+      return;
+    }
+    final dynamic decodedArgs;
+    try {
+      decodedArgs = jsonDecode(
+        _argsController.text.trim().isEmpty ? '{}' : _argsController.text,
+      );
+    } catch (_) {
+      setState(() => _errorText = context.l10n.functionLibraryStepArgsInvalid);
+      return;
+    }
+    if (decodedArgs is! Map) {
+      setState(
+        () => _errorText = context.l10n.functionLibraryStepArgsObjectRequired,
+      );
+      return;
+    }
+    final tool =
+        RunLogReplayPolicy.omniflowActionForToolName(enteredTool) ??
+        enteredTool;
+    final updated = Map<String, dynamic>.from(widget.rawStep);
+    updated['title'] = _titleController.text.trim();
+    updated['summary'] = _titleController.text.trim();
+    updated['tool'] = tool;
+    updated['args'] = Map<String, dynamic>.from(
+      decodedArgs.map((key, value) => MapEntry(key.toString(), value)),
+    );
+    final executor = (updated['executor'] ?? '').toString().trim();
+    if (executor == 'omniflow') {
+      updated['omniflow_action'] = tool;
+      updated['local_action'] = tool;
+      updated['callable_tool'] = tool;
+    } else if (executor != 'agent') {
+      updated['callable_tool'] = tool;
+    }
+    Navigator.of(context).pop(updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(context.l10n.functionLibraryStepEditTitle),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepTitleLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _toolController,
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepToolLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _argsController,
+                keyboardType: TextInputType.multiline,
+                minLines: 5,
+                maxLines: 10,
+                style: const TextStyle(fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  labelText: context.l10n.functionLibraryStepArgsLabel,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _errorText!,
+                    style: TextStyle(fontSize: 12, color: _errorColor(context)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(context.l10n.omniflowCancel),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.save_outlined, size: 18),
+          label: Text(context.l10n.omniflowSaveConfig),
+          onPressed: _save,
+        ),
+      ],
+    );
+  }
+}
+
+Map<String, dynamic>? _replaceReusableFunctionStep(
+  Map<String, dynamic> spec,
+  _ReusableFunctionStepSummary step,
+  Map<String, dynamic> replacement,
+) {
+  final updatedSpec = _deepCopyStringMap(spec);
+  final execution = _asStringKeyMap(updatedSpec['execution']);
+  final rawSteps = execution['steps'];
+  if (rawSteps is! List) return null;
+  final steps = rawSteps.map(_asStringKeyMap).toList(growable: true);
+  var index = step.id.trim().isEmpty
+      ? -1
+      : steps.indexWhere((candidate) => candidate['id']?.toString() == step.id);
+  if (index < 0 && step.index >= 0 && step.index < steps.length) {
+    index = step.index;
+  }
+  if (index < 0 || index >= steps.length) return null;
+  steps[index] = replacement;
+  execution['steps'] = steps;
+  execution['step_count'] = steps.length;
+  updatedSpec['execution'] = execution;
+  _syncReusableCanonicalActionAfterStepEdit(updatedSpec, index, replacement);
+  _updateReusableParameterDefaults(updatedSpec, index, replacement);
+  final metadata = _asStringKeyMap(updatedSpec['metadata']);
+  if (metadata.isNotEmpty) {
+    metadata['step_count'] = steps.length;
+    updatedSpec['metadata'] = metadata;
+  }
+  return updatedSpec;
+}
+
+Map<String, dynamic>? _removeReusableFunctionStep(
+  Map<String, dynamic> spec,
+  _ReusableFunctionStepSummary step,
+) {
+  final updatedSpec = _deepCopyStringMap(spec);
+  final execution = _asStringKeyMap(updatedSpec['execution']);
+  final rawSteps = execution['steps'];
+  if (rawSteps is! List || rawSteps.length <= 1) return null;
+  final steps = rawSteps.map(_asStringKeyMap).toList(growable: true);
+  var index = step.id.trim().isEmpty
+      ? -1
+      : steps.indexWhere((candidate) => candidate['id']?.toString() == step.id);
+  if (index < 0 && step.index >= 0 && step.index < steps.length) {
+    index = step.index;
+  }
+  if (index < 0 || index >= steps.length) return null;
+  steps.removeAt(index);
+  for (var nextIndex = 0; nextIndex < steps.length; nextIndex++) {
+    steps[nextIndex]['index'] = nextIndex;
+    steps[nextIndex]['id'] = 'step_${nextIndex + 1}';
+    steps[nextIndex]['step_id'] = 'step_${nextIndex + 1}';
+  }
+  execution['steps'] = steps;
+  execution['step_count'] = steps.length;
+  updatedSpec['execution'] = execution;
+  final actions = updatedSpec['actions'];
+  if (actions is List && index < actions.length) {
+    updatedSpec['actions'] = List<dynamic>.from(actions)..removeAt(index);
+  }
+  final metadata = _asStringKeyMap(updatedSpec['metadata']);
+  if (metadata.isNotEmpty) {
+    metadata['step_count'] = steps.length;
+    updatedSpec['metadata'] = metadata;
+  }
+  return updatedSpec;
+}
+
+void _syncReusableCanonicalActionAfterStepEdit(
+  Map<String, dynamic> spec,
+  int index,
+  Map<String, dynamic> step,
+) {
+  final rawActions = spec['actions'];
+  if (rawActions is! List || index < 0 || index >= rawActions.length) return;
+  final rawAction = rawActions[index];
+  if (rawAction is! Map) return;
+  final action = Map<String, dynamic>.from(
+    rawAction.map((key, value) => MapEntry(key.toString(), value)),
+  );
+  final tool =
+      RunLogReplayPolicy.omniflowActionForToolName(
+        (step['tool'] ?? step['omniflow_action'] ?? '').toString(),
+      ) ??
+      (step['tool'] ?? step['omniflow_action'] ?? '').toString();
+  if (tool.isNotEmpty) {
+    action['type'] = tool;
+  }
+  final title = (step['title'] ?? step['summary'] ?? '').toString().trim();
+  if (title.isNotEmpty) {
+    action['description'] = title;
+  }
+  final args = _asStringKeyMap(step['args']);
+  if (tool == 'input_text') {
+    for (final key in const ['text', 'content', 'value']) {
+      if (args.containsKey(key)) {
+        action['text'] = args[key];
+        break;
+      }
+    }
+  }
+  final actions = List<dynamic>.from(rawActions);
+  actions[index] = action;
+  spec['actions'] = actions;
+}
+
+void _updateReusableParameterDefaults(
+  Map<String, dynamic> spec,
+  int stepIndex,
+  Map<String, dynamic> step,
+) {
+  final args = _asStringKeyMap(step['args']);
+  if (args.isEmpty) return;
+  final parameters = spec['parameters'];
+  if (parameters is! List) return;
+  for (final raw in parameters) {
+    if (raw is! Map) continue;
+    final parameter = raw.map((key, value) => MapEntry(key.toString(), value));
+    final argKey = _boundReusableArgKeyForStep(
+      parameter['bindings'],
+      stepIndex,
+    );
+    if (argKey != null && args.containsKey(argKey)) {
+      raw['default'] = args[argKey];
+    }
+  }
+}
+
+String? _boundReusableArgKeyForStep(dynamic rawBindings, int stepIndex) {
+  if (rawBindings is! List) return null;
+  for (final rawBinding in rawBindings) {
+    final match = RegExp(
+      r'^\$\.execution\.steps\[(\d+)\]\.args\.([A-Za-z0-9_]+)$',
+    ).firstMatch(rawBinding?.toString() ?? '');
+    if (match != null && int.tryParse(match.group(1) ?? '') == stepIndex) {
+      return match.group(2);
+    }
+  }
+  return null;
+}
+
+List<_ReusableFunctionParameterSummary> _reusableFunctionParameters(
+  dynamic rawParameters,
+) {
+  if (rawParameters is List) {
+    return rawParameters
+        .map(_asStringKeyMap)
+        .where((item) => item.isNotEmpty)
+        .map(_ReusableFunctionParameterSummary.fromMap)
+        .toList(growable: false);
+  }
+  final schema = _asStringKeyMap(rawParameters);
+  final properties = _asStringKeyMap(schema['properties']);
+  if (properties.isEmpty) return const <_ReusableFunctionParameterSummary>[];
+  final requiredNames = schema['required'] is List
+      ? (schema['required'] as List).map((item) => item.toString()).toSet()
+      : const <String>{};
+  return properties.entries
+      .map((entry) {
+        final property = _asStringKeyMap(entry.value);
+        return _ReusableFunctionParameterSummary.fromMap({
+          ...property,
+          'name': entry.key,
+          'required': requiredNames.contains(entry.key),
+        });
+      })
+      .toList(growable: false);
+}
+
+String _reusableFunctionStepPreview(
+  BuildContext context,
+  List<_ReusableFunctionStepSummary> steps,
+) {
+  final parts = <String>[];
+  for (final step in steps.take(3)) {
+    final tool = _reusableFunctionToolLabel(
+      context,
+      (step.raw['tool'] ?? step.raw['omniflow_action'] ?? '').toString(),
+    );
+    final title = step.displayTitle.trim();
+    final body = title.isNotEmpty && tool.isNotEmpty && title != tool
+        ? '$title · $tool'
+        : (title.isNotEmpty ? title : tool);
+    if (body.isEmpty) continue;
+    parts.add('${step.index + 1}. $body');
+  }
+  if (parts.isEmpty) return '';
+  final preview = parts.join('  ');
+  return steps.length > 3 ? '$preview ...' : preview;
+}
+
+String _reusableFunctionToolLabel(BuildContext context, String tool) {
+  switch (tool.trim().toLowerCase()) {
+    case 'open_app':
+      return _text(context, '打开应用', 'Open app');
+    case 'click':
+      return _text(context, '点击', 'Tap');
+    case 'long_press':
+      return _text(context, '长按', 'Long press');
+    case 'input_text':
+    case 'type':
+      return _text(context, '输入文本', 'Enter text');
+    case 'swipe':
+    case 'scroll':
+      return _text(context, '滑动', 'Swipe');
+    case 'press_back':
+    case 'back':
+      return _text(context, '返回', 'Go back');
+    case 'press_home':
+    case 'home':
+      return _text(context, '回到桌面', 'Go home');
+    case 'wait':
+      return _text(context, '等待', 'Wait');
+  }
+  return tool.trim();
+}
+
+String _previewReusableNames(List<String> values, {int maxItems = 3}) {
+  final names = <String>[];
+  for (final value in values) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || names.contains(trimmed)) continue;
+    names.add(trimmed);
+  }
+  if (names.isEmpty) return '';
+  if (names.length <= maxItems) return names.join(' · ');
+  return '${names.take(maxItems).join(' · ')} +${names.length - maxItems}';
+}
+
+Map<String, dynamic> _deepCopyStringMap(Map<String, dynamic> value) {
+  final cloned = jsonDecode(jsonEncode(_jsonSafe(value)));
+  if (cloned is Map) {
+    return cloned.map((key, item) => MapEntry(key.toString(), item));
+  }
+  return <String, dynamic>{};
+}
+
+String _specFingerprint(Map<String, dynamic> value) {
+  return jsonEncode(_jsonSafe(value));
 }
 
 class _FunctionApiStatusBox extends StatelessWidget {
@@ -2741,6 +3925,7 @@ class _FunctionApiStatusBox extends StatelessWidget {
 
 class _SpecActionButton extends StatelessWidget {
   const _SpecActionButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
@@ -3156,75 +4341,6 @@ class _SummaryPill extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _DetailSection extends StatelessWidget {
-  const _DetailSection({
-    required this.title,
-    required this.child,
-    this.copyValue,
-  });
-
-  final String title;
-  final Widget child;
-  final String? copyValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: context.isDarkTheme
-            ? palette.surfaceSecondary
-            : Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: palette.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (copyValue != null && copyValue!.trim().isNotEmpty)
-                  Tooltip(
-                    message: _text(context, '复制', 'Copy'),
-                    child: IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.content_copy_rounded, size: 16),
-                      color: palette.textSecondary,
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: copyValue!));
-                        showToast(
-                          _text(context, '已复制', 'Copied'),
-                          type: ToastType.success,
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: child,
-          ),
-        ],
       ),
     );
   }
@@ -5017,7 +6133,15 @@ String _userVisibleJsonKey(String key) => _userVisibleString(key);
 String _userVisibleString(String value) {
   return value
       .replaceAll(RegExp('compile', caseSensitive: false), 'execution')
-      .replaceAll('编译', '执行');
+      .replaceAll('编译', '执行')
+      .replaceAll(
+        RegExp(r'reusable[_\s-]*function', caseSensitive: false),
+        'reusable_command',
+      )
+      .replaceAll(RegExp(r'参考\s*function', caseSensitive: false), '参考复用指令')
+      .replaceAll(RegExp(r'Function'), 'Reusable command')
+      .replaceAll(RegExp(r'function'), 'reusable_command')
+      .replaceAll('函数', '复用指令');
 }
 
 dynamic _jsonSafe(dynamic value) {

@@ -714,6 +714,17 @@ class UtgManualRunResult {
         context['fallback_available'],
   );
 
+  bool get canContinueWithVlm {
+    if (success || completedVlmFallback || startedAgentFallback) return false;
+    if (fallbackAvailable || modelRequired) return true;
+    return stepResults.any(
+      (step) =>
+          step['needs_agent'] == true ||
+          step['fallback_available'] == true ||
+          step['blocked_executor'] != null,
+    );
+  }
+
   bool get delegatedToolUsed => _truthy(
     terminalState['delegated_tool_used'] ??
         rawJson['delegated_tool_used'] ??
@@ -2665,6 +2676,36 @@ class AssistsMessageService {
     return _jsonSafeDynamicMap(result);
   }
 
+  static Future<Map<String, dynamic>> pauseHumanTrajectoryLearning() async {
+    final result = await assistCore.invokeMethod(
+      'pauseHumanTrajectoryLearning',
+    );
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<Map<String, dynamic>> resumeHumanTrajectoryLearning() async {
+    final result = await assistCore.invokeMethod(
+      'resumeHumanTrajectoryLearning',
+    );
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<Map<String, dynamic>> saveCurrentUdegState({
+    String? goal,
+  }) async {
+    final result = await assistCore.invokeMethod('saveCurrentUdegState', {
+      if (goal != null && goal.trim().isNotEmpty) 'goal': goal.trim(),
+    });
+    return _jsonSafeDynamicMap(result);
+  }
+
+  static Future<Map<String, dynamic>> exportOobUdeg({int limit = 1000}) async {
+    final result = await assistCore.invokeMethod('exportOobUdeg', {
+      'limit': limit,
+    });
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<Map<String, dynamic>> listOobReusableFunctions({
     int limit = 100,
   }) async {
@@ -2723,6 +2764,8 @@ class AssistsMessageService {
     Map<String, dynamic> arguments = const {},
     int? conversationId,
     String? conversationMode,
+    bool allowVlmFallback = false,
+    Map<String, dynamic>? localReplayResult,
   }) async {
     final args = <String, dynamic>{
       'functionId': functionId.trim(),
@@ -2733,6 +2776,12 @@ class AssistsMessageService {
     }
     if (conversationMode != null && conversationMode.trim().isNotEmpty) {
       args['conversationMode'] = conversationMode.trim();
+    }
+    if (allowVlmFallback) {
+      args['allowVlmFallback'] = true;
+    }
+    if (localReplayResult != null && localReplayResult.isNotEmpty) {
+      args['localReplayResult'] = _jsonSafeMap(localReplayResult);
     }
     final result = await assistCore.invokeMethod('runOobReusableFunction', {
       ...args,

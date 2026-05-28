@@ -1450,6 +1450,13 @@ mixin _ChatPageUiMixin on _ChatPageStateBase {
                               });
                             }
                           : null,
+                      onViewTrajectoriesTap: _activeMode == ChatPageMode.normal
+                          ? _openRunLogListFromShortcut
+                          : null,
+                      onViewCurrentTrajectoryTap:
+                          _activeMode == ChatPageMode.normal
+                          ? _openLatestRunLogFromShortcut
+                          : null,
                       onManualRecordingTap: _activeMode == ChatPageMode.normal
                           ? _startManualRecordingFromShortcut
                           : null,

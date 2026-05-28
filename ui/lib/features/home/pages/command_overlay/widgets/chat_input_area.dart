@@ -84,6 +84,8 @@ class ChatInputArea extends StatefulWidget {
   final bool? openClawEnabled;
   final ValueChanged<bool>? onToggleOpenClaw;
   final VoidCallback? onLongPressOpenClaw;
+  final FutureOr<void> Function()? onViewTrajectoriesTap;
+  final FutureOr<void> Function()? onViewCurrentTrajectoryTap;
   final FutureOr<void> Function()? onManualRecordingTap;
   final FutureOr<void> Function()? onTerminalTap;
 
@@ -118,6 +120,8 @@ class ChatInputArea extends StatefulWidget {
     this.openClawEnabled,
     this.onToggleOpenClaw,
     this.onLongPressOpenClaw,
+    this.onViewTrajectoriesTap,
+    this.onViewCurrentTrajectoryTap,
     this.onManualRecordingTap,
     this.onTerminalTap,
     this.useFrostedGlass = false,

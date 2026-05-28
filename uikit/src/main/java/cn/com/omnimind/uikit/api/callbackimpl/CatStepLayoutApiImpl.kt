@@ -7,10 +7,18 @@ import cn.com.omnimind.assists.api.eventapi.ExecutingTaskType
 import cn.com.omnimind.baselib.util.VibrationUtil
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.api.callback.CatStepLayoutApi
+import cn.com.omnimind.uikit.loader.ManualRecordingControlOverlay
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
 import cn.com.omnimind.uikit.settings.CompanionOverlaySettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CatStepLayoutApiImpl : CatStepLayoutApi {
+    private val manualRecordingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onResumeClick() {
         VibrationUtil.vibrateLight()
 
@@ -23,13 +31,17 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
     }
 
     override fun onStopClick() {
-        if (HumanTrajectoryLearningSession.completeActive()) {
+        if (HumanTrajectoryLearningSession.isActive()) {
+            ManualRecordingControlOverlay.dismiss()
             DraggableBallInstance.setDoing(
                 message = "正在整理复用指令",
                 isShowTakeOver = false,
                 subMessage = "请稍候",
                 isShowStop = false
             )
+            manualRecordingScope.launch {
+                HumanTrajectoryLearningSession.completeActive()
+            }
             return
         }
         if (AgentVlmUiSession.requestCompleteActiveSession()) {
@@ -55,10 +67,23 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
         VibrationUtil.vibrateLight()
 
         if (HumanTrajectoryLearningSession.isActive()) {
-            HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
-            DraggableBallInstance.finishDoingTask("学习已取消")
-            if (!CompanionOverlaySettings.isEnabled()) {
-                CompanionOverlaySettings.dismissFloatingUi()
+            val shouldResume = HumanTrajectoryLearningSession.isPaused()
+            manualRecordingScope.launch {
+                val updated = if (shouldResume) {
+                    HumanTrajectoryLearningSession.resumeActive()
+                } else {
+                    HumanTrajectoryLearningSession.pauseActive()
+                }
+                withContext(Dispatchers.Main) {
+                    if (!updated) {
+                        return@withContext
+                    }
+                    if (shouldResume) {
+                        ManualRecordingControlOverlay.markRecording()
+                    } else {
+                        ManualRecordingControlOverlay.markPaused()
+                    }
+                }
             }
             return
         }

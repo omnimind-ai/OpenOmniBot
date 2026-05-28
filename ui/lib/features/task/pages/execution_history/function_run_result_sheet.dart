@@ -11,6 +11,7 @@ Future<void> showFunctionRunResultSheet(
   BuildContext context, {
   required UtgManualRunResult result,
   String? title,
+  Map<String, dynamic> arguments = const {},
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -18,7 +19,11 @@ Future<void> showFunctionRunResultSheet(
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.28),
-    builder: (_) => _FunctionRunResultSheet(result: result, title: title),
+    builder: (_) => _FunctionRunResultSheet(
+      initialResult: result,
+      title: title,
+      arguments: arguments,
+    ),
   );
 }
 
@@ -27,10 +32,14 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
     super.key,
     required this.result,
     this.showRawJson = false,
+    this.showArtifacts = false,
+    this.stepsInitiallyExpanded = false,
   });
 
   final UtgManualRunResult result;
   final bool showRawJson;
+  final bool showArtifacts;
+  final bool stepsInitiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +59,7 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
             copyValue: errorText,
           ),
         ],
-        if (artifacts.isNotEmpty) ...[
+        if (showArtifacts && artifacts.isNotEmpty) ...[
           const SizedBox(height: 10),
           _ExpandableResultSection(
             title: _text(context, '运行产物', 'Run artifacts'),
@@ -63,7 +72,10 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
         ],
         if (steps.isNotEmpty) ...[
           const SizedBox(height: 10),
-          _StepResultList(steps: steps),
+          FunctionRunStepList(
+            steps: steps,
+            initiallyExpanded: stepsInitiallyExpanded,
+          ),
         ],
         if (showRawJson) ...[
           const SizedBox(height: 10),
@@ -81,15 +93,68 @@ class FunctionRunResultInlinePanel extends StatelessWidget {
   }
 }
 
-class _FunctionRunResultSheet extends StatelessWidget {
-  const _FunctionRunResultSheet({required this.result, this.title});
+class _FunctionRunResultSheet extends StatefulWidget {
+  const _FunctionRunResultSheet({
+    required this.initialResult,
+    this.title,
+    this.arguments = const {},
+  });
 
-  final UtgManualRunResult result;
+  final UtgManualRunResult initialResult;
   final String? title;
+  final Map<String, dynamic> arguments;
+
+  @override
+  State<_FunctionRunResultSheet> createState() =>
+      _FunctionRunResultSheetState();
+}
+
+class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
+  late UtgManualRunResult _result;
+  bool _continuing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _result = widget.initialResult;
+  }
+
+  Future<void> _continueWithVlm() async {
+    if (_continuing || !_result.canContinueWithVlm) return;
+    final functionId = _result.functionId.trim();
+    if (functionId.isEmpty) return;
+    setState(() => _continuing = true);
+    try {
+      final next = await AssistsMessageService.runOobReusableFunction(
+        functionId: functionId,
+        arguments: widget.arguments,
+        allowVlmFallback: true,
+        localReplayResult: _result.rawJson,
+      );
+      if (!mounted) return;
+      setState(() {
+        _result = next;
+        _continuing = false;
+      });
+      showToast(
+        next.success
+            ? _text(context, '已交给 VLM 继续执行', 'Continuing with VLM')
+            : (_resultErrorText(next).isNotEmpty
+                  ? _resultErrorText(next)
+                  : _text(context, 'VLM 继续执行失败', 'VLM continuation failed')),
+        type: next.success ? ToastType.success : ToastType.error,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _continuing = false);
+      showToast(error.toString(), type: ToastType.error);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.omniPalette;
+    final result = _result;
     final accent = result.success
         ? _successColor(context)
         : _errorColor(context);
@@ -145,8 +210,8 @@ class _FunctionRunResultSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              title?.trim().isNotEmpty == true
-                                  ? title!.trim()
+                              widget.title?.trim().isNotEmpty == true
+                                  ? widget.title!.trim()
                                   : _text(
                                       context,
                                       '复用指令执行结果',
@@ -213,13 +278,46 @@ class _FunctionRunResultSheet extends StatelessWidget {
                 Expanded(
                   child: SingleChildScrollView(
                     controller: controller,
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                    child: FunctionRunResultInlinePanel(
-                      result: result,
-                      showRawJson: false,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      14,
+                      16,
+                      result.canContinueWithVlm ? 96 : 24,
                     ),
+                    child: FunctionRunResultInlinePanel(result: result),
                   ),
                 ),
+                if (result.canContinueWithVlm)
+                  SafeArea(
+                    top: false,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                      decoration: BoxDecoration(
+                        color: palette.pageBackground,
+                        border: Border(
+                          top: BorderSide(color: palette.borderSubtle),
+                        ),
+                      ),
+                      child: FilledButton.icon(
+                        onPressed: _continuing ? null : _continueWithVlm,
+                        icon: _continuing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.smart_toy_outlined, size: 18),
+                        label: Text(
+                          _continuing
+                              ? _text(context, '正在继续执行', 'Continuing')
+                              : _text(context, '用 VLM 继续', 'Continue with VLM'),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -260,17 +358,39 @@ class _RunResultMetrics extends StatelessWidget {
   }
 }
 
-class _StepResultList extends StatelessWidget {
-  const _StepResultList({required this.steps});
+typedef FunctionRunStepActionBuilder =
+    Widget? Function(
+      BuildContext context,
+      int index,
+      Map<String, dynamic> step,
+    );
+
+class FunctionRunStepList extends StatelessWidget {
+  const FunctionRunStepList({
+    super.key,
+    required this.steps,
+    this.title,
+    this.initiallyExpanded = false,
+    this.showStatusIcon = true,
+    this.copyValue,
+    this.actionBuilder,
+  });
 
   final List<Map<String, dynamic>> steps;
+  final String? title;
+  final bool initiallyExpanded;
+  final bool showStatusIcon;
+  final String? copyValue;
+  final FunctionRunStepActionBuilder? actionBuilder;
 
   @override
   Widget build(BuildContext context) {
     return _ExpandableResultSection(
-      title: '${_text(context, '执行步骤', 'Step results')} · ${steps.length}',
-      copyValue: _prettyJson(_stripInternalTiming(steps)),
-      initiallyExpanded: false,
+      title:
+          title ??
+          '${_text(context, '执行步骤', 'Step results')} · ${steps.length}',
+      copyValue: copyValue ?? _prettyJson(_stripInternalTiming(steps)),
+      initiallyExpanded: initiallyExpanded,
       child: Column(
         children: steps
             .asMap()
@@ -280,7 +400,12 @@ class _StepResultList extends StatelessWidget {
                 padding: EdgeInsets.only(
                   bottom: entry.key == steps.length - 1 ? 0 : 8,
                 ),
-                child: _StepResultTile(index: entry.key, step: entry.value),
+                child: _StepResultTile(
+                  index: entry.key,
+                  step: entry.value,
+                  showStatusIcon: showStatusIcon,
+                  actionBuilder: actionBuilder,
+                ),
               ),
             )
             .toList(growable: false),
@@ -290,10 +415,17 @@ class _StepResultList extends StatelessWidget {
 }
 
 class _StepResultTile extends StatelessWidget {
-  const _StepResultTile({required this.index, required this.step});
+  const _StepResultTile({
+    required this.index,
+    required this.step,
+    required this.showStatusIcon,
+    this.actionBuilder,
+  });
 
   final int index;
   final Map<String, dynamic> step;
+  final bool showStatusIcon;
+  final FunctionRunStepActionBuilder? actionBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -411,13 +543,16 @@ class _StepResultTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Icon(
-            success
-                ? Icons.check_circle_outline_rounded
-                : Icons.error_outline_rounded,
-            size: 16,
-            color: color,
-          ),
+          if (actionBuilder != null)
+            actionBuilder!(context, index, step) ?? const SizedBox.shrink()
+          else if (showStatusIcon)
+            Icon(
+              success
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.error_outline_rounded,
+              size: 16,
+              color: color,
+            ),
         ],
       ),
     );

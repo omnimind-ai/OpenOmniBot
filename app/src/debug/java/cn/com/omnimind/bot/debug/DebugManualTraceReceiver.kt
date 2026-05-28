@@ -80,6 +80,8 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
             return linkedMapOf<String, Any?>(
                 "success" to false,
                 "phase" to "recorder_not_started",
+                "error_code" to "ACCESSIBILITY_RECORDER_UNAVAILABLE",
+                "error_message" to "OOB Accessibility service is required for manual trace recording",
                 "session_label" to sessionLabel,
                 "duration_ms" to durationMs,
                 "action_count" to 0,
@@ -111,6 +113,7 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
             "has_click" to actionNames.contains("click"),
             "has_swipe" to actionNames.contains("swipe"),
             "summary" to traceResult.summary,
+            "diagnostics" to traceResult.diagnostics.takeIf { it.isNotEmpty() },
             "actions" to traceResult.actions.map { action ->
                 linkedMapOf<String, Any?>(
                     "action_name" to action.actionName,
@@ -122,8 +125,9 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
                     "duration_ms" to (action.finishedAtMs - action.startedAtMs).coerceAtLeast(0L),
                     "before_xml_present" to !action.beforeXml.isNullOrBlank(),
                     "after_xml_present" to !action.afterXml.isNullOrBlank(),
+                    "event_context" to action.eventContext.takeIf { it.isNotEmpty() },
                     "summary" to action.summary,
-                )
+                ).filterValues { it != null }
             },
             "token_usage_total" to 0,
             "timing" to timing.finish(
@@ -259,6 +263,7 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
         private fun eventTypeName(eventType: Int): String = when (eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> "TYPE_VIEW_CLICKED"
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> "TYPE_VIEW_LONG_CLICKED"
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> "TYPE_VIEW_FOCUSED"
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> "TYPE_VIEW_TEXT_CHANGED"
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "TYPE_WINDOW_STATE_CHANGED"
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "TYPE_WINDOW_CONTENT_CHANGED"

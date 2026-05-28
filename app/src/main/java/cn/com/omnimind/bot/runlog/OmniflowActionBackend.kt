@@ -40,6 +40,16 @@ interface OmniflowActionBackend {
 
     suspend fun inputTextToFocusedNode(text: String)
 
+    suspend fun inputText(
+        text: String,
+        targetDescription: String = "",
+        x: Float? = null,
+        y: Float? = null,
+        nodeResourceId: String = "",
+    ) {
+        inputTextToFocusedNode(text)
+    }
+
     suspend fun launchApplication(packageName: String)
 
     suspend fun launchApplication(packageName: String, resetTask: Boolean) {
@@ -47,6 +57,8 @@ interface OmniflowActionBackend {
     }
 
     suspend fun pressHotKey(key: String)
+
+    suspend fun hideKeyboard() = Unit
 
     fun currentXml(): String?
 
@@ -136,6 +148,22 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
         AccessibilityController.inputTextToFocusedNode(text)
     }
 
+    override suspend fun inputText(
+        text: String,
+        targetDescription: String,
+        x: Float?,
+        y: Float?,
+        nodeResourceId: String,
+    ) {
+        AccessibilityController.inputTextToBestNode(
+            text = text,
+            targetDescription = targetDescription,
+            x = x,
+            y = y,
+            nodeResourceId = nodeResourceId,
+        )
+    }
+
     override suspend fun launchApplication(packageName: String) {
         launchApplication(packageName = packageName, resetTask = false)
     }
@@ -158,6 +186,11 @@ private object AccessibilityOmniflowActionBackend : OmniflowActionBackend {
 
     override suspend fun pressHotKey(key: String) {
         AccessibilityController.pressHotKey(key)
+    }
+
+    override suspend fun hideKeyboard() {
+        AccessibilityController.hideKeyboard()
+        delay(250)
     }
 
     override fun currentXml(): String? =

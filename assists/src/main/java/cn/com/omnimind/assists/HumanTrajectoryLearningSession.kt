@@ -1,10 +1,10 @@
 package cn.com.omnimind.assists
 
 import android.content.Context
-import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
-import cn.com.omnimind.assists.task.vlmserver.ManualVlmTraceRecorder
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
+import cn.com.omnimind.assists.task.vlmserver.ManualVlmTraceRecorder
 import kotlinx.coroutines.CompletableDeferred
 import java.util.UUID
 
@@ -16,7 +16,8 @@ data class HumanTrajectoryLearningResult(
     val actionCount: Int,
     val summary: String,
     val errorMessage: String = "",
-    val actions: List<ManualVlmRecordedAction> = emptyList()
+    val actions: List<ManualVlmRecordedAction> = emptyList(),
+    val diagnostics: Map<String, Any?> = emptyMap()
 )
 
 /**
@@ -40,8 +41,19 @@ object HumanTrajectoryLearningSession {
 
     private val lock = Any()
     private var activeSession: ActiveSession? = null
+    private var activePaused: Boolean = false
 
     fun isActive(): Boolean = synchronized(lock) { activeSession != null }
+
+    fun isPaused(): Boolean = synchronized(lock) { activePaused }
+
+    /**
+     * Returns the active manual recording RunLog id for app-layer evidence writes.
+     *
+     * The assists module does not own app-only assets such as UDEG nodes; callers
+     * use this id only to attach non-replay evidence to the current manual run.
+     */
+    fun activeRunId(): String? = synchronized(lock) { activeSession?.runId }
 
     fun start(
         context: Context,
@@ -58,6 +70,7 @@ object HumanTrajectoryLearningSession {
             if (activeSession != null) {
                 throw IllegalStateException("已有人工轨迹学习正在进行")
             }
+            activePaused = false
             InternalRunLogStore.beginRun(
                 context = appContext,
                 runId = runId,
@@ -92,8 +105,37 @@ object HumanTrajectoryLearningSession {
         return deferred
     }
 
+    /**
+     * Suspends action capture for the active manual session.
+     *
+     * @return True when an active session remains available in paused state.
+     */
+    fun pauseActive(): Boolean {
+        val session = synchronized(lock) { activeSession } ?: return false
+        val paused = session.recorder.pause()
+        if (paused) {
+            synchronized(lock) { activePaused = true }
+        }
+        return paused
+    }
+
+    /**
+     * Resumes capture after refreshing the active recorder's page baseline.
+     *
+     * @return True when an active session remains available for recording.
+     */
+    fun resumeActive(): Boolean {
+        val session = synchronized(lock) { activeSession } ?: return false
+        val resumed = session.recorder.resume()
+        if (resumed) {
+            synchronized(lock) { activePaused = false }
+        }
+        return resumed
+    }
+
     fun completeActive(): Boolean {
         val session = synchronized(lock) {
+            activePaused = false
             activeSession.also { activeSession = null }
         } ?: return false
         val trace = runCatching { session.recorder.stop() }
@@ -106,16 +148,16 @@ object HumanTrajectoryLearningSession {
                     errorMessage = error.message.orEmpty()
                 )
                 session.result.complete(
-                    HumanTrajectoryLearningResult(
-                        success = false,
-                        runId = session.runId,
-                        name = session.name,
-                        description = session.description,
-                        actionCount = 0,
-                        summary = "",
-                        errorMessage = error.message.orEmpty(),
-                        actions = emptyList()
-                    )
+                HumanTrajectoryLearningResult(
+                    success = false,
+                    runId = session.runId,
+                    name = session.name,
+                    description = session.description,
+                    actionCount = 0,
+                    summary = "",
+                    errorMessage = error.message.orEmpty(),
+                    actions = emptyList()
+                )
                 )
                 OmniLog.w(TAG, "human trajectory learning failed: ${error.message}")
                 return true
@@ -127,9 +169,20 @@ object HumanTrajectoryLearningSession {
         if (cards.isNotEmpty()) {
             InternalRunLogStore.appendCards(session.context, session.runId, cards)
         }
-        val success = trace.actions.isNotEmpty()
+        if (trace.diagnostics.isNotEmpty()) {
+            InternalRunLogStore.updateDiagnostics(
+                context = session.context,
+                runId = session.runId,
+                diagnostics = trace.diagnostics
+            )
+        }
+        val hasActions = trace.actions.isNotEmpty()
+        val success = hasActions
         val doneReason = if (success) "user_completed" else "empty_recording"
-        val errorMessage = if (success) null else "未记录到可复用的人类操作"
+        val errorMessage = when {
+            !hasActions -> "未记录到可复用的人类操作"
+            else -> null
+        }
         InternalRunLogStore.finishRun(
             context = session.context,
             runId = session.runId,
@@ -146,7 +199,8 @@ object HumanTrajectoryLearningSession {
                 actionCount = trace.actionCount,
                 summary = trace.summary,
                 errorMessage = errorMessage.orEmpty(),
-                actions = trace.actions
+                actions = trace.actions,
+                diagnostics = trace.diagnostics
             )
         )
         OmniLog.d(TAG, "human trajectory learning completed: ${session.runId} actions=${trace.actionCount}")
@@ -155,6 +209,7 @@ object HumanTrajectoryLearningSession {
 
     fun cancelActive(message: String = "人工轨迹学习已取消"): Boolean {
         val session = synchronized(lock) {
+            activePaused = false
             activeSession.also { activeSession = null }
         } ?: return false
         runCatching { session.recorder.stop() }
@@ -215,6 +270,7 @@ object HumanTrajectoryLearningSession {
             "package_name" to action.packageName,
             "compile_kind" to "manual_recording",
             "source" to "human_trajectory",
+            "event_context" to action.eventContext.takeIf { it.isNotEmpty() },
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "tool_call" to linkedMapOf(
                 "id" to cardId,
@@ -242,6 +298,9 @@ object HumanTrajectoryLearningSession {
 
     private fun sourceContextForAction(action: ManualVlmRecordedAction): Map<String, Any?> {
         val beforeXml = action.beforeXml?.takeIf { it.isNotBlank() } ?: return emptyMap()
+        val recordingBackend = action.params["recording_backend"]?.toString()
+            ?.takeIf { it.isNotBlank() }
+            ?: "unknown"
         val actionMap = linkedMapOf<String, Any?>("tool" to action.actionName)
         action.params.forEach { (key, value) ->
             if (value != null) actionMap[key] = value
@@ -260,8 +319,11 @@ object HumanTrajectoryLearningSession {
             "action" to actionMap,
             "_oob_meta" to linkedMapOf(
                 "mode" to "manual_operation_recording",
-                "recording_backend" to "accessibility_event"
-            )
+                "recording_backend" to recordingBackend,
+                "action_source" to recordingBackend,
+                "event_context" to action.eventContext.takeIf { it.isNotEmpty() }
+            ).filterValues { it != null }
         ).filterValues { it != null }
     }
+
 }

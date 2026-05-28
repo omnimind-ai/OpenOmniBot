@@ -7,6 +7,7 @@ import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/models/conversation_model.dart';
+import 'package:ui/core/router/go_router_manager.dart';
 import 'package:ui/services/ai_chat_service.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/chat_input_area.dart';
@@ -261,11 +262,6 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   @override
   Future<void> persistAgentConversation() => _saveConversationToDb();
-
-  @override
-  void clearAgentStreamSessionState({String? taskId}) {
-    super.clearAgentStreamSessionState(taskId: taskId);
-  }
 
   @override
   void onAgentTextMessageUpdated(String messageId, {bool isFinal = true}) {
@@ -943,19 +939,6 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   void _handleHomeGreetingSettingsChanged() {
     if (!mounted) return;
     setState(() {});
-  }
-
-  void _applyHomeQuickPrompt(HomeQuickPrompt prompt) {
-    final text = prompt.resolvePrompt(context).trim();
-    if (text.isEmpty) {
-      return;
-    }
-    _messageController.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    _handleSlashCommandInput();
-    _inputFocusNode.requestFocus();
   }
 
   @override
@@ -1833,6 +1816,39 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     await _startManualRecordingFlow(userMessageText: '录制轨迹');
   }
 
+  Future<void> _openRunLogListFromShortcut() async {
+    GoRouterManager.push('/task/run_logs');
+  }
+
+  Future<void> _openLatestRunLogFromShortcut() async {
+    if (_isAiResponding) return;
+    try {
+      final snapshot = await AssistsMessageService.getInternalRunLogs(limit: 1);
+      if (!mounted) return;
+      UtgRunLogSummary? latest;
+      for (final run in snapshot.runs) {
+        if (run.runId.trim().isNotEmpty) {
+          latest = run;
+          break;
+        }
+      }
+      if (latest == null) {
+        showToast('暂无可查看的轨迹', type: ToastType.warning);
+        return;
+      }
+      unawaited(
+        showRunLogTimelineSheet(
+          context,
+          runId: latest.runId.trim(),
+          title: latest.goal.trim().isEmpty ? '当前轨迹' : latest.goal.trim(),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showToast(error.toString(), type: ToastType.error);
+    }
+  }
+
   Future<void> _startManualRecordingFlow({
     required String userMessageText,
   }) async {
@@ -1847,9 +1863,13 @@ class _ChatBotSheetState extends State<ChatBotSheet>
       unawaited(ScreenDialogService.restoreAfterManualRecording());
       _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
       final success = result['success'] == true;
-      final conversionSuccess = result['conversion_success'] == true ||
+      final conversionSuccess =
+          result['conversion_success'] == true ||
           result['conversionSuccess'] == true ||
-          (result['function_id'] ?? result['functionId']).toString().trim().isNotEmpty;
+          (result['function_id'] ?? result['functionId'])
+              .toString()
+              .trim()
+              .isNotEmpty;
       final runId = (result['run_id'] ?? result['runId'] ?? '').toString();
       showToast(
         success
@@ -2392,10 +2412,6 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     final screenHeight = MediaQuery.of(context).size.height;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final inputAreaHeight = _inputAreaHeight > 0 ? _inputAreaHeight : 72.0;
-    final liftEmptyGreeting = _emptyGreetingKeyboardLiftTracker.resolveForBuild(
-      bottomInset,
-    );
-    final homeGreetingSettings = HomeGreetingSettingsService.notifier.value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateInputAreaMetrics();
     });
@@ -2803,8 +2819,6 @@ class _ChatBotSheetState extends State<ChatBotSheet>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildManualRecordingTestBlock(),
-          const SizedBox(height: 8),
           ChatInputArea(
             key: _chatInputAreaKey,
             controller: _messageController,
@@ -2815,100 +2829,11 @@ class _ChatBotSheetState extends State<ChatBotSheet>
             onPopupVisibilityChanged: _onPopupVisibilityChanged,
             openClawEnabled: _openClawEnabled,
             onToggleOpenClaw: _setOpenClawEnabled,
+            onViewTrajectoriesTap: _openRunLogListFromShortcut,
+            onViewCurrentTrajectoryTap: _openLatestRunLogFromShortcut,
             onManualRecordingTap: _startManualRecordingFromShortcut,
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildManualRecordingTestBlock() {
-    final disabled = _isAiResponding;
-    return Semantics(
-      container: true,
-      label: '手动录制测试',
-      child: Container(
-        key: const ValueKey('manual-recording-test-block'),
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE3EAF4)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x120D1B2A),
-              blurRadius: 12,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEAF2FF),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.gesture_rounded,
-                size: 19,
-                color: Color(0xFF2F65D9),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Text(
-                    '手动录制测试',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF25314A),
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    '点击后开始收集点击和简单滑动轨迹',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Color(0xFF71809B)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            SizedBox(
-              height: 34,
-              child: ElevatedButton.icon(
-                key: const ValueKey('manual-recording-start-button'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F65D9),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFD8E0EC),
-                  disabledForegroundColor: const Color(0xFF8C99AC),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: const Text('开始手动录制'),
-                onPressed: disabled ? null : _startManualRecordingFromShortcut,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

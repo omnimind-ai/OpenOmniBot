@@ -2322,6 +2322,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get functionLibraryEditFailed => 'Update failed';
 
   @override
+  String get functionLibraryStepEditTitle => 'Edit step';
+
+  @override
+  String get functionLibraryStepTitleLabel => 'Step title';
+
+  @override
+  String get functionLibraryStepToolLabel => 'Action tool';
+
+  @override
+  String get functionLibraryStepArgsLabel => 'Arguments JSON';
+
+  @override
+  String get functionLibraryStepToolRequired => 'Action tool is required';
+
+  @override
+  String get functionLibraryStepArgsInvalid =>
+      'Arguments must be a valid JSON object';
+
+  @override
+  String get functionLibraryStepArgsObjectRequired =>
+      'Arguments must be a JSON object';
+
+  @override
+  String get functionLibraryStepEditMissing => 'Step to edit was not found';
+
+  @override
+  String get functionLibraryStepSaved => 'Step saved';
+
+  @override
+  String get functionLibraryStepKeepOne =>
+      'A reusable command needs at least one step';
+
+  @override
+  String get functionLibraryStepDeleteTitle => 'Delete step';
+
+  @override
+  String functionLibraryStepDeleteConfirm(Object name) {
+    return 'Delete \"$name\"? It will no longer replay after saving.';
+  }
+
+  @override
+  String get functionLibraryStepDeleteMissing => 'Step to delete was not found';
+
+  @override
+  String get functionLibraryStepDeleted => 'Step deleted';
+
+  @override
+  String get functionLibraryStepSaveFailed => 'Failed to save step';
+
+  @override
   String get functionLibraryDelete => 'Delete';
 
   @override
@@ -2945,6 +2995,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatInputCommandTooltip => 'Command';
+
+  @override
+  String get chatInputTrajectoryTooltip => 'Trajectories';
+
+  @override
+  String get chatInputViewTrajectories => 'All';
+
+  @override
+  String get chatInputViewTrajectoriesTooltip => 'View existing trajectories';
+
+  @override
+  String get chatInputViewCurrentTrajectory => 'Latest';
+
+  @override
+  String get chatInputViewCurrentTrajectoryTooltip =>
+      'View the latest trajectory';
+
+  @override
+  String get chatInputRecordTrajectory => 'Record';
+
+  @override
+  String get chatInputRecordTrajectoryTooltip => 'Record a trajectory';
 
   @override
   String get workbenchTitle => 'Workbench';

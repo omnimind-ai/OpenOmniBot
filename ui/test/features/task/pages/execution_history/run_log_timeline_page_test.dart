@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -430,6 +432,9 @@ void main() {
             if (call.method == 'getInternalRunLogTimeline') {
               return _runLogTimelinePayload(runId: 'run-vlm');
             }
+            if (call.method == 'getOobReusableFunction') {
+              return null;
+            }
             if (call.method == 'convertInternalRunLogToOobFunction') {
               return <String, dynamic>{
                 'success': true,
@@ -585,24 +590,31 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
       );
 
-      final convertCall = methodCalls.singleWhere(
-        (call) => call.method == 'convertInternalRunLogToOobFunction',
-      );
+      final convertCalls = methodCalls
+          .where((call) => call.method == 'convertInternalRunLogToOobFunction')
+          .toList(growable: false);
+      expect(convertCalls, hasLength(2));
       final convertArgs = Map<String, dynamic>.from(
-        convertCall.arguments as Map,
+        convertCalls.first.arguments as Map,
       );
       expect(convertArgs['runId'], 'run-vlm');
-      expect(convertArgs['register'], isTrue);
-
-      await _pumpUntilFound(
-        tester,
-        find.text('复用指令 JSON', skipOffstage: false),
+      expect(convertArgs['register'], isFalse);
+      final registerArgs = Map<String, dynamic>.from(
+        convertCalls.last.arguments as Map,
       );
+      expect(registerArgs['runId'], 'run-vlm');
+      expect(registerArgs['register'], isTrue);
+
+      await _pumpUntilFound(tester, find.text('执行步骤 · 1', skipOffstage: false));
       expect(find.text('RunLog 保存结果', skipOffstage: false), findsOneWidget);
-      expect(_richTextContaining('来源  已保存'), findsOneWidget);
-      expect(_richTextContaining('状态  可执行'), findsOneWidget);
-      expect(find.text('保存', skipOffstage: false), findsOneWidget);
+      expect(find.text('打开 Settings', skipOffstage: false), findsWidgets);
+      expect(find.text('打开 Android 设置', skipOffstage: false), findsWidgets);
+      expect(find.text('步骤 1', skipOffstage: false), findsOneWidget);
+      expect(find.text('参数 0', skipOffstage: false), findsOneWidget);
+      expect(find.text('RunLogs 1', skipOffstage: false), findsOneWidget);
+      expect(find.text('保存', skipOffstage: false), findsNothing);
       expect(find.text('执行', skipOffstage: false), findsOneWidget);
+      expect(find.text('增强', skipOffstage: false), findsOneWidget);
       expect(find.text('定时任务', skipOffstage: false), findsOneWidget);
       expect(find.text('复制 JSON', skipOffstage: false), findsNothing);
       expect(find.text('复制 Agent 提示', skipOffstage: false), findsNothing);
@@ -611,6 +623,20 @@ void main() {
       expect(find.text('Native', skipOffstage: false), findsNothing);
       expect(find.text('Local', skipOffstage: false), findsNothing);
       expect(find.textContaining('转换', skipOffstage: false), findsNothing);
+      expect(find.text('名称', skipOffstage: false), findsOneWidget);
+      expect(find.text('简介', skipOffstage: false), findsOneWidget);
+      expect(find.text('动作预览', skipOffstage: false), findsOneWidget);
+      expect(find.text('高级信息', skipOffstage: false), findsOneWidget);
+      expect(find.text('复用指令 JSON', skipOffstage: false), findsNothing);
+
+      await tester.scrollUntilVisible(
+        find.text('高级信息', skipOffstage: false),
+        180,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('高级信息', skipOffstage: false));
+      await tester.pumpAndSettle();
       expect(find.text('复用指令 JSON', skipOffstage: false), findsOneWidget);
       expect(_selectableTextContaining('execution_kind'), findsWidgets);
       expect(_selectableTextContaining('execution_result'), findsWidgets);
@@ -621,41 +647,415 @@ void main() {
       expect(_selectableTextContaining('route_kind'), findsNothing);
       expect(_selectableTextContaining('route_result'), findsNothing);
       expect(_selectableTextContaining('route_status'), findsNothing);
+      expect(_selectableTextContaining('Function'), findsNothing);
+      expect(_selectableTextContaining('function'), findsNothing);
+      expect(_selectableTextContaining('参考function'), findsNothing);
 
-      methodCalls.clear();
-      await tester.scrollUntilVisible(
-        find.text('保存'),
-        180,
-        scrollable: find.byType(Scrollable).last,
-      );
-      await tester.drag(
-        find.byType(Scrollable).last,
-        const Offset(0, -520),
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('保存'));
-      await tester.pumpAndSettle();
-
-      final reRegisterCalls = methodCalls
-          .where((call) => call.method == 'convertInternalRunLogToOobFunction')
-          .toList(growable: false);
-      expect(reRegisterCalls, hasLength(1));
-      expect(
-        methodCalls.where(
-          (call) => call.method == 'registerOobReusableFunction',
-        ),
-        isEmpty,
-      );
-      final reRegisterArgs = Map<String, dynamic>.from(
-        reRegisterCalls.single.arguments as Map,
-      );
-      expect(reRegisterArgs['runId'], 'run-vlm');
-      expect(reRegisterArgs['register'], isTrue);
-      expect(reRegisterArgs['functionId'], 'fn_from_runlog');
-      expect(reRegisterArgs['name'], '打开 Settings');
+      expect(find.text('保存修改', skipOffstage: false), findsNothing);
     },
   );
+
+  testWidgets('RunLog save opens an existing registered reusable command', (
+    tester,
+  ) async {
+    final methodCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          methodCalls.add(call);
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            if (args['register'] == true) {
+              fail('existing RunLog should not be registered again');
+            }
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return _runLogReusableFunctionSpec(
+              name: '已有 Settings 指令',
+              description: '已经保存过的 Android 设置轨迹',
+            );
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+
+    final convertCalls = methodCalls
+        .where((call) => call.method == 'convertInternalRunLogToOobFunction')
+        .toList(growable: false);
+    expect(convertCalls, hasLength(1));
+    final convertArgs = Map<String, dynamic>.from(
+      convertCalls.single.arguments as Map,
+    );
+    expect(convertArgs['runId'], 'run-vlm');
+    expect(convertArgs['register'], isFalse);
+    expect(
+      methodCalls.where((call) => call.method == 'getOobReusableFunction'),
+      hasLength(1),
+    );
+
+    await _pumpUntilFound(
+      tester,
+      find.text('已有 Settings 指令', skipOffstage: false),
+    );
+    expect(find.text('RunLog 保存结果', skipOffstage: false), findsOneWidget);
+    expect(find.text('已经保存过的 Android 设置轨迹'), findsWidgets);
+  });
+
+  testWidgets('RunLog saved command supports explicit Agent enhancement', (
+    tester,
+  ) async {
+    final methodCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          methodCalls.add(call);
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return null;
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'registered': true,
+              'created_function_id': 'fn_from_runlog',
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'postLLMChat') {
+            return '''
+{
+  "name": "打开系统设置",
+  "description": "打开 Android 系统设置页，适合需要进入设置入口时复用。",
+  "steps": [
+    {
+      "index": 0,
+      "title": "打开设置应用",
+      "description": "启动 Android 设置应用。"
+    }
+  ]
+}
+''';
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            final spec = Map<String, dynamic>.from(args['functionSpec'] as Map);
+            expect(spec['function_id'], 'fn_from_runlog');
+            expect(spec['name'], '打开系统设置');
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'fn_from_runlog',
+              'created_function_id': 'fn_from_runlog',
+              'already_exists': true,
+              'asset_kind': 'oob_reusable_function',
+              'asset_state': 'native_local',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('增强'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('增强'));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 800)),
+    );
+    await _pumpUntilFound(tester, find.text('打开系统设置', skipOffstage: false));
+    expect(find.text('打开系统设置', skipOffstage: false), findsWidgets);
+    expect(
+      find.text('打开 Android 系统设置页，适合需要进入设置入口时复用。', skipOffstage: false),
+      findsWidgets,
+    );
+    expect(find.text('打开设置应用', skipOffstage: false), findsWidgets);
+    expect(
+      methodCalls.where((call) => call.method == 'postLLMChat'),
+      hasLength(4),
+    );
+    expect(
+      methodCalls.where((call) => call.method == 'registerOobReusableFunction'),
+      hasLength(1),
+    );
+    expect(find.text('已增强', skipOffstage: false), findsOneWidget);
+    expect(find.text('已修改，保存后生效', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('RunLog Agent enhancement shows async progress state', (
+    tester,
+  ) async {
+    final llmCompleter = Completer<String>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return null;
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'registered': true,
+              'created_function_id': 'fn_from_runlog',
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'postLLMChat') {
+            return llmCompleter.future;
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'fn_from_runlog',
+              'created_function_id': 'fn_from_runlog',
+              'already_exists': true,
+              'asset_kind': 'oob_reusable_function',
+              'asset_state': 'native_local',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('增强'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('增强'));
+    await tester.pump();
+
+    expect(find.text('增强中', skipOffstage: false), findsOneWidget);
+    expect(find.text('已增强', skipOffstage: false), findsNothing);
+
+    llmCompleter.complete('''
+{
+  "name": "打开系统设置",
+  "description": "打开 Android 系统设置页，适合需要进入设置入口时复用。",
+  "steps": [
+    {
+      "index": 0,
+      "title": "打开设置应用",
+      "description": "启动 Android 设置应用。"
+    }
+  ]
+}
+''');
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await _pumpUntilFound(tester, find.text('已增强', skipOffstage: false));
+    expect(find.text('增强中', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('RunLog Agent enhancement repairs non JSON model output', (
+    tester,
+  ) async {
+    final methodCalls = <MethodCall>[];
+    var llmCallCount = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          methodCalls.add(call);
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return null;
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'registered': true,
+              'created_function_id': 'fn_from_runlog',
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'postLLMChat') {
+            llmCallCount++;
+            final prompt = (call.arguments as Map)['text'].toString();
+            if (llmCallCount == 1) {
+              return '我会增强这个轨迹，但这不是 JSON。';
+            }
+            if (prompt.contains('修复')) {
+              return '''
+{
+  "name": "打开系统设置",
+  "description": "打开 Android 系统设置页，适合需要进入设置入口时复用。"
+}
+''';
+            }
+            if (prompt.contains('每个 step')) {
+              return '''
+{
+  "steps": [
+    {
+      "index": 0,
+      "title": "打开设置应用",
+      "description": "启动 Android 设置应用。"
+    }
+  ]
+}
+''';
+            }
+            if (prompt.contains('运行时参数')) {
+              return '{"parameters": []}';
+            }
+            if (prompt.contains('agent_reuse')) {
+              return '{"agent_reuse": {"reuse_when": ["当前页面仍是 Android 桌面或设置入口时"]}}';
+            }
+            return '''
+{
+  "name": "打开系统设置",
+  "description": "打开 Android 系统设置页，适合需要进入设置入口时复用。",
+  "steps": [
+    {
+      "index": 0,
+      "title": "打开设置应用",
+      "description": "启动 Android 设置应用。"
+    }
+  ]
+}
+''';
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            final spec = Map<String, dynamic>.from(args['functionSpec'] as Map);
+            expect(spec['function_id'], 'fn_from_runlog');
+            expect(spec['name'], '打开系统设置');
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'fn_from_runlog',
+              'created_function_id': 'fn_from_runlog',
+              'already_exists': true,
+              'asset_kind': 'oob_reusable_function',
+              'asset_state': 'native_local',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('增强'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('增强'));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 800)),
+    );
+    await _pumpUntilFound(tester, find.text('打开系统设置', skipOffstage: false));
+
+    expect(
+      methodCalls.where((call) => call.method == 'postLLMChat'),
+      hasLength(5),
+    );
+    expect(
+      methodCalls.where(
+        (call) =>
+            call.method == 'postLLMChat' &&
+            (call.arguments as Map)['text'].toString().contains('修复'),
+      ),
+      hasLength(1),
+    );
+    expect(
+      methodCalls.where((call) => call.method == 'registerOobReusableFunction'),
+      hasLength(1),
+    );
+    expect(find.text('已增强', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('没有返回可解析 JSON'), findsNothing);
+  });
 }
 
 Map<String, dynamic> _nestedVlmRunLogTimelinePayload() {
@@ -744,6 +1144,38 @@ Map<String, dynamic> _nestedVlmRunLogTimelinePayload() {
         'result': <String, dynamic>{'message': '点击完成'},
       },
     ],
+  };
+}
+
+Map<String, dynamic> _runLogReusableFunctionSpec({
+  required String name,
+  required String description,
+}) {
+  return <String, dynamic>{
+    'schema_version': 'oob.reusable_function.v1',
+    'function_id': 'fn_from_runlog',
+    'name': name,
+    'description': description,
+    'source': <String, dynamic>{
+      'kind': 'run_log',
+      'run_id': 'run-vlm',
+      'converter': 'native_run_log_reusable_function_builder',
+    },
+    'parameters': <dynamic>[],
+    'execution': <String, dynamic>{
+      'kind': 'tool_sequence',
+      'steps': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'step_1',
+          'index': 0,
+          'title': name,
+          'kind': 'omniflow_action',
+          'tool': 'open_app',
+          'executor': 'omniflow',
+          'args': <String, dynamic>{'package_name': 'com.android.settings'},
+        },
+      ],
+    },
   };
 }
 

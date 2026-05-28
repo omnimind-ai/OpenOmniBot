@@ -353,18 +353,24 @@ class OobFunctionToolHandler(
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        val recovery = refetchCurrentPageForFailedStep(e.message ?: "omniflow step failed")
-                        val fallbackResult = tryOmniflowVlmFallback(
-                            step = step,
-                            stepId = stepId,
-                            stepTitle = stepTitle,
-                            failReason = e.message ?: "omniflow step failed",
-                            recovery = recovery,
-                            env = env,
-                            callback = callback,
-                            toolHandle = toolHandle,
-                            parentToolCallId = parentToolCallId ?: toolName
-                        )
+                        val executionError = e as? OmniflowStepExecutor.ExecutionException
+                        val failReason = e.message ?: "omniflow step failed"
+                        val recovery = refetchCurrentPageForFailedStep(failReason)
+                        val fallbackResult = if (allowAgentFallback) {
+                            tryOmniflowVlmFallback(
+                                step = step,
+                                stepId = stepId,
+                                stepTitle = stepTitle,
+                                failReason = failReason,
+                                recovery = recovery,
+                                env = env,
+                                callback = callback,
+                                toolHandle = toolHandle,
+                                parentToolCallId = parentToolCallId ?: toolName
+                            )
+                        } else {
+                            null
+                        }
                         if (fallbackResult != null) {
                             delegatedToolUsed = true
                         }
@@ -380,10 +386,12 @@ class OobFunctionToolHandler(
                                 "needs_agent" to true,
                                 "fallback_available" to true,
                                 "prompt" to agentFallbackPrompt(step, stepTitle, recovery),
-                                "omniflow_fail_reason" to (e.message ?: "omniflow step failed"),
+                                "omniflow_fail_reason" to failReason,
+                                "error_code" to executionError?.errorCode,
+                                "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
                                 "recovery" to recovery,
                                 "summary" to "Omniflow step requires agent fallback: $stepTitle"
-                            )
+                            ).filterValues { it != null }
                         } else {
                             linkedMapOf<String, Any?>(
                                 "step_id" to stepId,
@@ -391,9 +399,13 @@ class OobFunctionToolHandler(
                                 "executor" to "omniflow",
                                 "model_free" to true,
                                 "success" to false,
+                                "needs_agent" to false,
+                                "fallback_available" to false,
+                                "error_code" to (executionError?.errorCode ?: "OOB_OMNIFLOW_STEP_FAILED"),
+                                "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
                                 "recovery" to recovery,
-                                "summary" to (e.message ?: "omniflow step failed")
-                            )
+                                "summary" to failReason
+                            ).filterValues { it != null }
                         }
                     }
                 }
@@ -1444,6 +1456,10 @@ class OobFunctionToolHandler(
             "hot_key",
             "target_description",
             "targetDescription",
+            "node_resource_id",
+            "nodeResourceId",
+            "resource_id",
+            "resourceId",
         )) {
             if (edgeArgs[key] == null && edge.containsKey(key)) {
                 edgeArgs[key] = edge[key]

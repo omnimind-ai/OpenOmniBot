@@ -118,7 +118,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute verifies recorded after page postcondition`() = runBlocking {
+    fun `execute records only pre action checker diagnostics`() = runBlocking {
         val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
@@ -144,9 +144,10 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals(true, postcondition["package_matched"])
+            assertFalse(result.containsKey("postcondition"))
+            val checker = result["checker"] as Map<*, *>
+            assertEquals("before_action", checker["phase"])
+            assertEquals("continue", checker["effect"])
         }
     }
 
@@ -162,7 +163,11 @@ class OmniflowStepExecutorTest {
                 step = mapOf(
                     "executor" to "omniflow",
                     "omniflow_action" to "click",
-                    "args" to mapOf("x" to 360, "y" to 977),
+                    "args" to mapOf(
+                        "x" to 360,
+                        "y" to 977,
+                        "coordinate_replay_allowed" to true,
+                    ),
                     "source_context" to mapOf(
                         "src_ctx" to mapOf("page" to SETTINGS_XML),
                         "dst_ctx" to mapOf(
@@ -180,11 +185,7 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals("com.android.settings", postcondition["expected_package"])
-            assertEquals("cn.com.omnimind.bot.debug", postcondition["recorded_expected_package"])
-            assertEquals(true, postcondition["package_matched"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
@@ -218,15 +219,12 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals(true, postcondition["package_matched"])
-            assertEquals("com.android.permissioncontroller", postcondition["current_package"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute skips click when current page already satisfies recorded after page`() = runBlocking {
+    fun `execute does not skip based on recorded after page`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_APPS_XML,
             afterXml = SETTINGS_APPS_XML,
@@ -238,7 +236,11 @@ class OmniflowStepExecutorTest {
                     "executor" to "omniflow",
                     "omniflow_action" to "click",
                     "coordinate_hook" to "omniflow",
-                    "args" to mapOf("x" to 360, "y" to 977),
+                    "args" to mapOf(
+                        "x" to 360,
+                        "y" to 977,
+                        "coordinate_replay_allowed" to true,
+                    ),
                     "source_context" to mapOf(
                         "src_ctx" to mapOf(
                             "page" to SETTINGS_XML,
@@ -259,16 +261,14 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            assertEquals(true, result["skipped"])
-            assertEquals("pre_action_postcondition_satisfied", result["skip_reason"])
-            assertFalse(backend.clicked)
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["pre_action_satisfied"])
+            assertFalse(result["skipped"] == true)
+            assertTrue(backend.clicked)
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute allows package-only postcondition for transient settings search page`() = runBlocking {
+    fun `execute ignores recorded after postcondition for transient settings search page`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_XML,
             afterXml = SETTINGS_SEARCH_CURRENT_XML,
@@ -303,14 +303,12 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals("settings_search_transition", postcondition["semantic_fallback"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute retries postcondition xml capture after app launch`() = runBlocking {
+    fun `execute open app does not run step postcondition`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SOURCE_XML,
             afterXml = AFTER_XML,
@@ -339,13 +337,12 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute verifies open app from activity package when xml and package are blank`() = runBlocking {
+    fun `execute opens app without post action package checker`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = "",
             afterXml = "",
@@ -364,10 +361,7 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals(true, postcondition["package_matched"])
-            assertEquals("com.android.settings", postcondition["current_package"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
@@ -425,7 +419,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute retries coordinate remap when current page is still settling`() = runBlocking {
+    fun `execute allows root projection only when explicitly requested`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SOURCE_XML,
             afterXml = SOURCE_XML,
@@ -438,7 +432,11 @@ class OmniflowStepExecutorTest {
                     "executor" to "omniflow",
                     "omniflow_action" to "click",
                     "coordinate_hook" to "omniflow",
-                    "args" to mapOf("x" to 504, "y" to 1152),
+                    "args" to mapOf(
+                        "x" to 504,
+                        "y" to 1152,
+                        "coordinate_replay_allowed" to true,
+                    ),
                     "source_context" to mapOf(
                         "src_ctx" to mapOf("page" to CLOCK_HOME_XML),
                     ),
@@ -452,7 +450,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute waits for matching postcondition instead of failing on stale foreground page`() = runBlocking {
+    fun `execute does not wait for matching postcondition after action`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_DISPLAY_XML,
             afterXml = SYSTEMUI_SLIDER_XML,
@@ -483,82 +481,207 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val postcondition = result["postcondition"] as Map<*, *>
-            assertEquals(true, postcondition["success"])
-            assertEquals(true, postcondition["package_matched"])
-            assertEquals("com.android.systemui", postcondition["current_package"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute rejects settings page match based only on generic resource ids`() = runBlocking {
+    fun `execute does not reject low recorded after similarity as step checker`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_XML,
             afterXml = SETTINGS_SECURITY_LIKE_XML,
             currentPackage = "com.android.settings",
         )
         OmniflowActionRuntime.useBackendForTesting(backend).use {
-            try {
-                OmniflowStepExecutor.execute(
-                    step = mapOf(
-                        "executor" to "omniflow",
-                        "omniflow_action" to "click",
-                        "args" to mapOf("x" to 360, "y" to 749),
-                        "source_context" to mapOf(
-                            "src_ctx" to mapOf("page" to SETTINGS_XML),
-                            "dst_ctx" to mapOf(
-                                "page" to SETTINGS_DISPLAY_XML,
-                                "package_name" to "com.android.settings",
-                            ),
-                        ),
-                        "postcondition" to mapOf(
-                            "kind" to "recorded_after_page_similarity",
-                            "min_score" to 0.12,
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 360, "y" to 749),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SETTINGS_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to SETTINGS_DISPLAY_XML,
+                            "package_name" to "com.android.settings",
                         ),
                     ),
-                    stepId = "step_wrong_settings_page",
-                    stepTitle = "click Display",
-                )
-                fail("Expected wrong Settings page postcondition to fail")
-            } catch (expected: IllegalStateException) {
-                assertTrue(expected.message.orEmpty().contains("Postcondition failed"))
-            }
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.12,
+                    ),
+                ),
+                stepId = "step_wrong_settings_page",
+                stepTitle = "click Display",
+            )
+
+            assertEquals(true, result["success"])
+            assertFalse(result.containsKey("postcondition"))
         }
     }
 
     @Test
-    fun `execute still fails low similarity postcondition without transient search marker`() = runBlocking {
+    fun `execute ignores low similarity recorded after postcondition without transient marker`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SETTINGS_XML,
             afterXml = SETTINGS_SEARCH_CURRENT_XML,
             currentPackage = "com.google.android.settings.intelligence",
         )
         OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 500, "y" to 120),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SETTINGS_XML),
+                        "dst_ctx" to mapOf(
+                            "page" to SETTINGS_SEARCH_RECORDED_XML,
+                            "package_name" to "com.google.android.settings.intelligence",
+                        ),
+                    ),
+                    "postcondition" to mapOf(
+                        "kind" to "recorded_after_page_similarity",
+                        "min_score" to 0.95,
+                    ),
+                ),
+                stepId = "step_search",
+                stepTitle = "click search settings",
+            )
+
+            assertEquals(true, result["success"])
+            assertFalse(result.containsKey("postcondition"))
+        }
+    }
+
+    @Test
+    fun `input text uses target metadata instead of focused node fallback`() = runBlocking {
+        val backend = FakeBackend(beforeXml = INPUT_FORM_XML, afterXml = INPUT_FORM_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "input_text",
+                    "args" to mapOf(
+                        "content" to "Alice",
+                        "target_description" to "First name",
+                        "node_resource_id" to "app:id/first_name",
+                        "x" to 180,
+                        "y" to 232,
+                    ),
+                ),
+                stepId = "step_input",
+                stepTitle = "type first name",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(1, backend.inputRequests.size)
+            val request = backend.inputRequests.single()
+            assertEquals("Alice", request["text"])
+            assertEquals("First name", request["targetDescription"])
+            assertEquals("app:id/first_name", request["nodeResourceId"])
+            assertEquals(180f, request["x"])
+            assertEquals(232f, request["y"])
+            assertEquals(0, backend.focusedInputCount)
+        }
+    }
+
+    @Test
+    fun `point transfer preserves intra node offset for webview regions`() = runBlocking {
+        val backend = FakeBackend(beforeXml = WEBVIEW_CURRENT_XML, afterXml = WEBVIEW_CURRENT_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 180, "y" to 220),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to WEBVIEW_SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_webview",
+                stepTitle = "click webview hotspot",
+            )
+
+            assertEquals(true, result["success"])
+            val click = backend.clickPoints.single()
+            assertEquals(360f, click.first, 0.01f)
+            assertEquals(440f, click.second, 0.01f)
+            assertFalse("transfer must not collapse webview clicks to target node center", click.first == 600f && click.second == 600f)
+        }
+    }
+
+    @Test
+    fun `coordinate remap abstains without anchor match by default`() = runBlocking {
+        val backend = FakeBackend(beforeXml = AFTER_XML, afterXml = AFTER_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
             try {
                 OmniflowStepExecutor.execute(
                     step = mapOf(
                         "executor" to "omniflow",
                         "omniflow_action" to "click",
-                        "args" to mapOf("x" to 500, "y" to 120),
+                        "coordinate_hook" to "omniflow",
+                        "args" to mapOf("x" to 120, "y" to 240),
                         "source_context" to mapOf(
-                            "src_ctx" to mapOf("page" to SETTINGS_XML),
-                            "dst_ctx" to mapOf(
-                                "page" to SETTINGS_SEARCH_RECORDED_XML,
-                                "package_name" to "com.google.android.settings.intelligence",
-                            ),
-                        ),
-                        "postcondition" to mapOf(
-                            "kind" to "recorded_after_page_similarity",
-                            "min_score" to 0.95,
+                            "src_ctx" to mapOf("page" to SOURCE_XML),
                         ),
                     ),
-                    stepId = "step_search",
-                    stepTitle = "click search settings",
+                    stepId = "step_no_anchor",
+                    stepTitle = "click stale target",
                 )
-                fail("Expected low-similarity postcondition to fail")
-            } catch (expected: IllegalStateException) {
-                assertTrue(expected.message.orEmpty().contains("Postcondition failed"))
+                fail("Expected strict action transfer to abstain")
+            } catch (expected: OmniflowStepExecutor.ExecutionException) {
+                assertEquals("OOB_ACTION_TRANSFER_FAILED", expected.errorCode)
+                assertEquals("no_anchor_match", expected.diagnostics["reason"])
             }
+        }
+    }
+
+    @Test
+    fun `pre action checker dismisses blocking ad overlay before transfer`() = runBlocking {
+        val backend = FakeBackend(beforeXml = AD_OVERLAY_XML, afterXml = SOURCE_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_ad_overlay",
+                stepTitle = "click behind ad",
+            )
+
+            assertEquals(true, result["success"])
+            val effects = result["control_effects"] as List<*>
+            val first = effects.single() as Map<*, *>
+            assertEquals("dismiss_blocking_overlay", first["controller"])
+            assertEquals(2, backend.clickPoints.size)
+        }
+    }
+
+    @Test
+    fun `pre action checker hides keyboard when it obscures target`() = runBlocking {
+        val backend = FakeBackend(beforeXml = KEYBOARD_XML, afterXml = KEYBOARD_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 540, "y" to 1720),
+                ),
+                stepId = "step_keyboard",
+                stepTitle = "tap covered button",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(1, backend.hideKeyboardCount)
+            val effects = result["control_effects"] as List<*>
+            val first = effects.single() as Map<*, *>
+            assertEquals("hide_keyboard_if_obscuring", first["controller"])
         }
     }
 
@@ -577,11 +700,18 @@ class OmniflowStepExecutorTest {
         private var preActionXmlReadCount = 0
         private var actionXmlReadCount = 0
         val launchRequests = mutableListOf<String>()
+        val clickPoints = mutableListOf<Pair<Float, Float>>()
+        val inputRequests = mutableListOf<Map<String, Any?>>()
+        var focusedInputCount = 0
+            private set
+        var hideKeyboardCount = 0
+            private set
 
         override fun isReady(): Boolean = true
 
         override suspend fun click(x: Float, y: Float) {
             clicked = true
+            clickPoints += x to y
         }
 
         override suspend fun longPress(x: Float, y: Float, durationMs: Long) {
@@ -600,6 +730,24 @@ class OmniflowStepExecutorTest {
 
         override suspend fun inputTextToFocusedNode(text: String) {
             clicked = true
+            focusedInputCount += 1
+        }
+
+        override suspend fun inputText(
+            text: String,
+            targetDescription: String,
+            x: Float?,
+            y: Float?,
+            nodeResourceId: String,
+        ) {
+            clicked = true
+            inputRequests += mapOf(
+                "text" to text,
+                "targetDescription" to targetDescription,
+                "x" to x,
+                "y" to y,
+                "nodeResourceId" to nodeResourceId,
+            )
         }
 
         override suspend fun launchApplication(packageName: String) {
@@ -613,6 +761,10 @@ class OmniflowStepExecutorTest {
 
         override suspend fun pressHotKey(key: String) {
             clicked = true
+        }
+
+        override suspend fun hideKeyboard() {
+            hideKeyboardCount += 1
         }
 
         override fun currentXml(): String? {
@@ -652,6 +804,16 @@ class OmniflowStepExecutorTest {
     companion object {
         private const val SOURCE_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/></hierarchy>"
+        private const val INPUT_FORM_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][760,264]\" enabled=\"true\" visible-to-user=\"true\" editable=\"true\" focusable=\"true\" text=\"\" hint-text=\"First name\" class=\"android.widget.EditText\" resource-id=\"app:id/first_name\"/></hierarchy>"
+        private const val WEBVIEW_SOURCE_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,100][500,500]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" class=\"android.webkit.WebView\" resource-id=\"app:id/webview\"/></hierarchy>"
+        private const val WEBVIEW_CURRENT_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[200,200][1000,1000]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" class=\"android.webkit.WebView\" resource-id=\"app:id/webview\"/></hierarchy>"
+        private const val AD_OVERLAY_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/><node bounds=\"[80,260][1000,1540]\" enabled=\"true\" visible-to-user=\"true\" text=\"Sponsored ad\" class=\"android.app.Dialog\" resource-id=\"ad:id/dialog\"><node bounds=\"[900,300][980,380]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" content-desc=\"Close ad\" class=\"android.widget.ImageButton\" resource-id=\"ad:id/close_ad\"/></node></hierarchy>"
+        private const val KEYBOARD_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1280]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.widget.FrameLayout\" resource-id=\"app:id/content\"/><node bounds=\"[0,1320][1080,1920]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.inputmethodservice.KeyboardView\" package=\"com.google.android.inputmethod.latin\" resource-id=\"com.google.android.inputmethod.latin:id/keyboard_view\"/></hierarchy>"
         private const val SCROLL_SOURCE_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1920]\" scrollable=\"true\" enabled=\"true\" visible-to-user=\"true\" class=\"androidx.recyclerview.widget.RecyclerView\" resource-id=\"app:id/list\"><node bounds=\"[100,300][900,380]\" enabled=\"true\" visible-to-user=\"true\" text=\"Network\" class=\"android.widget.TextView\" resource-id=\"android:id/title\"/></node></hierarchy>"
         private const val AFTER_XML =

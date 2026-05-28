@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -127,6 +128,87 @@ class AccessibilityController() {
                 captureAction?.getNodeMap()?.values?.firstOrNull { it.info.isFocused }?.info
                     ?: throw NoFocusedNodeException()
             actionController?.inputText(focusedNode, text)
+        }
+
+        suspend fun inputTextToBestNode(
+            text: String,
+            targetDescription: String = "",
+            x: Float? = null,
+            y: Float? = null,
+            nodeResourceId: String = "",
+        ) {
+            checkAccessibilityPermissions()
+            val errors = mutableListOf<String>()
+
+            if (x != null && y != null) {
+                val clicked = runCatching {
+                    clickCoordinate(x, y)
+                    delay(INPUT_FOCUS_SETTLE_MS)
+                }.onFailure { error ->
+                    errors += "coordinate_focus_failed=${error.message.orEmpty()}"
+                }.isSuccess
+
+                if (clicked) {
+                    runCatching {
+                        inputTextToFocusedNode(text)
+                    }.onSuccess {
+                        return
+                    }.onFailure { error ->
+                        errors += "focused_input_after_click_failed=${error.message.orEmpty()}"
+                    }
+
+                    val postClickNode = withTimeout(INPUT_TARGET_LOOKUP_TIMEOUT_MS) {
+                        findEditableInputCandidate(
+                            targetDescription = targetDescription,
+                            nodeResourceId = nodeResourceId,
+                            x = x,
+                            y = y
+                        )
+                    }
+                    if (postClickNode != null) {
+                        runCatching {
+                            inputTextIntoNode(postClickNode, text)
+                        }.onSuccess {
+                            return
+                        }.onFailure { error ->
+                            errors += "candidate_input_after_click_failed=${error.message.orEmpty()}"
+                        }
+                    } else {
+                        errors += "candidate_after_click_missing"
+                    }
+                }
+            }
+
+            val directNode = withTimeout(INPUT_TARGET_LOOKUP_TIMEOUT_MS) {
+                findEditableInputCandidate(
+                    targetDescription = targetDescription,
+                    nodeResourceId = nodeResourceId,
+                    x = x,
+                    y = y
+                )
+            }
+            if (directNode != null) {
+                runCatching {
+                    inputTextIntoNode(directNode, text)
+                }.onSuccess {
+                    return
+                }.onFailure { error ->
+                    errors += "direct_candidate_input_failed=${error.message.orEmpty()}"
+                }
+            }
+
+            if (targetDescription.isBlank() && nodeResourceId.isBlank() && x == null && y == null) {
+                inputTextToFocusedNode(text)
+                return
+            }
+            throw NoFocusedNodeException(
+                "No editable input target found for replay text action: " +
+                    targetDescription.ifBlank { nodeResourceId.ifBlank { "x=$x y=$y" } } +
+                    errors.takeIf { it.isNotEmpty() }?.joinToString(
+                        prefix = " (",
+                        postfix = ")"
+                    ).orEmpty()
+            )
         }
 
         suspend fun pressHotKey(key: String) {
@@ -534,6 +616,95 @@ class AccessibilityController() {
         private fun findNodeById(nodeId: String): AccessibilityNode? =
             captureAction?.getNodeMap()?.get(nodeId.trim())
 
+        private fun inputTextIntoNode(
+            node: AccessibilityNodeInfo,
+            text: String
+        ) {
+            if (!node.isFocused) {
+                runCatching {
+                    node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                }.onFailure { error ->
+                    OmniLog.d(TAG, "focus editable node before input failed: ${error.message}")
+                }
+            }
+            actionController?.inputText(node, text)
+                ?: throw IllegalStateException("Accessibility action controller is not ready")
+        }
+
+        private fun findEditableInputCandidate(
+            targetDescription: String,
+            nodeResourceId: String,
+            x: Float?,
+            y: Float?
+        ): AccessibilityNodeInfo? {
+            val terms = semanticTerms(targetDescription)
+            val resourceText = nodeResourceId.trim().lowercase()
+            val resourceTail = resourceText.substringAfterLast('/').substringAfterLast(':')
+            val hasSelector = targetDescription.isNotBlank() || resourceText.isNotBlank() ||
+                (x != null && y != null)
+            return captureAction?.getNodeMap()?.values.orEmpty()
+                .mapNotNull { node ->
+                    val editableNode = findActionableAncestor(
+                        node = node.info,
+                        supportsAction = { it.isEnabled && it.isEditable }
+                    ) ?: return@mapNotNull null
+                    val bounds = editableNode.boundsInScreenOrNull() ?: node.bounds
+                    if (bounds.isEmpty) return@mapNotNull null
+                    val label = nodeSemanticLabel(editableNode)
+                    val labelLower = label.lowercase()
+                    val containsPoint = x != null && y != null &&
+                        bounds.contains(x.toInt(), y.toInt())
+                    val distance = if (x != null && y != null) {
+                        abs(bounds.exactCenterX() - x) + abs(bounds.exactCenterY() - y)
+                    } else {
+                        0f
+                    }
+                    val termScore = terms.sumOf { term ->
+                        when {
+                            term.isBlank() -> 0
+                            labelLower == term -> 80
+                            labelLower.contains(term) -> 40
+                            else -> 0
+                        }
+                    }
+                    val candidateResource = editableNode.viewIdResourceName
+                        ?.toString()
+                        ?.trim()
+                        ?.lowercase()
+                        .orEmpty()
+                    val candidateTail = candidateResource.substringAfterLast('/').substringAfterLast(':')
+                    val resourceScore = when {
+                        resourceText.isBlank() -> 0f
+                        candidateResource == resourceText -> 900f
+                        resourceTail.isNotBlank() && candidateTail == resourceTail -> 520f
+                        candidateResource.contains(resourceTail) && resourceTail.isNotBlank() -> 260f
+                        else -> 0f
+                    }
+                    val coordinateScore = when {
+                        containsPoint -> 600f
+                        x != null && y != null -> (240f - distance * 0.08f).coerceAtLeast(0f)
+                        else -> 0f
+                    }
+                    val focusScore = if (editableNode.isFocused) 120f else 0f
+                    val areaPenalty = (bounds.width() * bounds.height()).toFloat() / 100000f
+                    EditableInputCandidate(
+                        node = editableNode,
+                        score = coordinateScore + termScore + resourceScore + focusScore - areaPenalty
+                    )
+                }
+                .filter { candidate ->
+                    candidate.score >= if (hasSelector) MIN_INPUT_TARGET_SCORE else 0f
+                }
+                .maxByOrNull { it.score }
+                ?.node
+        }
+
+        private fun AccessibilityNodeInfo.boundsInScreenOrNull(): Rect? {
+            val rect = Rect()
+            getBoundsInScreen(rect)
+            return rect.takeUnless { it.isEmpty }
+        }
+
         private fun findActionableAncestor(
             node: AccessibilityNodeInfo,
             supportsAction: (AccessibilityNodeInfo) -> Boolean
@@ -577,11 +748,17 @@ class AccessibilityController() {
             listOf(
                 node.text?.toString(),
                 node.contentDescription?.toString(),
+                node.hintText?.toString(),
                 node.viewIdResourceName,
                 node.className?.toString()?.substringAfterLast('.')
             )
                 .filter { !it.isNullOrBlank() }
                 .joinToString(" ")
+
+        private data class EditableInputCandidate(
+            val node: AccessibilityNodeInfo,
+            val score: Float
+        )
 
         private fun semanticTerms(value: String): Set<String> =
             TERM_REGEX.findAll(value.lowercase())
@@ -979,5 +1156,8 @@ class AccessibilityController() {
         private const val MIN_SCROLLABLE_WIDTH_PX = 120
         private const val MIN_SCROLLABLE_HEIGHT_PX = 160
         private const val MAX_NODE_ACTION_ANCESTOR_DEPTH = 6
+        private const val MIN_INPUT_TARGET_SCORE = 80f
+        private const val INPUT_TARGET_LOOKUP_TIMEOUT_MS = 3000L
+        private const val INPUT_FOCUS_SETTLE_MS = 500L
     }
 }

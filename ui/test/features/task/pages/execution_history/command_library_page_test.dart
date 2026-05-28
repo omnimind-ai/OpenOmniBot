@@ -193,6 +193,245 @@ void main() {
     },
   );
 
+  testWidgets('Reusable command step can be edited and saved', (tester) async {
+    Map<String, dynamic>? savedSpec;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'listOobReusableFunctions') {
+            return <String, dynamic>{
+              'success': true,
+              'functions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'function_id': 'search_contact',
+                  'name': '搜索联系人',
+                  'description': '搜索联系人',
+                  'step_count': 1,
+                  'parameter_names': <String>['query'],
+                  'step_summaries': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 'step_1',
+                      'index': 0,
+                      'title': '输入文本',
+                      'kind': 'omniflow_action',
+                      'executor': 'omniflow',
+                      'tool': 'type',
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return <String, dynamic>{
+              'function_id': 'search_contact',
+              'name': '搜索联系人',
+              'parameters': <String, dynamic>{
+                'type': 'object',
+                'properties': <String, dynamic>{
+                  'query': <String, dynamic>{
+                    'type': 'string',
+                    'default': '妈妈',
+                    'x_oob_bindings': <String>[
+                      r'$.execution.steps[0].args.text',
+                      r'$.actions[0].text',
+                    ],
+                  },
+                },
+              },
+              'actions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'type': 'type',
+                  'text': r'${query}',
+                  'description': '输入文本',
+                },
+              ],
+              'execution': <String, dynamic>{
+                'step_count': 1,
+                'steps': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'step_1',
+                    'index': 0,
+                    'title': '输入文本',
+                    'kind': 'omniflow_action',
+                    'executor': 'omniflow',
+                    'tool': 'type',
+                    'omniflow_action': 'type',
+                    'callable_tool': 'type',
+                    'args': <String, dynamic>{'text': '妈妈'},
+                  },
+                ],
+              },
+            };
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final arguments = Map<String, dynamic>.from(call.arguments as Map);
+            savedSpec = Map<String, dynamic>.from(
+              arguments['functionSpec'] as Map,
+            );
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'search_contact',
+              'created_function_id': 'search_contact',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: CommandLibraryPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.info_outline_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(3));
+    await tester.enterText(fields.at(0), '输入姓名');
+    await tester.enterText(fields.at(1), 'type');
+    await tester.enterText(fields.at(2), '{"text":"妈妈的新号码"}');
+    await tester.tap(find.text('保存').last);
+    await tester.pumpAndSettle();
+
+    final execution = savedSpec?['execution'] as Map;
+    final step = (execution['steps'] as List).single as Map;
+    expect(step['title'], '输入姓名');
+    expect(step['tool'], 'input_text');
+    expect(step['omniflow_action'], 'input_text');
+    expect((step['args'] as Map)['text'], '妈妈的新号码');
+    final action = (savedSpec?['actions'] as List).single as Map;
+    expect(action['type'], 'input_text');
+    expect(action['text'], r'${query}');
+    expect(action['description'], '输入姓名');
+    final properties = ((savedSpec?['parameters'] as Map)['properties'] as Map);
+    expect((properties['query'] as Map)['default'], '妈妈的新号码');
+  });
+
+  testWidgets('Deleting a recorded step reindexes parameter bindings', (
+    tester,
+  ) async {
+    Map<String, dynamic>? savedSpec;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'listOobReusableFunctions') {
+            return <String, dynamic>{
+              'success': true,
+              'functions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'function_id': 'duplicate_type',
+                  'name': '输入联系人',
+                  'step_count': 2,
+                  'step_summaries': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 'step_1',
+                      'index': 0,
+                      'title': '错误输入',
+                      'executor': 'omniflow',
+                      'tool': 'input_text',
+                    },
+                    <String, dynamic>{
+                      'id': 'step_2',
+                      'index': 1,
+                      'title': '有效输入',
+                      'executor': 'omniflow',
+                      'tool': 'input_text',
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return <String, dynamic>{
+              'function_id': 'duplicate_type',
+              'parameters': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'name': 'wrong_text',
+                  'default': 'x',
+                  'bindings': <String>[r'$.execution.steps[0].args.text'],
+                },
+                <String, dynamic>{
+                  'name': 'kept_text',
+                  'default': 'y',
+                  'bindings': <String>[r'$.execution.steps[1].args.text'],
+                },
+              ],
+              'actions': <Map<String, dynamic>>[
+                <String, dynamic>{'type': 'input_text', 'text': 'x'},
+                <String, dynamic>{'type': 'input_text', 'text': 'y'},
+              ],
+              'execution': <String, dynamic>{
+                'steps': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'step_1',
+                    'index': 0,
+                    'title': '错误输入',
+                    'executor': 'omniflow',
+                    'tool': 'input_text',
+                    'args': <String, dynamic>{'text': 'x'},
+                  },
+                  <String, dynamic>{
+                    'id': 'step_2',
+                    'index': 1,
+                    'title': '有效输入',
+                    'executor': 'omniflow',
+                    'tool': 'input_text',
+                    'args': <String, dynamic>{'text': 'y'},
+                  },
+                ],
+              },
+            };
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final arguments = Map<String, dynamic>.from(call.arguments as Map);
+            savedSpec = Map<String, dynamic>.from(
+              arguments['functionSpec'] as Map,
+            );
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'duplicate_type',
+              'created_function_id': 'duplicate_type',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: CommandLibraryPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.info_outline_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+
+    final execution = savedSpec?['execution'] as Map;
+    final steps = execution['steps'] as List;
+    expect(steps, hasLength(1));
+    expect((steps.single as Map)['id'], 'step_1');
+    expect((steps.single as Map)['title'], '有效输入');
+    expect(((savedSpec?['actions'] as List).single as Map)['text'], 'y');
+    final parameters = savedSpec?['parameters'] as List;
+    expect(parameters, hasLength(1));
+    expect((parameters.single as Map)['name'], 'kept_text');
+    expect((parameters.single as Map)['bindings'], <String>[
+      r'$.execution.steps[0].args.text',
+    ]);
+  });
+
   testWidgets(
     'Reusable command run button invokes local execution and shows running state',
     (tester) async {

@@ -168,6 +168,7 @@ class DebugVlmRunLogReceiver : BroadcastReceiver() {
             "runlog_found" to (record != null),
             "runlog_success" to record?.success,
             "runlog_card_count" to (record?.cards?.size ?: 0),
+            "run_log" to timeline,
             "token_usage" to (timeline?.get("token_usage") ?: emptyMap<String, Any?>()),
             "token_usage_total" to timeline?.get("token_usage_total"),
             "token_usage_by_step" to (timeline?.get("token_usage_by_step") ?: emptyList<Map<String, Any?>>()),
