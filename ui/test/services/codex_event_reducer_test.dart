@@ -909,6 +909,92 @@ void main() {
   });
 
   test(
+    'top-level error with willRetry=false finalizes the active turn',
+    () {
+      reducer.reduce(
+        runtime: runtime,
+        event: {
+          'message': {
+            'method': 'turn/started',
+            'params': {'threadId': 'thread-1', 'turnId': 'turn-1'},
+          },
+        },
+      );
+      reducer.reduce(
+        runtime: runtime,
+        event: {
+          'message': {
+            'method': 'item/reasoning/textDelta',
+            'params': {
+              'threadId': 'thread-1',
+              'turnId': 'turn-1',
+              'itemId': 'reason-1',
+              'delta': 'thinking',
+            },
+          },
+        },
+      );
+
+      expect(runtime.isAiResponding, isTrue);
+
+      reducer.reduce(
+        runtime: runtime,
+        event: {
+          'message': {
+            'method': 'error',
+            'params': {
+              'threadId': 'thread-1',
+              'turnId': 'turn-1',
+              'willRetry': false,
+              'message': 'connection lost',
+            },
+          },
+        },
+      );
+
+      expect(runtime.isAiResponding, isFalse);
+      expect(runtime.currentDispatchTaskId, isNull);
+      final thinking = runtime.messages
+          .firstWhere(
+            (message) => message.cardData?['type'] == 'deep_thinking',
+          )
+          .cardData!;
+      expect(thinking['isLoading'], isFalse);
+      expect(thinking['stage'], ThinkingStage.complete.value);
+    },
+  );
+
+  test('top-level error with willRetry=true keeps the turn active', () {
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'turn/started',
+          'params': {'threadId': 'thread-1', 'turnId': 'turn-1'},
+        },
+      },
+    );
+
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'error',
+          'params': {
+            'threadId': 'thread-1',
+            'turnId': 'turn-1',
+            'willRetry': true,
+            'message': 'rate limited',
+          },
+        },
+      },
+    );
+
+    expect(runtime.isAiResponding, isTrue);
+    expect(runtime.currentDispatchTaskId, isNotNull);
+  });
+
+  test(
     'snapshot renders reasoning as loading even when item.status is completed '
     'while turn is active',
     () {

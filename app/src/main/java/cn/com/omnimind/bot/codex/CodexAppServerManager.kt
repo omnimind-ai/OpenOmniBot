@@ -714,6 +714,18 @@ class CodexAppServerManager private constructor(
         if (!threadId.isNullOrBlank() && method == "turn/completed") {
             activeTurnsByThreadId.remove(threadId)
         }
+        if (!threadId.isNullOrBlank() &&
+            method == "error" &&
+            params["willRetry"] != true) {
+            // codex app-server emits top-level `error` notifications when a
+            // turn fails terminally (no follow-up turn/completed will come).
+            // Clear the active turn so subsequent thread/read responses
+            // surface active=false to the Flutter side.
+            activeTurnsByThreadId.remove(threadId)
+        }
+        if (!threadId.isNullOrBlank() && method == "thread/closed") {
+            activeTurnsByThreadId.remove(threadId)
+        }
 
         val localConversationId = syncMessage(method, message, params, threadId)
         if (method == "turn/completed") {

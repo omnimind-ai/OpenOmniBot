@@ -1142,15 +1142,23 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     );
     final snapshotIsAiResponding =
         directActiveTurnId != null || activity.active || inferredRemoteActive;
-    // The reducer is the authoritative source of "this turn is in flight":
-    // it flips runtime.isAiResponding=true on every streaming event and
-    // flips it back to false only on _completeTurn (turn/completed,
-    // thread/closed, thread/status/changed inactive). Snapshot polling
-    // runs every 2s and would otherwise downgrade that flag between
-    // reasoning deltas (codex doesn't always surface a "running" status
-    // in thread/read responses). Treat the snapshot value as a floor —
-    // never below what the runtime already knows.
-    final isAiResponding = snapshotIsAiResponding || previousActive;
+    // The snapshot makes a definitive "no active turn" statement when it
+    // observed a known-inactive activity AND has no active turn id. Kotlin
+    // injects `active=false` on thread/read whenever activeTurnsByThreadId
+    // has dropped this thread (codex sent turn/completed, thread/closed,
+    // status/changed inactive, or an `error` notification was tracked). In
+    // those cases the snapshot is authoritative — trust it and let runtime
+    // active flip to false even if a stale `turn/completed` event never
+    // reached the reducer.
+    final snapshotKnowsInactive =
+        directActiveTurnId == null && activity.known && !activity.active;
+    // Otherwise floor against the reducer's runtime state. Snapshot polling
+    // runs every 2s and would otherwise downgrade isAiResponding between
+    // reasoning deltas when codex doesn't surface a "running" status in
+    // thread/read.
+    final isAiResponding =
+        snapshotIsAiResponding ||
+        (previousActive && !snapshotKnowsInactive);
     final activeTurnId = isAiResponding
         ? (directActiveTurnId ??
               _codexLatestTurnIdFromThreadResponse(response) ??

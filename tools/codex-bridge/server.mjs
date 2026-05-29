@@ -38,6 +38,8 @@ Options:
                           Codex app-server transport. Defaults to auto.
   --app-server-socket <path>
                           Desktop Codex app-server Unix socket override.
+  --config <path>         Bridge config path for remembered manual token.
+  --forget-token          Clear the remembered manual token before setup.
   --interactive           Force terminal setup prompts.
   --no-interactive        Start immediately without terminal prompts.
   -h, --help              Show this help.
@@ -46,7 +48,7 @@ Environment variables with the same meaning are also supported:
   OMNIBOT_BRIDGE_CWD, OMNIBOT_BRIDGE_TOKEN, OMNIBOT_BRIDGE_HOST,
   OMNIBOT_BRIDGE_PORT, OMNIBOT_BRIDGE_PUBLIC_HOST, CODEX_BIN, CODEX_HOME,
   OMNIBOT_BRIDGE_APP_SERVER, OMNIBOT_BRIDGE_INTERACTIVE,
-  CODEX_APP_SERVER_SOCKET`);
+  OMNIBOT_BRIDGE_CONFIG, CODEX_APP_SERVER_SOCKET`);
 }
 
 function readOptionValue(args, index, option) {
@@ -82,6 +84,10 @@ function parseCliArgs(args) {
       options.interactive = false;
       continue;
     }
+    if (arg === '--forget-token') {
+      options.forgetToken = true;
+      continue;
+    }
     const optionMap = {
       '--cwd': 'cwd',
       '--token': 'token',
@@ -92,6 +98,7 @@ function parseCliArgs(args) {
       '--codex-home': 'codexHome',
       '--app-server': 'appServer',
       '--app-server-socket': 'appServerSocket',
+      '--config': 'configPath',
     };
     const matchedOption = Object.keys(optionMap).find(
       (option) => arg === option || arg.startsWith(`${option}=`)
@@ -114,9 +121,14 @@ function parseCliArgs(args) {
   return options;
 }
 
-function resolveToken(cliToken) {
+function resolveToken(cliToken, rememberedToken = '') {
+  const envToken = envOption('OMNIBOT_BRIDGE_TOKEN');
   const rawToken =
-    cliToken === undefined ? process.env.OMNIBOT_BRIDGE_TOKEN || '' : cliToken;
+    cliToken === undefined
+      ? envToken === undefined
+        ? rememberedToken || ''
+        : envToken
+      : cliToken;
   return rawToken === 'auto' ? crypto.randomBytes(16).toString('hex') : rawToken;
 }
 
@@ -148,10 +160,17 @@ function hasExplicitNetworkConfig(options) {
   );
 }
 
-function hasExplicitTokenConfig(options) {
+function hasCommandTokenConfig(options) {
   return (
     Object.prototype.hasOwnProperty.call(options, 'token') ||
     envOption('OMNIBOT_BRIDGE_TOKEN') !== undefined
+  );
+}
+
+function hasExplicitTokenConfig(options) {
+  return (
+    hasCommandTokenConfig(options) ||
+    hasText(options.rememberedToken)
   );
 }
 
@@ -283,6 +302,46 @@ function renderChoices(choices, selectedIndex, defaultIndex, inputState = null) 
 
 function logField(label, value, valueStyle = color.value) {
   console.log(`${color.label(`${label}:`)} ${valueStyle(value)}`);
+}
+
+function defaultBridgeConfigPath() {
+  return path.join(os.homedir(), '.omnibot', 'codex-bridge.json');
+}
+
+function resolveBridgeConfigPath(options) {
+  return expandHomePath(
+    options.configPath ||
+      process.env.OMNIBOT_BRIDGE_CONFIG ||
+      defaultBridgeConfigPath()
+  );
+}
+
+async function readBridgeConfig(configPath) {
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    if (error?.code === 'ENOENT') return {};
+    console.log(color.warn(`Could not read bridge config at ${configPath}: ${error.message}`));
+    return {};
+  }
+}
+
+async function writeBridgeConfig(configPath, config) {
+  const nextConfig = {};
+  if (hasText(config.token)) {
+    nextConfig.token = String(config.token);
+  }
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  try {
+    await fs.chmod(configPath, 0o600);
+  } catch {
+    // Best effort on platforms/filesystems that do not support POSIX modes.
+  }
 }
 
 async function promptChoice(title, choices, defaultIndex = 0, options = {}) {
@@ -598,43 +657,84 @@ function shouldPromptNetworkConfig(options) {
 }
 
 async function promptTokenConfig(options, allowBack = false) {
-  if (options.interactive !== true && hasExplicitTokenConfig(options)) {
+  if (options.interactive !== true && hasCommandTokenConfig(options)) {
     return {};
   }
+  let rememberedToken = String(options.rememberedToken || '');
+  let clearRememberedToken = false;
   for (;;) {
-    const selected = await promptChoice(
-      'Select token authentication',
-      [
+    const tokenChoices = [];
+    if (hasText(rememberedToken)) {
+      tokenChoices.push(
+        {
+          label: 'Use remembered token',
+          detail: 'skip setup and reuse the saved manual token',
+          token: rememberedToken,
+        },
+        {
+          label: 'Enter a new token',
+          detail: 'replace the remembered manual token',
+          manual: true,
+          input: {
+            placeholder: 'type new token',
+          },
+        },
+        {
+          label: 'Forget remembered token',
+          detail: 'clear it and choose another token mode',
+          forgetRememberedToken: true,
+        }
+      );
+    } else {
+      tokenChoices.push(
         {
           label: 'Auto-generate token',
-          detail: 'recommended for LAN use',
+          detail: 'only for this run',
           token: 'auto',
         },
         {
           label: 'Enter token manually',
-          detail: 'use a token you will type on the phone',
+          detail: 'save and reuse this token next time',
           manual: true,
           input: {
             placeholder: 'type token',
           },
-        },
-        {
-          label: 'No token',
-          detail: 'only use on trusted networks',
-          token: '',
-        },
-      ],
+        }
+      );
+    }
+    if (hasText(rememberedToken)) {
+      tokenChoices.push({
+        label: 'Auto-generate token',
+        detail: 'only for this run',
+        token: 'auto',
+      });
+    }
+    tokenChoices.push({
+      label: 'No token',
+      detail: 'only use on trusted networks',
+      token: '',
+    });
+    const selected = await promptChoice(
+      'Select token authentication',
+      tokenChoices,
       0,
       { allowBack }
     );
     if (selected === PROMPT_BACK) {
       return PROMPT_BACK;
     }
+    if (selected.forgetRememberedToken) {
+      rememberedToken = '';
+      clearRememberedToken = true;
+      continue;
+    }
     if (!selected.manual) {
-      return { token: selected.token };
+      return { token: selected.token, clearRememberedToken };
     }
     const token = selected.inputValue || '';
-    if (token) return { token };
+    if (token) {
+      return { token, rememberToken: true, clearRememberedToken: false };
+    }
     console.log(color.warn('Token cannot be empty. Choose "No token" if you want to disable auth.'));
   }
 }
@@ -672,6 +772,17 @@ if (cliOptions.help) {
   process.exit(0);
 }
 
+const bridgeConfigPath = resolveBridgeConfigPath(cliOptions);
+let bridgeConfig = await readBridgeConfig(bridgeConfigPath);
+if (cliOptions.forgetToken) {
+  bridgeConfig = { ...bridgeConfig, token: '' };
+  await writeBridgeConfig(bridgeConfigPath, bridgeConfig);
+  console.log(color.warn(`Remembered bridge token cleared: ${bridgeConfigPath}`));
+}
+if (hasText(bridgeConfig.token)) {
+  cliOptions.rememberedToken = String(bridgeConfig.token);
+}
+
 let interactiveOptions;
 try {
   interactiveOptions = await interactiveSetup(cliOptions);
@@ -681,6 +792,18 @@ try {
     process.exit(130);
   }
   throw error;
+}
+if (interactiveOptions.clearRememberedToken) {
+  bridgeConfig = { ...bridgeConfig, token: '' };
+  await writeBridgeConfig(bridgeConfigPath, bridgeConfig);
+  cliOptions.rememberedToken = '';
+  console.log(color.warn(`Remembered bridge token cleared: ${bridgeConfigPath}`));
+}
+if (interactiveOptions.rememberToken && hasText(interactiveOptions.token)) {
+  bridgeConfig = { ...bridgeConfig, token: interactiveOptions.token };
+  await writeBridgeConfig(bridgeConfigPath, bridgeConfig);
+  cliOptions.rememberedToken = interactiveOptions.token;
+  console.log(color.green(`Manual bridge token saved: ${bridgeConfigPath}`));
 }
 const port = Number.parseInt(
   cliOptions.port || process.env.OMNIBOT_BRIDGE_PORT || '17321',
@@ -703,7 +826,8 @@ const publicHost =
 const token = resolveToken(
   Object.prototype.hasOwnProperty.call(interactiveOptions, 'token')
     ? interactiveOptions.token
-    : cliOptions.token
+    : cliOptions.token,
+  cliOptions.rememberedToken
 );
 const codexBin = cliOptions.codexBin || process.env.CODEX_BIN || 'codex';
 const bridgeCwd = path.resolve(

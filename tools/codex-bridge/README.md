@@ -23,6 +23,8 @@ npx @thuocean/codex-bridge
 
 The bridge opens a terminal setup flow where you can use Up/Down and Enter to choose the LAN address to listen on and either auto-generate a token, enter a token manually, or disable token auth. Custom values are typed in place on the selected row. Press Esc on later steps to go back and reselect the previous setup item.
 
+When you enter a token manually, the bridge remembers it in `~/.omnibot/codex-bridge.json` and reuses it on later launches. If the setup UI opens, the remembered token appears as the default token choice so you can reuse, replace, or forget it without adding flags. Run with `--interactive` to force this setup UI, or `--forget-token` to clear the remembered token before setup.
+
 Scripted startup is still supported:
 
 ```bash
@@ -80,6 +82,8 @@ For unattended scripts or service managers, pass `--no-interactive` or set `OMNI
 - `--codex-home <path>`: optional `CODEX_HOME` override
 - `--app-server <auto|desktop|stdio>`: app-server transport, default `auto`
 - `--app-server-socket <path>`: desktop Codex app-server Unix socket override
+- `--config <path>`: bridge config path for the remembered manual token
+- `--forget-token`: clear the remembered manual token before setup
 - `--interactive`: force terminal setup prompts
 - `--no-interactive`: start immediately without terminal prompts
 
@@ -92,6 +96,7 @@ For unattended scripts or service managers, pass `--no-interactive` or set `OMNI
 - `OMNIBOT_BRIDGE_CWD`: default project directory
 - `OMNIBOT_BRIDGE_APP_SERVER`: `auto`, `desktop`, or `stdio`
 - `OMNIBOT_BRIDGE_INTERACTIVE`: set to `0`/`false` to disable prompts, or `1`/`true` to force prompts
+- `OMNIBOT_BRIDGE_CONFIG`: bridge config path, default `~/.omnibot/codex-bridge.json`
 - `OMNIBOT_BRIDGE_MAX_READ_BYTES`: max file preview payload, default 12 MiB
 - `CODEX_BIN`: Codex executable, default `codex`
 - `CODEX_HOME`: optional Codex config directory override

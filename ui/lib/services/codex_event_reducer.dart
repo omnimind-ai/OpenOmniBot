@@ -495,6 +495,24 @@ class CodexEventReducer {
         ),
         touchTurn: false,
       );
+      // codex app-server emits the top-level `error` notification when a
+      // turn fails terminally (network, rate-limit, server error). When
+      // willRetry=false the server will NOT follow up with turn/completed,
+      // so we must finalize the turn ourselves — otherwise runtime stays
+      // isAiResponding=true forever.
+      final willRetry = params['willRetry'] == true;
+      if (!willRetry) {
+        final completionTaskId =
+            turnId ??
+            runtime.currentDispatchTaskId ??
+            runtime.lastAgentTaskId ??
+            parentTaskId;
+        _completeTurn(
+          runtime,
+          completionTaskId,
+          appendCancelIfEmpty: false,
+        );
+      }
       return CodexReduceResult(
         handled: true,
         method: method,
