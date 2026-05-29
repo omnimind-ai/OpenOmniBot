@@ -12,11 +12,17 @@ import 'package:ui/l10n/legacy_text_localizer.dart';
 
 class _WeeklyTokenData {
   final DateTime weekStart;
-  int localTokens = 0;
-  int cloudTokens = 0;
+  final Map<String, int> modelTokens = {};
   int cachedTokens = 0;
-  int get totalTokens => localTokens + cloudTokens;
+  int get totalTokens =>
+      modelTokens.values.fold(0, (sum, tokens) => sum + tokens);
+
   _WeeklyTokenData({required this.weekStart});
+
+  void addModelTokens(String modelId, int tokens) {
+    if (tokens <= 0) return;
+    modelTokens[modelId] = (modelTokens[modelId] ?? 0) + tokens;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -58,9 +64,9 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   // -- token data --
   List<_WeeklyTokenData> _weeklyData = [];
   bool _isTokenLoading = true;
-  int _totalLocal = 0;
-  int _totalCloud = 0;
   int _totalCached = 0;
+  Map<String, int> _modelTotals = {};
+  List<String> _modelOrder = [];
 
   // -- animation --
   late AnimationController _fadeController;
@@ -171,9 +177,8 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         ),
       );
 
-      int totalLocal = 0;
-      int totalCloud = 0;
       int totalCached = 0;
+      final modelTotals = <String, int>{};
 
       for (final record in records) {
         final daysSinceStart = DateTime.fromMillisecondsSinceEpoch(
@@ -183,25 +188,28 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
         final weekIndex = daysSinceStart ~/ 7;
         if (weekIndex >= totalWeeks) continue;
         final tokens = record.totalTokens;
+        final modelId = record.modelId;
 
         weeklyData[weekIndex].cachedTokens += record.cachedTokens;
         totalCached += record.cachedTokens;
-
-        if (record.isLocal) {
-          weeklyData[weekIndex].localTokens += tokens;
-          totalLocal += tokens;
-        } else {
-          weeklyData[weekIndex].cloudTokens += tokens;
-          totalCloud += tokens;
+        weeklyData[weekIndex].addModelTokens(modelId, tokens);
+        if (tokens > 0) {
+          modelTotals[modelId] = (modelTotals[modelId] ?? 0) + tokens;
         }
       }
+
+      final modelOrder = modelTotals.keys.toList()
+        ..sort((a, b) {
+          final byTokens = (modelTotals[b] ?? 0).compareTo(modelTotals[a] ?? 0);
+          return byTokens != 0 ? byTokens : a.compareTo(b);
+        });
 
       if (mounted) {
         setState(() {
           _weeklyData = weeklyData;
-          _totalLocal = totalLocal;
-          _totalCloud = totalCloud;
           _totalCached = totalCached;
+          _modelTotals = modelTotals;
+          _modelOrder = modelOrder;
           _isTokenLoading = false;
         });
         _tryStartFade();
@@ -225,7 +233,8 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   //  Helpers
   // -----------------------------------------------------------------------
 
-  int get _totalTokens => _totalLocal + _totalCloud;
+  int get _totalTokens =>
+      _modelTotals.values.fold(0, (sum, tokens) => sum + tokens);
 
   String _dateKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -256,15 +265,43 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   }
 
   // -- token colors --
-  Color _localColor(bool d) => d ? const Color(0xFF5E8A5A) : const Color(0xFF7FA878);
-  Color _cloudColor(bool d) => d ? const Color(0xFF2178BD) : const Color(0xFF3B8FD4);
-  Color _localPillBg(bool d) => d ? const Color(0xFF2A3B28) : const Color(0xFFE8F2E6);
-  Color _localPillText(bool d) => d ? const Color(0xFF98D492) : const Color(0xFF3D7A35);
-  Color _cloudPillBg(bool d) => d ? const Color(0xFF1A3A5C) : const Color(0xFFE8F2FC);
-  Color _cloudPillText(bool d) => d ? const Color(0xFF3B9FE8) : const Color(0xFF2C7FEB);
-  Color _cachedColor(bool d) => d ? const Color(0xFFB8860B) : const Color(0xFFD4A017);
-  Color _cachedPillBg(bool d) => d ? const Color(0xFF3A3018) : const Color(0xFFFFF3DC);
-  Color _cachedPillText(bool d) => d ? const Color(0xFFE8C547) : const Color(0xFFB8860B);
+  static const List<Color> _modelLightColors = [
+    Color(0xFF2C7FEB),
+    Color(0xFF16A085),
+    Color(0xFF8B5CF6),
+    Color(0xFFF97316),
+    Color(0xFFE11D48),
+    Color(0xFF0891B2),
+    Color(0xFF65A30D),
+    Color(0xFFDB2777),
+    Color(0xFF475569),
+    Color(0xFFB45309),
+  ];
+
+  static const List<Color> _modelDarkColors = [
+    Color(0xFF7BBCE6),
+    Color(0xFF5DD6B3),
+    Color(0xFFC4B5FD),
+    Color(0xFFFBBF24),
+    Color(0xFFFB7185),
+    Color(0xFF67E8F9),
+    Color(0xFFA3E635),
+    Color(0xFFF0ABFC),
+    Color(0xFFCBD5E1),
+    Color(0xFFFDBA74),
+  ];
+
+  Color _modelColor(String modelId, bool isDark) {
+    final colors = isDark ? _modelDarkColors : _modelLightColors;
+    final hash = modelId.codeUnits.fold<int>(
+      0,
+      (value, codeUnit) => (value * 31 + codeUnit) & 0x7fffffff,
+    );
+    return colors[hash % colors.length];
+  }
+
+  Color _cachedColor(bool d) =>
+      d ? const Color(0xFFB8860B) : const Color(0xFFD4A017);
 
   // -----------------------------------------------------------------------
   //  Build
@@ -287,7 +324,9 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           border: Border.all(color: palette.borderSubtle),
           boxShadow: [
             BoxShadow(
-              color: palette.shadowColor.withValues(alpha: isDark ? 0.30 : 0.08),
+              color: palette.shadowColor.withValues(
+                alpha: isDark ? 0.30 : 0.08,
+              ),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -331,13 +370,41 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(width: 200, height: 16, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(4))),
+        Container(
+          width: 200,
+          height: 16,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
         const SizedBox(height: 12),
-        Container(width: double.infinity, height: 28, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(14))),
+        Container(
+          width: double.infinity,
+          height: 28,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
         const SizedBox(height: 12),
-        Container(width: double.infinity, height: 90, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(6))),
+        Container(
+          width: double.infinity,
+          height: 90,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
         const SizedBox(height: 10),
-        Container(width: 140, height: 12, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(4))),
+        Container(
+          width: 140,
+          height: 12,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
       ],
     );
   }
@@ -347,7 +414,9 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
   // -----------------------------------------------------------------------
 
   Widget _buildStatsRow(OmniThemePalette palette, bool isDark) {
-    final accentBlue = isDark ? const Color(0xFF7BBCE6) : const Color(0xFF2C7FEB);
+    final accentBlue = isDark
+        ? const Color(0xFF7BBCE6)
+        : const Color(0xFF2C7FEB);
     final streakColor = _currentStreak >= 3
         ? const Color(0xFFF59E0B)
         : accentBlue;
@@ -389,6 +458,14 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                   accentBlue,
                   palette,
                 ),
+                if (_modelTotals.isNotEmpty)
+                  _buildStatPill(
+                    Icons.hub_outlined,
+                    '${_modelTotals.length}',
+                    LegacyTextLocalizer.localize('个模型'),
+                    _modelColor(_modelOrder.first, isDark),
+                    palette,
+                  ),
                 if (_totalCached > 0)
                   _buildStatPill(
                     Icons.cached_rounded,
@@ -405,15 +482,35 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
     );
   }
 
-  Widget _buildStatPill(IconData icon, String value, String label, Color iconColor, OmniThemePalette palette) {
+  Widget _buildStatPill(
+    IconData icon,
+    String value,
+    String label,
+    Color iconColor,
+    OmniThemePalette palette,
+  ) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: iconColor),
         const SizedBox(width: 3),
-        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: palette.textPrimary)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: palette.textPrimary,
+          ),
+        ),
         const SizedBox(width: 2),
-        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w400, color: palette.textTertiary)),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w400,
+            color: palette.textTertiary,
+          ),
+        ),
       ],
     );
   }
@@ -452,9 +549,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           final box = sliderContext.findRenderObject() as RenderBox?;
           if (box == null || !box.hasSize) return;
           final local = box.globalToLocal(details.globalPosition);
-          _switchTab(
-            local.dx >= box.size.width / 2 ? _tokenTab : _convTab,
-          );
+          _switchTab(local.dx >= box.size.width / 2 ? _tokenTab : _convTab);
         },
         child: Container(
           height: 28,
@@ -526,10 +621,7 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
                     label: LegacyTextLocalizer.isEnglish ? 'Chat' : '对话',
                     tabIndex: _convTab,
                   ),
-                  _buildTabButton(
-                    label: 'Token',
-                    tabIndex: _tokenTab,
-                  ),
+                  _buildTabButton(label: 'Token', tabIndex: _tokenTab),
                 ],
               ),
             ],
@@ -573,13 +665,20 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
 
   Widget _buildConversationView(bool isDark, OmniThemePalette palette) {
     if (_isConvLoading) {
-      return const SizedBox(height: 100, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))));
+      return const SizedBox(
+        height: 100,
+        child: Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildHeatmapGrid(isDark),
-      ],
+      children: [_buildHeatmapGrid(isDark)],
     );
   }
 
@@ -617,78 +716,131 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
           padding: const EdgeInsets.only(left: dayLabelWidth, bottom: 4),
           child: SizedBox(
             height: 14,
-            child: LayoutBuilder(builder: (context, constraints) {
-              final weekCellWidth = totalWeeks > 0 ? constraints.maxWidth / totalWeeks : 14.0;
-              return Stack(
-                children: monthLabels.map((ml) => Positioned(
-                  left: ml.weekIndex * weekCellWidth,
-                  child: Text(ml.label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: isDark ? const Color(0xFF9A9488) : const Color(0xFF98A5BB))),
-                )).toList(),
-              );
-            }),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final weekCellWidth = totalWeeks > 0
+                    ? constraints.maxWidth / totalWeeks
+                    : 14.0;
+                return Stack(
+                  children: monthLabels
+                      .map(
+                        (ml) => Positioned(
+                          left: ml.weekIndex * weekCellWidth,
+                          child: Text(
+                            ml.label,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                              color: isDark
+                                  ? const Color(0xFF9A9488)
+                                  : const Color(0xFF98A5BB),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
           ),
         ),
         // Grid
-        LayoutBuilder(builder: (context, constraints) {
-          final gridWidth = constraints.maxWidth - dayLabelWidth;
-          final cellSize = (totalWeeks > 0 ? (gridWidth - (totalWeeks - 1) * cellGap) / totalWeeks : 11.0).clamp(4.0, 14.0);
-          final gridHeight = 7 * cellSize + 6 * cellGap;
-          final rowHeight = cellSize + cellGap;
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final gridWidth = constraints.maxWidth - dayLabelWidth;
+            final cellSize =
+                (totalWeeks > 0
+                        ? (gridWidth - (totalWeeks - 1) * cellGap) / totalWeeks
+                        : 11.0)
+                    .clamp(4.0, 14.0);
+            final gridHeight = 7 * cellSize + 6 * cellGap;
+            final rowHeight = cellSize + cellGap;
 
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: dayLabelWidth,
-                child: Column(
-                  children: [
-                    for (int day = 0; day < 7; day++)
-                      SizedBox(
-                        height: day < 6 ? rowHeight : cellSize,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: day % 2 == 0
-                              ? Text(_dayLabel(day), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: isDark ? const Color(0xFF9A9488) : const Color(0xFF98A5BB)))
-                              : const SizedBox.shrink(),
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: dayLabelWidth,
+                  child: Column(
+                    children: [
+                      for (int day = 0; day < 7; day++)
+                        SizedBox(
+                          height: day < 6 ? rowHeight : cellSize,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: day % 2 == 0
+                                ? Text(
+                                    _dayLabel(day),
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark
+                                          ? const Color(0xFF9A9488)
+                                          : const Color(0xFF98A5BB),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SizedBox(
-                  height: gridHeight,
-                  child: Wrap(
-                    direction: Axis.vertical,
-                    spacing: cellGap,
-                    runSpacing: cellGap,
-                    children: List.generate(totalWeeks * 7, (index) {
-                      final week = index ~/ 7;
-                      final dayOfWeek = index % 7;
-                      final cellDate = startDate.add(Duration(days: week * 7 + dayOfWeek));
-                      if (cellDate.isAfter(today)) return SizedBox(width: cellSize, height: cellSize);
-                      final count = _activityMap[_dateKey(cellDate)] ?? 0;
-                      return Tooltip(
-                        message: count > 0
-                            ? LegacyTextLocalizer.localize(
-                                '$count 次对话 · ${cellDate.month}/${cellDate.day}',
-                              )
-                            : LegacyTextLocalizer.localize(
-                                '无对话 · ${cellDate.month}/${cellDate.day}',
-                              ),
-                        preferBelow: false,
-                        verticalOffset: 12,
-                        decoration: BoxDecoration(color: isDark ? const Color(0xFF2D3032) : const Color(0xFF353E53), borderRadius: BorderRadius.circular(6)),
-                        textStyle: const TextStyle(fontSize: 11, color: Colors.white),
-                        child: Container(width: cellSize, height: cellSize, decoration: BoxDecoration(color: _cellColor(_intensityLevel(count), isDark), borderRadius: BorderRadius.circular(2.5))),
-                      );
-                    }),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          );
-        }),
+                Expanded(
+                  child: SizedBox(
+                    height: gridHeight,
+                    child: Wrap(
+                      direction: Axis.vertical,
+                      spacing: cellGap,
+                      runSpacing: cellGap,
+                      children: List.generate(totalWeeks * 7, (index) {
+                        final week = index ~/ 7;
+                        final dayOfWeek = index % 7;
+                        final cellDate = startDate.add(
+                          Duration(days: week * 7 + dayOfWeek),
+                        );
+                        if (cellDate.isAfter(today)) {
+                          return SizedBox(width: cellSize, height: cellSize);
+                        }
+                        final count = _activityMap[_dateKey(cellDate)] ?? 0;
+                        return Tooltip(
+                          triggerMode: TooltipTriggerMode.tap,
+                          enableFeedback: false,
+                          message: count > 0
+                              ? LegacyTextLocalizer.localize(
+                                  '$count 次对话 · ${cellDate.month}/${cellDate.day}',
+                                )
+                              : LegacyTextLocalizer.localize(
+                                  '无对话 · ${cellDate.month}/${cellDate.day}',
+                                ),
+                          preferBelow: false,
+                          verticalOffset: 12,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF2D3032)
+                                : const Color(0xFF353E53),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                          ),
+                          child: Container(
+                            width: cellSize,
+                            height: cellSize,
+                            decoration: BoxDecoration(
+                              color: _cellColor(_intensityLevel(count), isDark),
+                              borderRadius: BorderRadius.circular(2.5),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -745,7 +897,16 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
 
   Widget _buildTokenView(bool isDark, OmniThemePalette palette) {
     if (_isTokenLoading) {
-      return const SizedBox(height: 100, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))));
+      return const SizedBox(
+        height: 100,
+        child: Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
     }
     if (_totalTokens == 0) {
       return SizedBox(
@@ -759,102 +920,234 @@ class _ActivityDashboardCardState extends State<ActivityDashboardCard>
       );
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Local/Cloud proportion pills
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (_totalLocal > 0)
-              _buildPropPill(
-                LegacyTextLocalizer.localize(
-                  '本地 ${_percentOf(_totalLocal, _totalTokens)}%',
-                ),
-                _localPillBg(isDark),
-                _localPillText(isDark),
-                _localColor(isDark),
-              ),
-            if (_totalLocal > 0 && _totalCloud > 0) const SizedBox(width: 6),
-            if (_totalCloud > 0)
-              _buildPropPill(
-                LegacyTextLocalizer.localize(
-                  '云端 ${_percentOf(_totalCloud, _totalTokens)}%',
-                ),
-                _cloudPillBg(isDark),
-                _cloudPillText(isDark),
-                _cloudColor(isDark),
-              ),
-          ],
-        ),
+        _buildModelLegendStrip(isDark, palette),
         const SizedBox(height: 10),
         _buildStackedBars(isDark, palette),
       ],
     );
   }
 
-  Widget _buildPropPill(String label, Color bg, Color text, Color dot) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 6, height: 6, decoration: BoxDecoration(color: dot, borderRadius: BorderRadius.circular(1.5))),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: text)),
-      ]),
+  Widget _buildModelLegendStrip(bool isDark, OmniThemePalette palette) {
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemBuilder: (context, index) {
+          final modelId = _modelOrder[index];
+          final tokens = _modelTotals[modelId] ?? 0;
+          return _buildModelLegendItem(
+            modelId: modelId,
+            tokens: tokens,
+            isDark: isDark,
+            palette: palette,
+          );
+        },
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemCount: _modelOrder.length,
+      ),
+    );
+  }
+
+  Widget _buildModelLegendItem({
+    required String modelId,
+    required int tokens,
+    required bool isDark,
+    required OmniThemePalette palette,
+  }) {
+    final color = _modelColor(modelId, isDark);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            modelId,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: palette.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${_percentOf(tokens, _totalTokens)}%',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: isDark
+                  ? color
+                  : Color.lerp(color, palette.textPrimary, 0.18),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildStackedBars(bool isDark, OmniThemePalette palette) {
-    final maxWeekTotal = _weeklyData.fold<int>(0, (p, w) => w.totalTokens > p ? w.totalTokens : p);
+    final maxWeekTotal = _weeklyData.fold<int>(
+      0,
+      (p, w) => w.totalTokens > p ? w.totalTokens : p,
+    );
     const double barGap = 3.0;
     const double heatmapCellGap = 3.0;
     const double dayLabelWidth = 20.0;
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final totalBars = _weeklyData.length;
-      // Match heatmap grid height
-      final gridWidth = constraints.maxWidth - dayLabelWidth;
-      final heatmapCellSize = (totalBars > 0 ? (gridWidth - (totalBars - 1) * heatmapCellGap) / totalBars : 11.0).clamp(4.0, 14.0);
-      final barAreaHeight = 7 * heatmapCellSize + 6 * heatmapCellGap;
-      final barWidth = (totalBars > 0 ? (constraints.maxWidth - (totalBars - 1) * barGap) / totalBars : 8.0).clamp(4.0, 14.0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalBars = _weeklyData.length;
+        // Match heatmap grid height
+        final gridWidth = constraints.maxWidth - dayLabelWidth;
+        final heatmapCellSize =
+            (totalBars > 0
+                    ? (gridWidth - (totalBars - 1) * heatmapCellGap) / totalBars
+                    : 11.0)
+                .clamp(4.0, 14.0);
+        final barAreaHeight = 7 * heatmapCellSize + 6 * heatmapCellGap;
+        final barWidth =
+            (totalBars > 0
+                    ? (constraints.maxWidth - (totalBars - 1) * barGap) /
+                          totalBars
+                    : 8.0)
+                .clamp(4.0, 14.0);
 
-      return SizedBox(
-        height: barAreaHeight,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(_weeklyData.length, (index) {
-            final week = _weeklyData[index];
-            final totalH = maxWeekTotal > 0 ? (week.totalTokens / maxWeekTotal) * barAreaHeight : 0.0;
-            final localH = week.totalTokens > 0 ? totalH * (week.localTokens / week.totalTokens) : 0.0;
-            final cloudH = totalH - localH;
-            return Padding(
-              padding: EdgeInsets.only(right: index < _weeklyData.length - 1 ? barGap : 0),
-              child: Tooltip(
-                message: week.totalTokens > 0
-                    ? LegacyTextLocalizer.localize(
-                        '本地 ${_formatTokenCount(week.localTokens)} · 云端 ${_formatTokenCount(week.cloudTokens)} · 缓存 ${_formatTokenCount(week.cachedTokens)}',
-                      )
-                    : LegacyTextLocalizer.localize('无消耗'),
-                preferBelow: false, verticalOffset: 12,
-                decoration: BoxDecoration(color: isDark ? const Color(0xFF2D3032) : const Color(0xFF353E53), borderRadius: BorderRadius.circular(6)),
-                textStyle: const TextStyle(fontSize: 11, color: Colors.white),
-                child: SizedBox(
-                  width: barWidth,
-                  height: barAreaHeight,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (cloudH > 0) Container(width: barWidth, height: cloudH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _cloudColor(isDark), borderRadius: BorderRadius.only(topLeft: const Radius.circular(2), topRight: const Radius.circular(2)))),
-                      if (localH > 0) Container(width: barWidth, height: localH.clamp(0, barAreaHeight), decoration: BoxDecoration(color: _localColor(isDark), borderRadius: cloudH > 0 ? BorderRadius.zero : const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
-                      if (week.totalTokens == 0) Container(width: barWidth, height: 2, decoration: BoxDecoration(color: palette.surfaceElevated, borderRadius: BorderRadius.circular(1))),
-                    ],
+        return SizedBox(
+          height: barAreaHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(_weeklyData.length, (index) {
+              final week = _weeklyData[index];
+              final totalH = maxWeekTotal > 0
+                  ? (week.totalTokens / maxWeekTotal) * barAreaHeight
+                  : 0.0;
+              final modelIds = _orderedModelsForWeek(week);
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: index < _weeklyData.length - 1 ? barGap : 0,
+                ),
+                child: Tooltip(
+                  triggerMode: TooltipTriggerMode.tap,
+                  enableFeedback: false,
+                  message: week.totalTokens > 0
+                      ? _buildWeekTooltip(week, modelIds)
+                      : LegacyTextLocalizer.localize('无消耗'),
+                  preferBelow: false,
+                  verticalOffset: 12,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF2D3032)
+                        : const Color(0xFF353E53),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  textStyle: const TextStyle(fontSize: 11, color: Colors.white),
+                  child: SizedBox(
+                    width: barWidth,
+                    height: barAreaHeight,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: week.totalTokens == 0
+                          ? [
+                              Container(
+                                width: barWidth,
+                                height: 2,
+                                decoration: BoxDecoration(
+                                  color: palette.surfaceElevated,
+                                  borderRadius: BorderRadius.circular(1),
+                                ),
+                              ),
+                            ]
+                          : List.generate(modelIds.length, (segmentIndex) {
+                              final modelId = modelIds[segmentIndex];
+                              final tokens = week.modelTokens[modelId] ?? 0;
+                              final rawHeight =
+                                  totalH * tokens / week.totalTokens;
+                              final minHeight = totalH >= modelIds.length * 1.4
+                                  ? 1.4
+                                  : 0.6;
+                              final segmentHeight = rawHeight
+                                  .clamp(minHeight, barAreaHeight)
+                                  .toDouble();
+                              final isTop = segmentIndex == 0;
+                              final isBottom =
+                                  segmentIndex == modelIds.length - 1;
+                              return Container(
+                                width: barWidth,
+                                height: segmentHeight,
+                                decoration: BoxDecoration(
+                                  color: _modelColor(modelId, isDark),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: isTop
+                                        ? const Radius.circular(2.5)
+                                        : Radius.zero,
+                                    topRight: isTop
+                                        ? const Radius.circular(2.5)
+                                        : Radius.zero,
+                                    bottomLeft: isBottom
+                                        ? const Radius.circular(1.5)
+                                        : Radius.zero,
+                                    bottomRight: isBottom
+                                        ? const Radius.circular(1.5)
+                                        : Radius.zero,
+                                  ),
+                                ),
+                              );
+                            }),
+                    ),
                   ),
                 ),
-              ),
-            );
-          }),
-        ),
-      );
-    });
+              );
+            }),
+          ),
+        );
+      },
+    );
   }
 
+  List<String> _orderedModelsForWeek(_WeeklyTokenData week) {
+    final ordered = _modelOrder
+        .where((modelId) => (week.modelTokens[modelId] ?? 0) > 0)
+        .toList();
+    for (final modelId in week.modelTokens.keys) {
+      if (!ordered.contains(modelId)) {
+        ordered.add(modelId);
+      }
+    }
+    return ordered;
+  }
+
+  String _buildWeekTooltip(_WeeklyTokenData week, List<String> modelIds) {
+    final range = _formatWeekRange(week.weekStart);
+    final lines = <String>[
+      '$range · ${_formatTokenCount(week.totalTokens)} tokens',
+      for (final modelId in modelIds.take(6))
+        '$modelId ${_formatTokenCount(week.modelTokens[modelId] ?? 0)}',
+    ];
+    if (modelIds.length > 6) {
+      lines.add('+${modelIds.length - 6}');
+    }
+    if (week.cachedTokens > 0) {
+      lines.add(
+        '${LegacyTextLocalizer.localize('缓存')} ${_formatTokenCount(week.cachedTokens)}',
+      );
+    }
+    return lines.join('\n');
+  }
+
+  String _formatWeekRange(DateTime weekStart) {
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    return '${weekStart.month}/${weekStart.day}-${weekEnd.month}/${weekEnd.day}';
+  }
 }

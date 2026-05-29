@@ -32,6 +32,10 @@ class TokenUsageRecord {
     return detailed > 0 ? detailed : completionTokens;
   }
 
+  /// Model id used by UI charts. Provider prefixes such as "openai/gpt-4o"
+  /// are removed so the legend focuses on the actual model id.
+  String get modelId => TokenUsageService.normalizeModelId(model);
+
   factory TokenUsageRecord.fromJson(Map<String, dynamic> json) {
     return TokenUsageRecord(
       id: (json['id'] as num?)?.toInt() ?? 0,
@@ -53,6 +57,36 @@ class TokenUsageService {
     'cn.com.omnimind.bot/AssistCoreEvent',
   );
 
+  static String normalizeModelId(String rawModel) {
+    var value = rawModel.trim();
+    if (value.isEmpty) return 'unknown';
+
+    value = value.replaceAll(RegExp(r'\s+'), ' ');
+
+    final prefixSplit = value
+        .split(RegExp(r'\s*(?:\||::)\s*'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    if (prefixSplit.length > 1) {
+      value = prefixSplit.last.trim();
+    }
+
+    final pathSplit = value
+        .split(RegExp(r'[/\\]'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    if (pathSplit.length > 1) {
+      value = pathSplit.last.trim();
+    } else {
+      final colonIndex = value.indexOf(':');
+      if (colonIndex > 0 && colonIndex < value.length - 1) {
+        value = value.substring(colonIndex + 1).trim();
+      }
+    }
+
+    return value.isEmpty ? 'unknown' : value;
+  }
+
   static Future<List<TokenUsageRecord>> getRecordsSince(int sinceMs) async {
     try {
       final result = await _assistCore.invokeMethod<List<dynamic>>(
@@ -63,9 +97,8 @@ class TokenUsageService {
       return result
           .whereType<Map>()
           .map(
-            (item) => TokenUsageRecord.fromJson(
-              Map<String, dynamic>.from(item),
-            ),
+            (item) =>
+                TokenUsageRecord.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList();
     } on PlatformException catch (e) {
