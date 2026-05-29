@@ -1,0 +1,4 @@
+interface:
+  display_name: "OmniFlow Function Enhancer"
+  short_description: "Polish RunLog Functions with explicit status"
+  default_prompt: "Use $omniflow-function-enhancer to improve an existing OmniFlow reusable Function from a RunLog, keeping execution unchanged and reporting enhanced, unchanged, partial, or failed."

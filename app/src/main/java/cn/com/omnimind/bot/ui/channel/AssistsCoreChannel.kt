@@ -76,6 +76,9 @@ class AssistsCoreChannel {
                 "resumeHumanTrajectoryLearning" -> {
                     assistsCoreManager!!.resumeHumanTrajectoryLearning(call, result)
                 }
+                "getHumanTrajectoryLearningStatus" -> {
+                    assistsCoreManager!!.getHumanTrajectoryLearningStatus(call, result)
+                }
                 "saveCurrentUdegState" -> {
                     assistsCoreManager!!.saveCurrentUdegState(call, result)
                 }

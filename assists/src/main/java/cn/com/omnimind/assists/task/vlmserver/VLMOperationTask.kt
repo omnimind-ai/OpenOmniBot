@@ -508,13 +508,17 @@ open class VLMOperationTask(
             ),
             "before" to linkedMapOf(
                 "observation_xml" to action.beforeXml,
+                "screenshot" to action.beforeScreenshot?.asMap(),
+                "screenshot_path" to action.beforeScreenshot?.path,
                 "package_name" to action.packageName
-            ),
+            ).filterValues { it != null },
             "after" to linkedMapOf(
                 "observation_xml" to action.afterXml,
+                "screenshot" to action.afterScreenshot?.asMap(),
+                "screenshot_path" to action.afterScreenshot?.path,
                 "summary" to action.summary,
                 "package_name" to action.packageName
-            )
+            ).filterValues { it != null }
         ).filterValues { it != null }
     }
 
@@ -529,11 +533,15 @@ open class VLMOperationTask(
         }
         val dstCtx = linkedMapOf<String, Any?>(
             "page" to action.afterXml?.takeIf { it.isNotBlank() },
+            "screenshot" to action.afterScreenshot?.asMap(),
+            "screenshot_path" to action.afterScreenshot?.path,
             "package_name" to action.packageName
         ).filterValues { it != null && it.toString().isNotBlank() }
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to beforeXml,
+                "screenshot" to action.beforeScreenshot?.asMap(),
+                "screenshot_path" to action.beforeScreenshot?.path,
                 "package_name" to action.packageName,
                 "require_unique_action_signature" to false
             ).filterValues { it != null && it.toString().isNotBlank() },

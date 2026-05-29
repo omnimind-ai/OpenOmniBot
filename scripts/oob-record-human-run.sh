@@ -10,7 +10,10 @@ ACTION="cn.com.omnimind.bot.debug.HUMAN_RUN_RECORDING"
 RECEIVER_CLASS="cn.com.omnimind.bot.debug.DebugHumanRunRecordingReceiver"
 DESCRIPTION=""
 OUTPUT_PATH=""
+ARTIFACT_DIR=""
+RAW_EVENT_OUTPUT=""
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-20}"
+ENABLE_RAW_TOUCH="${ENABLE_RAW_TOUCH:-0}"
 REQUIRE_RAW_TOUCH="${REQUIRE_RAW_TOUCH:-0}"
 EXPECTED_CLICKS=""
 EXPECTED_SWIPES=""
@@ -18,16 +21,16 @@ EXPECTED_SWIPES=""
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/oob-record-human-run.sh --description "增加联系人：妈妈 + 妈妈的手机号" [--device SERIAL] [--output-path PATH]
+  scripts/oob-record-human-run.sh --description "增加联系人：妈妈 + 妈妈的手机号" [--device SERIAL] [--output-path PATH] [--artifact-dir DIR]
 
 Starts OOB's native Kotlin human recorder. Press Ctrl-C to finish recording.
 The script only sends adb broadcasts; recording and RunLog generation happen
 inside the Android app through ManualVlmTraceRecorder + InternalRunLogStore.
 
 The recorder uses Accessibility events as the default action source. Raw
-getevent through app/su/Shizuku is optional enrichment unless
---require-raw-touch is passed. It requires the OOB debug APK and OOB
-Accessibility service to be enabled.
+getevent is disabled by default; pass --enable-raw-touch or
+--require-raw-touch to opt into app/su/Shizuku raw collection. It requires the
+OOB debug APK and OOB Accessibility service to be enabled.
 EOF
 }
 
@@ -49,11 +52,24 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_PATH="$2"
       shift 2
       ;;
+    --artifact-dir)
+      ARTIFACT_DIR="$2"
+      shift 2
+      ;;
+    --raw-event-output)
+      RAW_EVENT_OUTPUT="$2"
+      shift 2
+      ;;
     --timeout)
       TIMEOUT_SECONDS="$2"
       shift 2
       ;;
+    --enable-raw-touch)
+      ENABLE_RAW_TOUCH=1
+      shift
+      ;;
     --require-raw-touch)
+      ENABLE_RAW_TOUCH=1
       REQUIRE_RAW_TOUCH=1
       shift
       ;;
@@ -170,15 +186,24 @@ finish_and_exit() {
   if ! finish_recording; then
     exit 1
   fi
-  python3 - "$RESULT_TMP" "$OUTPUT_PATH" "$DEVICE_SERIAL" "$REQUIRE_RAW_TOUCH" "$EXPECTED_CLICKS" "$EXPECTED_SWIPES" <<'PY'
+  if [[ -n "${RAW_EVENT_OUTPUT// }" ]]; then
+    mkdir -p "$(dirname "$RAW_EVENT_OUTPUT")"
+  fi
+  python3 - "$RESULT_TMP" "$OUTPUT_PATH" "$DEVICE_SERIAL" "$PACKAGE_NAME" "$REQUIRE_RAW_TOUCH" "$EXPECTED_CLICKS" "$EXPECTED_SWIPES" "$RAW_EVENT_OUTPUT" "$ARTIFACT_DIR" <<'PY'
 import json
+import re
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
-result_path, output_path, target = sys.argv[1], sys.argv[2], sys.argv[3]
-require_raw = sys.argv[4] == "1"
-expected_clicks = int(sys.argv[5]) if sys.argv[5].strip() else None
-expected_swipes = int(sys.argv[6]) if sys.argv[6].strip() else None
+result_path, output_path, target, package_name = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+require_raw = sys.argv[5] == "1"
+expected_clicks = int(sys.argv[6]) if sys.argv[6].strip() else None
+expected_swipes = int(sys.argv[7]) if sys.argv[7].strip() else None
+raw_event_output = sys.argv[8].strip()
+artifact_dir_arg = sys.argv[9].strip()
 data = json.load(open(result_path, encoding="utf-8"))
 run_log = data.get("run_log") or {}
 if not isinstance(run_log, dict) or not run_log:
@@ -188,8 +213,20 @@ Path(output_path).write_text(
     json.dumps(run_log, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
+output_stem = Path(output_path)
+artifact_dir = Path(artifact_dir_arg) if artifact_dir_arg else output_stem.with_suffix("").with_name(output_stem.with_suffix("").name + ".artifacts")
+artifact_dir.mkdir(parents=True, exist_ok=True)
+(artifact_dir / "xml").mkdir(parents=True, exist_ok=True)
+(artifact_dir / "screenshots").mkdir(parents=True, exist_ok=True)
+(artifact_dir / "events").mkdir(parents=True, exist_ok=True)
+(artifact_dir / "audit").mkdir(parents=True, exist_ok=True)
+(artifact_dir / "run_log.json").write_text(
+    json.dumps(run_log, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
 diagnostics = data.get("diagnostics") or run_log.get("diagnostics") or {}
 raw_touch = diagnostics.get("raw_touch") or {}
+raw_event_stream = raw_touch.get("event_stream") or {}
 manual_recording = diagnostics.get("manual_recording") or {}
 window_transitions = diagnostics.get("unattributed_window_transitions") or {}
 actions = data.get("actions") or []
@@ -198,6 +235,187 @@ if not actions:
         card for card in run_log.get("cards", [])
         if isinstance(card, dict) and (card.get("action_type") or card.get("tool_name"))
     ]
+
+def as_map(value):
+    return value if isinstance(value, dict) else {}
+
+def safe_name(value, fallback):
+    text = str(value or fallback)
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("_")
+    return (text or str(fallback))[:96]
+
+def write_ndjson(path, rows):
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+def collect_cards(run_log):
+    cards = run_log.get("cards")
+    if isinstance(cards, list):
+        return [card for card in cards if isinstance(card, dict)]
+    steps = run_log.get("steps")
+    if isinstance(steps, list):
+        return [step for step in steps if isinstance(step, dict)]
+    return []
+
+cards = collect_cards(run_log)
+
+def card_action_name(card):
+    return card.get("action_name") or card.get("action_type") or card.get("tool_name") or card.get("toolName") or ""
+
+def card_step_index(card, fallback):
+    raw = card.get("step_index")
+    try:
+        return int(float(raw))
+    except Exception:
+        return fallback
+
+def observation(card, side):
+    return as_map(card.get(side))
+
+def observation_xml(card, side):
+    obs = observation(card, side)
+    return obs.get("observation_xml") or obs.get("xml") or ""
+
+def screenshot_ref(card, side):
+    obs = observation(card, side)
+    ref = as_map(obs.get("screenshot"))
+    path = obs.get("screenshot_path") or ref.get("screenshot_path") or ref.get("path")
+    if not path:
+        return {}
+    out = dict(ref)
+    out.setdefault("path", path)
+    out.setdefault("screenshot_path", path)
+    return out
+
+def read_device_file(device_path):
+    if not device_path:
+        return None, "empty_path"
+    try:
+        result = subprocess.run(
+            ["adb", "-s", target, "shell", "run-as", package_name, "cat", device_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=8,
+            check=False,
+        )
+    except Exception as exc:
+        return None, f"copy_exception:{exc}"
+    if result.returncode != 0 or not result.stdout:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        return None, f"copy_failed:{result.returncode}:{message[:200]}"
+    return result.stdout, None
+
+xml_assets = []
+a11_events = []
+action_rows = []
+screenshot_assets = []
+warnings = []
+seen_screenshot_paths = {}
+
+for fallback_index, card in enumerate(cards, start=1):
+    step_index = card_step_index(card, fallback_index)
+    action_name = card_action_name(card)
+    card_id = card.get("card_id") or card.get("tool_call_id") or f"step_{step_index:03d}"
+    step_prefix = f"step_{step_index:03d}_{safe_name(action_name, 'action')}"
+    event_context = as_map(card.get("event_context"))
+    source_context = as_map(card.get("source_context"))
+    before_xml = observation_xml(card, "before")
+    after_xml = observation_xml(card, "after")
+
+    for side, xml in (("before", before_xml), ("after", after_xml)):
+        if not xml:
+            continue
+        xml_path = artifact_dir / "xml" / f"{step_prefix}_{side}.xml"
+        xml_path.write_text(xml, encoding="utf-8")
+        xml_assets.append({
+            "step_index": step_index,
+            "card_id": card_id,
+            "side": side,
+            "path": str(xml_path),
+            "relative_path": str(xml_path.relative_to(artifact_dir)),
+            "bytes": xml_path.stat().st_size,
+            "chars": len(xml),
+        })
+
+    for side in ("before", "after"):
+        ref = screenshot_ref(card, side)
+        device_path = ref.get("path") or ref.get("screenshot_path")
+        if not device_path:
+            continue
+        local_path = seen_screenshot_paths.get(device_path)
+        if local_path is None:
+            suffix = Path(str(device_path)).suffix or ".jpg"
+            local = artifact_dir / "screenshots" / f"{step_prefix}_{side}{suffix}"
+            content, error = read_device_file(str(device_path))
+            if content is not None:
+                local.write_bytes(content)
+                local_path = str(local)
+            else:
+                local_path = ""
+                warnings.append({
+                    "kind": "screenshot_copy_failed",
+                    "step_index": step_index,
+                    "side": side,
+                    "device_path": device_path,
+                    "reason": error,
+                })
+            seen_screenshot_paths[device_path] = local_path
+        asset = {
+            "step_index": step_index,
+            "card_id": card_id,
+            "side": side,
+            "device_path": device_path,
+            "local_path": local_path or None,
+            "relative_path": (
+                str(Path(local_path).relative_to(artifact_dir))
+                if local_path else None
+            ),
+            "schema_ref": ref,
+        }
+        if local_path and Path(local_path).exists():
+            asset["bytes"] = Path(local_path).stat().st_size
+        screenshot_assets.append({k: v for k, v in asset.items() if v is not None})
+
+    if event_context:
+        a11_events.append({
+            "step_index": step_index,
+            "card_id": card_id,
+            "action_name": action_name,
+            "event_context": event_context,
+        })
+
+    action_rows.append({
+        "step_index": step_index,
+        "card_id": card_id,
+        "title": card.get("title") or card.get("summary"),
+        "action_name": action_name,
+        "status": card.get("status"),
+        "success": card.get("success"),
+        "duration_ms": card.get("duration_ms"),
+        "source": card.get("source"),
+        "compile_kind": card.get("compile_kind"),
+        "recording_backend": as_map(card.get("params")).get("recording_backend"),
+        "has_before_xml": bool(before_xml),
+        "has_after_xml": bool(after_xml),
+        "has_before_screenshot": bool(screenshot_ref(card, "before")),
+        "has_after_screenshot": bool(screenshot_ref(card, "after")),
+        "has_source_context": bool(source_context),
+        "event_type": event_context.get("event_type"),
+        "event_has_source": event_context.get("event_has_source"),
+        "target_resolution": event_context.get("target_resolution") or as_map(card.get("params")).get("target_resolution"),
+    })
+
+write_ndjson(artifact_dir / "events" / "a11.ndjson", a11_events)
+write_ndjson(artifact_dir / "actions.ndjson", action_rows)
+raw_events = raw_event_stream.get("events") or []
+write_ndjson(artifact_dir / "events" / "raw_getevent.ndjson", raw_events)
+(artifact_dir / "screenshots" / "index.json").write_text(
+    json.dumps(screenshot_assets, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+
 action_names = [
     (action.get("action_name") or action.get("action_type") or action.get("tool_name"))
     for action in actions
@@ -205,11 +423,107 @@ action_names = [
 ]
 click_count = sum(1 for name in action_names if name == "click")
 swipe_count = sum(1 for name in action_names if name == "swipe")
+missing_before_xml = [row["step_index"] for row in action_rows if not row["has_before_xml"]]
+missing_after_xml = [row["step_index"] for row in action_rows if not row["has_after_xml"]]
+missing_before_screenshot = [row["step_index"] for row in action_rows if not row["has_before_screenshot"]]
+missing_after_screenshot = [row["step_index"] for row in action_rows if not row["has_after_screenshot"]]
+missing_source_context = [row["step_index"] for row in action_rows if not row["has_source_context"]]
+source_null_steps = [
+    row["step_index"] for row in action_rows
+    if row.get("event_type") and row.get("event_has_source") is False
+]
+audit = {
+    "schema_version": "oob.manual_recording_audit.v1",
+    "success": data.get("success") is True,
+    "run_id": data.get("run_id") or run_log.get("run_id"),
+    "action_count": len(action_rows),
+    "click_count": click_count,
+    "swipe_count": swipe_count,
+    "xml_asset_count": len(xml_assets),
+    "screenshot_ref_count": len(screenshot_assets),
+    "screenshot_local_copy_count": sum(1 for item in screenshot_assets if item.get("local_path")),
+    "a11_event_count": len(a11_events),
+    "raw_getevent_line_count": raw_event_stream.get("line_count") or len(raw_events),
+    "raw_getevent_retained_line_count": len(raw_events),
+    "coverage": {
+        "before_xml_steps": len(action_rows) - len(missing_before_xml),
+        "after_xml_steps": len(action_rows) - len(missing_after_xml),
+        "before_screenshot_steps": len(action_rows) - len(missing_before_screenshot),
+        "after_screenshot_steps": len(action_rows) - len(missing_after_screenshot),
+        "source_context_steps": len(action_rows) - len(missing_source_context),
+    },
+    "missing": {
+        "before_xml_steps": missing_before_xml,
+        "after_xml_steps": missing_after_xml,
+        "before_screenshot_steps": missing_before_screenshot,
+        "after_screenshot_steps": missing_after_screenshot,
+        "source_context_steps": missing_source_context,
+    },
+    "diagnostics": {
+        "recording_completeness": manual_recording.get("completeness"),
+        "recording_action_source": manual_recording.get("action_source"),
+        "guarantees_no_missing_clicks": manual_recording.get("guarantees_no_missing_clicks"),
+        "source_null_event_steps": source_null_steps,
+        "warnings": warnings,
+    },
+}
+(artifact_dir / "audit" / "recording_audit.json").write_text(
+    json.dumps(audit, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+
+manifest = {
+    "schema_version": "oob.manual_recording_artifact.v1",
+    "kind": "oob_manual_recording_bundle",
+    "run_id": data.get("run_id") or run_log.get("run_id"),
+    "goal": run_log.get("goal") or data.get("description"),
+    "description": data.get("description"),
+    "device_serial": target,
+    "package_name": package_name,
+    "created_at_ms": int(time.time() * 1000),
+    "artifact_root": str(artifact_dir),
+    "paths": {
+        "run_log": str(artifact_dir / "run_log.json"),
+        "actions_ndjson": str(artifact_dir / "actions.ndjson"),
+        "a11_events_ndjson": str(artifact_dir / "events" / "a11.ndjson"),
+        "raw_getevent_ndjson": str(artifact_dir / "events" / "raw_getevent.ndjson"),
+        "screenshot_index": str(artifact_dir / "screenshots" / "index.json"),
+        "audit": str(artifact_dir / "audit" / "recording_audit.json"),
+        "legacy_output_path": output_path,
+    },
+    "artifacts": {
+        "action_count": len(action_rows),
+        "xml_asset_count": len(xml_assets),
+        "screenshot_ref_count": len(screenshot_assets),
+        "screenshot_local_copy_count": audit["screenshot_local_copy_count"],
+        "a11_event_count": len(a11_events),
+        "raw_getevent_retained_line_count": len(raw_events),
+    },
+    "xml_assets": xml_assets,
+    "screenshot_assets": screenshot_assets,
+    "audit": audit,
+    "privacy": {
+        "run_log_embeds_xml": True,
+        "run_log_embeds_screenshot_base64": False,
+        "screenshots_stored_as_files": True,
+        "raw_getevent_stored_as_ndjson": True,
+        "storage": "local_artifact_dir",
+    },
+    "warnings": warnings,
+}
+(artifact_dir / "manifest.json").write_text(
+    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+
 summary = {
     "success": data.get("success") is True,
     "target": target,
     "run_id": data.get("run_id") or run_log.get("run_id"),
     "run_log_path": output_path,
+    "artifact_dir": str(artifact_dir),
+    "manifest_path": str(artifact_dir / "manifest.json"),
+    "audit_path": str(artifact_dir / "audit" / "recording_audit.json"),
     "action_count": data.get("action_count") or run_log.get("step_count"),
     "action_names": action_names,
     "click_count": click_count,
@@ -222,6 +536,16 @@ summary = {
     "raw_touch_finished_gesture_count": raw_touch.get("finished_gesture_count"),
     "raw_touch_recorded_gesture_count": raw_touch.get("recorded_gesture_count"),
     "raw_touch_ignored_control_gesture_count": raw_touch.get("ignored_control_gesture_count"),
+    "raw_getevent_line_count": raw_event_stream.get("line_count"),
+    "raw_getevent_retained_line_count": raw_event_stream.get("retained_line_count"),
+    "raw_getevent_dropped_line_count": raw_event_stream.get("dropped_line_count"),
+    "raw_getevent_truncated": raw_event_stream.get("truncated"),
+    "screenshot_ref_count": audit["screenshot_ref_count"],
+    "screenshot_local_copy_count": audit["screenshot_local_copy_count"],
+    "missing_before_xml_steps": missing_before_xml,
+    "missing_after_xml_steps": missing_after_xml,
+    "missing_before_screenshot_steps": missing_before_screenshot,
+    "missing_after_screenshot_steps": missing_after_screenshot,
     "recording_completeness": manual_recording.get("completeness"),
     "recording_action_source": manual_recording.get("action_source"),
     "guarantees_no_missing_clicks": manual_recording.get("guarantees_no_missing_clicks"),
@@ -236,6 +560,10 @@ summary = {
     "token_usage_total": data.get("token_usage_total", 0),
     "error_message": data.get("error_message") or None,
 }
+if raw_event_output:
+    events = raw_event_stream.get("events") or []
+    shutil.copyfile(artifact_dir / "events" / "raw_getevent.ndjson", raw_event_output)
+    summary["raw_getevent_event_stream_path"] = raw_event_output
 print(json.dumps(summary, ensure_ascii=False, indent=2))
 if require_raw and raw_touch.get("available") is not True:
     print("raw touch is required but unavailable", file=sys.stderr)
@@ -267,7 +595,8 @@ require_unlocked_device
   -a "$ACTION" \
   -n "$RECEIVER" \
   --es op start \
-  --es description "$DESCRIPTION" >/dev/null
+  --es description "$DESCRIPTION" \
+  --ez enableRawTouch "$([[ "$ENABLE_RAW_TOUCH" -eq 1 ]] && echo true || echo false)" >/dev/null
 
 wait_for_file "$START_FILE" "$START_TMP"
 python3 - "$START_TMP" <<'PY'

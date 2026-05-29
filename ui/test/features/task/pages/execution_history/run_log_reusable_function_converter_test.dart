@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 
@@ -884,9 +885,11 @@ Actual output:
           );
 
       expect(prompt, contains('Use this example shape'));
+      expect(prompt, contains('OmniFlow Function Enhancer skill contract'));
       expect(prompt, contains('candidate_bindings'));
       expect(prompt, contains(r'$.execution.steps[1].args.content'));
       expect(prompt, contains('Work one section at a time'));
+      expect(prompt, contains('enhanced, unchanged, partial, or failed'));
       expect(prompt, isNot(contains(sourceXml)));
       expect(prompt, isNot(contains('source_context')));
       expect(prompt, isNot(contains('Reusable command JSON:')));

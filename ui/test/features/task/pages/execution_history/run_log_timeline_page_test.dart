@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/l10n/generated/app_localizations.dart';
+import 'package:ui/services/run_log_function_enhancement_job_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +16,9 @@ void main() {
   );
   var clipboardText = '';
 
-  setUp(() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await RunLogFunctionEnhancementJobService.clearForTesting();
     clipboardText = '';
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -326,7 +330,7 @@ void main() {
     expect(find.text('工具调用历史'), findsNothing);
   });
 
-  testWidgets('Agent runlog nests VLM internal actions under vlm_task', (
+  testWidgets('Agent runlog displays VLM task and child actions as steps', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -342,22 +346,20 @@ void main() {
 
     expect(find.text('已完成 · 3 步'), findsOneWidget);
     expect(find.text('第 1 步'), findsOneWidget);
-    expect(find.text('第 2 步'), findsNothing);
-    expect(find.text('第 3 步'), findsNothing);
+    expect(find.text('第 2 步'), findsOneWidget);
+    expect(find.text('第 3 步'), findsOneWidget);
     expect(find.text('视觉执行 打开 Settings'), findsOneWidget);
-    expect(find.text('内部 VLM 动作'), findsOneWidget);
-    expect(find.text('2 步'), findsOneWidget);
+    expect(find.text('内部 VLM 动作'), findsNothing);
     expect(find.text('打开应用 com.android.settings'), findsOneWidget);
     expect(find.text('点击 Network & internet'), findsOneWidget);
     expect(find.text('1.2s'), findsOneWidget);
     expect(find.text('320ms'), findsOneWidget);
 
-    await tester.tap(find.text('视觉执行 打开 Settings'));
+    await tester.tap(find.text('点击 Network & internet'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('VLM 执行记录 · 第 1 步'), findsOneWidget);
-    expect(find.text('内部 VLM 动作'), findsWidgets);
-    expect(find.text('打开应用 com.android.settings'), findsWidgets);
+    expect(find.textContaining('VLM 执行记录 · 第 3 步'), findsOneWidget);
+    expect(find.text('内部 VLM 动作'), findsNothing);
     expect(find.text('点击 Network & internet'), findsWidgets);
   });
 
@@ -593,17 +595,25 @@ void main() {
       final convertCalls = methodCalls
           .where((call) => call.method == 'convertInternalRunLogToOobFunction')
           .toList(growable: false);
-      expect(convertCalls, hasLength(2));
+      expect(convertCalls, hasLength(1));
       final convertArgs = Map<String, dynamic>.from(
-        convertCalls.first.arguments as Map,
+        convertCalls.single.arguments as Map,
       );
       expect(convertArgs['runId'], 'run-vlm');
-      expect(convertArgs['register'], isFalse);
-      final registerArgs = Map<String, dynamic>.from(
-        convertCalls.last.arguments as Map,
+      expect(convertArgs['register'], isTrue);
+
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey('run-log-function-status-strip')),
       );
-      expect(registerArgs['runId'], 'run-vlm');
-      expect(registerArgs['register'], isTrue);
+      expect(find.text('已保存为复用指令'), findsOneWidget);
+      expect(find.text('RunLog 保存结果', skipOffstage: false), findsNothing);
+      expect(find.text('执行步骤 · 1', skipOffstage: false), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('run-log-function-open-detail')),
+      );
+      await tester.pumpAndSettle();
 
       await _pumpUntilFound(tester, find.text('执行步骤 · 1', skipOffstage: false));
       expect(find.text('RunLog 保存结果', skipOffstage: false), findsOneWidget);
@@ -614,7 +624,7 @@ void main() {
       expect(find.text('RunLogs 1', skipOffstage: false), findsOneWidget);
       expect(find.text('保存', skipOffstage: false), findsNothing);
       expect(find.text('执行', skipOffstage: false), findsOneWidget);
-      expect(find.text('增强', skipOffstage: false), findsOneWidget);
+      expect(find.text('增强', skipOffstage: false), findsWidgets);
       expect(find.text('定时任务', skipOffstage: false), findsOneWidget);
       expect(find.text('复制 JSON', skipOffstage: false), findsNothing);
       expect(find.text('复制 Agent 提示', skipOffstage: false), findsNothing);
@@ -625,7 +635,7 @@ void main() {
       expect(find.textContaining('转换', skipOffstage: false), findsNothing);
       expect(find.text('名称', skipOffstage: false), findsOneWidget);
       expect(find.text('简介', skipOffstage: false), findsOneWidget);
-      expect(find.text('动作预览', skipOffstage: false), findsOneWidget);
+      expect(find.text('动作预览', skipOffstage: false), findsNothing);
       expect(find.text('高级信息', skipOffstage: false), findsOneWidget);
       expect(find.text('复用指令 JSON', skipOffstage: false), findsNothing);
 
@@ -655,7 +665,7 @@ void main() {
     },
   );
 
-  testWidgets('RunLog save opens an existing registered reusable command', (
+  testWidgets('RunLog save shows inline status before explicit details', (
     tester,
   ) async {
     final methodCalls = <MethodCall>[];
@@ -666,24 +676,17 @@ void main() {
             return _runLogTimelinePayload(runId: 'run-vlm');
           }
           if (call.method == 'convertInternalRunLogToOobFunction') {
-            final args = Map<String, dynamic>.from(call.arguments as Map);
-            if (args['register'] == true) {
-              fail('existing RunLog should not be registered again');
-            }
             return <String, dynamic>{
               'success': true,
+              'registered': true,
+              'already_exists': true,
+              'created_function_id': 'fn_from_runlog',
               'function_id': 'fn_from_runlog',
               'function_spec': _runLogReusableFunctionSpec(
-                name: '打开 Settings',
-                description: '打开 Android 设置',
+                name: '已有 Settings 指令',
+                description: '已经保存过的 Android 设置轨迹',
               ),
             };
-          }
-          if (call.method == 'getOobReusableFunction') {
-            return _runLogReusableFunctionSpec(
-              name: '已有 Settings 指令',
-              description: '已经保存过的 Android 设置轨迹',
-            );
           }
           return null;
         });
@@ -712,12 +715,23 @@ void main() {
       convertCalls.single.arguments as Map,
     );
     expect(convertArgs['runId'], 'run-vlm');
-    expect(convertArgs['register'], isFalse);
+    expect(convertArgs['register'], isTrue);
     expect(
       methodCalls.where((call) => call.method == 'getOobReusableFunction'),
-      hasLength(1),
+      isEmpty,
     );
 
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-status-strip')),
+    );
+    expect(find.text('已保存为复用指令'), findsOneWidget);
+    expect(find.text('RunLog 保存结果', skipOffstage: false), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-function-open-detail')),
+    );
+    await tester.pumpAndSettle();
     await _pumpUntilFound(
       tester,
       find.text('已有 Settings 指令', skipOffstage: false),
@@ -799,17 +813,21 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 500)),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('增强'),
-      180,
-      scrollable: find.byType(Scrollable).last,
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('增强'));
+    await tester.tap(find.byKey(const ValueKey('run-log-function-enhance')));
     await tester.pump();
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 800)),
+      () => Future<void>.delayed(const Duration(milliseconds: 1500)),
     );
+
+    await _pumpUntilFound(tester, find.text('已增强并保存'));
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-function-open-detail')),
+    );
+    await tester.pumpAndSettle();
     await _pumpUntilFound(tester, find.text('打开系统设置', skipOffstage: false));
     expect(find.text('打开系统设置', skipOffstage: false), findsWidgets);
     expect(
@@ -825,7 +843,7 @@ void main() {
       methodCalls.where((call) => call.method == 'registerOobReusableFunction'),
       hasLength(1),
     );
-    expect(find.text('已增强', skipOffstage: false), findsOneWidget);
+    expect(find.text('已增强并保存', skipOffstage: false), findsOneWidget);
     expect(find.text('已修改，保存后生效', skipOffstage: false), findsNothing);
   });
 
@@ -882,21 +900,19 @@ void main() {
     );
     await tester.pump();
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 500)),
-    );
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('增强'),
-      180,
-      scrollable: find.byType(Scrollable).last,
+      () => Future<void>.delayed(const Duration(milliseconds: 1000)),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('增强'));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
+    );
+    await tester.tap(find.byKey(const ValueKey('run-log-function-enhance')));
     await tester.pump();
 
-    expect(find.text('增强中', skipOffstage: false), findsOneWidget);
-    expect(find.text('已增强', skipOffstage: false), findsNothing);
+    expect(find.text('后台增强中', skipOffstage: false), findsWidgets);
+    expect(find.text('已增强并保存', skipOffstage: false), findsNothing);
 
     llmCompleter.complete('''
 {
@@ -914,8 +930,177 @@ void main() {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 500)),
     );
-    await _pumpUntilFound(tester, find.text('已增强', skipOffstage: false));
-    expect(find.text('增强中', skipOffstage: false), findsNothing);
+    await _pumpUntilFound(tester, find.text('已增强并保存', skipOffstage: false));
+  });
+
+  testWidgets('RunLog Agent enhancement marks unchanged explicitly', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return null;
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'registered': true,
+              'created_function_id': 'fn_from_runlog',
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'postLLMChat') {
+            final prompt = (call.arguments as Map)['text'].toString();
+            if (prompt.contains('每个 step')) {
+              return '{}';
+            }
+            if (prompt.contains('运行时参数')) {
+              return '{"parameters": []}';
+            }
+            if (prompt.contains('agent_reuse')) {
+              return '{"agent_reuse": {}}';
+            }
+            return '''
+{
+  "name": "打开 Settings",
+  "description": "打开 Android 设置"
+}
+''';
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            final spec = Map<String, dynamic>.from(args['functionSpec'] as Map);
+            final metadata = Map<String, dynamic>.from(spec['metadata'] as Map);
+            final report = Map<String, dynamic>.from(
+              metadata['oob_enhancement'] as Map,
+            );
+            expect(spec['name'], '打开 Settings');
+            expect(report['status'], 'unchanged');
+            expect(report['changed'], isFalse);
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'fn_from_runlog',
+              'created_function_id': 'fn_from_runlog',
+              'already_exists': true,
+              'asset_kind': 'oob_reusable_function',
+              'asset_state': 'native_local',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
+    );
+    await tester.tap(find.byKey(const ValueKey('run-log-function-enhance')));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 1500)),
+    );
+
+    await _pumpUntilFound(tester, find.text('已检查，无需修改', skipOffstage: false));
+    expect(find.text('已检查，无需修改', skipOffstage: false), findsOneWidget);
+    expect(find.text('已增强并保存', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('RunLog Agent enhancement failure is explicit and retryable', (
+    tester,
+  ) async {
+    final methodCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          methodCalls.add(call);
+          if (call.method == 'getInternalRunLogTimeline') {
+            return _runLogTimelinePayload(runId: 'run-vlm');
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return null;
+          }
+          if (call.method == 'convertInternalRunLogToOobFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'registered': true,
+              'created_function_id': 'fn_from_runlog',
+              'function_id': 'fn_from_runlog',
+              'function_spec': _runLogReusableFunctionSpec(
+                name: '打开 Settings',
+                description: '打开 Android 设置',
+              ),
+            };
+          }
+          if (call.method == 'postLLMChat') {
+            return '这不是 JSON，也无法修复。';
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            fail('failed enhancement must not save a Function');
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        locale: const Locale('zh'),
+        child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('run-log-action-save-function')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
+    );
+    await tester.tap(find.byKey(const ValueKey('run-log-function-enhance')));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 1500)),
+    );
+
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
+    );
+    expect(find.text('已增强并保存', skipOffstage: false), findsNothing);
+    expect(find.text('处理失败', skipOffstage: false), findsOneWidget);
+    expect(
+      methodCalls.where((call) => call.method == 'registerOobReusableFunction'),
+      isEmpty,
+    );
+    expect(
+      methodCalls.where((call) => call.method == 'postLLMChat'),
+      hasLength(8),
+    );
   });
 
   testWidgets('RunLog Agent enhancement repairs non JSON model output', (
@@ -1024,18 +1209,16 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 500)),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('增强'),
-      180,
-      scrollable: find.byType(Scrollable).last,
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('run-log-function-enhance')),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('增强'));
+    await tester.tap(find.byKey(const ValueKey('run-log-function-enhance')));
     await tester.pump();
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 800)),
+      () => Future<void>.delayed(const Duration(milliseconds: 1500)),
     );
-    await _pumpUntilFound(tester, find.text('打开系统设置', skipOffstage: false));
+    await _pumpUntilFound(tester, find.text('已增强并保存', skipOffstage: false));
 
     expect(
       methodCalls.where((call) => call.method == 'postLLMChat'),
@@ -1053,7 +1236,7 @@ void main() {
       methodCalls.where((call) => call.method == 'registerOobReusableFunction'),
       hasLength(1),
     );
-    expect(find.text('已增强', skipOffstage: false), findsOneWidget);
+    expect(find.text('已增强并保存', skipOffstage: false), findsOneWidget);
     expect(find.textContaining('没有返回可解析 JSON'), findsNothing);
   });
 }
@@ -1305,10 +1488,11 @@ Finder _selectableTextContaining(String text) {
 }
 
 Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
-  for (var i = 0; i < 50; i++) {
+  for (var i = 0; i < 80; i++) {
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) {
       return;
     }
   }
+  expect(finder, findsWidgets);
 }

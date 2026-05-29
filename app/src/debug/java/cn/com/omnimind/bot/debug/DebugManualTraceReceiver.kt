@@ -30,10 +30,12 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?: "debug_manual_trace"
+        val enableRawTouch = intent?.getBooleanExtra("enableRawTouch", false) == true ||
+            intent?.getBooleanExtra("rawTouch", false) == true
 
         scope.launch {
             val result = runCatching {
-                runManualTrace(appContext, sessionLabel, durationMs)
+                runManualTrace(appContext, sessionLabel, durationMs, enableRawTouch)
             }.getOrElse { error ->
                 linkedMapOf<String, Any?>(
                     "success" to false,
@@ -53,12 +55,17 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
         context: Context,
         sessionLabel: String,
         durationMs: Long,
+        enableRawTouch: Boolean,
     ): Map<String, Any?> {
         val timing = DebugTiming()
         timing.measure("wait_accessibility_ms") {
             waitForAccessibility(context)
         }
-        val recorder = ManualVlmTraceRecorder(context, sessionLabel)
+        val recorder = ManualVlmTraceRecorder(
+            context = context,
+            sessionLabel = sessionLabel,
+            enableRawTouch = enableRawTouch
+        )
         val started = timing.measure("start_recorder_ms") {
             recorder.start()
         }

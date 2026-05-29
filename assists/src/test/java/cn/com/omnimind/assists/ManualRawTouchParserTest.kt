@@ -1,12 +1,47 @@
 package cn.com.omnimind.assists
 
 import cn.com.omnimind.assists.task.vlmserver.ManualRawTouchParser
+import cn.com.omnimind.assists.task.vlmserver.ManualRawTouchEventLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManualRawTouchParserTest {
+    @Test
+    fun `parse raw getevent stream line for diagnostics`() {
+        val parsed = ManualRawTouchParser.parseEventLine(
+            "[ 1000.001000] /dev/input/event4: EV_ABS ABS_MT_POSITION_X 00004000"
+        )
+
+        assertNotNull(parsed)
+        assertEquals(1_000_001L, parsed?.eventTimeMs)
+        assertEquals("/dev/input/event4", parsed?.devicePath)
+        assertEquals("EV_ABS", parsed?.eventType)
+        assertEquals("ABS_MT_POSITION_X", parsed?.code)
+        assertEquals(0x4000, parsed?.value)
+    }
+
+    @Test
+    fun `raw getevent diagnostic line preserves original stream text`() {
+        val line = "[ 1000.001000] /dev/input/event4: EV_ABS ABS_MT_POSITION_X 00004000"
+        val diagnostic = ManualRawTouchEventLine(
+            seq = 7,
+            capturedAtMs = 1234,
+            line = line,
+            eventTimeMs = 1_000_001L,
+            devicePath = "/dev/input/event4",
+            eventType = "EV_ABS",
+            code = "ABS_MT_POSITION_X",
+            value = 0x4000
+        ).asMap()
+
+        assertEquals(7L, diagnostic["seq"])
+        assertEquals(line, diagnostic["line"])
+        assertEquals("ABS_MT_POSITION_X", diagnostic["code"])
+        assertEquals(0x4000, diagnostic["value"])
+    }
+
     @Test
     fun `parse touch device from getevent capabilities`() {
         val devices = ManualRawTouchParser.parseTouchDevices(

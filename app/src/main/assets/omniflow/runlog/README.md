@@ -137,9 +137,12 @@ is `增强`: it asks Agent to improve the reusable command name, description,
 per-step descriptions, safe runtime parameter slots, and non-executable
 `agent_reuse` metadata, then saves the enhanced spec back to the same
 `function_id`. Enhancement never changes executor/tool/args/validation/fallback
-or step order. This is an asynchronous UI state: the button shows `增强中`
-while the Agent/update work is pending and `已增强` after the enhanced spec has
-been saved. A save button should only appear after unsaved manual edits.
+or step order. This is a background UI task: the button shows `后台增强中`
+while the Agent/update work is pending, then shows an explicit terminal result:
+`已增强`, `已检查`, `部分增强`, or `重试增强`. The result is persisted under
+`metadata.oob_enhancement` with status `enhanced`, `unchanged`, `partial`, or
+`failed`, so reopening the Function does not require guessing whether the prior
+click changed anything. A save button should only appear after unsaved manual edits.
 Raw JSON and agent prompt details stay under the advanced section by default.
 
 ## OmniFlow Compatibility Boundary

@@ -1,6 +1,7 @@
 package cn.com.omnimind.assists
 
 import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
+import cn.com.omnimind.assists.task.vlmserver.ManualVlmScreenshotRef
 import cn.com.omnimind.assists.task.vlmserver.ManualRecordingDiagnostics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +10,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HumanTrajectoryLearningSessionTest {
+    @Test
+    fun `manual recording inactive status uses shared schema`() {
+        val status = HumanTrajectoryLearningSession.status()
+        val payload = status.asMap()
+
+        assertFalse(status.active)
+        assertFalse(status.paused)
+        assertEquals(false, payload["recording_active"])
+        assertEquals(false, payload["recording_paused"])
+        assertEquals(0, payload["action_count"])
+        assertEquals("accessibility_event", payload["recording_backend"])
+    }
+
     @Test
     fun `manual recording diagnostics require active raw touch for no-miss guarantee`() {
         val semanticOnly = ManualRecordingDiagnostics.completeness(
@@ -37,6 +51,8 @@ class HumanTrajectoryLearningSessionTest {
     fun `manual recording run log card keeps replay context and timing`() {
         val beforeXml = "<hierarchy package=\"com.android.settings\"><node text=\"Bluetooth\" bounds=\"[0,0][100,100]\" /></hierarchy>"
         val afterXml = "<hierarchy package=\"com.android.settings\"><node text=\"Connected devices\" bounds=\"[0,0][100,100]\" /></hierarchy>"
+        val beforeScreenshot = screenshotRef("before", "/tmp/run/screenshots/0001_before.jpg")
+        val afterScreenshot = screenshotRef("after", "/tmp/run/screenshots/0002_after.jpg")
         val action = ManualVlmRecordedAction(
             actionName = "click",
             title = "人工点击 Bluetooth",
@@ -51,6 +67,8 @@ class HumanTrajectoryLearningSessionTest {
             packageName = "com.android.settings",
             beforeXml = beforeXml,
             afterXml = afterXml,
+            beforeScreenshot = beforeScreenshot,
+            afterScreenshot = afterScreenshot,
             startedAtMs = 1000L,
             finishedAtMs = 1250L,
             summary = "人工点击 Bluetooth",
@@ -82,8 +100,14 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(84f, params["y"])
         assertEquals(beforeXml, before["observation_xml"])
         assertEquals(afterXml, after["observation_xml"])
+        assertEquals(beforeScreenshot.path, before["screenshot_path"])
+        assertEquals(afterScreenshot.path, after["screenshot_path"])
         assertEquals(beforeXml, srcCtx["page"])
         assertEquals(afterXml, dstCtx["page"])
+        assertEquals(beforeScreenshot.path, srcCtx["screenshot_path"])
+        assertEquals(afterScreenshot.path, dstCtx["screenshot_path"])
+        assertEquals(beforeScreenshot.path, (srcCtx["screenshot"] as Map<*, *>)["path"])
+        assertEquals(afterScreenshot.path, (dstCtx["screenshot"] as Map<*, *>)["path"])
         assertEquals("click", sourceAction["tool"])
         assertEquals(42f, sourceAction["x"])
         assertEquals(84f, sourceAction["y"])
@@ -94,6 +118,19 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(action.eventContext, meta["event_context"])
         assertNotNull(card["tool_call"])
     }
+
+    private fun screenshotRef(stage: String, path: String): ManualVlmScreenshotRef =
+        ManualVlmScreenshotRef(
+            path = path,
+            relativePath = path.substringAfter("/tmp/"),
+            mimeType = "image/jpeg",
+            width = 630,
+            height = 1400,
+            bytes = 12345L,
+            sha256 = "abc123",
+            capturedAtMs = 999L,
+            captureStage = stage,
+        )
 
     @Suppress("UNCHECKED_CAST")
     private fun buildRunLogCardForTest(

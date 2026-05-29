@@ -30,6 +30,22 @@ the user is asking to reuse execution behavior.
 4. Ask the user before confirmation-required or live-context continuation.
 5. Stop on blocked actions.
 
+## Relation to VLM Execution
+
+For online phone execution, `vlm-android-gui` owns the canonical runtime flow:
+fresh-page VLM turns, UDEG page-skill injection, RunLog collection, explicit
+Function replay boundaries, and fallback policy. This OmniFlow skill owns the
+reusable execution material: conversion, registration, enhancement, guard
+checks, and explicit replay.
+
+Keep the boundary simple: recall is UDEG page match plus node-attached
+capability candidates, not global Function search; registration is
+`RunLog -> compile -> Function store -> UDEG node attachment`, not a harness;
+enhancement never changes executable replay structure; replay must surface as a
+real `call_function` / reusable-command card; if replay needs live perception,
+return `fallback=true` / `needs_agent` and let the caller explicitly continue
+with bounded VLM.
+
 ## Access Mode Selection
 
 If MCP is available, call `tools/list`.
@@ -71,8 +87,9 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 4. Only use `decision=hit` or `decision=segment_hit` as direct execution when
    the host explicitly requested direct recall execution, for example through
    `auto_execute=true`.
-5. If recall misses or call_tool returns `fallback=true`, continue with the
-   host agent's normal planner.
+5. If recall misses or call_tool returns `fallback=true`, return that state to
+   the caller; continue with live planning only after explicit bounded VLM
+   selection.
 
 ### Write Back a RunLog
 
@@ -83,6 +100,8 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 ### Enhance a Saved RunLog Command
 
 Enhancement improves reuse ability without changing the execution structure.
+For detailed Function-enhancement behavior, read the built-in
+`omniflow-function-enhancer` skill when available.
 
 Allowed enhancement output:
 
@@ -106,6 +125,20 @@ Hard boundaries:
 - Before replay, fill fresh argument values through `parameters.bindings`; a
   recording with defaults like "妈妈" and a phone number should be reusable for
   another contact and phone number through those bindings.
+
+Enhancement status must be explicit:
+
+- `enhanced`: safe, meaningful changes were saved to the same Function.
+- `unchanged`: Agent checked the Function and found nothing safe to improve.
+- `partial`: safe changes were saved, but one or more sections failed or were
+  skipped.
+- `failed`: no usable enhancement was produced; keep the Function unchanged and
+  allow retry.
+
+Persist this result under `metadata.oob_enhancement` and surface it in the GUI.
+The GUI action should run as a background UI task: show progress immediately,
+then show `已增强`, `已检查`, `部分增强`, or `重试增强` instead of relying on a
+bare boolean.
 
 ### Explore, Save, and Replay a New Path
 

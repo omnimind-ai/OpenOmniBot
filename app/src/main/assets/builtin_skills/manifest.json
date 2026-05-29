@@ -41,6 +41,16 @@
       "hasEvals": false
     },
     {
+      "id": "omniflow-function-enhancer",
+      "name": "omniflow-function-enhancer",
+      "description": "Enhance an existing OmniFlow reusable Function created from a RunLog. Use for 增强, RunLog 转 Function 增强, execution-structure enhancement planning, runtime parameters, agent_reuse metadata, background enhancement status, and explicit enhanced unchanged partial failed reporting.",
+      "assetPath": "builtin_skills/omniflow-function-enhancer",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "oob-project",
       "name": "oob-project",
       "description": "OOB Workbench Project 完整生命周期总入口：新建 Project、更新、蒸馏、审查、HTML Display、Project Tool/API 设计、热更新、导出、PROJECT_SOUL/PROJECT_CONTEXT 维护。Use when the user says \"帮我做一个\", \"我想创建一个\", \"新建 Project\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", \"project review\", \"审查 project\", \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", \"产品分析\", \"GitHub 仓库分析\", or any intent to create, distill, modify, review, export, or maintain a persistent personal tool.",

@@ -180,18 +180,103 @@ void main() {
 
       expect(find.text('复用指令详情'), findsOneWidget);
       expect(find.text('类型 OmniFlow'), findsNothing);
-      expect(find.text('状态 已注册'), findsOneWidget);
+      expect(find.text('状态 已注册'), findsNothing);
       expect(find.text('package_name'), findsOneWidget);
-      expect(find.text('离线来源'), findsOneWidget);
-      expect(find.textContaining('由 RunLog 注册'), findsOneWidget);
-      expect(find.text('动作预览'), findsOneWidget);
-      expect(find.text('步骤'), findsOneWidget);
+      expect(find.text('离线来源'), findsNothing);
+      expect(find.textContaining('由 RunLog 注册'), findsNothing);
+      expect(find.text('动作预览'), findsNothing);
+      expect(find.text('执行步骤 · 1'), findsOneWidget);
       expect(find.text('参数'), findsOneWidget);
-      expect(find.textContaining('打开 Settings · 打开应用'), findsOneWidget);
-      expect(find.textContaining('open_app'), findsNothing);
+      expect(find.textContaining('打开 Settings'), findsWidgets);
+      expect(find.textContaining('open_app'), findsWidgets);
       expect(find.textContaining('OmniFlow'), findsNothing);
     },
   );
+
+  testWidgets('Reusable command detail renders vlm_task as VLM step', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'listOobReusableFunctions') {
+            return <String, dynamic>{
+              'success': true,
+              'count': 1,
+              'functions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'function_id': 'screen_vlm',
+                  'name': '识别屏幕',
+                  'description': 'VLM 直接执行',
+                  'step_count': 1,
+                  'parameter_names': <String>[],
+                  'source_run_ids': <String>['run-vlm-only'],
+                  'step_summaries': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'index': 0,
+                      'title': '识别当前屏幕',
+                      'kind': 'agent_replan',
+                      'executor': 'agent',
+                      'tool': 'vlm_task',
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'screen_vlm',
+              'name': '识别屏幕',
+              'description': 'VLM 直接执行',
+              'parameters': <Map<String, dynamic>>[],
+              'execution': <String, dynamic>{
+                'step_count': 1,
+                'steps': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'step_vlm_1',
+                    'index': 0,
+                    'title': '识别当前屏幕',
+                    'kind': 'agent_replan',
+                    'executor': 'agent',
+                    'tool': 'vlm_task',
+                    'args': <String, dynamic>{'goal': '识别当前屏幕'},
+                    'agent_call': <String, dynamic>{
+                      'original_tool': 'vlm_task',
+                      'reason': 'perception_only_step_without_recorded_actions',
+                    },
+                  },
+                ],
+              },
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: CommandLibraryPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.info_outline_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('执行步骤 · 1'), findsOneWidget);
+    expect(find.text('VLM'), findsOneWidget);
+    expect(find.text('视觉执行 识别当前屏幕'), findsOneWidget);
+    expect(find.textContaining('agent · vlm_task'), findsNothing);
+
+    await tester.tap(find.text('视觉执行 识别当前屏幕'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('VLM 执行记录 · 第 1 步'), findsOneWidget);
+    expect(find.text('VLM 动作'), findsOneWidget);
+  });
 
   testWidgets('Reusable command step can be edited and saved', (tester) async {
     Map<String, dynamic>? savedSpec;

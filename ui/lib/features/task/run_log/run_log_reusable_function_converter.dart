@@ -1,23 +1,74 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 import 'package:ui/services/assists_core_service.dart';
 
+enum RunLogReusableFunctionEnhancementStatus {
+  none,
+  enhancing,
+  enhanced,
+  unchanged,
+  partial,
+  failed,
+}
+
+extension RunLogReusableFunctionEnhancementStatusX
+    on RunLogReusableFunctionEnhancementStatus {
+  String get wireName => name;
+
+  bool get isApplied =>
+      this == RunLogReusableFunctionEnhancementStatus.enhanced ||
+      this == RunLogReusableFunctionEnhancementStatus.partial;
+
+  bool get isTerminal =>
+      this == RunLogReusableFunctionEnhancementStatus.enhanced ||
+      this == RunLogReusableFunctionEnhancementStatus.unchanged ||
+      this == RunLogReusableFunctionEnhancementStatus.partial ||
+      this == RunLogReusableFunctionEnhancementStatus.failed;
+}
+
+const String kOmniFlowFunctionEnhancerContractAsset =
+    'assets/execution_history/omniflow_function_enhancer_contract.md';
+
+const String kOmniFlowFunctionEnhancerContract = '''
+OmniFlow Function Enhancer skill contract:
+- This is the saved Function enhancement pass; RunLog is provenance only.
+- Improve reuse clarity without silently changing execution.
+- Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
+- Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
+- If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
+- The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.
+''';
+
+String? _enhancementSkillContractCache;
+
 class RunLogReusableFunctionSpec {
-  const RunLogReusableFunctionSpec({
+  RunLogReusableFunctionSpec({
     required this.json,
     required this.agentPrompt,
     required this.aiEnhanced,
     this.warning,
     this.rawAiText,
-  });
+    RunLogReusableFunctionEnhancementStatus? enhancementStatus,
+    String? enhancementMessage,
+    Map<String, dynamic>? enhancementReport,
+  }) : enhancementStatus =
+           enhancementStatus ?? _enhancementStatusFromFunctionJson(json),
+       enhancementMessage =
+           enhancementMessage ?? _enhancementMessageFromFunctionJson(json),
+       enhancementReport =
+           enhancementReport ?? _enhancementReportFromFunctionJson(json);
 
   final Map<String, dynamic> json;
   final String agentPrompt;
   final bool aiEnhanced;
   final String? warning;
   final String? rawAiText;
+  final RunLogReusableFunctionEnhancementStatus enhancementStatus;
+  final String? enhancementMessage;
+  final Map<String, dynamic>? enhancementReport;
 
   String get functionId => (json['function_id'] ?? '').toString();
   String get name => (json['name'] ?? '').toString();
@@ -28,6 +79,9 @@ class RunLogReusableFunctionSpec {
     bool? aiEnhanced,
     String? warning,
     String? rawAiText,
+    RunLogReusableFunctionEnhancementStatus? enhancementStatus,
+    String? enhancementMessage,
+    Map<String, dynamic>? enhancementReport,
   }) {
     return RunLogReusableFunctionSpec(
       json: json ?? this.json,
@@ -35,6 +89,9 @@ class RunLogReusableFunctionSpec {
       aiEnhanced: aiEnhanced ?? this.aiEnhanced,
       warning: warning ?? this.warning,
       rawAiText: rawAiText ?? this.rawAiText,
+      enhancementStatus: enhancementStatus ?? this.enhancementStatus,
+      enhancementMessage: enhancementMessage ?? this.enhancementMessage,
+      enhancementReport: enhancementReport ?? this.enhancementReport,
     );
   }
 
@@ -56,10 +113,139 @@ class _LabelEnhancementPatchResult {
   const _LabelEnhancementPatchResult({
     required this.json,
     required this.rawTexts,
+    required this.sectionReport,
   });
 
   final Map<String, dynamic>? json;
   final List<String> rawTexts;
+  final Map<String, dynamic> sectionReport;
+}
+
+RunLogReusableFunctionEnhancementStatus _enhancementStatusFromFunctionJson(
+  Map<String, dynamic> functionJson,
+) {
+  final report = _enhancementReportFromFunctionJson(functionJson);
+  final rawStatus = _firstNonBlank([
+    report?['status'],
+    _asStringKeyMap(functionJson['metadata'])['enhancement_status'],
+    functionJson['enhancement_status'],
+  ]).trim().toLowerCase();
+  switch (rawStatus) {
+    case 'enhanced':
+    case 'applied':
+      return RunLogReusableFunctionEnhancementStatus.enhanced;
+    case 'partial':
+    case 'partially_enhanced':
+      return RunLogReusableFunctionEnhancementStatus.partial;
+    case 'unchanged':
+    case 'checked':
+    case 'no_change':
+      return RunLogReusableFunctionEnhancementStatus.unchanged;
+    case 'failed':
+    case 'error':
+      return RunLogReusableFunctionEnhancementStatus.failed;
+    case 'enhancing':
+      return RunLogReusableFunctionEnhancementStatus.enhancing;
+  }
+  return RunLogReusableFunctionEnhancementStatus.none;
+}
+
+String? _enhancementMessageFromFunctionJson(Map<String, dynamic> functionJson) {
+  final report = _enhancementReportFromFunctionJson(functionJson);
+  final message = _firstNonBlank([
+    report?['message'],
+    _asStringKeyMap(functionJson['metadata'])['enhancement_message'],
+    functionJson['enhancement_message'],
+  ]);
+  return message.isEmpty ? null : message;
+}
+
+Map<String, dynamic>? _enhancementReportFromFunctionJson(
+  Map<String, dynamic> functionJson,
+) {
+  final metadata = _asStringKeyMap(functionJson['metadata']);
+  final report = _asStringKeyMap(
+    metadata['oob_enhancement'] ??
+        metadata['enhancement'] ??
+        functionJson['oob_enhancement'],
+  );
+  return report.isEmpty ? null : report;
+}
+
+Map<String, dynamic> _buildEnhancementReport({
+  required RunLogReusableFunctionEnhancementStatus status,
+  required bool changed,
+  required String message,
+  required List<Map<String, dynamic>> sections,
+}) {
+  return {
+    'schema_version': 'oob.function_enhancement.v1',
+    'source': 'run_log_agent_label_enhancer',
+    'status': status.wireName,
+    'changed': changed,
+    'message': message,
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+    'sections': sections.map(_jsonSafeMap).toList(growable: false),
+  };
+}
+
+Map<String, dynamic> _withEnhancementMetadata(
+  Map<String, dynamic> functionJson,
+  Map<String, dynamic> report,
+) {
+  final result = _jsonSafeMap(functionJson);
+  final metadata = <String, dynamic>{..._asStringKeyMap(result['metadata'])};
+  metadata['oob_enhancement'] = _jsonSafeMap(report);
+  result['metadata'] = metadata;
+  return result;
+}
+
+bool _sectionReportFailed(Map<String, dynamic> report) {
+  final status = (report['status'] ?? '').toString().trim();
+  if (status == 'parsed' || status == 'repaired' || status == 'empty_patch') {
+    return false;
+  }
+  return report['accepted'] != true;
+}
+
+String _enhancementStatusMessage(
+  RunLogReusableFunctionEnhancementStatus status, {
+  required bool useEnglish,
+}) {
+  switch (status) {
+    case RunLogReusableFunctionEnhancementStatus.enhanced:
+      return _text(
+        useEnglish,
+        'Agent 增强已应用并保存：名称、步骤说明、运行时参数或复用元数据已有有效改进。',
+        'Agent enhancement applied and saved: labels, step descriptions, runtime parameters, or reuse metadata changed.',
+      );
+    case RunLogReusableFunctionEnhancementStatus.partial:
+      return _text(
+        useEnglish,
+        'Agent 增强已部分应用并保存：有可用改进，但部分增强片段未通过解析或校验。',
+        'Agent enhancement partially applied and saved: useful changes were kept, but some sections failed parsing or validation.',
+      );
+    case RunLogReusableFunctionEnhancementStatus.unchanged:
+      return _text(
+        useEnglish,
+        'Agent 已检查，未发现可安全应用的增强；当前复用指令保持不变。',
+        'Agent checked this command and found no safe enhancement to apply. The reusable command is unchanged.',
+      );
+    case RunLogReusableFunctionEnhancementStatus.failed:
+      return _text(
+        useEnglish,
+        'Agent 增强未产生可用结果，已保留当前复用指令。',
+        'Agent enhancement produced no usable result. Keeping the current reusable command.',
+      );
+    case RunLogReusableFunctionEnhancementStatus.enhancing:
+      return _text(
+        useEnglish,
+        'Agent 正在后台增强这个复用指令。',
+        'Agent is enhancing this reusable command in the background.',
+      );
+    case RunLogReusableFunctionEnhancementStatus.none:
+      return '';
+  }
 }
 
 class RunLogReusableFunctionConverter {
@@ -459,23 +645,36 @@ class RunLogReusableFunctionConverter {
     bool useEnglish = false,
   }) async {
     final fallbackJson = _jsonSafeMap(functionJson);
+    final skillContract = await enhancementSkillContractAsync();
     final patches = <Map<String, dynamic>>[];
     final rawParts = <String>[];
+    final sectionReports = <Map<String, dynamic>>[];
     try {
       Future<void> requestPart({
         required String partName,
         required String prompt,
         required Map<String, dynamic> fallbackPatch,
       }) async {
-        final result = await _requestLabelEnhancementPatch(
-          partName: partName,
-          prompt: prompt,
-          fallbackPatch: fallbackPatch,
-          useEnglish: useEnglish,
-        );
-        rawParts.addAll(result.rawTexts);
-        if (result.json != null && result.json!.isNotEmpty) {
-          patches.add(result.json!);
+        try {
+          final result = await _requestLabelEnhancementPatch(
+            partName: partName,
+            prompt: prompt,
+            fallbackPatch: fallbackPatch,
+            useEnglish: useEnglish,
+          );
+          rawParts.addAll(result.rawTexts);
+          sectionReports.add(result.sectionReport);
+          if (result.json != null && result.json!.isNotEmpty) {
+            patches.add(result.json!);
+          }
+        } catch (error) {
+          rawParts.add('[$partName error]\n$error');
+          sectionReports.add({
+            'part': partName,
+            'status': 'error',
+            'accepted': false,
+            'error': error.toString(),
+          });
         }
       }
 
@@ -483,6 +682,7 @@ class RunLogReusableFunctionConverter {
         partName: 'header',
         prompt: _buildLabelHeaderEnhancementPrompt(
           fallbackJson,
+          skillContract: skillContract,
           useEnglish: useEnglish,
         ),
         fallbackPatch: _labelHeaderFallbackPatch(fallbackJson),
@@ -493,6 +693,7 @@ class RunLogReusableFunctionConverter {
           partName: 'steps',
           prompt: _buildLabelStepsEnhancementPrompt(
             chunk,
+            skillContract: skillContract,
             useEnglish: useEnglish,
           ),
           fallbackPatch: {'steps': _stepPromptFallback(chunk)},
@@ -503,6 +704,7 @@ class RunLogReusableFunctionConverter {
         partName: 'parameters',
         prompt: _buildLabelParametersEnhancementPrompt(
           fallbackJson,
+          skillContract: skillContract,
           useEnglish: useEnglish,
         ),
         fallbackPatch: _labelParametersFallbackPatch(fallbackJson),
@@ -512,6 +714,7 @@ class RunLogReusableFunctionConverter {
         partName: 'agent_reuse',
         prompt: _buildLabelReuseEnhancementPrompt(
           fallbackJson,
+          skillContract: skillContract,
           useEnglish: useEnglish,
         ),
         fallbackPatch: const {
@@ -527,6 +730,17 @@ class RunLogReusableFunctionConverter {
 
       final aiJson = _mergeLabelEnhancementPatches(patches);
       if (aiJson.isEmpty) {
+        final message = _text(
+          useEnglish,
+          'Agent 增强没有返回任何可解析 JSON 片段，已保留当前复用指令。',
+          'Agent enhancement did not return any parseable JSON fragments. Keeping the current command.',
+        );
+        final report = _buildEnhancementReport(
+          status: RunLogReusableFunctionEnhancementStatus.failed,
+          changed: false,
+          message: message,
+          sections: sectionReports,
+        );
         final agentPrompt = await buildAgentPromptAsync(
           fallbackJson,
           useEnglish: useEnglish,
@@ -536,14 +750,47 @@ class RunLogReusableFunctionConverter {
           agentPrompt: agentPrompt,
           aiEnhanced: false,
           rawAiText: rawParts.join('\n\n'),
-          warning: _text(
-            useEnglish,
-            'Agent 增强没有返回任何可解析 JSON 片段，已保留当前复用指令。',
-            'Agent enhancement did not return any parseable JSON fragments. Keeping the current command.',
-          ),
+          warning: message,
+          enhancementStatus: RunLogReusableFunctionEnhancementStatus.failed,
+          enhancementMessage: message,
+          enhancementReport: report,
         );
       }
-      final enhanced = _applyLabelEnhancement(aiJson, fallbackJson);
+      final enhancedCore = _applyLabelEnhancement(aiJson, fallbackJson);
+      final changed = !_valuesEquivalent(enhancedCore, fallbackJson);
+      final hasSectionFailure = sectionReports.any(_sectionReportFailed);
+      final diffReport = _buildLabelEnhancementDiffReport(
+        original: fallbackJson,
+        enhanced: enhancedCore,
+        mergedPatch: aiJson,
+      );
+      final status = changed
+          ? hasSectionFailure
+                ? RunLogReusableFunctionEnhancementStatus.partial
+                : RunLogReusableFunctionEnhancementStatus.enhanced
+          : hasSectionFailure
+          ? RunLogReusableFunctionEnhancementStatus.failed
+          : RunLogReusableFunctionEnhancementStatus.unchanged;
+      final message = _enhancementStatusMessage(status, useEnglish: useEnglish);
+      final report = _buildEnhancementReport(
+        status: status,
+        changed: changed,
+        message: message,
+        sections: [
+          ...sectionReports,
+          diffReport,
+          if (!changed)
+            {
+              'part': 'decision',
+              'status': 'unchanged_after_validation',
+              'accepted': true,
+              'reason': 'validated patch normalized to the same Function JSON',
+            },
+        ],
+      );
+      final enhanced = status == RunLogReusableFunctionEnhancementStatus.failed
+          ? fallbackJson
+          : _withEnhancementMetadata(enhancedCore, report);
       final agentPrompt = await buildAgentPromptAsync(
         enhanced,
         useEnglish: useEnglish,
@@ -551,10 +798,35 @@ class RunLogReusableFunctionConverter {
       return RunLogReusableFunctionSpec(
         json: enhanced,
         agentPrompt: agentPrompt,
-        aiEnhanced: !_valuesEquivalent(enhanced, fallbackJson),
+        aiEnhanced: status.isApplied,
         rawAiText: rawParts.join('\n\n'),
+        warning: status == RunLogReusableFunctionEnhancementStatus.failed
+            ? message
+            : null,
+        enhancementStatus: status,
+        enhancementMessage: message,
+        enhancementReport: report,
       );
     } catch (error) {
+      final message = _text(
+        useEnglish,
+        'Agent 增强失败，已保留当前复用指令：$error',
+        'Agent enhancement failed. Keeping the current command: $error',
+      );
+      final report = _buildEnhancementReport(
+        status: RunLogReusableFunctionEnhancementStatus.failed,
+        changed: false,
+        message: message,
+        sections: [
+          ...sectionReports,
+          {
+            'part': 'enhancement',
+            'status': 'error',
+            'accepted': false,
+            'error': error.toString(),
+          },
+        ],
+      );
       final agentPrompt = await buildAgentPromptAsync(
         fallbackJson,
         useEnglish: useEnglish,
@@ -563,11 +835,10 @@ class RunLogReusableFunctionConverter {
         json: fallbackJson,
         agentPrompt: agentPrompt,
         aiEnhanced: false,
-        warning: _text(
-          useEnglish,
-          'Agent 增强失败，已保留当前复用指令：$error',
-          'Agent enhancement failed. Keeping the current command: $error',
-        ),
+        warning: message,
+        enhancementStatus: RunLogReusableFunctionEnhancementStatus.failed,
+        enhancementMessage: message,
+        enhancementReport: report,
       );
     }
   }
@@ -587,6 +858,7 @@ class RunLogReusableFunctionConverter {
     final rawTexts = <String>[
       if ((raw ?? '').trim().isNotEmpty) '[$partName]\n${raw!.trim()}',
     ];
+    var repaired = false;
     if (aiJson == null && (raw ?? '').trim().isNotEmpty) {
       final repairRaw = await AssistsMessageService.postLLMChat(
         text: _buildLabelEnhancementPartRepairPrompt(
@@ -602,19 +874,69 @@ class RunLogReusableFunctionConverter {
         rawTexts.add('[$partName repair]\n${repairRaw!.trim()}');
       }
       aiJson = _extractJsonObject(repairRaw ?? '');
+      repaired = aiJson != null;
     }
-    return _LabelEnhancementPatchResult(json: aiJson, rawTexts: rawTexts);
+    final status = aiJson == null
+        ? (raw ?? '').trim().isEmpty
+              ? 'no_response'
+              : 'invalid_json'
+        : aiJson.isEmpty
+        ? 'empty_patch'
+        : repaired
+        ? 'repaired'
+        : 'parsed';
+    return _LabelEnhancementPatchResult(
+      json: aiJson,
+      rawTexts: rawTexts,
+      sectionReport: {
+        'part': partName,
+        'status': status,
+        'accepted':
+            status == 'parsed' ||
+            status == 'repaired' ||
+            status == 'empty_patch',
+        'patch_keys': aiJson?.keys.toList(growable: false) ?? const <String>[],
+      },
+    );
   }
 
   static Future<String> buildLabelEnhancementPromptAsync(
     Map<String, dynamic> functionJson, {
     bool useEnglish = false,
-  }) {
+  }) async {
+    final skillContract = await enhancementSkillContractAsync();
     return compute(_buildLabelEnhancementPromptInIsolate, {
       'functionJson': _jsonSafeMap(functionJson),
       'useEnglish': useEnglish,
+      'skillContract': skillContract,
     });
   }
+
+  static Future<String> enhancementSkillContractAsync() async {
+    final cached = _enhancementSkillContractCache;
+    if (cached != null) {
+      return cached;
+    }
+    try {
+      final loaded = await rootBundle.loadString(
+        kOmniFlowFunctionEnhancerContractAsset,
+      );
+      final normalized = loaded.trim();
+      if (normalized.isNotEmpty) {
+        _enhancementSkillContractCache = normalized;
+        return normalized;
+      }
+    } catch (_) {
+      // Unit tests and some embedded hosts may not have the asset bundle ready.
+    }
+    final fallback = kOmniFlowFunctionEnhancerContract.trim();
+    _enhancementSkillContractCache = fallback;
+    return fallback;
+  }
+
+  @visibleForTesting
+  static String enhancementSkillContractForTesting() =>
+      kOmniFlowFunctionEnhancerContract.trim();
 
   static Future<Map<String, dynamic>> applyLabelEnhancementAsync(
     Map<String, dynamic> aiJson,
@@ -812,6 +1134,7 @@ $fallback
 
   static String _buildLabelEnhancementPrompt(
     Map<String, dynamic> functionJson, {
+    required String skillContract,
     bool useEnglish = false,
   }) {
     final compact = const JsonEncoder.withIndent(
@@ -820,6 +1143,8 @@ $fallback
     if (useEnglish) {
       return '''
 You are an OOB/OmniFlow reusable trajectory editor.
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 
 Work one section at a time:
 1. Name and description.
@@ -880,6 +1205,8 @@ $compact
     return '''
 你是 OOB/OmniFlow 的复用轨迹整理器。
 
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
+
 按顺序逐项处理：
 1. 名称和简介。
 2. 每个 step 的标题/描述。
@@ -937,8 +1264,19 @@ $compact
 ''';
   }
 
+  static String _labelEnhancementSkillContract({
+    required String skillContract,
+    required String section,
+  }) {
+    final normalized = skillContract.trim().isEmpty
+        ? kOmniFlowFunctionEnhancerContract.trim()
+        : skillContract.trim();
+    return '$normalized\n- Current enhancement section: "$section". Do not include status prose.';
+  }
+
   static String _buildLabelHeaderEnhancementPrompt(
     Map<String, dynamic> functionJson, {
+    required String skillContract,
     bool useEnglish = false,
   }) {
     final input = const JsonEncoder.withIndent(
@@ -948,6 +1286,8 @@ $compact
       return '''
 You are editing only the name and description of an OOB reusable command.
 
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'header')}
+
 Return exactly one JSON object:
 {"name":"short reusable command name","description":"one sentence describing when and why to use it"}
 
@@ -955,6 +1295,7 @@ Rules:
 - Return raw JSON only. Do not use Markdown or explanations.
 - Do not include steps, parameters, execution, tools, or agent_reuse.
 - Keep the name concise and action-oriented.
+- The description must say when the Function is reusable, not describe implementation internals.
 
 Input digest:
 $input
@@ -963,6 +1304,8 @@ $input
     return '''
 你只负责整理 OOB 复用指令的名称和简介。
 
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'header')}
+
 只返回一个 JSON object：
 {"name":"简短复用指令名称","description":"一句话说明它什么时候、为什么可复用"}
 
@@ -970,6 +1313,7 @@ $input
 - 只返回原始 JSON。不要 Markdown，不要解释。
 - 不要包含 steps、parameters、execution、tools 或 agent_reuse。
 - 名称要短，像可执行指令。
+- 简介要说明这个 Function 什么时候可复用，不要描述内部实现。
 
 输入摘要：
 $input
@@ -978,12 +1322,15 @@ $input
 
   static String _buildLabelStepsEnhancementPrompt(
     List<Map<String, dynamic>> steps, {
+    required String skillContract,
     bool useEnglish = false,
   }) {
     final input = const JsonEncoder.withIndent('  ').convert({'steps': steps});
     if (useEnglish) {
       return '''
 You are editing only per-step titles and descriptions for an OOB reusable command.
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 Return exactly one JSON object:
 {"steps":[{"index":0,"title":"short action title","description":"what this action does","importance":"key"}]}
@@ -994,6 +1341,7 @@ Rules:
 - Use only indexes from the input digest.
 - Do not include name, parameters, execution, tools, args, or agent_reuse.
 - Keep titles concise and action-oriented.
+- Describe visible user intent, not raw coordinates or low-level implementation.
 
 Input digest:
 $input
@@ -1001,6 +1349,8 @@ $input
     }
     return '''
 你只负责整理 OOB 复用指令中每个 step 的标题和描述。
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 只返回一个 JSON object：
 {"steps":[{"index":0,"title":"简短动作标题","description":"这个动作做了什么","importance":"key"}]}
@@ -1011,6 +1361,7 @@ $input
 - 只能使用输入摘要中已有的 index。
 - 不要包含 name、parameters、execution、tools、args 或 agent_reuse。
 - 标题要短，像动作说明。
+- 描述可见的用户意图，不要描述裸坐标或底层实现。
 
 输入摘要：
 $input
@@ -1019,6 +1370,7 @@ $input
 
   static String _buildLabelParametersEnhancementPrompt(
     Map<String, dynamic> functionJson, {
+    required String skillContract,
     bool useEnglish = false,
   }) {
     final input = const JsonEncoder.withIndent(
@@ -1027,6 +1379,8 @@ $input
     if (useEnglish) {
       return '''
 You are editing only runtime parameter metadata for an OOB reusable command.
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'parameters')}
 
 Return exactly one JSON object:
 {"parameters":[{"name":"contact_name","type":"string","description":"runtime contact name","default":"Mom","bindings":["\$.execution.steps[0].args.text"]}]}
@@ -1037,6 +1391,7 @@ Rules:
 - Do not bind coordinates, bounds, widths, heights, or invented paths.
 - Prefer slots for user-entered text, contact names, phone numbers, search terms, message text, dates, URLs, and target object names.
 - Do not include name, steps, execution, tools, args, or agent_reuse.
+- Parameter names must be semantic, for example contact_name, search_query, message_text, target_date, or target_url.
 
 Input digest:
 $input
@@ -1044,6 +1399,8 @@ $input
     }
     return '''
 你只负责整理 OOB 复用指令的运行时参数 metadata。
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'parameters')}
 
 只返回一个 JSON object：
 {"parameters":[{"name":"contact_name","type":"string","description":"运行时联系人姓名","default":"妈妈","bindings":["\$.execution.steps[0].args.text"]}]}
@@ -1054,6 +1411,7 @@ $input
 - 不要绑定坐标、bounds、宽高或不存在的路径。
 - 优先抽象用户输入文本、联系人姓名、手机号、搜索词、消息正文、日期、URL 和目标对象名。
 - 不要包含 name、steps、execution、tools、args 或 agent_reuse。
+- 参数名必须有语义，例如 contact_name、search_query、message_text、target_date 或 target_url。
 
 输入摘要：
 $input
@@ -1062,6 +1420,7 @@ $input
 
   static String _buildLabelReuseEnhancementPrompt(
     Map<String, dynamic> functionJson, {
+    required String skillContract,
     bool useEnglish = false,
   }) {
     final input = const JsonEncoder.withIndent(
@@ -1070,6 +1429,8 @@ $input
     if (useEnglish) {
       return '''
 You are editing only non-executable agent_reuse metadata for an OOB reusable command.
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'agent_reuse')}
 
 Return exactly one JSON object:
 {"agent_reuse":{"reuse_when":["when this recorded trajectory matches the current app/page"],"avoid_when":["when the target app/page is different"],"success_signal":"visible state that confirms success","key_actions":[{"step_index":1,"reason":"writes the runtime contact name","parameter_names":["contact_name"]}],"segments":[{"name":"Fill contact fields","start_step_index":1,"end_step_index":2,"description":"contiguous slice that can be considered for future split","inputs":["contact_name","phone_number"]}]}}
@@ -1080,6 +1441,7 @@ Rules:
 - Segment candidates must use inclusive contiguous step indexes from the input digest.
 - key_actions and segment inputs may reference only listed parameter names.
 - Do not include name, steps, parameters, execution, tools, or args.
+- reuse_when, avoid_when, and success_signal must be concrete visible app/page conditions.
 
 Input digest:
 $input
@@ -1087,6 +1449,8 @@ $input
     }
     return '''
 你只负责整理 OOB 复用指令的非执行 agent_reuse metadata。
+
+${_labelEnhancementSkillContract(skillContract: skillContract, section: 'agent_reuse')}
 
 只返回一个 JSON object：
 {"agent_reuse":{"reuse_when":["当前 app/页面与记录轨迹一致时"],"avoid_when":["目标 app/页面不同或字段语义不匹配时"],"success_signal":"可见的完成状态","key_actions":[{"step_index":1,"reason":"写入运行时联系人姓名","parameter_names":["contact_name"]}],"segments":[{"name":"填写联系人字段","start_step_index":1,"end_step_index":2,"description":"未来可考虑拆分的连续步骤片段","inputs":["contact_name","phone_number"]}]}}
@@ -1097,6 +1461,7 @@ $input
 - segment 候选必须使用输入摘要里的闭区间连续 step index。
 - key_actions 和 segment inputs 只能引用已列出的参数名。
 - 不要包含 name、steps、parameters、execution、tools 或 args。
+- reuse_when、avoid_when 和 success_signal 必须是具体、可见的 app/page 条件。
 
 输入摘要：
 $input
@@ -1452,6 +1817,123 @@ $fallback
     return result;
   }
 
+  static Map<String, dynamic> _buildLabelEnhancementDiffReport({
+    required Map<String, dynamic> original,
+    required Map<String, dynamic> enhanced,
+    required Map<String, dynamic> mergedPatch,
+  }) {
+    final originalSteps = _executionSteps(original);
+    final enhancedSteps = _executionSteps(enhanced);
+    final originalParameters = _parameterSummaries(original['parameters']);
+    final enhancedParameters = _parameterSummaries(enhanced['parameters']);
+    final originalReuse = _asStringKeyMap(original['agent_reuse']);
+    final enhancedReuse = _asStringKeyMap(enhanced['agent_reuse']);
+
+    final headerChanges = <String>[];
+    if (!_valuesEquivalent(original['name'], enhanced['name'])) {
+      headerChanges.add('name');
+    }
+    if (!_valuesEquivalent(original['description'], enhanced['description'])) {
+      headerChanges.add('description');
+    }
+
+    final stepChanges = <Map<String, dynamic>>[];
+    final maxStepCount = originalSteps.length < enhancedSteps.length
+        ? originalSteps.length
+        : enhancedSteps.length;
+    for (var index = 0; index < maxStepCount; index++) {
+      final changedFields = <String>[];
+      for (final field in const ['title', 'summary', 'description']) {
+        if (!_valuesEquivalent(
+          originalSteps[index][field],
+          enhancedSteps[index][field],
+        )) {
+          changedFields.add(field);
+        }
+      }
+      if (changedFields.isNotEmpty) {
+        stepChanges.add({
+          'index': index,
+          'step_id': _firstNonBlank([
+            enhancedSteps[index]['id'],
+            originalSteps[index]['id'],
+            'step_${index + 1}',
+          ]),
+          'changed_fields': changedFields,
+        });
+      }
+    }
+
+    final parameterChanges = <String, dynamic>{
+      'before_names': originalParameters.map((item) => item['name']).toList(),
+      'after_names': enhancedParameters.map((item) => item['name']).toList(),
+      'added_names': _setDifference(
+        enhancedParameters.map((item) => item['name']),
+        originalParameters.map((item) => item['name']),
+      ),
+      'removed_names': _setDifference(
+        originalParameters.map((item) => item['name']),
+        enhancedParameters.map((item) => item['name']),
+      ),
+      'changed_names': _changedParameterNames(
+        originalParameters,
+        enhancedParameters,
+      ),
+    };
+
+    final requestedParameters = _firstListValue(mergedPatch, const [
+      'parameters',
+      'slots',
+      'arguments',
+      'parameter_suggestions',
+      'parameterSuggestions',
+    ]);
+    final requestedParameterNames = requestedParameters
+        .map(_asStringKeyMap)
+        .map((item) => _firstNonBlank([item['name'], item['id'], item['role']]))
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    final appliedParameterNames = enhancedParameters
+        .map((item) => item['name']?.toString() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    final rejectedParameterNames = _setDifference(
+      requestedParameterNames,
+      appliedParameterNames,
+    );
+
+    final reuseChangedKeys = <String>[];
+    for (final key in <String>{...originalReuse.keys, ...enhancedReuse.keys}) {
+      if (!_valuesEquivalent(originalReuse[key], enhancedReuse[key])) {
+        reuseChangedKeys.add(key);
+      }
+    }
+
+    final changed =
+        headerChanges.isNotEmpty ||
+        stepChanges.isNotEmpty ||
+        !_valuesEquivalent(originalParameters, enhancedParameters) ||
+        reuseChangedKeys.isNotEmpty;
+
+    return {
+      'part': 'validated_diff',
+      'status': changed ? 'changed' : 'unchanged',
+      'accepted': true,
+      'changed': changed,
+      'header_changed_fields': headerChanges,
+      'step_changes': stepChanges,
+      'parameter_changes': parameterChanges,
+      'reuse_changed_keys': reuseChangedKeys,
+      'rejected_candidates': {
+        'parameter_names': rejectedParameterNames,
+        'count': rejectedParameterNames.length,
+        if (rejectedParameterNames.isNotEmpty)
+          'reason':
+              'candidate binding was missing, unsafe, duplicate, or incompatible with recorded values',
+      },
+    };
+  }
+
   static List<dynamic> _applyParameterEnhancement(
     Map<String, dynamic> aiJson,
     Map<String, dynamic> functionJson,
@@ -1691,6 +2173,72 @@ $fallback
     return Map<String, dynamic>.from(fallback);
   }
 
+  static List<Map<String, dynamic>> _parameterSummaries(dynamic rawParameters) {
+    if (rawParameters is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    return rawParameters
+        .map(_asStringKeyMap)
+        .where((item) => item.isNotEmpty)
+        .map(
+          (item) => {
+            'name': _firstNonBlank([item['name']]),
+            'type': _firstNonBlank([item['type']]),
+            'description': _firstNonBlank([item['description']]),
+            if (item.containsKey('default'))
+              'default': _jsonSafe(item['default']),
+            'bindings': item['bindings'] is List
+                ? (item['bindings'] as List)
+                      .map((entry) => entry.toString())
+                      .toList(growable: false)
+                : const <String>[],
+          },
+        )
+        .toList(growable: false);
+  }
+
+  static List<String> _setDifference(
+    Iterable<dynamic> left,
+    Iterable<dynamic> right,
+  ) {
+    final rightSet = right
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    final output = <String>[];
+    for (final raw in left) {
+      final value = raw?.toString().trim() ?? '';
+      if (value.isEmpty || rightSet.contains(value) || output.contains(value)) {
+        continue;
+      }
+      output.add(value);
+    }
+    return output;
+  }
+
+  static List<String> _changedParameterNames(
+    List<Map<String, dynamic>> before,
+    List<Map<String, dynamic>> after,
+  ) {
+    final beforeByName = {
+      for (final item in before)
+        if ((item['name'] ?? '').toString().trim().isNotEmpty)
+          item['name'].toString(): item,
+    };
+    final output = <String>[];
+    for (final item in after) {
+      final name = (item['name'] ?? '').toString().trim();
+      if (name.isEmpty) {
+        continue;
+      }
+      final previous = beforeByName[name];
+      if (previous != null && !_valuesEquivalent(previous, item)) {
+        output.add(name);
+      }
+    }
+    return output;
+  }
+
   @visibleForTesting
   static Map<String, dynamic> normalizeAiJsonForTesting(
     Map<String, dynamic> aiJson,
@@ -1747,6 +2295,7 @@ Map<String, dynamic> _normalizeAiJsonInIsolate(Map<String, dynamic> args) {
 String _buildLabelEnhancementPromptInIsolate(Map<String, dynamic> args) {
   return RunLogReusableFunctionConverter._buildLabelEnhancementPrompt(
     _asStringKeyMap(args['functionJson']),
+    skillContract: (args['skillContract'] ?? '').toString(),
     useEnglish: args['useEnglish'] == true,
   );
 }

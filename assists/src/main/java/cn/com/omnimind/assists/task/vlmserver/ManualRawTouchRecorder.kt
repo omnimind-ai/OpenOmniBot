@@ -65,6 +65,28 @@ internal data class ManualRawTouchGesture(
     val deviceName: String
 )
 
+internal data class ManualRawTouchEventLine(
+    val seq: Long,
+    val capturedAtMs: Long,
+    val line: String,
+    val eventTimeMs: Long,
+    val devicePath: String,
+    val eventType: String,
+    val code: String,
+    val value: Int
+) {
+    fun asMap(): Map<String, Any?> = linkedMapOf(
+        "seq" to seq,
+        "captured_at_ms" to capturedAtMs,
+        "line" to line,
+        "event_time_ms" to eventTimeMs,
+        "device_path" to devicePath,
+        "event_type" to eventType,
+        "code" to code,
+        "value" to value
+    )
+}
+
 /**
  * In-app raw touch recorder backed by Android's `getevent`.
  *
@@ -79,10 +101,12 @@ internal class ManualRawTouchRecorder(
     private val displayWidth: Int,
     private val displayHeight: Int,
     private val onGestureStarted: (ManualRawTouchStart) -> Unit,
-    private val onGestureFinished: (ManualRawTouchGesture) -> Unit
+    private val onGestureFinished: (ManualRawTouchGesture) -> Unit,
+    private val onRawEventLine: (ManualRawTouchEventLine) -> Unit = {}
 ) {
     private val running = AtomicBoolean(false)
     private val paused = AtomicBoolean(false)
+    private var rawLineSeq = 0L
     private var process: Process? = null
     private var readerThread: Thread? = null
     private var shizukuExecThread: Thread? = null
@@ -122,7 +146,7 @@ internal class ManualRawTouchRecorder(
             running.set(true)
             paused.set(false)
             readerThread = Thread({
-                readEventStream(startedProcess, parser)
+                readEventStream(startedProcess, device, parser)
             }, "oob_raw_getevent_reader").apply {
                 isDaemon = true
                 start()
@@ -187,6 +211,7 @@ internal class ManualRawTouchRecorder(
 
     private fun readEventStream(
         process: Process,
+        device: ManualRawTouchParser.TouchDevice,
         parser: ManualRawTouchParser.StreamParser
     ) {
         runCatching {
@@ -194,6 +219,9 @@ internal class ManualRawTouchRecorder(
                 val iterator = lines.iterator()
                 while (running.get() && iterator.hasNext()) {
                     val line = iterator.next()
+                    if (!paused.get()) {
+                        emitRawEventLine(line, device)
+                    }
                     val gesture = parser.acceptLine(line) ?: continue
                     if (!paused.get()) {
                         onGestureFinished(gesture)
@@ -361,7 +389,7 @@ internal class ManualRawTouchRecorder(
                 start()
             }
             shizukuPollThread = Thread({
-                pollShizukuTranscript(manager, activeSessionId, parser)
+                pollShizukuTranscript(manager, activeSessionId, device, parser)
             }, "oob_raw_getevent_shizuku_poll").apply {
                 isDaemon = true
                 start()
@@ -406,6 +434,7 @@ internal class ManualRawTouchRecorder(
     private fun pollShizukuTranscript(
         manager: ShizukuCapabilityManager,
         sessionId: String,
+        device: ManualRawTouchParser.TouchDevice,
         parser: ManualRawTouchParser.StreamParser
     ) {
         var lastTranscript = ""
@@ -432,6 +461,9 @@ internal class ManualRawTouchRecorder(
                     .map { it.trim() }
                     .filter { it.isNotBlank() && !it.startsWith("[stderr]") }
                     .forEach { line ->
+                        if (!paused.get()) {
+                            emitRawEventLine(line, device)
+                        }
                         val gesture = parser.acceptLine(line) ?: return@forEach
                         if (!paused.get()) {
                             onGestureFinished(gesture)
@@ -440,6 +472,25 @@ internal class ManualRawTouchRecorder(
             }
             Thread.sleep(SHIZUKU_POLL_INTERVAL_MS)
         }
+    }
+
+    private fun emitRawEventLine(
+        line: String,
+        device: ManualRawTouchParser.TouchDevice
+    ) {
+        val parsed = ManualRawTouchParser.parseEventLine(line) ?: return
+        if (parsed.devicePath != device.path) return
+        val event = ManualRawTouchEventLine(
+            seq = ++rawLineSeq,
+            capturedAtMs = System.currentTimeMillis(),
+            line = line,
+            eventTimeMs = parsed.eventTimeMs,
+            devicePath = parsed.devicePath,
+            eventType = parsed.eventType,
+            code = parsed.code,
+            value = parsed.value
+        )
+        onRawEventLine(event)
     }
 
     private fun closeProcess() {

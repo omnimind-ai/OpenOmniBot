@@ -1,6 +1,7 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
@@ -8,7 +9,13 @@ import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
+import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
+import java.util.ArrayDeque
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -28,21 +35,73 @@ data class ManualVlmRecordedAction(
     val packageName: String?,
     val beforeXml: String?,
     val afterXml: String?,
+    val beforeScreenshot: ManualVlmScreenshotRef? = null,
+    val afterScreenshot: ManualVlmScreenshotRef? = null,
     val startedAtMs: Long,
     val finishedAtMs: Long,
     val summary: String,
     val eventContext: Map<String, Any?> = emptyMap()
 )
 
+data class ManualVlmScreenshotRef(
+    val path: String,
+    val relativePath: String,
+    val mimeType: String,
+    val width: Int,
+    val height: Int,
+    val bytes: Long,
+    val sha256: String,
+    val capturedAtMs: Long,
+    val captureStage: String
+) {
+    fun asMap(): Map<String, Any?> = linkedMapOf(
+        "schema_version" to "oob.runlog.screenshot_ref.v1",
+        "kind" to "screenshot",
+        "path" to path,
+        "relative_path" to relativePath,
+        "screenshot_path" to path,
+        "mime_type" to mimeType,
+        "width" to width,
+        "height" to height,
+        "bytes" to bytes,
+        "sha256" to sha256,
+        "captured_at_ms" to capturedAtMs,
+        "capture_stage" to captureStage,
+        "storage" to "app_private_files"
+    )
+}
+
+internal data class ManualVlmTraceSnapshot(
+    val isStarted: Boolean,
+    val isPaused: Boolean,
+    val actionCount: Int,
+    val latestActionSummary: String?,
+    val pendingActionSummary: String?,
+    val accessibilityEventCount: Int,
+    val rawTouchEnabled: Boolean,
+    val rawTouchAvailable: Boolean
+) {
+    fun asMap(): Map<String, Any?> = linkedMapOf(
+        "is_started" to isStarted,
+        "is_paused" to isPaused,
+        "action_count" to actionCount,
+        "latest_action_summary" to latestActionSummary,
+        "pending_action_summary" to pendingActionSummary,
+        "accessibility_event_count" to accessibilityEventCount,
+        "raw_touch_enabled" to rawTouchEnabled,
+        "raw_touch_available" to rawTouchAvailable
+    ).filterValues { it != null }
+}
+
 internal object ManualRecordingDiagnostics {
     const val COMPLETE_RAW_TOUCH = "complete_raw_touch"
     const val MISSING_RAW_TOUCH = "missing_raw_touch"
     const val RAW_TOUCH_INTERRUPTED = "raw_touch_interrupted"
 
-    @Deprecated("Manual recording is raw-touch-only; use MISSING_RAW_TOUCH.")
+    @Deprecated("Manual recording is A11-first; use MISSING_RAW_TOUCH.")
     const val PARTIAL_SEMANTIC_ONLY = MISSING_RAW_TOUCH
 
-    @Deprecated("Manual recording is raw-touch-only; use RAW_TOUCH_INTERRUPTED.")
+    @Deprecated("Manual recording is A11-first; use RAW_TOUCH_INTERRUPTED.")
     const val PARTIAL_RAW_TOUCH_INTERRUPTED = RAW_TOUCH_INTERRUPTED
 
     fun completeness(rawTouchAvailable: Boolean, rawTouchActiveAtStop: Boolean?): String {
@@ -71,6 +130,63 @@ internal object ManualRecordingDiagnostics {
     fun warningMessage(diagnostics: Map<String, Any?>): String? {
         val manual = diagnostics["manual_recording"] as? Map<*, *> ?: return null
         return manual["warning_message"]?.toString()?.takeIf { it.isNotBlank() }
+    }
+}
+
+internal data class ManualScrollSnapshot(
+    val scrollX: Int,
+    val scrollY: Int,
+    val scrollDeltaX: Int,
+    val scrollDeltaY: Int,
+    val fromIndex: Int,
+    val toIndex: Int,
+    val itemCount: Int
+) {
+    fun hasViewportSignal(): Boolean =
+        abs(scrollDeltaX) >= ManualScrollEventPolicy.MIN_SCROLL_DELTA ||
+            abs(scrollDeltaY) >= ManualScrollEventPolicy.MIN_SCROLL_DELTA ||
+            scrollX != 0 ||
+            scrollY != 0 ||
+            fromIndex >= 0 ||
+            toIndex >= 0 ||
+            itemCount > 0
+}
+
+internal enum class ManualScrollDirection {
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT
+}
+
+internal object ManualScrollEventPolicy {
+    const val MIN_SCROLL_DELTA = 4
+
+    fun inferDirection(
+        previous: ManualScrollSnapshot?,
+        current: ManualScrollSnapshot
+    ): ManualScrollDirection? {
+        if (abs(current.scrollDeltaY) >= MIN_SCROLL_DELTA) {
+            return if (current.scrollDeltaY > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
+        }
+        if (abs(current.scrollDeltaX) >= MIN_SCROLL_DELTA) {
+            return if (current.scrollDeltaX > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
+        }
+        if (previous != null) {
+            val dy = current.scrollY - previous.scrollY
+            if (abs(dy) >= MIN_SCROLL_DELTA) {
+                return if (dy > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
+            }
+            val dx = current.scrollX - previous.scrollX
+            if (abs(dx) >= MIN_SCROLL_DELTA) {
+                return if (dx > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
+            }
+            val indexDelta = current.fromIndex - previous.fromIndex
+            if (indexDelta != 0) {
+                return if (indexDelta > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
+            }
+        }
+        return null
     }
 }
 
@@ -474,18 +590,21 @@ internal object ManualClickGrounding {
 /**
  * Records user actions during VLM takeover using Accessibility semantic events.
  *
- * Raw touch capture is kept as a best-effort enhancement when available, but it
- * is not required for starting or completing a manual recording session.
+ * Raw touch capture is opt-in enrichment. It is disabled by default because
+ * most devices cannot read `/dev/input/event*` from an app UID without
+ * root/Shizuku; the default recorder path is A11Event-only.
  */
 class ManualVlmTraceRecorder(
     private val context: Context,
-    private val sessionLabel: String
+    private val sessionLabel: String,
+    private val enableRawTouch: Boolean = false
 ) {
     private val ownPackageName = context.packageName
     private val recordingLock = Any()
     private val recordedActions = mutableListOf<ManualVlmRecordedAction>()
-    private val nodeScrollState = mutableMapOf<String, ScrollSnapshot>()
+    private val nodeScrollState = mutableMapOf<String, ManualScrollSnapshot>()
     private val rawGestureBeforeXml = mutableMapOf<Long, String?>()
+    private val rawGestureBeforeScreenshot = mutableMapOf<Long, ManualVlmScreenshotRef?>()
     private var pendingText: PendingTextAction? = null
     private var pendingScroll: PendingScrollAction? = null
     private var rawTouchRecorder: ManualRawTouchRecorder? = null
@@ -493,6 +612,10 @@ class ManualVlmTraceRecorder(
     private var lastDiscreteSignature: String = ""
     private var lastDiscreteAtMs: Long = 0L
     private var lastXmlSnapshot: String? = null
+    private var lastScreenshotSnapshot: ManualVlmScreenshotRef? = null
+    private var screenshotSeq: Int = 0
+    private var screenshotStoredCount: Int = 0
+    private var screenshotFailedCount: Int = 0
     private var accessibilityEventCount: Int = 0
     private var accessibilityIgnoredPackageCount: Int = 0
     private val accessibilityEventTypeCounts = linkedMapOf<String, Int>()
@@ -500,6 +623,9 @@ class ManualVlmTraceRecorder(
     private var rawGestureFinishedCount: Int = 0
     private var rawGestureRecordedCount: Int = 0
     private var rawGestureIgnoredControlCount: Int = 0
+    private var rawGeteventLineCount: Int = 0
+    private var rawGeteventDroppedLineCount: Int = 0
+    private val rawGeteventRecentLines = ArrayDeque<Map<String, Any?>>()
     private var rawTouchActiveAtStop: Boolean? = null
     private var suppressedSemanticActionEventCount: Int = 0
     private var suppressedNonRawActionCount: Int = 0
@@ -529,9 +655,19 @@ class ManualVlmTraceRecorder(
         isStarted = true
         isPaused = false
         lastXmlSnapshot = captureCurrentXml()
-        startRawTouchRecorder()
+        lastScreenshotSnapshot = captureCurrentScreenshotRef("start")
+        if (enableRawTouch) {
+            startRawTouchRecorder()
+        } else {
+            rawTouchStatus = ManualRawTouchStatus(
+                available = false,
+                backend = RAW_TOUCH_BACKEND,
+                errorCode = "raw_touch_disabled",
+                errorMessage = "Raw getevent recording is disabled; using Accessibility events"
+            )
+        }
         AssistsService.addListener(listener)
-        OmniLog.d(TAG, "manual trace recorder started: $sessionLabel")
+        OmniLog.d(TAG, "manual trace recorder started: $sessionLabel rawTouch=$enableRawTouch")
         return true
     }
 
@@ -544,9 +680,11 @@ class ManualVlmTraceRecorder(
         if (!isStarted) return false
         if (isPaused) return true
         val currentXml = captureCurrentXml()
+        val currentScreenshot = captureCurrentScreenshotRef("pause")
         flushPendingText(currentXml)
         flushPendingScroll(currentXml)
         lastXmlSnapshot = currentXml
+        lastScreenshotSnapshot = currentScreenshot
         isPaused = true
         rawTouchRecorder?.pause()
         OmniLog.d(TAG, "manual trace recorder paused: $sessionLabel")
@@ -562,6 +700,7 @@ class ManualVlmTraceRecorder(
         if (!isStarted) return false
         if (!isPaused) return true
         lastXmlSnapshot = captureCurrentXml()
+        lastScreenshotSnapshot = captureCurrentScreenshotRef("resume")
         lastDiscreteSignature = ""
         lastDiscreteAtMs = 0L
         isPaused = false
@@ -588,6 +727,24 @@ class ManualVlmTraceRecorder(
         )
     }
 
+    internal fun snapshot(): ManualVlmTraceSnapshot = synchronized(recordingLock) {
+        val pendingSummary = when {
+            pendingText != null -> "正在输入：${pendingText?.label.orEmpty()}"
+            pendingScroll != null -> "正在滑动：${pendingScroll?.label.orEmpty()}"
+            else -> null
+        }
+        ManualVlmTraceSnapshot(
+            isStarted = isStarted,
+            isPaused = isPaused,
+            actionCount = recordedActions.size,
+            latestActionSummary = pendingSummary ?: recordedActions.lastOrNull()?.summary,
+            pendingActionSummary = pendingSummary,
+            accessibilityEventCount = accessibilityEventCount,
+            rawTouchEnabled = enableRawTouch,
+            rawTouchAvailable = rawTouchStatus?.available == true
+        )
+    }
+
     private fun handleAccessibilityEvent(event: AccessibilityEvent) {
         synchronized(recordingLock) {
             handleAccessibilityEventLocked(event)
@@ -606,22 +763,25 @@ class ManualVlmTraceRecorder(
         }
 
         val beforeXml = lastXmlSnapshot ?: captureCurrentXml()
+        val beforeScreenshot = lastScreenshotSnapshot ?: captureCurrentScreenshotRef("event_before")
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val afterXml = captureCurrentXml()
                 recordWindowTransitionObservation(event, beforeXml, afterXml)
                 lastXmlSnapshot = afterXml
+                lastScreenshotSnapshot = captureCurrentScreenshotRef("window_transition_after")
             }
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> recordTextChanged(event, packageName, beforeXml)
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> recordScrolled(event, packageName, beforeXml)
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> recordClick(event, packageName, "click", beforeXml)
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> recordFocusedTextTarget(event, packageName, beforeXml)
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> recordTextChanged(event, packageName, beforeXml, beforeScreenshot)
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> recordScrolled(event, packageName, beforeXml, beforeScreenshot)
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> recordClick(event, packageName, "click", beforeXml, beforeScreenshot)
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> recordFocusedTextTarget(event, packageName, beforeXml, beforeScreenshot)
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> recordClick(
                 event,
                 packageName,
                 "long_press",
-                beforeXml
+                beforeXml,
+                beforeScreenshot
             )
             else -> Unit
         }
@@ -680,7 +840,8 @@ class ManualVlmTraceRecorder(
             displayWidth = metrics.widthPixels.coerceAtLeast(1),
             displayHeight = metrics.heightPixels.coerceAtLeast(1),
             onGestureStarted = ::rememberRawGestureStart,
-            onGestureFinished = ::recordRawTouchGesture
+            onGestureFinished = ::recordRawTouchGesture,
+            onRawEventLine = ::recordRawGeteventLine
         )
         val status = recorder.start()
         rawTouchStatus = status
@@ -703,6 +864,7 @@ class ManualVlmTraceRecorder(
         }
         rawTouchRecorder = null
         rawGestureBeforeXml.clear()
+        rawGestureBeforeScreenshot.clear()
     }
 
     private fun isRawTouchActive(): Boolean = rawTouchRecorder?.isActive() == true
@@ -712,6 +874,20 @@ class ManualVlmTraceRecorder(
             if (!isStarted || isPaused) return
             rawGestureStartedCount += 1
             rawGestureBeforeXml[start.gestureId] = lastXmlSnapshot ?: captureCurrentXml()
+            rawGestureBeforeScreenshot[start.gestureId] = lastScreenshotSnapshot
+                ?: captureCurrentScreenshotRef("raw_${start.gestureId}_before")
+        }
+    }
+
+    private fun recordRawGeteventLine(eventLine: ManualRawTouchEventLine) {
+        synchronized(recordingLock) {
+            if (!isStarted || isPaused) return
+            rawGeteventLineCount += 1
+            if (rawGeteventRecentLines.size >= MAX_RAW_GETEVENT_RECENT_LINES) {
+                rawGeteventRecentLines.removeFirst()
+                rawGeteventDroppedLineCount += 1
+            }
+            rawGeteventRecentLines.addLast(eventLine.asMap())
         }
     }
 
@@ -722,6 +898,11 @@ class ManualVlmTraceRecorder(
         }
         val beforeXml = synchronized(recordingLock) {
             rawGestureBeforeXml.remove(gesture.gestureId) ?: lastXmlSnapshot ?: captureCurrentXml()
+        }
+        val beforeScreenshot = synchronized(recordingLock) {
+            rawGestureBeforeScreenshot.remove(gesture.gestureId)
+                ?: lastScreenshotSnapshot
+                ?: captureCurrentScreenshotRef("raw_${gesture.gestureId}_before")
         }
         val touchX = if (gesture.actionName == "swipe") gesture.startX else (gesture.startX + gesture.endX) / 2f
         val touchY = if (gesture.actionName == "swipe") gesture.startY else (gesture.startY + gesture.endY) / 2f
@@ -734,23 +915,27 @@ class ManualVlmTraceRecorder(
         }
         Thread.sleep(RAW_TOUCH_SETTLE_MS)
         val afterXml = captureCurrentXml()
+        val afterScreenshot = captureCurrentScreenshotRef("raw_${gesture.gestureId}_after")
         synchronized(recordingLock) {
             if (!isStarted || isPaused) return
             flushPendingText(beforeXml)
             flushPendingScroll(beforeXml)
             when (gesture.actionName) {
-                "click", "long_press" -> appendRawClickGesture(gesture, beforeXml, afterXml)
-                "swipe" -> appendRawSwipeGesture(gesture, beforeXml, afterXml)
+                "click", "long_press" -> appendRawClickGesture(gesture, beforeXml, afterXml, beforeScreenshot, afterScreenshot)
+                "swipe" -> appendRawSwipeGesture(gesture, beforeXml, afterXml, beforeScreenshot, afterScreenshot)
             }
             rawGestureRecordedCount += 1
             lastXmlSnapshot = afterXml ?: beforeXml
+            lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
         }
     }
 
     private fun appendRawClickGesture(
         gesture: ManualRawTouchGesture,
         beforeXml: String?,
-        afterXml: String?
+        afterXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?,
+        afterScreenshot: ManualVlmScreenshotRef?
     ) {
         val x = ((gesture.startX + gesture.endX) / 2f)
         val y = ((gesture.startY + gesture.endY) / 2f)
@@ -793,6 +978,8 @@ class ManualVlmTraceRecorder(
                 packageName = target.packageName,
                 beforeXml = beforeXml,
                 afterXml = afterXml,
+                beforeScreenshot = beforeScreenshot,
+                afterScreenshot = afterScreenshot,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
@@ -804,7 +991,9 @@ class ManualVlmTraceRecorder(
     private fun appendRawSwipeGesture(
         gesture: ManualRawTouchGesture,
         beforeXml: String?,
-        afterXml: String?
+        afterXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?,
+        afterScreenshot: ManualVlmScreenshotRef?
     ) {
         val midX = (gesture.startX + gesture.endX) / 2f
         val midY = (gesture.startY + gesture.endY) / 2f
@@ -846,6 +1035,8 @@ class ManualVlmTraceRecorder(
                 packageName = target.packageName,
                 beforeXml = beforeXml,
                 afterXml = afterXml,
+                beforeScreenshot = beforeScreenshot,
+                afterScreenshot = afterScreenshot,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
@@ -858,7 +1049,8 @@ class ManualVlmTraceRecorder(
         event: AccessibilityEvent,
         packageName: String?,
         actionName: String,
-        beforeXml: String?
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         val sourceNode = runCatching { event.source }.getOrNull()
         flushPendingText(lastXmlSnapshot)
@@ -931,7 +1123,9 @@ class ManualVlmTraceRecorder(
             params["duration_ms"] = 1000L
         }
         val afterXml = afterXmlForAction ?: captureCurrentXml()
+        val afterScreenshot = captureCurrentScreenshotRef("click_after")
         lastXmlSnapshot = afterXml
+        lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
         appendRecordedAction(ManualVlmRecordedAction(
             actionName = recordedActionName,
             title = title,
@@ -939,6 +1133,8 @@ class ManualVlmTraceRecorder(
             packageName = targetPackage,
             beforeXml = beforeXml,
             afterXml = afterXml,
+            beforeScreenshot = beforeScreenshot,
+            afterScreenshot = afterScreenshot,
             startedAtMs = eventWallTime(event.eventTime, now),
             finishedAtMs = now,
             summary = title,
@@ -949,7 +1145,8 @@ class ManualVlmTraceRecorder(
     private fun recordFocusedTextTarget(
         event: AccessibilityEvent,
         packageName: String?,
-        beforeXml: String?
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         flushPendingText(lastXmlSnapshot)
         flushPendingScroll(lastXmlSnapshot)
@@ -971,7 +1168,9 @@ class ManualVlmTraceRecorder(
         val label = target.label.ifBlank { "输入框" }
         val title = "人工点击 $label"
         val afterXml = captureCurrentXml()
+        val afterScreenshot = captureCurrentScreenshotRef("focus_after")
         lastXmlSnapshot = afterXml
+        lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
         appendRecordedAction(ManualVlmRecordedAction(
             actionName = "click",
             title = title,
@@ -990,6 +1189,8 @@ class ManualVlmTraceRecorder(
             packageName = targetPackage,
             beforeXml = beforeXml,
             afterXml = afterXml,
+            beforeScreenshot = beforeScreenshot,
+            afterScreenshot = afterScreenshot,
             startedAtMs = eventWallTime(event.eventTime, now),
             finishedAtMs = now,
             summary = title,
@@ -1000,7 +1201,8 @@ class ManualVlmTraceRecorder(
     private fun recordTextChanged(
         event: AccessibilityEvent,
         packageName: String?,
-        beforeXml: String?
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         val node = event.source ?: return
         val now = System.currentTimeMillis()
@@ -1022,6 +1224,7 @@ class ManualVlmTraceRecorder(
         }
         val sameNodePending = pendingText?.takeIf { it.nodeKey == key }
         val pendingBeforeXml = sameNodePending?.beforeXml ?: beforeXml
+        val pendingBeforeScreenshot = sameNodePending?.beforeScreenshot ?: beforeScreenshot
 
         pendingText = PendingTextAction(
             nodeKey = key,
@@ -1033,11 +1236,13 @@ class ManualVlmTraceRecorder(
             resourceId = target.resourceId,
             resolution = target.resolution,
             beforeXml = pendingBeforeXml,
+            beforeScreenshot = pendingBeforeScreenshot,
             startedAtMs = sameNodePending?.startedAtMs ?: eventWallTime(event.eventTime, now),
             updatedAtMs = now,
             eventContext = eventContextFor(event, target, node)
         )
         lastXmlSnapshot = captureCurrentXml()
+        lastScreenshotSnapshot = captureCurrentScreenshotRef("text_changed_after")
     }
 
     private fun textReplayTargetFromBeforeXml(
@@ -1077,7 +1282,9 @@ class ManualVlmTraceRecorder(
             "人工输入文本"
         }
         val afterXml = afterXmlOverride ?: captureCurrentXml()
+        val afterScreenshot = captureCurrentScreenshotRef("text_after")
         lastXmlSnapshot = afterXml
+        lastScreenshotSnapshot = afterScreenshot ?: pending.beforeScreenshot
         val params = linkedMapOf<String, Any?>(
             "target_description" to pending.label,
             "content" to pending.text,
@@ -1097,6 +1304,8 @@ class ManualVlmTraceRecorder(
             packageName = pending.packageName,
             beforeXml = pending.beforeXml,
             afterXml = afterXml,
+            beforeScreenshot = pending.beforeScreenshot,
+            afterScreenshot = afterScreenshot,
             startedAtMs = pending.startedAtMs,
             finishedAtMs = pending.updatedAtMs,
             summary = if (pending.text == REDACTED_TEXT) title else "$title：${pending.text.take(MAX_SUMMARY_TEXT)}",
@@ -1107,11 +1316,12 @@ class ManualVlmTraceRecorder(
     private fun recordScrolled(
         event: AccessibilityEvent,
         packageName: String?,
-        beforeXml: String?
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         flushPendingText(lastXmlSnapshot)
         val sourceNode = event.source
-        val current = ScrollSnapshot(
+        val current = ManualScrollSnapshot(
             scrollX = event.scrollX,
             scrollY = event.scrollY,
             scrollDeltaX = event.scrollDeltaX,
@@ -1120,7 +1330,7 @@ class ManualVlmTraceRecorder(
             toIndex = event.toIndex,
             itemCount = event.itemCount
         )
-        if (!current.hasMeaningfulSignal()) {
+        if (!current.hasViewportSignal()) {
             OmniLog.d(TAG, "manual trace ignored scroll without movement signal")
             return
         }
@@ -1142,14 +1352,16 @@ class ManualVlmTraceRecorder(
         val previous = nodeScrollState[key]
         nodeScrollState[key] = current
 
-        val inferredDirection = inferScrollDirection(previous, current)
-        if (sourceNode == null && inferredDirection == null) {
-            OmniLog.d(TAG, "manual trace ignored source-less scroll without direction signal")
+        val inferredDirection = ManualScrollEventPolicy.inferDirection(previous, current)
+        if (inferredDirection == null) {
+            OmniLog.d(TAG, "manual trace ignored scroll viewport baseline without direction signal")
             return
         }
-        val direction = inferredDirection ?: fallbackScrollDirection(bounds)
+        val direction = inferredDirection
         val now = System.currentTimeMillis()
         val pendingBeforeXml = pendingScroll?.takeIf { it.nodeKey == key }?.beforeXml ?: beforeXml
+        val pendingBeforeScreenshot = pendingScroll?.takeIf { it.nodeKey == key }?.beforeScreenshot
+            ?: beforeScreenshot
         pendingScroll = PendingScrollAction(
             nodeKey = key,
             packageName = target.packageName ?: packageName,
@@ -1160,12 +1372,14 @@ class ManualVlmTraceRecorder(
             resourceId = target.resourceId,
             resolution = target.resolution,
             beforeXml = pendingBeforeXml,
+            beforeScreenshot = pendingBeforeScreenshot,
             startedAtMs = pendingScroll?.takeIf { it.nodeKey == key }?.startedAtMs
                 ?: eventWallTime(event.eventTime, now),
             updatedAtMs = now,
             eventContext = eventContextFor(event, target, sourceNode)
         )
         lastXmlSnapshot = captureCurrentXml()
+        lastScreenshotSnapshot = captureCurrentScreenshotRef("scroll_after")
     }
 
     private fun flushPendingScroll(afterXmlOverride: String? = lastXmlSnapshot) {
@@ -1174,7 +1388,9 @@ class ManualVlmTraceRecorder(
         val swipe = swipeFromBounds(pending.bounds, pending.direction)
         val title = "人工滑动 ${pending.label}"
         val afterXml = afterXmlOverride ?: captureCurrentXml()
+        val afterScreenshot = captureCurrentScreenshotRef("scroll_flush_after")
         lastXmlSnapshot = afterXml
+        lastScreenshotSnapshot = afterScreenshot ?: pending.beforeScreenshot
         appendRecordedAction(ManualVlmRecordedAction(
             actionName = "swipe",
             title = title,
@@ -1195,49 +1411,13 @@ class ManualVlmTraceRecorder(
             packageName = pending.packageName,
             beforeXml = pending.beforeXml,
             afterXml = afterXml,
+            beforeScreenshot = pending.beforeScreenshot,
+            afterScreenshot = afterScreenshot,
             startedAtMs = pending.startedAtMs,
             finishedAtMs = pending.updatedAtMs,
             summary = title,
             eventContext = pending.eventContext
         ))
-    }
-
-    private fun inferScrollDirection(
-        previous: ScrollSnapshot?,
-        current: ScrollSnapshot
-    ): ManualScrollDirection? {
-        if (abs(current.scrollDeltaY) >= MIN_SCROLL_DELTA) {
-            return if (current.scrollDeltaY > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-        }
-        if (abs(current.scrollDeltaX) >= MIN_SCROLL_DELTA) {
-            return if (current.scrollDeltaX > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
-        }
-        if (previous != null) {
-            val dy = current.scrollY - previous.scrollY
-            if (abs(dy) >= MIN_SCROLL_DELTA) {
-                return if (dy > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-            }
-            val dx = current.scrollX - previous.scrollX
-            if (abs(dx) >= MIN_SCROLL_DELTA) {
-                return if (dx > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
-            }
-            val indexDelta = current.fromIndex - previous.fromIndex
-            if (indexDelta != 0) {
-                return if (indexDelta > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-            }
-        }
-        if (current.fromIndex > 0 || current.toIndex > 0) {
-            return ManualScrollDirection.UP
-        }
-        return null
-    }
-
-    private fun fallbackScrollDirection(bounds: Rect): ManualScrollDirection {
-        return if (bounds.height() >= bounds.width()) {
-            ManualScrollDirection.UP
-        } else {
-            ManualScrollDirection.LEFT
-        }
     }
 
     private fun swipeFromBounds(bounds: Rect, direction: ManualScrollDirection): SwipeParams {
@@ -1734,6 +1914,71 @@ class ManualVlmTraceRecorder(
         }
     }
 
+    private fun captureCurrentScreenshotRef(stage: String): ManualVlmScreenshotRef? {
+        val capturedAtMs = System.currentTimeMillis()
+        return runCatching {
+            AccessibilityController.initController()
+            val capture = runBlocking {
+                AccessibilityController.captureScreenshotImage(
+                    isBitmap = true,
+                    isBase64 = false,
+                    isFile = false,
+                    isFilterOverlay = true,
+                    compressQuality = ImageQuality.SUMMARY
+                )
+            }
+            val bitmap = capture.imageBitmap ?: return null
+            try {
+                saveScreenshotRef(
+                    bitmap = bitmap,
+                    stage = stage,
+                    capturedAtMs = capturedAtMs
+                )
+            } finally {
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+        }.getOrElse { error ->
+            screenshotFailedCount += 1
+            OmniLog.w(TAG, "manual trace screenshot capture failed: ${error.message}")
+            null
+        }
+    }
+
+    private fun saveScreenshotRef(
+        bitmap: Bitmap,
+        stage: String,
+        capturedAtMs: Long
+    ): ManualVlmScreenshotRef {
+        val safeSession = safePathSegment(sessionLabel)
+        val safeStage = safePathSegment(stage)
+        val dir = File(context.filesDir, "oob_runlog_artifacts/$safeSession/screenshots")
+        dir.mkdirs()
+        val seq = (++screenshotSeq).toString().padStart(4, '0')
+        val file = File(dir, "${seq}_${safeStage}.jpg")
+        FileOutputStream(file).use { stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, SCREENSHOT_JPEG_QUALITY, stream)
+        }
+        val bytes = file.readBytes()
+        screenshotStoredCount += 1
+        val relativePath = file.relativeToOrSelf(context.filesDir).path
+        return ManualVlmScreenshotRef(
+            path = file.absolutePath,
+            relativePath = relativePath,
+            mimeType = "image/jpeg",
+            width = bitmap.width,
+            height = bitmap.height,
+            bytes = file.length(),
+            sha256 = sha256(bytes),
+            capturedAtMs = capturedAtMs,
+            captureStage = stage
+        )
+    }
+
+    private fun sha256(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return digest.joinToString("") { byte -> "%02x".format(byte) }
+    }
+
     private fun buildSummary(actions: List<ManualVlmRecordedAction>): String {
         if (actions.isEmpty()) return ""
         val actionSummary = actions.take(MAX_SUMMARY_ACTIONS).joinToString("；") { action ->
@@ -1835,7 +2080,11 @@ class ManualVlmTraceRecorder(
             rawTouchAvailable = rawTouchAvailable,
             rawTouchActiveAtStop = rawTouchActiveAtStop
         )
-        val warningMessage = ManualRecordingDiagnostics.warningMessage(completeness)
+        val warningMessage = if (enableRawTouch) {
+            ManualRecordingDiagnostics.warningMessage(completeness)
+        } else {
+            null
+        }
         return linkedMapOf<String, Any?>(
             "raw_touch" to rawTouchStatus?.asMap()?.plus(
                 linkedMapOf<String, Any?>(
@@ -1844,8 +2093,17 @@ class ManualVlmTraceRecorder(
                     "finished_gesture_count" to rawGestureFinishedCount,
                     "recorded_gesture_count" to rawGestureRecordedCount,
                     "ignored_control_gesture_count" to rawGestureIgnoredControlCount,
-                    "recorded_action_count" to rawActions
+                    "recorded_action_count" to rawActions,
+                    "event_stream" to rawGeteventStreamDiagnostics()
                 ).filterValues { it != null }
+            ),
+            "screenshots" to linkedMapOf(
+                "schema_version" to "oob.runlog.screenshot_refs.v1",
+                "storage" to "app_private_files",
+                "reference_style" to "path_only",
+                "stored_count" to screenshotStoredCount,
+                "failed_count" to screenshotFailedCount,
+                "root_relative_path" to "oob_runlog_artifacts/${safePathSegment(sessionLabel)}/screenshots"
             ),
             "accessibility_events" to linkedMapOf(
                 "event_count" to accessibilityEventCount,
@@ -1869,6 +2127,7 @@ class ManualVlmTraceRecorder(
                     rawActions > 0 -> "raw_touch"
                     else -> "accessibility_event"
                 },
+                "raw_touch_enabled" to enableRawTouch,
                 "raw_touch_required" to false,
                 "a11_replay_actions_enabled" to true,
                 "action_count" to recordedActions.size,
@@ -1876,7 +2135,7 @@ class ManualVlmTraceRecorder(
                 "semantic_action_count" to semanticActions,
                 "suppressed_non_raw_action_count" to suppressedNonRawActionCount,
                 "completeness" to completeness,
-                "missing_raw_touch" to !rawTouchAvailable,
+                "missing_raw_touch" to (enableRawTouch && !rawTouchAvailable),
                 "raw_touch_active_at_stop" to rawTouchActiveAtStop,
                 "guarantees_no_missing_clicks" to guaranteesNoMissingClicks,
                 "unattributed_window_transition_count" to unattributedWindowTransitionCount,
@@ -1894,6 +2153,20 @@ class ManualVlmTraceRecorder(
         AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "TYPE_WINDOW_CONTENT_CHANGED"
         AccessibilityEvent.TYPE_VIEW_SCROLLED -> "TYPE_VIEW_SCROLLED"
         else -> "TYPE_$eventType"
+    }
+
+    private fun rawGeteventStreamDiagnostics(): Map<String, Any?>? {
+        if (rawGeteventLineCount <= 0 && rawGeteventRecentLines.isEmpty()) return null
+        return linkedMapOf(
+            "format" to "getevent -lt",
+            "scope" to "selected_touch_device_only",
+            "retention_policy" to "last_$MAX_RAW_GETEVENT_RECENT_LINES",
+            "line_count" to rawGeteventLineCount,
+            "retained_line_count" to rawGeteventRecentLines.size,
+            "dropped_line_count" to rawGeteventDroppedLineCount,
+            "truncated" to (rawGeteventDroppedLineCount > 0),
+            "events" to rawGeteventRecentLines.toList()
+        )
     }
 
     private fun eventWallTime(eventTimeMs: Long, nowWallMs: Long): Long {
@@ -1924,6 +2197,7 @@ class ManualVlmTraceRecorder(
         val resourceId: String?,
         val resolution: String,
         val beforeXml: String?,
+        val beforeScreenshot: ManualVlmScreenshotRef?,
         val startedAtMs: Long,
         val updatedAtMs: Long,
         val eventContext: Map<String, Any?>
@@ -1939,29 +2213,11 @@ class ManualVlmTraceRecorder(
         val resourceId: String?,
         val resolution: String,
         val beforeXml: String?,
+        val beforeScreenshot: ManualVlmScreenshotRef?,
         val startedAtMs: Long,
         val updatedAtMs: Long,
         val eventContext: Map<String, Any?>
     )
-
-    private data class ScrollSnapshot(
-        val scrollX: Int,
-        val scrollY: Int,
-        val scrollDeltaX: Int,
-        val scrollDeltaY: Int,
-        val fromIndex: Int,
-        val toIndex: Int,
-        val itemCount: Int
-    ) {
-        fun hasMeaningfulSignal(): Boolean =
-            abs(scrollDeltaX) >= MIN_SCROLL_DELTA ||
-                abs(scrollDeltaY) >= MIN_SCROLL_DELTA ||
-                scrollX != 0 ||
-                scrollY != 0 ||
-                fromIndex >= 0 ||
-                toIndex >= 0 ||
-                itemCount > 0
-    }
 
     private data class SwipeParams(
         val x1: Float,
@@ -2052,18 +2308,12 @@ class ManualVlmTraceRecorder(
         }
     }
 
-    private enum class ManualScrollDirection {
-        UP,
-        DOWN,
-        LEFT,
-        RIGHT
-    }
-
     private companion object {
         private const val TAG = "ManualVlmTraceRecorder"
         private const val DUPLICATE_EVENT_WINDOW_MS = 400L
+        private const val RAW_TOUCH_BACKEND = "device_getevent"
         private const val RAW_TOUCH_SETTLE_MS = 350L
-        private const val MIN_SCROLL_DELTA = 4
+        private const val SCREENSHOT_JPEG_QUALITY = 90
         private const val MAX_LABEL_LENGTH = 80
         private const val MAX_SUMMARY_TEXT = 40
         private const val MAX_SUMMARY_ACTIONS = 8
@@ -2071,6 +2321,7 @@ class ManualVlmTraceRecorder(
         private const val MAX_IGNORED_CONTROL_AREA_RATIO = 0.20f
         private const val MAX_IGNORED_CONTROL_AREA_PX = 160_000
         private const val MAX_WINDOW_TRANSITION_SAMPLES = 8
+        private const val MAX_RAW_GETEVENT_RECENT_LINES = 2_000
         private const val MAX_PAGE_FINGERPRINT_NODES = 220
         private const val MAX_PAGE_SUMMARY_LABELS = 8
         private const val MAX_PAGE_LABEL_LENGTH = 48
@@ -2105,5 +2356,12 @@ class ManualVlmTraceRecorder(
 
         private fun boundsString(bounds: Rect): String =
             "[${bounds.left},${bounds.top}][${bounds.right},${bounds.bottom}]"
+
+        private fun safePathSegment(value: String): String {
+            val normalized = value
+                .replace(Regex("[^A-Za-z0-9._-]+"), "_")
+                .trim('_')
+            return normalized.ifBlank { "manual_trace" }.take(96)
+        }
     }
 }

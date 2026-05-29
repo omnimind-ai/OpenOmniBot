@@ -28,11 +28,13 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         val description = intent?.getStringExtra("description")?.trim().orEmpty()
         val name = intent?.getStringExtra("name")?.trim().orEmpty()
             .ifBlank { description.ifBlank { "人工录制轨迹" } }
+        val enableRawTouch = intent?.getBooleanExtra("enableRawTouch", false) == true ||
+            intent?.getBooleanExtra("rawTouch", false) == true
 
         scope.launch {
             val payload = runCatching {
                 when (op) {
-                    "start" -> startRecording(appContext, name, description)
+                    "start" -> startRecording(appContext, name, description, enableRawTouch)
                     "pause" -> pauseRecording()
                     "resume" -> resumeRecording()
                     "finish", "stop", "complete" -> finishRecording(appContext)
@@ -62,7 +64,8 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
     private suspend fun startRecording(
         context: Context,
         name: String,
-        description: String
+        description: String,
+        enableRawTouch: Boolean
     ): Map<String, Any?> {
         if (activeResult != null || HumanTrajectoryLearningSession.isActive()) {
             return errorPayload("ALREADY_RECORDING", "A human recording session is already active")
@@ -72,19 +75,23 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         val result = HumanTrajectoryLearningSession.start(
             context = context,
             name = name,
-            description = description.ifBlank { name }
+            description = description.ifBlank { name },
+            enableRawTouch = enableRawTouch
         )
         activeResult = result
         activeStartedAtMs = startedAtMs
         activeName = name
         activeDescription = description.ifBlank { name }
+        val status = HumanTrajectoryLearningSession.status().asMap()
         return linkedMapOf(
             "success" to true,
             "phase" to "started",
             "recording_active" to true,
             "name" to activeName,
             "description" to activeDescription,
+            "raw_touch_enabled" to enableRawTouch,
             "started_at_ms" to startedAtMs,
+            "status" to status,
             "source" to "oob_debug_human_run_recording"
         )
     }
@@ -102,11 +109,13 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
 
     private fun pauseRecording(): Map<String, Any?> {
         val paused = HumanTrajectoryLearningSession.pauseActive()
+        val status = HumanTrajectoryLearningSession.status().asMap()
         return linkedMapOf(
             "success" to paused,
             "phase" to "paused",
-            "recording_active" to HumanTrajectoryLearningSession.isActive(),
-            "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+            "recording_active" to status["recording_active"],
+            "recording_paused" to status["recording_paused"],
+            "status" to status,
             "error_code" to if (paused) null else "NO_ACTIVE_RECORDING",
             "error_message" to if (paused) null else "No active human recording session",
             "source" to "oob_debug_human_run_recording"
@@ -115,11 +124,13 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
 
     private fun resumeRecording(): Map<String, Any?> {
         val resumed = HumanTrajectoryLearningSession.resumeActive()
+        val status = HumanTrajectoryLearningSession.status().asMap()
         return linkedMapOf(
             "success" to resumed,
             "phase" to "recording",
-            "recording_active" to HumanTrajectoryLearningSession.isActive(),
-            "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+            "recording_active" to status["recording_active"],
+            "recording_paused" to status["recording_paused"],
+            "status" to status,
             "error_code" to if (resumed) null else "NO_ACTIVE_RECORDING",
             "error_message" to if (resumed) null else "No active human recording session",
             "source" to "oob_debug_human_run_recording"
@@ -180,16 +191,30 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         error("OOB accessibility service is not bound")
     }
 
-    private fun statusPayload(): Map<String, Any?> = linkedMapOf(
-        "success" to true,
-        "phase" to "status",
-        "recording_active" to (activeResult != null || HumanTrajectoryLearningSession.isActive()),
-        "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
-        "name" to activeName,
-        "description" to activeDescription,
-        "started_at_ms" to activeStartedAtMs.takeIf { it > 0L },
-        "source" to "oob_debug_human_run_recording"
-    )
+    private fun statusPayload(): Map<String, Any?> {
+        val status = HumanTrajectoryLearningSession.status().asMap()
+        return linkedMapOf(
+            "success" to true,
+            "phase" to "status",
+            "recording_active" to (
+                activeResult != null ||
+                    (status["recording_active"] as? Boolean == true)
+                ),
+            "recording_paused" to status["recording_paused"],
+            "run_id" to status["run_id"],
+            "name" to (status["name"] ?: activeName),
+            "description" to (status["description"] ?: activeDescription),
+            "started_at_ms" to (status["started_at_ms"] ?: activeStartedAtMs.takeIf { it > 0L }),
+            "action_count" to status["action_count"],
+            "latest_action_summary" to status["latest_action_summary"],
+            "pending_action_summary" to status["pending_action_summary"],
+            "recording_backend" to status["recording_backend"],
+            "raw_touch_enabled" to status["raw_touch_enabled"],
+            "raw_touch_available" to status["raw_touch_available"],
+            "status" to status,
+            "source" to "oob_debug_human_run_recording"
+        ).filterValues { it != null }
+    }
 
     private fun errorPayload(
         code: String,

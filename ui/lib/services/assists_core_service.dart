@@ -2690,6 +2690,13 @@ class AssistsMessageService {
     return _jsonSafeDynamicMap(result);
   }
 
+  static Future<Map<String, dynamic>> getHumanTrajectoryLearningStatus() async {
+    final result = await assistCore.invokeMethod(
+      'getHumanTrajectoryLearningStatus',
+    );
+    return _jsonSafeDynamicMap(result);
+  }
+
   static Future<Map<String, dynamic>> saveCurrentUdegState({
     String? goal,
   }) async {

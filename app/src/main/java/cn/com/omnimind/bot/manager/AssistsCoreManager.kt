@@ -3448,6 +3448,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun pauseHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val paused = HumanTrajectoryLearningSession.pauseActive()
+            val status = HumanTrajectoryLearningSession.status().asMap()
             withContext(Dispatchers.Main) {
                 if (paused) {
                     ManualRecordingControlOverlay.markPaused()
@@ -3455,8 +3456,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 result.success(
                     linkedMapOf(
                         "success" to paused,
-                        "recording_active" to HumanTrajectoryLearningSession.isActive(),
-                        "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+                        "recording_active" to status["recording_active"],
+                        "recording_paused" to status["recording_paused"],
+                        "action_count" to status["action_count"],
+                        "latest_action_summary" to status["latest_action_summary"],
+                        "status" to status,
                         "error_code" to if (paused) null else "NO_ACTIVE_RECORDING",
                         "error_message" to if (paused) null else "No active human recording session",
                         "source" to "human_trajectory_learning"
@@ -3469,6 +3473,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun resumeHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val resumed = HumanTrajectoryLearningSession.resumeActive()
+            val status = HumanTrajectoryLearningSession.status().asMap()
             withContext(Dispatchers.Main) {
                 if (resumed) {
                     ManualRecordingControlOverlay.markRecording()
@@ -3476,8 +3481,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 result.success(
                     linkedMapOf(
                         "success" to resumed,
-                        "recording_active" to HumanTrajectoryLearningSession.isActive(),
-                        "recording_paused" to HumanTrajectoryLearningSession.isPaused(),
+                        "recording_active" to status["recording_active"],
+                        "recording_paused" to status["recording_paused"],
+                        "action_count" to status["action_count"],
+                        "latest_action_summary" to status["latest_action_summary"],
+                        "status" to status,
                         "error_code" to if (resumed) null else "NO_ACTIVE_RECORDING",
                         "error_message" to if (resumed) null else "No active human recording session",
                         "source" to "human_trajectory_learning"
@@ -3485,6 +3493,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 )
             }
         }
+    }
+
+    fun getHumanTrajectoryLearningStatus(call: MethodCall, result: MethodChannel.Result) {
+        result.success(
+            linkedMapOf(
+                "success" to true,
+                "status" to HumanTrajectoryLearningSession.status().asMap(),
+                "source" to "human_trajectory_learning"
+            )
+        )
     }
 
     fun saveCurrentUdegState(call: MethodCall, result: MethodChannel.Result) {

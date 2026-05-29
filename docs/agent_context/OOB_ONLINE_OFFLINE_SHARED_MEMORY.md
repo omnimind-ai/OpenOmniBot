@@ -702,12 +702,18 @@ Manual takeover is integrated with pause/resume:
 6. Recorder summary is appended as external memory so VLM continues from the
    current screen.
 
-`ManualVlmTraceRecorder` records semantic Accessibility events, not raw touch:
+`ManualVlmTraceRecorder` uses Accessibility events as the default replayable
+action source. Raw `getevent` capture is opt-in enrichment and is not activated
+by default; when explicitly enabled and available it adds raw click/swipe
+evidence and retained event lines. Raw access failure must not make a non-empty
+A11 recording fail.
 
 - `TYPE_VIEW_CLICKED` -> `click`
 - `TYPE_VIEW_LONG_CLICKED` -> `long_press`
 - `TYPE_VIEW_TEXT_CHANGED` -> pending `input_text`
-- `TYPE_VIEW_SCROLLED` -> pending `swipe`
+- `TYPE_VIEW_SCROLLED` -> pending `swipe` only when scroll deltas, scroll
+  offsets, or list index changes identify direction; viewport-only scroll
+  baselines are evidence but not replay actions
 - `TYPE_WINDOW_CONTENT_CHANGED` and `TYPE_WINDOW_STATE_CHANGED` update XML
   snapshots
 
@@ -724,6 +730,50 @@ Manual RunLog cards use:
 - action names aligned with replayable names: `click`, `long_press`,
   `input_text`, `swipe`, `press_back`, `press_home`
 - before/after XML snapshots when available
+- before/after screenshot refs when available. The RunLog stores path-style
+  refs (`oob.runlog.screenshot_ref.v1`) under `before.screenshot`,
+  `after.screenshot`, `source_context.src_ctx.screenshot`, and
+  `source_context.dst_ctx.screenshot`; it does not embed screenshot base64.
+
+The debug CLI `scripts/oob-record-human-run.sh` finishes a native Kotlin
+recording and exports an artifact bundle. It defaults to A11Event-only
+recording; `--enable-raw-touch` opts into raw collection, and
+`--require-raw-touch` opts in plus fails validation if raw is unavailable.
+
+The shared status source is `HumanTrajectoryLearningSession.status()`. UI
+overlay controls, Flutter MethodChannel status, and debug broadcast `status`
+read the same schema:
+
+```text
+active / paused / run_id / name / description / started_at_ms
+action_count / latest_action_summary / pending_action_summary
+accessibility_event_count / raw_touch_enabled / raw_touch_available
+recording_backend
+```
+
+The UI path may show `ManualRecordingControlOverlay` with start/pause/resume,
+finish, cancel, screenshot-state capture, and live step count. Debug/script
+paths stay headless and never show that overlay unless a future explicit
+`showOverlay` option is added.
+
+```text
+<artifact_dir>/run_log.json
+<artifact_dir>/actions.ndjson
+<artifact_dir>/events/a11.ndjson
+<artifact_dir>/events/raw_getevent.ndjson
+<artifact_dir>/xml/step_###_<action>_{before,after}.xml
+<artifact_dir>/screenshots/index.json
+<artifact_dir>/audit/recording_audit.json
+<artifact_dir>/manifest.json
+```
+
+`manifest.json` uses `schema_version =
+"oob.manual_recording_artifact.v1"`. The audit records action counts,
+click/swipe counts, XML/screenshot coverage, A11 event count, retained raw
+getevent line count, source-null event steps, and warnings such as failed
+screenshot copy. Screenshot files are copied from app-private storage with
+`adb shell run-as <package> cat <path>` when possible; copy failure is a
+diagnostic warning, not a recording failure.
 
 ## Offline Convert/Register Flow
 

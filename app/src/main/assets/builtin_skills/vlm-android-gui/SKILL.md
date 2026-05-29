@@ -38,6 +38,67 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 - Validate after at least two visible UI states before `finished`.
 - Multi-target goals: keep ordered checklist; finish only after named targets verified.
 
+## Runtime Flow: VLM, UDEG, RunLog, Function
+
+This is the canonical OOB execution flow. Keep the live VLM loop, UDEG recall,
+RunLog conversion, Function enhancement, and deterministic Function replay
+connected by artifacts, but do not merge their responsibilities.
+
+1. Start `vlm_task` for the user's phone goal. The native runtime opens an
+   Internal RunLog and records concrete tool cards, token usage, timing
+   diagnostics, post-action observations, and terminal status.
+2. For every action turn, read one fresh current-page snapshot: current package,
+   Accessibility XML, indexed UI evidence, screenshot, display size, and
+   timestamp. Reuse it only for tool-call format correction on the same
+   unchanged screen. Page-stability retry and the next action must read again.
+3. Build dynamic page context only from that fresh snapshot. UDEG recall is:
+   `page match -> UDEG node -> node skill-like decision context -> VLM/tool decision`.
+   The UDEG node skill is OOB's page-level app-card equivalent. Inject it into
+   `currentPageSummary` as current-page decision context, not into pre-run
+   `stepSkillGuidance`, not as task memory, and not by flat-scanning all
+   Functions.
+4. Treat node-attached Functions and segments as optional capability candidates.
+   Default `allowOmniFlowFunctionAutoExecute=false`: the live VLM still chooses
+   native screen tools (`click`, `input_text`, `swipe`, `open_app`,
+   `press_back`, `press_home`, `finished`) from live screenshot/XML/indexed
+   evidence. Direct replay requires explicit user/agent Function selection or an
+   explicitly enabled strict auto-execute path.
+5. Explicit Function replay runs through `oob_function_guard_check` then
+   `oob_function_run`, `omniflow.call_tool`, or `call_tool(function_id=...)`.
+   This is an OmniFlow replay step, not a VLM click. It must create its own
+   visible `call_function` / reusable-command card with guard status, local
+   replay result, fallback reason, and nested step results.
+6. If replay returns `fallback=true`, `needs_agent`, or `model_required=true`,
+   stop replay and require an explicit bounded VLM continuation. Do not silently
+   fall back to VLM inside an offline replay.
+7. Convert/register a successful VLM or human-recorded RunLog only when it
+   contains replayable concrete actions and finished successfully. Failed,
+   unfinished, empty, perception-only, or diagnostic-only RunLogs must not
+   become reusable Functions.
+8. After registration, Function enhancement may improve name, description, step
+   labels, runtime parameter metadata, and `agent_reuse`. It must not change
+   executable step order, tool names, executors, concrete args, validation,
+   fallback, or callable definitions.
+
+RunLog registration is not the harness. Registration is
+`RunLog -> compile -> Function store -> UDEG node attachment`. A harness is a
+driver or validation wrapper that may launch VLM, collect a RunLog, register it,
+enhance it, replay it, and assert device state. A Function is validated only
+after guard-check plus real replay, or it remains an explicit candidate.
+
+Tool ownership:
+
+- RunLog inspect/list: `oob_run_log_get`, `oob_run_log_list`.
+- RunLog conversion/registration: `oob_run_log_convert` or
+  `convertInternalRunLogToOobFunction`.
+- Function management: `oob_function_list/get/register/guard_check/run/delete/clear`.
+- Function enhancement: `omniflow-function-enhancer` skill or background
+  enhancement job, writing `metadata.oob_enhancement`.
+- Function recall: UDEG current-page match returning node decision context and
+  node-attached Function/segment candidates.
+- Agent-facing Function cards: show `call_function` as a real tool call, not as
+  hidden JSON under the parent VLM result.
+
 ## Overview
 
 Use this skill when the user wants OOB to operate an Android screen, run a
@@ -172,10 +233,8 @@ Use `vlm_task` for live Android GUI work:
 
 Guidelines:
 
-- Default recall policy: keep `allowOmniFlowFunctionAutoExecute=false`. Recalled
-  Functions are optional candidates and UDEG node decision context for the live
-  VLM agent; do not auto-run a Function unless the user explicitly asks for a
-  strict direct Function execution path.
+- Follow the canonical Runtime Flow above for fresh-page evidence, UDEG recall,
+  Function candidate handling, and RunLog conversion boundaries.
 - For bare online validation, set `disableOmniFlowRecall=true`.
 - Include the app, starting point, target page, and visible finish condition.
 - Set `startFromCurrent=true` only when the user explicitly wants the current
@@ -364,31 +423,22 @@ for online VLM, replay, and recall-repeat phases.
 
 ## OmniFlow UDEG Node Skill Decision Context
 
-OOB may inject an `OmniFlow UDEG node skill-like decision context` section into
-the VLM dynamic context. Treat it as decision context reached through:
-`page match -> UDEG node -> node skill-like decision context -> VLM/tool
-decision`.
+The Runtime Flow section owns UDEG policy. This section only adds VLM decision
+safeguards for page-skill context:
 
-- Use the page-matched UDEG node's skill-like information to choose the next
-  VLM/tool decision on the live screen.
-- Consider only reusable commands attached to that UDEG node as outgoing reusable
-  transitions.
-- In default online VLM mode, those reusable commands are candidates only. The
-  native VLM loop still has screen tools only (`click`, `scroll`, `input_text`,
-  etc.); direct replay must be a separate explicit agent/user-selected Function
-  run.
-- Do not call `finished` just because recall returned `hit` or a prior reusable
-  command finished. Finish only after the current visible page satisfies the
-  user's requested end state.
-- If the current screen does not match the recalled step, re-ground on the
-  current screenshot/XML and continue normally.
+- Do not call `finished` because recall returned `hit` or because a historical
+  reusable command finished. Finish only after the current visible page satisfies
+  the user's requested end state.
+- If the current screen does not match the recalled node/step, ignore that
+  candidate, re-ground on the current screenshot/XML/indexed evidence, and
+  continue with normal live VLM actions.
 - For form tasks, keep each field's intended value tied to the visible field
   label. If a label row or spinner must be changed, click the label/spinner
   control before typing; never type a label value into the currently focused
   phone/email/name field.
-- If a replay-like action appears unsafe or ambiguous, choose a bounded live VLM
-  action such as `press_back`, `scroll`, or a specific visible `click`, rather
-  than blindly following historical coordinates.
+- If a replay-like suggestion appears unsafe or ambiguous, choose a bounded live
+  VLM action such as `press_back`, `scroll`, or a specific visible `click`
+  rather than following historical coordinates.
 
 ## Function Management
 
@@ -425,30 +475,12 @@ maintaining RunLog-derived reusable instructions. Prefer `oob_function_*` when
 the agent is doing explicit Function registration, inspection, guard checks, or
 execution.
 
-Do not treat registration as permission to auto-execute. In online VLM tasks,
-registered Functions are candidate actions only. Use direct Function replay only
-when the caller has explicitly selected the Function or set the advanced
-auto-execute flag.
-
-Do not assume a newly registered Function becomes a model-callable tool. OOB keeps
-that exposure off by default; the agent should inspect/list/guard candidates and
-call `oob_function_run` explicitly when it chooses one. The optional
-`oobFunctionAsToolEnabled` setting is an advanced UI setting and is not toggled by
-registration or RunLog conversion.
-
-Recommended agent workflow:
-
-1. Run `vlm_task` for the live task. Keep
-   `allowOmniFlowFunctionAutoExecute=false` unless the user explicitly asks for
-   strict direct replay.
-2. Inspect the RunLog with `oob_run_log_get`; check `duration_ms`,
-   `started_at`, `finished_at`, `step_count`, and `token_usage`.
-3. Convert a successful reusable RunLog with `oob_run_log_convert`, or register
-   a simple hand-authored reusable instruction with `oob_function_register`.
-4. Present the Function as a candidate reusable instruction. Execute only after
-   selection via `oob_function_run`.
-5. Use `oob_function_delete` to remove temporary validation Functions and
-   detach their UDEG node references.
+Registration, model-tool exposure, recall, and direct replay policy are defined
+by the Runtime Flow section. This section only names the management tools and
+validation entrypoints. For a create/inspect/run workflow, inspect with
+`oob_run_log_get`, convert/register with `oob_run_log_convert` or
+`oob_function_register`, guard-check, then run only through explicit
+`oob_function_run` / `call_tool(function_id=...)` selection.
 
 When submitting a conversation through `agent_run` only to create, inspect,
 convert, or explicitly run reusable instructions, pass
@@ -673,8 +705,9 @@ Rules:
   `toolName=call_function`, `toolType=oob_function`, readable "复用指令" text,
   `argsJson.function_id`, and final success/error status. Do not hide nested
   reusable-command execution only inside a parent result JSON.
-- If `call_tool` returns `fallback=true` or `needs_agent`, switch to a bounded
-  VLM task and report the fallback reason.
+- If `call_tool` returns `fallback=true` or `needs_agent`, follow the Runtime
+  Flow fallback rule: stop replay, report the reason, and continue with bounded
+  VLM only through explicit selection.
 
 ## Reusable Command Segment Validation
 
@@ -785,50 +818,11 @@ only because one click or one scroll was executed.
 
 ## UDEG Recall Context
 
-OOB recall follows OmniFlow's UDEG path:
-
-1. Encode the live accessibility page into a local `PageVectorSet`.
-2. Page-match that vector to a UDEG node.
-3. Read the UDEG node's skill-like decision context.
-4. Consider the reusable commands attached to that node as outgoing reusable
-   transitions.
-
-The decision path is exactly: `page match -> UDEG node -> node skill-like
-decision context -> VLM/tool decision`. UDEG node data is skill-like decision
-context, not memory text and not a flat reusable command list. Do not skip the
-node by scanning the reusable command store directly.
-
-For online VLM, every action turn must be grounded on a fresh current-page
-snapshot: current package, Accessibility XML, screenshot, display size, and
-snapshot timestamp are captured once and reused only inside that same turn. A
-tool-call format retry may reuse the same snapshot; a page-stability retry or
-the next action turn must capture a new snapshot. Do not carry a previous
-turn's UDEG page-match result into the next turn.
-
-The UDEG node skill is OOB's page-level app-card equivalent. It may be injected
-into `currentPageSummary` only after the live page matches a UDEG node, and it
-is current-page decision context only. The next action must still be selected
-from live screenshot/XML/indexed evidence. Keep pre-run `stepSkillGuidance` for
-static user or skill instructions; do not append dynamic page-match facts there.
-
-Do not treat recall as a flat text search over all reusable commands. A recalled
-reusable command is trusted only when the current page has been localized to its
-UDEG node and the command description/boundary fits the user goal. If the node
-skill is present but no command clearly fits, continue with normal live VLM
-actions.
-
-Direct local execution is disabled by default. It is allowed only when the caller
-explicitly selects a Function (`oob_function_run` or `call_tool(function_id=...)`)
-or sets the advanced `allowOmniFlowFunctionAutoExecute=true` flag, and the
-Function has a strong page match, strongly matches the goal, needs no arguments,
-and passes guard checks. Parameterized or weakly matched commands remain decision
-context for the VLM/tool layer.
-
-Model-tool exposure for saved Functions is also disabled by default. Registering,
-converting, or syncing Functions updates the Function store and UDEG node
-attachments only; it does not add each Function id to the model tool list. Use the
-management tools plus explicit `oob_function_run` unless the user intentionally
-enables Function-as-tool exposure.
+The Runtime Flow section is the source of truth for UDEG recall. Implementation
+detail: encode the live Accessibility page into a local `PageVectorSet`,
+page-match it to a UDEG node, read that node's skill-like decision context, and
+consider only reusable commands attached to that node as outgoing capability
+candidates.
 
 `omniflow.recall` defaults to an agent-compact payload. It should contain the
 decision, node id/package, optional Function or segment candidates, compact
@@ -838,7 +832,8 @@ skill body, page vectors, or skill artifacts unless a test/debug caller sets
 
 ## RunLog and Reusable Command Handling
 
-After a successful VLM run:
+The Runtime Flow section owns conversion and replay policy. Operationally, after
+a successful VLM or human-recorded run:
 
 1. Check the RunLog contains concrete actions and a terminal `finished` marker.
 2. Generate a reusable command only when the task is reusable and not
@@ -848,7 +843,7 @@ After a successful VLM run:
 4. If generated, report the reusable command id, guard decision, replay status,
    and run id.
 
-For replay:
+For explicit replay:
 
 1. Run `call_tool(function_id=..., arguments=...)`.
 2. Respect guard decisions: `allow`, `needs_agent`, `needs_confirmation`,

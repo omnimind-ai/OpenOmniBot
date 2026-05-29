@@ -20,6 +20,43 @@ data class HumanTrajectoryLearningResult(
     val diagnostics: Map<String, Any?> = emptyMap()
 )
 
+data class HumanTrajectoryLearningStatus(
+    val active: Boolean,
+    val paused: Boolean,
+    val runId: String? = null,
+    val name: String = "",
+    val description: String = "",
+    val startedAtMs: Long? = null,
+    val actionCount: Int = 0,
+    val latestActionSummary: String? = null,
+    val pendingActionSummary: String? = null,
+    val accessibilityEventCount: Int = 0,
+    val rawTouchEnabled: Boolean = false,
+    val rawTouchAvailable: Boolean = false
+) {
+    fun asMap(): Map<String, Any?> = linkedMapOf(
+        "active" to active,
+        "paused" to paused,
+        "recording_active" to active,
+        "recording_paused" to paused,
+        "run_id" to runId,
+        "name" to name,
+        "description" to description,
+        "started_at_ms" to startedAtMs,
+        "action_count" to actionCount,
+        "latest_action_summary" to latestActionSummary,
+        "pending_action_summary" to pendingActionSummary,
+        "accessibility_event_count" to accessibilityEventCount,
+        "raw_touch_enabled" to rawTouchEnabled,
+        "raw_touch_available" to rawTouchAvailable,
+        "recording_backend" to when {
+            rawTouchEnabled && rawTouchAvailable -> "mixed"
+            rawTouchEnabled -> "accessibility_event_with_raw_unavailable"
+            else -> "accessibility_event"
+        }
+    ).filterValues { it != null }
+}
+
 /**
  * Records a full human-operated trajectory and stores it as an Internal RunLog.
  *
@@ -35,6 +72,7 @@ object HumanTrajectoryLearningSession {
         val runId: String,
         val name: String,
         val description: String,
+        val startedAtMs: Long,
         val recorder: ManualVlmTraceRecorder,
         val result: CompletableDeferred<HumanTrajectoryLearningResult>
     )
@@ -47,6 +85,39 @@ object HumanTrajectoryLearningSession {
 
     fun isPaused(): Boolean = synchronized(lock) { activePaused }
 
+    fun status(): HumanTrajectoryLearningStatus {
+        val session = synchronized(lock) { activeSession } ?: return HumanTrajectoryLearningStatus(
+            active = false,
+            paused = false
+        )
+        val recorderSnapshot = runCatching { session.recorder.snapshot() }
+            .getOrElse { error ->
+                OmniLog.w(TAG, "human trajectory status snapshot failed: ${error.message}")
+                return HumanTrajectoryLearningStatus(
+                    active = true,
+                    paused = synchronized(lock) { activePaused },
+                    runId = session.runId,
+                    name = session.name,
+                    description = session.description,
+                    startedAtMs = session.startedAtMs
+                )
+            }
+        return HumanTrajectoryLearningStatus(
+            active = true,
+            paused = synchronized(lock) { activePaused } || recorderSnapshot.isPaused,
+            runId = session.runId,
+            name = session.name,
+            description = session.description,
+            startedAtMs = session.startedAtMs,
+            actionCount = recorderSnapshot.actionCount,
+            latestActionSummary = recorderSnapshot.latestActionSummary,
+            pendingActionSummary = recorderSnapshot.pendingActionSummary,
+            accessibilityEventCount = recorderSnapshot.accessibilityEventCount,
+            rawTouchEnabled = recorderSnapshot.rawTouchEnabled,
+            rawTouchAvailable = recorderSnapshot.rawTouchAvailable
+        )
+    }
+
     /**
      * Returns the active manual recording RunLog id for app-layer evidence writes.
      *
@@ -58,14 +129,20 @@ object HumanTrajectoryLearningSession {
     fun start(
         context: Context,
         name: String,
-        description: String
+        description: String,
+        enableRawTouch: Boolean = false
     ): CompletableDeferred<HumanTrajectoryLearningResult> {
         val normalizedName = name.trim().ifEmpty { "人工学习轨迹" }
         val normalizedDescription = description.trim().ifEmpty { normalizedName }
         val appContext = context.applicationContext ?: context
         val runId = "human_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}"
+        val startedAtMs = System.currentTimeMillis()
         val deferred = CompletableDeferred<HumanTrajectoryLearningResult>()
-        val recorder = ManualVlmTraceRecorder(appContext, "human_trajectory:$runId")
+        val recorder = ManualVlmTraceRecorder(
+            context = appContext,
+            sessionLabel = "human_trajectory:$runId",
+            enableRawTouch = enableRawTouch
+        )
         synchronized(lock) {
             if (activeSession != null) {
                 throw IllegalStateException("已有人工轨迹学习正在进行")
@@ -97,6 +174,7 @@ object HumanTrajectoryLearningSession {
                 runId = runId,
                 name = normalizedName,
                 description = normalizedDescription,
+                startedAtMs = startedAtMs,
                 recorder = recorder,
                 result = deferred
             )
@@ -286,13 +364,17 @@ object HumanTrajectoryLearningSession {
             ),
             "before" to linkedMapOf(
                 "observation_xml" to action.beforeXml,
+                "screenshot" to action.beforeScreenshot?.asMap(),
+                "screenshot_path" to action.beforeScreenshot?.path,
                 "package_name" to action.packageName
-            ),
+            ).filterValues { it != null },
             "after" to linkedMapOf(
                 "observation_xml" to action.afterXml,
+                "screenshot" to action.afterScreenshot?.asMap(),
+                "screenshot_path" to action.afterScreenshot?.path,
                 "summary" to action.summary,
                 "package_name" to action.packageName
-            )
+            ).filterValues { it != null }
         ).filterValues { it != null }
     }
 
@@ -307,11 +389,15 @@ object HumanTrajectoryLearningSession {
         }
         val dstCtx = linkedMapOf<String, Any?>(
             "page" to action.afterXml?.takeIf { it.isNotBlank() },
+            "screenshot" to action.afterScreenshot?.asMap(),
+            "screenshot_path" to action.afterScreenshot?.path,
             "package_name" to action.packageName
         ).filterValues { it != null && it.toString().isNotBlank() }
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to beforeXml,
+                "screenshot" to action.beforeScreenshot?.asMap(),
+                "screenshot_path" to action.beforeScreenshot?.path,
                 "package_name" to action.packageName,
                 "require_unique_action_signature" to false
             ).filterValues { it != null && it.toString().isNotBlank() },

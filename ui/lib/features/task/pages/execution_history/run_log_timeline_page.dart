@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -14,6 +15,7 @@ import 'package:ui/services/agent_tool_card_policy.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
 import 'package:ui/services/scheduled_task_storage_service.dart';
 import 'package:ui/services/assists_core_service.dart';
+import 'package:ui/services/run_log_function_enhancement_job_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
@@ -198,12 +200,26 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
   bool _isLoading = true;
   bool _isConvertingFunction = false;
   bool _isReplayingRunLog = false;
+  RunLogReusableFunctionSpec? _savedFunctionSpec;
+  UtgRunLogImportResult? _savedFunctionImportResult;
+  _RunLogFunctionPanelStatus _functionPanelStatus =
+      _RunLogFunctionPanelStatus.idle;
+  String? _functionPanelMessage;
+  String? _functionPanelError;
+  RunLogFunctionEnhancementJob? _runLogEnhancementJob;
+  StreamSubscription<RunLogFunctionEnhancementJob>? _runLogEnhancementJobSub;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _runLogEnhancementJobSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -250,6 +266,8 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _payload,
       _cards,
     );
+    final savedSpec = _savedFunctionSpec;
+    final isEnhancingRunLogFunction = _runLogEnhancementJob?.isRunning == true;
     final List<Widget> actions = <Widget>[
       Tooltip(
         message: l10n.omniflowAssetReplay,
@@ -273,7 +291,9 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         ),
       ),
       Tooltip(
-        message: convertEligibility.canConvert
+        message: savedSpec != null
+            ? _text(context, '查看复用指令', 'View reusable command')
+            : convertEligibility.canConvert
             ? _text(context, '保存为复用指令', 'Save reusable command')
             : convertEligibility.message,
         child: IconButton(
@@ -287,13 +307,18 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
                     color: palette.textPrimary,
                   ),
                 )
+              : savedSpec != null
+              ? const Icon(Icons.cloud_done_outlined)
               : const Icon(Icons.cloud_upload_outlined),
           color: palette.textPrimary,
           onPressed:
-              !convertEligibility.canConvert ||
-                  _isConvertingFunction ||
-                  _isReplayingRunLog
+              _isConvertingFunction ||
+                  _isReplayingRunLog ||
+                  isEnhancingRunLogFunction ||
+                  (savedSpec == null && !convertEligibility.canConvert)
               ? null
+              : savedSpec != null
+              ? _openSavedFunctionSheet
               : _registerCurrentRunLog,
         ),
       ),
@@ -366,10 +391,15 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       );
     }
     final cardGroups = _groupTimelineCards(_cards);
+    final functionStatusStrip = _buildFunctionStatusStrip(context);
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       children: [
         _RunLogOverviewCard(payload: _payload, stepCount: _cards.length),
+        if (functionStatusStrip != null) ...[
+          const SizedBox(height: 10),
+          functionStatusStrip,
+        ],
         const SizedBox(height: 12),
         for (var index = 0; index < cardGroups.length; index++)
           _StepCard(
@@ -414,16 +444,23 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       _cards,
     );
     if (!convertEligibility.canConvert) {
-      showToast(convertEligibility.message, type: ToastType.warning);
+      setState(() {
+        _functionPanelStatus = _RunLogFunctionPanelStatus.failed;
+        _functionPanelMessage = convertEligibility.message;
+        _functionPanelError = convertEligibility.message;
+      });
       return;
     }
     setState(() {
       _isConvertingFunction = true;
+      _functionPanelStatus = _RunLogFunctionPanelStatus.saving;
+      _functionPanelMessage = _text(
+        context,
+        '正在保存为复用指令',
+        'Saving as reusable command',
+      );
+      _functionPanelError = null;
     });
-    showToast(
-      _text(context, '正在检查 RunLog...', 'Checking RunLog...'),
-      type: ToastType.info,
-    );
     final registrationFailedText = _text(
       context,
       '注册失败',
@@ -431,43 +468,6 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
     );
     final useEnglish = _localeValue(context, zh: false, en: true);
     try {
-      final compileOnlyResult =
-          await AssistsMessageService.convertInternalRunLogToOobFunction(
-            runId: widget.runId,
-            register: false,
-          );
-      if (compileOnlyResult['success'] != true) {
-        final error = _firstNonBlank([
-          compileOnlyResult['error_message'],
-          compileOnlyResult['errorMessage'],
-          registrationFailedText,
-        ]);
-        throw Exception(error);
-      }
-      final existing = await _loadExistingReusableFunctionFromCompileResult(
-        compileOnlyResult,
-        useEnglish: useEnglish,
-      );
-      if (existing != null) {
-        if (!mounted) return;
-        setState(() {
-          _isConvertingFunction = false;
-        });
-        showToast(
-          _text(context, '已打开已有复用指令', 'Opened existing reusable command'),
-          type: ToastType.success,
-        );
-        await _showReusableFunctionSheet(
-          existing.spec,
-          initialImportResult: existing.importResult,
-        );
-        return;
-      }
-      if (!mounted) return;
-      showToast(
-        _text(context, '正在注册 RunLog...', 'Registering RunLog...'),
-        type: ToastType.info,
-      );
       final result =
           await AssistsMessageService.convertInternalRunLogToOobFunction(
             runId: widget.runId,
@@ -515,68 +515,26 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       if (!mounted) return;
       setState(() {
         _isConvertingFunction = false;
+        _savedFunctionSpec = spec;
+        _savedFunctionImportResult = importResult;
+        _functionPanelStatus = _RunLogFunctionPanelStatus.saved;
+        _functionPanelMessage = _text(
+          context,
+          '已保存为复用指令',
+          'Saved as reusable command',
+        );
+        _functionPanelError = null;
       });
-      showToast(
-        _text(context, 'RunLog 已保存为复用指令', 'RunLog saved as reusable command'),
-        type: ToastType.success,
-      );
-      await _showReusableFunctionSheet(spec, initialImportResult: importResult);
     } catch (e) {
       if (!mounted) return;
+      final message = _text(context, '注册失败', 'Registration failed');
       setState(() {
         _isConvertingFunction = false;
+        _functionPanelStatus = _RunLogFunctionPanelStatus.failed;
+        _functionPanelMessage = message;
+        _functionPanelError = e.toString();
       });
-      final message = _text(context, '注册失败', 'Registration failed');
-      showToast('$message: $e', type: ToastType.error);
     }
-  }
-
-  Future<_ExistingRunLogFunction?>
-  _loadExistingReusableFunctionFromCompileResult(
-    Map<String, dynamic> compileResult, {
-    required bool useEnglish,
-  }) async {
-    final functionId = _firstNonBlank([
-      compileResult['created_function_id'],
-      compileResult['function_id'],
-      _asStringKeyMap(compileResult['function_spec'])['function_id'],
-    ]);
-    if (functionId.isEmpty) return null;
-    final existing = await AssistsMessageService.getOobReusableFunction(
-      functionId,
-    );
-    if (existing == null || existing.isEmpty) return null;
-    final existingFunctionId = _firstNonBlank([
-      existing['function_id'],
-      functionId,
-    ]);
-    final specJson = _asStringKeyMap({
-      ...existing,
-      if (existingFunctionId.isNotEmpty) 'function_id': existingFunctionId,
-    });
-    if (specJson.isEmpty) return null;
-    final agentPrompt =
-        await RunLogReusableFunctionConverter.buildAgentPromptAsync(
-          specJson,
-          useEnglish: useEnglish,
-        );
-    return _ExistingRunLogFunction(
-      spec: RunLogReusableFunctionSpec(
-        json: specJson,
-        agentPrompt: agentPrompt,
-        aiEnhanced: false,
-      ),
-      importResult: UtgRunLogImportResult.fromMap({
-        'success': true,
-        'run_id': widget.runId,
-        'function_id': existingFunctionId,
-        'created_function_id': existingFunctionId,
-        'hit_function_ids': [existingFunctionId],
-        'functions_created': 0,
-        'function_kind': 'oob_reusable_function',
-        'asset_state': 'native_local',
-      }),
-    );
   }
 
   Future<void> _executeCurrentRunLog() async {
@@ -647,6 +605,127 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       });
       showToast('$executionFailedText: $e', type: ToastType.error);
     }
+  }
+
+  Widget? _buildFunctionStatusStrip(BuildContext context) {
+    final shouldShow =
+        _functionPanelStatus != _RunLogFunctionPanelStatus.idle ||
+        _savedFunctionSpec != null ||
+        _functionPanelError?.trim().isNotEmpty == true;
+    if (!shouldShow) return null;
+    final savedSpec = _savedFunctionSpec;
+    final isBusy =
+        _isConvertingFunction || _runLogEnhancementJob?.isRunning == true;
+    final canView = savedSpec != null && !isBusy;
+    final canEnhance =
+        savedSpec != null &&
+        !isBusy &&
+        (_functionPanelStatus == _RunLogFunctionPanelStatus.saved ||
+            _functionPanelStatus == _RunLogFunctionPanelStatus.failed);
+    final canRetrySave =
+        savedSpec == null &&
+        !isBusy &&
+        _functionPanelStatus == _RunLogFunctionPanelStatus.failed;
+    return _RunLogFunctionStatusStrip(
+      key: const ValueKey('run-log-function-status-strip'),
+      status: _functionPanelStatus,
+      spec: savedSpec,
+      message: _functionPanelMessage,
+      error: _functionPanelError,
+      canView: canView,
+      canEnhance: canEnhance,
+      canRetrySave: canRetrySave,
+      onView: canView ? _openSavedFunctionSheet : null,
+      onEnhance: canEnhance ? _enhanceSavedRunLogFunction : null,
+      onRetrySave: canRetrySave ? _registerCurrentRunLog : null,
+    );
+  }
+
+  Future<void> _openSavedFunctionSheet() async {
+    final spec = _savedFunctionSpec;
+    if (spec == null) return;
+    await _showReusableFunctionSheet(
+      spec,
+      initialImportResult: _savedFunctionImportResult,
+    );
+  }
+
+  Future<void> _enhanceSavedRunLogFunction() async {
+    final spec = _savedFunctionSpec;
+    if (spec == null ||
+        _isConvertingFunction ||
+        _isReplayingRunLog ||
+        _runLogEnhancementJob?.isRunning == true) {
+      return;
+    }
+    final useEnglish = _localeValue(context, zh: false, en: true);
+    setState(() {
+      _functionPanelStatus = _RunLogFunctionPanelStatus.enhancing;
+      _functionPanelMessage = _text(
+        context,
+        'Agent 已将这个 Function 加入后台增强队列。',
+        'Agent queued this Function for background enhancement.',
+      );
+      _functionPanelError = null;
+    });
+    try {
+      final job = await RunLogFunctionEnhancementJobService.enqueue(
+        runId: widget.runId,
+        functionJson: spec.json,
+        useEnglish: useEnglish,
+      );
+      if (!mounted) return;
+      _attachRunLogEnhancementJob(job);
+      _applyRunLogEnhancementJob(job);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _functionPanelStatus = _RunLogFunctionPanelStatus.failed;
+        _functionPanelMessage = _text(
+          context,
+          '后台增强启动失败，当前 Function 保持原样。',
+          'Failed to start background enhancement. The current Function is unchanged.',
+        );
+        _functionPanelError = e.toString();
+      });
+    }
+  }
+
+  void _attachRunLogEnhancementJob(RunLogFunctionEnhancementJob job) {
+    if (_runLogEnhancementJob?.jobId == job.jobId &&
+        _runLogEnhancementJobSub != null) {
+      return;
+    }
+    unawaited(_runLogEnhancementJobSub?.cancel());
+    _runLogEnhancementJob = job;
+    _runLogEnhancementJobSub =
+        RunLogFunctionEnhancementJobService.watchJob(job.jobId).listen((
+          updatedJob,
+        ) {
+          if (!mounted) return;
+          _applyRunLogEnhancementJob(updatedJob);
+        });
+  }
+
+  void _applyRunLogEnhancementJob(RunLogFunctionEnhancementJob job) {
+    final savedSpec = job.savedSpec;
+    final importResult = _runLogImportResultFromEnhancementJob(
+      job,
+      runId: widget.runId,
+    );
+    setState(() {
+      _runLogEnhancementJob = job;
+      if (savedSpec != null) {
+        _savedFunctionSpec = savedSpec;
+        _savedFunctionImportResult = importResult ?? _savedFunctionImportResult;
+      }
+      _functionPanelStatus = _panelStatusFromEnhancementJob(job);
+      _functionPanelMessage = job.message;
+      _functionPanelError =
+          job.phase == RunLogFunctionEnhancementJobPhase.failed
+          ? (job.error ?? job.message)
+          : null;
+    });
   }
 
   String _buildRunLogTranscript() {
@@ -737,14 +816,328 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
   }
 }
 
-class _ExistingRunLogFunction {
-  const _ExistingRunLogFunction({
+enum _RunLogFunctionPanelStatus {
+  idle,
+  saving,
+  saved,
+  enhancing,
+  enhanced,
+  partial,
+  unchanged,
+  failed,
+}
+
+_RunLogFunctionPanelStatus _panelStatusFromEnhancementJob(
+  RunLogFunctionEnhancementJob job,
+) {
+  if (job.isRunning) return _RunLogFunctionPanelStatus.enhancing;
+  if (job.phase == RunLogFunctionEnhancementJobPhase.failed) {
+    return _RunLogFunctionPanelStatus.failed;
+  }
+  switch (job.enhancementStatus) {
+    case RunLogReusableFunctionEnhancementStatus.enhanced:
+      return _RunLogFunctionPanelStatus.enhanced;
+    case RunLogReusableFunctionEnhancementStatus.partial:
+      return _RunLogFunctionPanelStatus.partial;
+    case RunLogReusableFunctionEnhancementStatus.unchanged:
+      return _RunLogFunctionPanelStatus.unchanged;
+    case RunLogReusableFunctionEnhancementStatus.failed:
+      return _RunLogFunctionPanelStatus.failed;
+    case RunLogReusableFunctionEnhancementStatus.enhancing:
+      return _RunLogFunctionPanelStatus.enhancing;
+    case RunLogReusableFunctionEnhancementStatus.none:
+      return _RunLogFunctionPanelStatus.saved;
+  }
+}
+
+UtgRunLogImportResult? _runLogImportResultFromEnhancementJob(
+  RunLogFunctionEnhancementJob job, {
+  required String runId,
+}) {
+  final result = job.registrationResult;
+  if (result == null || result['success'] != true) {
+    return null;
+  }
+  final registeredId = _firstNonBlank([
+    result['created_function_id'],
+    result['function_id'],
+    job.functionId,
+  ]);
+  return UtgRunLogImportResult.fromMap({
+    ...result,
+    'success': true,
+    'run_id': runId,
+    'function_id': registeredId,
+    'created_function_id': registeredId,
+    'functions_created': result['already_exists'] == true ? 0 : 1,
+    'asset_kind': result['asset_kind'] ?? result['function_kind'],
+    'asset_state': result['asset_state'],
+  });
+}
+
+class _RunLogFunctionStatusStrip extends StatelessWidget {
+  const _RunLogFunctionStatusStrip({
+    super.key,
+    required this.status,
     required this.spec,
-    required this.importResult,
+    required this.message,
+    required this.error,
+    required this.canView,
+    required this.canEnhance,
+    required this.canRetrySave,
+    required this.onView,
+    required this.onEnhance,
+    required this.onRetrySave,
   });
 
-  final RunLogReusableFunctionSpec spec;
-  final UtgRunLogImportResult importResult;
+  final _RunLogFunctionPanelStatus status;
+  final RunLogReusableFunctionSpec? spec;
+  final String? message;
+  final String? error;
+  final bool canView;
+  final bool canEnhance;
+  final bool canRetrySave;
+  final VoidCallback? onView;
+  final VoidCallback? onEnhance;
+  final VoidCallback? onRetrySave;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = _color(context);
+    final busy =
+        status == _RunLogFunctionPanelStatus.saving ||
+        status == _RunLogFunctionPanelStatus.enhancing;
+    final title = _title(context);
+    final detail = _firstNonBlank([
+      error,
+      if ((message ?? '').trim() != title.trim()) message,
+      if ((spec?.name ?? '').trim() != title.trim()) spec?.name,
+      spec?.functionId,
+    ]);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.16 : 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          if (busy)
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            )
+          else
+            Icon(_icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.25,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (canView)
+            TextButton.icon(
+              key: const ValueKey('run-log-function-open-detail'),
+              onPressed: onView,
+              icon: const Icon(Icons.visibility_outlined, size: 16),
+              label: Text(_text(context, '查看', 'View')),
+            ),
+          if (canEnhance)
+            TextButton.icon(
+              key: const ValueKey('run-log-function-enhance'),
+              onPressed: onEnhance,
+              icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+              label: Text(
+                status == _RunLogFunctionPanelStatus.failed
+                    ? _text(context, '重试', 'Retry')
+                    : _text(context, '增强', 'Enhance'),
+              ),
+            ),
+          if (canRetrySave)
+            TextButton.icon(
+              key: const ValueKey('run-log-function-retry-save'),
+              onPressed: onRetrySave,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(_text(context, '重试', 'Retry')),
+            ),
+        ],
+      ),
+    );
+  }
+
+  IconData get _icon {
+    switch (status) {
+      case _RunLogFunctionPanelStatus.saved:
+        return Icons.cloud_done_outlined;
+      case _RunLogFunctionPanelStatus.enhanced:
+        return Icons.auto_awesome_rounded;
+      case _RunLogFunctionPanelStatus.partial:
+        return Icons.rule_rounded;
+      case _RunLogFunctionPanelStatus.unchanged:
+        return Icons.fact_check_outlined;
+      case _RunLogFunctionPanelStatus.failed:
+        return Icons.error_outline_rounded;
+      case _RunLogFunctionPanelStatus.idle:
+      case _RunLogFunctionPanelStatus.saving:
+      case _RunLogFunctionPanelStatus.enhancing:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  Color _color(BuildContext context) {
+    switch (status) {
+      case _RunLogFunctionPanelStatus.saved:
+      case _RunLogFunctionPanelStatus.enhanced:
+        return _successColor(context);
+      case _RunLogFunctionPanelStatus.partial:
+        return _warningColor(context);
+      case _RunLogFunctionPanelStatus.failed:
+        return _errorColor(context);
+      case _RunLogFunctionPanelStatus.idle:
+      case _RunLogFunctionPanelStatus.saving:
+      case _RunLogFunctionPanelStatus.enhancing:
+      case _RunLogFunctionPanelStatus.unchanged:
+        return _routeColor(context);
+    }
+  }
+
+  String _title(BuildContext context) {
+    switch (status) {
+      case _RunLogFunctionPanelStatus.saving:
+        return _text(context, '正在保存为复用指令', 'Saving reusable command');
+      case _RunLogFunctionPanelStatus.saved:
+        return _text(context, '已保存为复用指令', 'Reusable command saved');
+      case _RunLogFunctionPanelStatus.enhancing:
+        return _text(context, '后台增强中', 'Enhancing in background');
+      case _RunLogFunctionPanelStatus.enhanced:
+        return _text(context, '已增强并保存', 'Enhanced and saved');
+      case _RunLogFunctionPanelStatus.partial:
+        return _text(context, '部分增强并保存', 'Partially enhanced and saved');
+      case _RunLogFunctionPanelStatus.unchanged:
+        return _text(context, '已检查，无需修改', 'Checked, no change');
+      case _RunLogFunctionPanelStatus.failed:
+        return _text(context, '处理失败', 'Action failed');
+      case _RunLogFunctionPanelStatus.idle:
+        return '';
+    }
+  }
+}
+
+class _StepFunctionStatusStrip extends StatelessWidget {
+  const _StepFunctionStatusStrip({
+    required this.isConverting,
+    required this.spec,
+    required this.message,
+    required this.error,
+    required this.onView,
+  });
+
+  final bool isConverting;
+  final RunLogReusableFunctionSpec? spec;
+  final String? message;
+  final String? error;
+  final VoidCallback? onView;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final hasError = error?.trim().isNotEmpty == true;
+    final color = hasError
+        ? _errorColor(context)
+        : spec != null
+        ? _successColor(context)
+        : _routeColor(context);
+    final detail = _firstNonBlank([
+      error,
+      message,
+      spec?.name,
+      spec?.functionId,
+    ]);
+    return Container(
+      key: const ValueKey('run-log-step-function-status-strip'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.16 : 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          if (isConverting)
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            )
+          else
+            Icon(
+              hasError
+                  ? Icons.error_outline_rounded
+                  : Icons.auto_awesome_rounded,
+              size: 18,
+              color: color,
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              detail.isEmpty
+                  ? _text(
+                      context,
+                      '此步复用指令已生成',
+                      'Step reusable command generated',
+                    )
+                  : detail,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+          if (spec != null && !isConverting)
+            TextButton.icon(
+              key: const ValueKey('run-log-step-function-open-detail'),
+              onPressed: onView,
+              icon: const Icon(Icons.visibility_outlined, size: 16),
+              label: Text(_text(context, '查看', 'View')),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _RunLogTimelineEmptyNotice extends StatelessWidget {
@@ -1544,6 +1937,232 @@ class _NestedVlmStepRow extends StatelessWidget {
   }
 }
 
+class RunLogStyleFunctionStepList extends StatelessWidget {
+  const RunLogStyleFunctionStepList({
+    super.key,
+    required this.steps,
+    this.title,
+    this.initiallyExpanded = false,
+    this.copyValue,
+    this.actionBuilder,
+  });
+
+  final List<Map<String, dynamic>> steps;
+  final String? title;
+  final bool initiallyExpanded;
+  final String? copyValue;
+  final FunctionRunStepActionBuilder? actionBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CollapsibleSection(
+      title:
+          title ??
+          '${_text(context, '执行步骤', 'Step results')} · ${steps.length}',
+      copyValue: copyValue ?? _prettyUserJson(steps),
+      initiallyExpanded: initiallyExpanded,
+      child: Column(
+        children: steps
+            .asMap()
+            .entries
+            .map(
+              (entry) => Padding(
+                padding: EdgeInsets.only(
+                  bottom: entry.key == steps.length - 1 ? 0 : 8,
+                ),
+                child: _RunLogStyleFunctionStepTile(
+                  index: entry.key,
+                  step: entry.value,
+                  actionBuilder: actionBuilder,
+                ),
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _RunLogStyleFunctionStepTile extends StatelessWidget {
+  const _RunLogStyleFunctionStepTile({
+    required this.index,
+    required this.step,
+    this.actionBuilder,
+  });
+
+  final int index;
+  final Map<String, dynamic> step;
+  final FunctionRunStepActionBuilder? actionBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final card = _runLogCardFromFunctionStep(step, index);
+    final snapshot = _RunLogStepSnapshot.fromCard(card, fallbackIndex: index);
+    final success = snapshot.success ?? true;
+    final source = _runLogStepSource(snapshot);
+    final sourceColor = _runLogStepSourceColor(context, source);
+    final hasSourceBadge = _hasRunLogSourceBadge(source);
+    final displayTitle = _runLogStepDisplayTitle(context, snapshot);
+    final preview = snapshot.previewText(context);
+    final statusColor = success ? _successColor(context) : _errorColor(context);
+    final borderColor = hasSourceBadge
+        ? sourceColor.withValues(alpha: context.isDarkTheme ? 0.40 : 0.24)
+        : palette.borderSubtle;
+    final baseColor = context.isDarkTheme
+        ? palette.surfaceSecondary
+        : Colors.white;
+    final cardColor = hasSourceBadge
+        ? Color.alphaBlend(
+            sourceColor.withValues(alpha: context.isDarkTheme ? 0.16 : 0.06),
+            baseColor,
+          )
+        : baseColor;
+    final trailing = actionBuilder?.call(context, index, step);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showFunctionStepDetail(context, card, index),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    _stepLabel(context, snapshot.stepNumber),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: palette.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  if (hasSourceBadge)
+                    _RunLogStepSourceBadge(source: source)
+                  else
+                    _RouteBadge(
+                      compileKind: snapshot.compileKind,
+                      l10n: context.l10n,
+                    ),
+                  const Spacer(),
+                  if (snapshot.durationMs != null) ...[
+                    Text(
+                      _formatMs(snapshot.durationMs!),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Icon(
+                    success
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    size: 15,
+                    color: statusColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: palette.textTertiary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Text(
+                displayTitle.isEmpty
+                    ? _text(context, '未命名步骤', 'Untitled step')
+                    : displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: palette.textPrimary,
+                  height: 1.25,
+                  letterSpacing: 0,
+                ),
+              ),
+              if (snapshot.toolName.isNotEmpty &&
+                  snapshot.toolName != displayTitle) ...[
+                const SizedBox(height: 4),
+                Text(
+                  snapshot.toolName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: palette.textSecondary,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+              if (preview.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  preview,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: palette.textSecondary,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+              if (trailing != null) ...[
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerRight, child: trailing),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showFunctionStepDetail(
+  BuildContext context,
+  Map<String, dynamic> card,
+  int index,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.28),
+    builder: (_) => _StepDetailSheet(
+      card: card,
+      fallbackIndex: index,
+      runId: _firstNonBlank([
+        card['source_run_id'],
+        card['sourceRunId'],
+        _asStringKeyMap(card['source'])['run_id'],
+        _asStringKeyMap(card['source'])['runId'],
+      ]),
+      title: _firstNonBlank([card['title'], card['summary']]),
+      payload: <String, dynamic>{'source': 'function_step', 'card': card},
+      enableConvertStep: false,
+    ),
+  );
+}
+
 class _StepDetailSheet extends StatefulWidget {
   const _StepDetailSheet({
     required this.card,
@@ -1553,6 +2172,7 @@ class _StepDetailSheet extends StatefulWidget {
     required this.title,
     required this.payload,
     this.baseUrl,
+    this.enableConvertStep = true,
   });
 
   final Map<String, dynamic> card;
@@ -1562,6 +2182,7 @@ class _StepDetailSheet extends StatefulWidget {
   final String title;
   final Map<String, dynamic> payload;
   final String? baseUrl;
+  final bool enableConvertStep;
 
   @override
   State<_StepDetailSheet> createState() => _StepDetailSheetState();
@@ -1569,6 +2190,10 @@ class _StepDetailSheet extends StatefulWidget {
 
 class _StepDetailSheetState extends State<_StepDetailSheet> {
   bool _isConvertingStep = false;
+  RunLogReusableFunctionSpec? _generatedStepSpec;
+  String? _generatedStepRunId;
+  String? _stepConversionMessage;
+  String? _stepConversionError;
 
   @override
   Widget build(BuildContext context) {
@@ -1671,29 +2296,30 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                               ],
                             ),
                           ),
-                          Tooltip(
-                            message: _text(
-                              context,
-                              '转为复用指令',
-                              'Convert this step',
+                          if (widget.enableConvertStep)
+                            Tooltip(
+                              message: _text(
+                                context,
+                                '转为复用指令',
+                                'Convert this step',
+                              ),
+                              child: IconButton(
+                                icon: _isConvertingStep
+                                    ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: palette.textSecondary,
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome_rounded),
+                                color: palette.textSecondary,
+                                onPressed: _isConvertingStep
+                                    ? null
+                                    : () => _convertThisStep(snapshot),
+                              ),
                             ),
-                            child: IconButton(
-                              icon: _isConvertingStep
-                                  ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: palette.textSecondary,
-                                      ),
-                                    )
-                                  : const Icon(Icons.auto_awesome_rounded),
-                              color: palette.textSecondary,
-                              onPressed: _isConvertingStep
-                                  ? null
-                                  : () => _convertThisStep(snapshot),
-                            ),
-                          ),
                           Tooltip(
                             message: _text(context, '复制本步文本', 'Copy this step'),
                             child: IconButton(
@@ -1744,6 +2370,20 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                                     baseUrl: widget.baseUrl,
                                   );
                                 },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            if (_isConvertingStep ||
+                                _generatedStepSpec != null ||
+                                _stepConversionError != null) ...[
+                              _StepFunctionStatusStrip(
+                                isConverting: _isConvertingStep,
+                                spec: _generatedStepSpec,
+                                message: _stepConversionMessage,
+                                error: _stepConversionError,
+                                onView: _generatedStepSpec == null
+                                    ? null
+                                    : _openGeneratedStepSpecSheet,
                               ),
                               const SizedBox(height: 12),
                             ],
@@ -1960,11 +2600,15 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
     if (_isConvertingStep) return;
     setState(() {
       _isConvertingStep = true;
+      _stepConversionMessage = _text(
+        context,
+        '正在生成此步复用指令',
+        'Generating step command',
+      );
+      _stepConversionError = null;
+      _generatedStepSpec = null;
+      _generatedStepRunId = null;
     });
-    showToast(
-      _text(context, '正在生成此步复用指令...', 'Generating this step command...'),
-      type: ToastType.info,
-    );
     final stepRunId = '${widget.runId}-step-${snapshot.stepNumber}';
     final stepTitle = snapshot.title.isNotEmpty
         ? snapshot.title
@@ -1989,37 +2633,39 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
       if (!mounted) return;
       setState(() {
         _isConvertingStep = false;
+        _generatedStepSpec = spec;
+        _generatedStepRunId = stepRunId;
+        _stepConversionMessage = spec.warning?.trim().isNotEmpty == true
+            ? spec.warning
+            : _text(context, '此步复用指令已生成', 'Step reusable command generated');
+        _stepConversionError = null;
       });
-      if (spec.warning != null && spec.warning!.trim().isNotEmpty) {
-        showToast(spec.warning!, type: ToastType.warning);
-      } else {
-        showToast(
-          _text(context, '此步复用指令已生成', 'Step reusable command generated'),
-          type: ToastType.success,
-        );
-      }
-      await showModalBottomSheet<void>(
-        context: context,
-        useRootNavigator: true,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        barrierColor: Colors.black.withValues(alpha: 0.28),
-        builder: (_) => _ReusableFunctionSpecSheet(
-          spec: spec,
-          runId: stepRunId,
-          baseUrl: widget.baseUrl,
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isConvertingStep = false;
+        _generatedStepRunId = stepRunId;
+        _stepConversionMessage = _text(context, '生成失败', 'Generation failed');
+        _stepConversionError = e.toString();
       });
-      showToast(
-        '${_text(context, '生成失败', 'Generation failed')}: $e',
-        type: ToastType.error,
-      );
     }
+  }
+
+  Future<void> _openGeneratedStepSpecSheet() async {
+    final spec = _generatedStepSpec;
+    if (spec == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.28),
+      builder: (_) => _ReusableFunctionSpecSheet(
+        spec: spec,
+        runId: _generatedStepRunId ?? '${widget.runId}-step',
+        baseUrl: widget.baseUrl,
+      ),
+    );
   }
 
   void _copyText(BuildContext context, String text, String successMessage) {
@@ -2059,11 +2705,39 @@ class _ReusableFunctionSpecSheetState
   bool _isEnhancing = false;
   bool _hasAgentEnhanced = false;
   bool _hasStructuralEdits = false;
+  RunLogReusableFunctionEnhancementStatus _enhancementStatus =
+      RunLogReusableFunctionEnhancementStatus.none;
+  String? _enhancementMessage;
+  RunLogFunctionEnhancementJob? _enhancementJob;
+  StreamSubscription<RunLogFunctionEnhancementJob>? _enhancementJobSub;
   late String _lastSavedSpecFingerprint;
   String? _apiError;
 
   RunLogReusableFunctionSpec get spec =>
       _draftSpec.copyWith(json: _functionJsonWithHeaderEdits(_draftSpec.json));
+
+  RunLogReusableFunctionEnhancementStatus get _visibleEnhancementStatus {
+    if (_enhancementJob?.isRunning == true) {
+      return RunLogReusableFunctionEnhancementStatus.enhancing;
+    }
+    if (_enhancementStatus != RunLogReusableFunctionEnhancementStatus.none) {
+      return _enhancementStatus;
+    }
+    return spec.enhancementStatus;
+  }
+
+  String? get _visibleEnhancementMessage =>
+      _enhancementJob?.message ??
+      _enhancementMessage ??
+      spec.enhancementMessage;
+
+  bool get _hasCompletedEnhancement =>
+      _visibleEnhancementStatus ==
+          RunLogReusableFunctionEnhancementStatus.enhanced ||
+      _visibleEnhancementStatus ==
+          RunLogReusableFunctionEnhancementStatus.partial ||
+      _visibleEnhancementStatus ==
+          RunLogReusableFunctionEnhancementStatus.unchanged;
 
   @override
   void initState() {
@@ -2074,13 +2748,19 @@ class _ReusableFunctionSpecSheetState
       text: (widget.spec.json['description'] ?? '').toString(),
     );
     _importResult = widget.initialImportResult;
+    _enhancementStatus = widget.spec.enhancementStatus;
+    _enhancementMessage = widget.spec.enhancementMessage;
+    _hasAgentEnhanced =
+        widget.spec.aiEnhanced || widget.spec.enhancementStatus.isApplied;
     _lastSavedSpecFingerprint = _specFingerprint(spec.json);
     _nameController.addListener(_onHeaderFieldChanged);
     _descriptionController.addListener(_onHeaderFieldChanged);
+    unawaited(_restoreEnhancementJob());
   }
 
   @override
   void dispose() {
+    _enhancementJobSub?.cancel();
     _nameController.removeListener(_onHeaderFieldChanged);
     _descriptionController.removeListener(_onHeaderFieldChanged);
     _nameController.dispose();
@@ -2102,6 +2782,10 @@ class _ReusableFunctionSpecSheetState
     final hasRegisteredFunction = _registeredFunctionId.isNotEmpty;
     final hasUnsavedEdits = _hasUnsavedEdits;
     final detail = _ReusableFunctionDraftSnapshot.fromSpec(spec.json);
+    final enhancementStatus = _visibleEnhancementStatus;
+    final isEnhancing = _isEnhancing || _enhancementJob?.isRunning == true;
+    final hasAgentEnhanced =
+        _hasAgentEnhanced || spec.aiEnhanced || enhancementStatus.isApplied;
 
     return GestureDetector(
       onTap: () => Navigator.of(context, rootNavigator: true).maybePop(),
@@ -2173,11 +2857,43 @@ class _ReusableFunctionSpecSheetState
                                           '已修改，保存后生效',
                                           'Edited, save to apply',
                                         )
-                                      : spec.aiEnhanced
+                                      : enhancementStatus ==
+                                            RunLogReusableFunctionEnhancementStatus
+                                                .enhancing
                                       ? _text(
                                           context,
-                                          'AI 整理结果',
-                                          'AI prepared command',
+                                          '后台增强中',
+                                          'Enhancing in background',
+                                        )
+                                      : enhancementStatus ==
+                                            RunLogReusableFunctionEnhancementStatus
+                                                .failed
+                                      ? _text(
+                                          context,
+                                          'Agent 增强失败',
+                                          'Agent enhancement failed',
+                                        )
+                                      : enhancementStatus ==
+                                            RunLogReusableFunctionEnhancementStatus
+                                                .unchanged
+                                      ? _text(
+                                          context,
+                                          'Agent 已检查',
+                                          'Agent checked',
+                                        )
+                                      : enhancementStatus ==
+                                            RunLogReusableFunctionEnhancementStatus
+                                                .partial
+                                      ? _text(
+                                          context,
+                                          'Agent 部分增强结果',
+                                          'Agent partially enhanced',
+                                        )
+                                      : hasAgentEnhanced
+                                      ? _text(
+                                          context,
+                                          'Agent 增强结果',
+                                          'Agent enhanced command',
                                         )
                                       : hasRegisteredFunction
                                       ? _text(
@@ -2252,9 +2968,8 @@ class _ReusableFunctionSpecSheetState
                               stepCount: detail.steps.length,
                               parameterCount: detail.parameters.length,
                               sourceRunCount: _sourceRunCount,
-                              isRunning: _isExecuting || _isEnhancing,
-                              onRun:
-                                  _isImporting || _isExecuting || _isEnhancing
+                              isRunning: _isExecuting || isEnhancing,
+                              onRun: _isImporting || _isExecuting || isEnhancing
                                   ? null
                                   : _executeRegisteredFunction,
                             ),
@@ -2268,6 +2983,17 @@ class _ReusableFunctionSpecSheetState
                               const SizedBox(height: 12),
                               _WarningBox(text: _apiError!),
                             ],
+                            if (enhancementStatus !=
+                                RunLogReusableFunctionEnhancementStatus
+                                    .none) ...[
+                              const SizedBox(height: 12),
+                              _EnhancementStatusBox(
+                                status: enhancementStatus,
+                                message: _visibleEnhancementMessage,
+                                isSaving: _isImporting,
+                                isSaved: !hasUnsavedEdits,
+                              ),
+                            ],
                             const SizedBox(height: 14),
                             Row(
                               children: [
@@ -2278,25 +3004,50 @@ class _ReusableFunctionSpecSheetState
                                     ),
                                     icon: hasUnsavedEdits
                                         ? Icons.cloud_upload_outlined
+                                        : enhancementStatus ==
+                                              RunLogReusableFunctionEnhancementStatus
+                                                  .failed
+                                        ? Icons.refresh_rounded
                                         : Icons.auto_awesome_rounded,
-                                    label: _isEnhancing
-                                        ? _text(context, '增强中', 'Enhancing')
+                                    label: isEnhancing
+                                        ? _text(
+                                            context,
+                                            '后台增强中',
+                                            'Background enhance',
+                                          )
                                         : _isImporting
                                         ? _text(context, '保存中', 'Saving')
                                         : hasUnsavedEdits
                                         ? _text(context, '保存修改', 'Save changes')
-                                        : _hasAgentEnhanced || spec.aiEnhanced
+                                        : enhancementStatus ==
+                                              RunLogReusableFunctionEnhancementStatus
+                                                  .failed
+                                        ? _text(
+                                            context,
+                                            '重试增强',
+                                            'Retry enhance',
+                                          )
+                                        : enhancementStatus ==
+                                              RunLogReusableFunctionEnhancementStatus
+                                                  .unchanged
+                                        ? _text(context, '已检查', 'Checked')
+                                        : hasAgentEnhanced
                                         ? _text(context, '已增强', 'Enhanced')
                                         : _text(context, '增强', 'Enhance'),
                                     onTap:
                                         _isImporting ||
                                             _isExecuting ||
                                             _isScheduling ||
-                                            _isEnhancing
+                                            isEnhancing
                                         ? null
                                         : hasUnsavedEdits
                                         ? _registerFunction
-                                        : _hasAgentEnhanced || spec.aiEnhanced
+                                        : enhancementStatus ==
+                                              RunLogReusableFunctionEnhancementStatus
+                                                  .failed
+                                        ? _enhanceWithAgent
+                                        : _hasCompletedEnhancement ||
+                                              hasAgentEnhanced
                                         ? null
                                         : _enhanceWithAgent,
                                   ),
@@ -2312,15 +3063,14 @@ class _ReusableFunctionSpecSheetState
                                         _isImporting ||
                                             _isExecuting ||
                                             _isScheduling ||
-                                            _isEnhancing
+                                            isEnhancing
                                         ? null
                                         : _scheduleRegisteredFunction,
                                   ),
                                 ),
                               ],
                             ),
-                            if (_registeredFunctionId.isNotEmpty ||
-                                _runResult != null) ...[
+                            if (_runResult != null) ...[
                               const SizedBox(height: 12),
                               _FunctionApiStatusBox(
                                 functionId: _registeredFunctionId,
@@ -2334,29 +3084,19 @@ class _ReusableFunctionSpecSheetState
                               nameController: _nameController,
                               descriptionController: _descriptionController,
                             ),
-                            const SizedBox(height: 14),
-                            _ReusableFunctionSectionTitle(
-                              text: _text(context, '动作预览', 'Action preview'),
-                            ),
-                            const SizedBox(height: 8),
-                            _ReusableFunctionPreviewPanel(
-                              steps: detail.steps,
-                              parameters: detail.parameters,
-                            ),
                             const SizedBox(height: 16),
                             if (detail.steps.isEmpty)
                               _ReusableFunctionEmptyText(
                                 text: _text(context, '暂无步骤', 'No steps'),
                               )
                             else
-                              FunctionRunStepList(
+                              RunLogStyleFunctionStepList(
                                 title:
                                     '${_text(context, '执行步骤', 'Step results')} · ${detail.steps.length}',
                                 steps: detail.steps
                                     .map((step) => step.raw)
                                     .toList(growable: false),
                                 initiallyExpanded: true,
-                                showStatusIcon: false,
                                 copyValue: _prettyUserJson(
                                   detail.steps
                                       .map((step) => step.raw)
@@ -2371,7 +3111,7 @@ class _ReusableFunctionSpecSheetState
                                   final canEdit =
                                       !_isImporting &&
                                       !_isExecuting &&
-                                      !_isEnhancing;
+                                      !isEnhancing;
                                   final canDelete =
                                       canEdit && detail.steps.length > 1;
                                   return Row(
@@ -2447,6 +3187,17 @@ class _ReusableFunctionSpecSheetState
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (_registeredFunctionId.isNotEmpty ||
+                                      _importResult != null ||
+                                      _apiCallJson.trim().isNotEmpty) ...[
+                                    _FunctionApiStatusBox(
+                                      functionId: _registeredFunctionId,
+                                      importResult: _importResult,
+                                      runResult: null,
+                                      apiCallJson: _apiCallJson,
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
                                   _ReusableFunctionSectionTitle(
                                     text: _text(
                                       context,
@@ -2492,7 +3243,9 @@ class _ReusableFunctionSpecSheetState
   }
 
   Future<void> _editStep(_ReusableFunctionStepSummary step) async {
-    if (_isImporting || _isExecuting || _isEnhancing) return;
+    if (_isImporting || _isExecuting || _enhancementJob?.isRunning == true) {
+      return;
+    }
     final editedStep = await _showReusableFunctionStepEditorDialog(
       context,
       step.raw,
@@ -2519,7 +3272,9 @@ class _ReusableFunctionSpecSheetState
   }
 
   Future<void> _deleteStep(_ReusableFunctionStepSummary step) async {
-    if (_isImporting || _isExecuting || _isEnhancing) return;
+    if (_isImporting || _isExecuting || _enhancementJob?.isRunning == true) {
+      return;
+    }
     final detail = _ReusableFunctionDraftSnapshot.fromSpec(spec.json);
     if (detail.steps.length <= 1) {
       showToast(context.l10n.functionLibraryStepKeepOne, type: ToastType.error);
@@ -2564,56 +3319,138 @@ class _ReusableFunctionSpecSheetState
     );
   }
 
-  Future<void> _enhanceWithAgent() async {
-    if (_isImporting || _isExecuting || _isScheduling || _isEnhancing) {
+  void _enhanceWithAgent() {
+    if (_isImporting ||
+        _isExecuting ||
+        _isScheduling ||
+        _enhancementJob?.isRunning == true) {
       return;
     }
+    final useEnglish = _localeValue(context, zh: false, en: true);
     setState(() {
       _isEnhancing = true;
+      _enhancementStatus = RunLogReusableFunctionEnhancementStatus.enhancing;
+      _enhancementMessage = _text(
+        context,
+        'Agent 已将这个 Function 加入后台增强队列。',
+        'Agent queued this Function for background enhancement.',
+      );
       _apiError = null;
     });
+    unawaited(_enqueueEnhancementJob(useEnglish: useEnglish));
+  }
+
+  Future<void> _restoreEnhancementJob() async {
     try {
-      final useEnglish = _localeValue(context, zh: false, en: true);
-      final enhanced = await RunLogReusableFunctionConverter.enhanceLabels(
+      await RunLogFunctionEnhancementJobService.resumePendingJobs();
+      final job = await RunLogFunctionEnhancementJobService.latestFor(
+        runId: widget.runId,
+        functionId: spec.functionId,
+      );
+      if (!mounted || job == null) {
+        return;
+      }
+      _attachEnhancementJob(job);
+      _applyEnhancementJob(job, showTerminalToast: false);
+    } catch (_) {
+      // Best-effort UI restoration; the user can retry from the sheet.
+    }
+  }
+
+  Future<void> _enqueueEnhancementJob({required bool useEnglish}) async {
+    try {
+      final job = await RunLogFunctionEnhancementJobService.enqueue(
+        runId: widget.runId,
         functionJson: spec.json,
         useEnglish: useEnglish,
       );
       if (!mounted) return;
-      _nameController.text = enhanced.name;
-      _descriptionController.text = (enhanced.json['description'] ?? '')
-          .toString();
-      setState(() {
-        _draftSpec = enhanced;
-        _runResult = null;
-        if (enhanced.warning?.trim().isEmpty ?? true) {
-          _hasStructuralEdits = true;
-        }
-      });
-      final warning = enhanced.warning?.trim();
-      if (warning != null && warning.isNotEmpty) {
-        setState(() {
-          _isEnhancing = false;
-        });
-        showToast(warning, type: ToastType.warning);
-      } else {
-        final saved = await _registerFunction(
-          successMessage: _text(context, '增强已保存', 'Enhancement saved'),
-          allowWhileEnhancing: true,
-        );
-        if (!mounted) return;
-        setState(() {
-          _isEnhancing = false;
-          _hasAgentEnhanced = saved;
-        });
-      }
+      _attachEnhancementJob(job);
+      _applyEnhancementJob(job, showTerminalToast: false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isEnhancing = false;
+        _enhancementStatus = RunLogReusableFunctionEnhancementStatus.failed;
+        _enhancementMessage = _text(
+          context,
+          '后台增强启动失败，当前 Function 保持原样。',
+          'Failed to start background enhancement. The current Function is unchanged.',
+        );
         _apiError = e.toString();
       });
-      showToast(_apiError!, type: ToastType.error);
     }
+  }
+
+  void _attachEnhancementJob(RunLogFunctionEnhancementJob job) {
+    if (_enhancementJob?.jobId == job.jobId && _enhancementJobSub != null) {
+      return;
+    }
+    unawaited(_enhancementJobSub?.cancel());
+    _enhancementJob = job;
+    _enhancementJobSub = RunLogFunctionEnhancementJobService.watchJob(job.jobId)
+        .listen((updatedJob) {
+          if (!mounted) return;
+          _applyEnhancementJob(updatedJob, showTerminalToast: true);
+        });
+  }
+
+  void _applyEnhancementJob(
+    RunLogFunctionEnhancementJob job, {
+    required bool showTerminalToast,
+  }) {
+    final savedSpec = job.savedSpec;
+    if (savedSpec != null) {
+      _nameController.text = savedSpec.name;
+      _descriptionController.text = (savedSpec.json['description'] ?? '')
+          .toString();
+    }
+    final importResult = _importResultFromEnhancementJob(job);
+    final apiError = job.phase == RunLogFunctionEnhancementJobPhase.failed
+        ? job.error
+        : null;
+    setState(() {
+      _enhancementJob = job;
+      _isEnhancing = job.isRunning;
+      if (savedSpec != null) {
+        _draftSpec = savedSpec;
+        _lastSavedSpecFingerprint = _specFingerprint(savedSpec.json);
+        _hasStructuralEdits = false;
+        _hasAgentEnhanced = savedSpec.enhancementStatus.isApplied;
+        _importResult = importResult ?? _importResult;
+        _runResult = null;
+      }
+      _enhancementStatus = job.enhancementStatus;
+      _enhancementMessage = job.message;
+      _apiError = apiError;
+    });
+    if (!showTerminalToast || job.isRunning) {
+      return;
+    }
+  }
+
+  UtgRunLogImportResult? _importResultFromEnhancementJob(
+    RunLogFunctionEnhancementJob job,
+  ) {
+    final result = job.registrationResult;
+    if (result == null || result['success'] != true) {
+      return null;
+    }
+    final registeredId = _firstNonBlank([
+      result['created_function_id'],
+      result['function_id'],
+      job.functionId,
+    ]);
+    return UtgRunLogImportResult.fromMap({
+      ...result,
+      'success': true,
+      'run_id': widget.runId,
+      'function_id': registeredId,
+      'created_function_id': registeredId,
+      'functions_created': result['already_exists'] == true ? 0 : 1,
+      'asset_kind': result['asset_kind'] ?? result['function_kind'],
+      'asset_state': result['asset_state'],
+    });
   }
 
   Future<void> _updateDraftJson(
@@ -2640,7 +3477,10 @@ class _ReusableFunctionSpecSheetState
     String? successMessage,
     bool allowWhileEnhancing = false,
   }) async {
-    if (_isImporting || (_isEnhancing && !allowWhileEnhancing)) return false;
+    if (_isImporting ||
+        (_enhancementJob?.isRunning == true && !allowWhileEnhancing)) {
+      return false;
+    }
     setState(() {
       _isImporting = true;
       _apiError = null;
@@ -2756,7 +3596,9 @@ class _ReusableFunctionSpecSheetState
   }
 
   Future<void> _executeRegisteredFunction() async {
-    if (_isExecuting || _isImporting || _isEnhancing) return;
+    if (_isExecuting || _isImporting || _enhancementJob?.isRunning == true) {
+      return;
+    }
     var functionId = _registeredFunctionId;
     if (functionId.isEmpty) {
       await _registerFunction();
@@ -2811,7 +3653,12 @@ class _ReusableFunctionSpecSheetState
   }
 
   Future<void> _scheduleRegisteredFunction() async {
-    if (_isScheduling || _isImporting || _isExecuting || _isEnhancing) return;
+    if (_isScheduling ||
+        _isImporting ||
+        _isExecuting ||
+        _enhancementJob?.isRunning == true) {
+      return;
+    }
     setState(() {
       _isScheduling = true;
       _apiError = null;
@@ -3153,71 +4000,6 @@ class _ReusableFunctionEmptyText extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(fontSize: 13, color: context.omniPalette.textTertiary),
-      ),
-    );
-  }
-}
-
-class _ReusableFunctionPreviewPanel extends StatelessWidget {
-  const _ReusableFunctionPreviewPanel({
-    required this.steps,
-    required this.parameters,
-  });
-
-  final List<_ReusableFunctionStepSummary> steps;
-  final List<_ReusableFunctionParameterSummary> parameters;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.omniPalette;
-    final stepPreview = _reusableFunctionStepPreview(context, steps);
-    final parameterPreview = _previewReusableNames(
-      parameters.map((parameter) => parameter.name).toList(growable: false),
-    );
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: context.isDarkTheme
-            ? palette.surfaceSecondary
-            : _routeColor(context).withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            stepPreview.isEmpty
-                ? _text(context, '暂无动作预览', 'No action preview')
-                : stepPreview,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: stepPreview.isEmpty
-                  ? FontWeight.w500
-                  : FontWeight.w600,
-              color: stepPreview.isEmpty
-                  ? palette.textTertiary
-                  : palette.textPrimary,
-              height: 1.4,
-            ),
-          ),
-          if (parameterPreview.isNotEmpty) ...[
-            const SizedBox(height: 7),
-            Text(
-              '${_text(context, '参数', 'Params')}: $parameterPreview',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: palette.textSecondary,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -3720,66 +4502,6 @@ List<_ReusableFunctionParameterSummary> _reusableFunctionParameters(
       .toList(growable: false);
 }
 
-String _reusableFunctionStepPreview(
-  BuildContext context,
-  List<_ReusableFunctionStepSummary> steps,
-) {
-  final parts = <String>[];
-  for (final step in steps.take(3)) {
-    final tool = _reusableFunctionToolLabel(
-      context,
-      (step.raw['tool'] ?? step.raw['omniflow_action'] ?? '').toString(),
-    );
-    final title = step.displayTitle.trim();
-    final body = title.isNotEmpty && tool.isNotEmpty && title != tool
-        ? '$title · $tool'
-        : (title.isNotEmpty ? title : tool);
-    if (body.isEmpty) continue;
-    parts.add('${step.index + 1}. $body');
-  }
-  if (parts.isEmpty) return '';
-  final preview = parts.join('  ');
-  return steps.length > 3 ? '$preview ...' : preview;
-}
-
-String _reusableFunctionToolLabel(BuildContext context, String tool) {
-  switch (tool.trim().toLowerCase()) {
-    case 'open_app':
-      return _text(context, '打开应用', 'Open app');
-    case 'click':
-      return _text(context, '点击', 'Tap');
-    case 'long_press':
-      return _text(context, '长按', 'Long press');
-    case 'input_text':
-    case 'type':
-      return _text(context, '输入文本', 'Enter text');
-    case 'swipe':
-    case 'scroll':
-      return _text(context, '滑动', 'Swipe');
-    case 'press_back':
-    case 'back':
-      return _text(context, '返回', 'Go back');
-    case 'press_home':
-    case 'home':
-      return _text(context, '回到桌面', 'Go home');
-    case 'wait':
-      return _text(context, '等待', 'Wait');
-  }
-  return tool.trim();
-}
-
-String _previewReusableNames(List<String> values, {int maxItems = 3}) {
-  final names = <String>[];
-  for (final value in values) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty || names.contains(trimmed)) continue;
-    names.add(trimmed);
-  }
-  if (names.isEmpty) return '';
-  if (names.length <= maxItems) return names.join(' · ');
-  return '${names.take(maxItems).join(' · ')} +${names.length - maxItems}';
-}
-
 Map<String, dynamic> _deepCopyStringMap(Map<String, dynamic> value) {
   final cloned = jsonDecode(jsonEncode(_jsonSafe(value)));
   if (cloned is Map) {
@@ -3790,6 +4512,186 @@ Map<String, dynamic> _deepCopyStringMap(Map<String, dynamic> value) {
 
 String _specFingerprint(Map<String, dynamic> value) {
   return jsonEncode(_jsonSafe(value));
+}
+
+class _EnhancementStatusBox extends StatelessWidget {
+  const _EnhancementStatusBox({
+    required this.status,
+    required this.message,
+    required this.isSaving,
+    required this.isSaved,
+  });
+
+  final RunLogReusableFunctionEnhancementStatus status;
+  final String? message;
+  final bool isSaving;
+  final bool isSaved;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final color = _statusColor(context);
+    final body = message?.trim().isNotEmpty == true
+        ? message!.trim()
+        : _defaultMessage(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDarkTheme ? 0.14 : 0.09),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.26)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _title(context),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  body,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: palette.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData get _icon {
+    switch (status) {
+      case RunLogReusableFunctionEnhancementStatus.enhancing:
+        return Icons.sync_rounded;
+      case RunLogReusableFunctionEnhancementStatus.enhanced:
+        return Icons.auto_awesome_rounded;
+      case RunLogReusableFunctionEnhancementStatus.partial:
+        return Icons.rule_rounded;
+      case RunLogReusableFunctionEnhancementStatus.unchanged:
+        return Icons.fact_check_outlined;
+      case RunLogReusableFunctionEnhancementStatus.failed:
+        return Icons.error_outline_rounded;
+      case RunLogReusableFunctionEnhancementStatus.none:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  Color _statusColor(BuildContext context) {
+    switch (status) {
+      case RunLogReusableFunctionEnhancementStatus.enhanced:
+        return _successColor(context);
+      case RunLogReusableFunctionEnhancementStatus.partial:
+        return _warningColor(context);
+      case RunLogReusableFunctionEnhancementStatus.failed:
+        return _errorColor(context);
+      case RunLogReusableFunctionEnhancementStatus.enhancing:
+      case RunLogReusableFunctionEnhancementStatus.unchanged:
+      case RunLogReusableFunctionEnhancementStatus.none:
+        return _routeColor(context);
+    }
+  }
+
+  String _title(BuildContext context) {
+    switch (status) {
+      case RunLogReusableFunctionEnhancementStatus.enhancing:
+        return isSaving
+            ? _text(context, '增强：保存中', 'Enhancement: saving')
+            : _text(context, '增强：后台执行中', 'Enhancement: running in background');
+      case RunLogReusableFunctionEnhancementStatus.enhanced:
+        if (!isSaved) {
+          return _text(
+            context,
+            '增强：已生成，待保存',
+            'Enhancement: generated, save pending',
+          );
+        }
+        return _text(context, '增强：已增强并保存', 'Enhancement: enhanced and saved');
+      case RunLogReusableFunctionEnhancementStatus.partial:
+        if (!isSaved) {
+          return _text(
+            context,
+            '增强：部分生成，待保存',
+            'Enhancement: partially generated, save pending',
+          );
+        }
+        return _text(
+          context,
+          '增强：部分增强并保存',
+          'Enhancement: partially enhanced and saved',
+        );
+      case RunLogReusableFunctionEnhancementStatus.unchanged:
+        if (!isSaved) {
+          return _text(
+            context,
+            '增强：已检查，待保存',
+            'Enhancement: checked, save pending',
+          );
+        }
+        return _text(context, '增强：已检查，无需修改', 'Enhancement: checked, no change');
+      case RunLogReusableFunctionEnhancementStatus.failed:
+        return _text(
+          context,
+          '增强：失败，可重试',
+          'Enhancement: failed, retry available',
+        );
+      case RunLogReusableFunctionEnhancementStatus.none:
+        return _text(context, '增强：未执行', 'Enhancement: not run');
+    }
+  }
+
+  String _defaultMessage(BuildContext context) {
+    switch (status) {
+      case RunLogReusableFunctionEnhancementStatus.enhancing:
+        return _text(
+          context,
+          'Agent 正在后台整理名称、步骤、参数和复用元数据。',
+          'Agent is refining labels, steps, parameters, and reuse metadata in the background.',
+        );
+      case RunLogReusableFunctionEnhancementStatus.enhanced:
+        return _text(
+          context,
+          '已产生可用增强并写回 Function 库。',
+          'Useful enhancement was produced and written back to the function library.',
+        );
+      case RunLogReusableFunctionEnhancementStatus.partial:
+        return _text(
+          context,
+          '有可用增强已保留，未通过的片段已跳过。',
+          'Useful enhancement was kept; failed sections were skipped.',
+        );
+      case RunLogReusableFunctionEnhancementStatus.unchanged:
+        return _text(
+          context,
+          'Agent 已检查当前 Function，没有安全可应用的变化。',
+          'Agent checked the function and found no safe applicable change.',
+        );
+      case RunLogReusableFunctionEnhancementStatus.failed:
+        return _text(
+          context,
+          '没有写入增强结果，当前 Function 保持原样。',
+          'No enhancement was written. The current function is unchanged.',
+        );
+      case RunLogReusableFunctionEnhancementStatus.none:
+        return '';
+    }
+  }
 }
 
 class _FunctionApiStatusBox extends StatelessWidget {
@@ -4662,8 +5564,11 @@ class _RunLogStepSnapshot {
     final cardStepIndex = _asInt(
       _firstPresentValue(card, const ['step_index', 'stepIndex', 'index']),
     );
-    final stepNumber =
-        ((headerStepIndex ?? cardStepIndex) ?? fallbackIndex) + 1;
+    final usesNestedLocalIndex = _timelineParentCardId(card).isNotEmpty;
+    final stepIndex = usesNestedLocalIndex
+        ? fallbackIndex
+        : ((headerStepIndex ?? cardStepIndex) ?? fallbackIndex);
+    final stepNumber = stepIndex + 1;
     final toolName = _firstNonBlank([
       toolCall['name'],
       toolCall['tool_name'],
@@ -5615,6 +6520,10 @@ List<_RunLogCardGroup> _groupTimelineCards(List<Map<String, dynamic>> cards) {
     if (parentId.isEmpty || !parentIndexes.containsKey(parentId)) {
       continue;
     }
+    final parentCard = cards[parentIndexes[parentId]!];
+    if (_shouldFlattenTimelineChild(cards[index], parentCard)) {
+      continue;
+    }
     nestedByParent.putIfAbsent(parentId, () => <Map<String, dynamic>>[]);
     nestedByParent[parentId]!.add(cards[index]);
     nestedIndexes.add(index);
@@ -5636,6 +6545,47 @@ List<_RunLogCardGroup> _groupTimelineCards(List<Map<String, dynamic>> cards) {
     );
   }
   return groups;
+}
+
+bool _shouldFlattenTimelineChild(
+  Map<String, dynamic> child,
+  Map<String, dynamic> parent,
+) {
+  return _timelineCardLooksLikeVlm(child) || _timelineCardLooksLikeVlm(parent);
+}
+
+bool _timelineCardLooksLikeVlm(Map<String, dynamic> card) {
+  final header = _asStringKeyMap(card['header']);
+  final toolCall = _extractToolCall(card);
+  final values = <String>[
+    _firstNonBlank([card['tool_type'], card['toolType']]),
+    _firstNonBlank([card['source'], card['run_source'], card['runSource']]),
+    _firstNonBlank([card['compile_kind'], card['compileKind']]),
+    _firstNonBlank([card['span_kind'], card['spanKind']]),
+    _firstNonBlank([header['tool_type'], header['toolType']]),
+    _firstNonBlank([
+      header['source'],
+      header['run_source'],
+      header['runSource'],
+    ]),
+    _firstNonBlank([header['compile_kind'], header['compileKind']]),
+    _firstNonBlank([header['span_kind'], header['spanKind']]),
+    _firstNonBlank([
+      toolCall['name'],
+      toolCall['tool_name'],
+      toolCall['toolName'],
+      card['tool_name'],
+      card['toolName'],
+    ]),
+  ].map((value) => value.trim().toLowerCase()).toList(growable: false);
+  return values.any(
+    (value) =>
+        value == 'vlm' ||
+        value == 'vlm_task' ||
+        value == 'vlm_step' ||
+        value == 'vlm_action' ||
+        value.contains('vlm'),
+  );
 }
 
 String _timelineCardId(Map<String, dynamic> card) {
@@ -5906,6 +6856,180 @@ List<Map<String, dynamic>> _cardsFromList(List<dynamic> items) {
     cards.add(_normalizeTimelineCard(card, index));
   }
   return cards;
+}
+
+Map<String, dynamic> _runLogCardFromFunctionStep(
+  Map<String, dynamic> step,
+  int fallbackIndex,
+) {
+  final normalized = Map<String, dynamic>.from(step);
+  final toolName = _firstNonBlank([
+    normalized['tool'],
+    normalized['tool_name'],
+    normalized['toolName'],
+    normalized['omniflow_action'],
+    normalized['omniflowAction'],
+    normalized['action_type'],
+    normalized['actionType'],
+    normalized['executor'] == 'agent' ? normalized['callable_tool'] : null,
+  ]);
+  final args = _decodeJsonIfNeeded(
+    _firstPresent([
+      normalized['args'],
+      normalized['arguments'],
+      normalized['params'],
+      normalized['input'],
+    ]),
+  );
+  final result = _functionStepResult(normalized);
+  final isVlm = _functionStepLooksLikeVlm(normalized, toolName);
+  final compileKind = isVlm
+      ? 'vlm_step'
+      : _firstNonBlank([
+          normalized['compile_kind'],
+          normalized['compileKind'],
+          normalized['kind'] == 'omniflow_action' ? 'hit' : null,
+          normalized['executor'] == 'omniflow' ? 'hit' : null,
+          normalized['kind'],
+        ]);
+  final cardId = _functionStepCardId(normalized, fallbackIndex);
+  final title = _firstNonBlank([
+    normalized['title'],
+    normalized['summary'],
+    normalized['description'],
+    toolName,
+  ]);
+  final durationMs = _firstPresent([
+    normalized['duration_ms'],
+    normalized['durationMs'],
+    normalized['elapsed_ms'],
+    normalized['elapsedMs'],
+  ]);
+  final sourceRunId = _firstNonBlank([
+    normalized['source_run_id'],
+    normalized['sourceRunId'],
+    _asStringKeyMap(normalized['source'])['run_id'],
+    _asStringKeyMap(normalized['source'])['runId'],
+  ]);
+
+  return _normalizeTimelineCard(<String, dynamic>{
+    'card_id': cardId,
+    'tool_call_id': cardId,
+    'step_index': fallbackIndex,
+    if (title.isNotEmpty) 'title': title,
+    if (title.isNotEmpty) 'summary': title,
+    if (compileKind.isNotEmpty) 'compile_kind': compileKind,
+    if (isVlm) ...<String, dynamic>{
+      'source': 'vlm',
+      'tool_type': 'vlm',
+      'span_kind': toolName == 'vlm_task' ? 'vlm_task' : 'vlm_action',
+    },
+    if (sourceRunId.isNotEmpty) 'source_run_id': sourceRunId,
+    'success': _asBool(normalized['success']) ?? true,
+    if (durationMs != null) 'duration_ms': durationMs,
+    'header': <String, dynamic>{
+      'step_index': fallbackIndex,
+      if (title.isNotEmpty) 'title': title,
+      if (toolName.isNotEmpty) 'tool_name': toolName,
+      if (compileKind.isNotEmpty) 'compile_kind': compileKind,
+      'success': _asBool(normalized['success']) ?? true,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (isVlm) ...<String, dynamic>{
+        'source': 'vlm',
+        'tool_type': 'vlm',
+        'span_kind': toolName == 'vlm_task' ? 'vlm_task' : 'vlm_action',
+      },
+    },
+    'tool_call': <String, dynamic>{
+      'id': cardId,
+      if (toolName.isNotEmpty) 'name': toolName,
+      if (args != null) 'arguments': args,
+    },
+    if (!_isEmptyJsonValue(result)) 'result': result,
+    'compile_result': _functionStepCompileResult(normalized),
+    'function_step': normalized,
+  }, fallbackIndex);
+}
+
+String _functionStepCardId(Map<String, dynamic> step, int fallbackIndex) {
+  return _firstNonBlank([
+    step['id'],
+    step['step_id'],
+    step['stepId'],
+    step['tool_call_id'],
+    step['toolCallId'],
+    'function_step_${fallbackIndex + 1}',
+  ]);
+}
+
+dynamic _functionStepResult(Map<String, dynamic> step) {
+  return _decodeJsonIfNeeded(
+    _firstPresent([
+      step['observed_result'],
+      step['observedResult'],
+      step['result'],
+      step['output'],
+      step['response'],
+      step['error_message'],
+      step['errorMessage'],
+      step['error'],
+    ]),
+  );
+}
+
+Map<String, dynamic> _functionStepCompileResult(Map<String, dynamic> step) {
+  return <String, dynamic>{
+    if (step.containsKey('kind')) 'kind': step['kind'],
+    if (step.containsKey('executor')) 'executor': step['executor'],
+    if (step.containsKey('postcondition'))
+      'postcondition': step['postcondition'],
+    if (step.containsKey('tool_binding')) 'tool_binding': step['tool_binding'],
+    if (step.containsKey('toolBinding')) 'tool_binding': step['toolBinding'],
+    if (step.containsKey('agent_call')) 'agent_call': step['agent_call'],
+    if (step.containsKey('agentCall')) 'agent_call': step['agentCall'],
+    if (step.containsKey('fallback_reason'))
+      'fallback_reason': step['fallback_reason'],
+    if (step.containsKey('fallbackReason'))
+      'fallback_reason': step['fallbackReason'],
+    if (step.containsKey('needs_agent')) 'needs_agent': step['needs_agent'],
+    if (step.containsKey('needsAgent')) 'needs_agent': step['needsAgent'],
+    if (step.containsKey('blocked_executor'))
+      'blocked_executor': step['blocked_executor'],
+    if (step.containsKey('blockedExecutor'))
+      'blocked_executor': step['blockedExecutor'],
+  };
+}
+
+bool _functionStepLooksLikeVlm(Map<String, dynamic> step, String toolName) {
+  final agentCall = _asStringKeyMap(step['agent_call'] ?? step['agentCall']);
+  final toolBinding = _asStringKeyMap(
+    step['tool_binding'] ?? step['toolBinding'],
+  );
+  final values = <String>[
+    toolName,
+    _firstNonBlank([step['tool_type'], step['toolType']]),
+    _firstNonBlank([step['source'], step['run_source'], step['runSource']]),
+    _firstNonBlank([step['compile_kind'], step['compileKind']]),
+    _firstNonBlank([step['kind']]),
+    _firstNonBlank([step['executor']]),
+    _firstNonBlank([
+      agentCall['tool_name'],
+      agentCall['toolName'],
+      agentCall['original_tool'],
+      agentCall['originalTool'],
+      agentCall['callable_tool'],
+      agentCall['callableTool'],
+    ]),
+    _firstNonBlank([toolBinding['tool'], toolBinding['kind']]),
+  ].map((value) => value.trim().toLowerCase()).toList(growable: false);
+  return values.any(
+    (value) =>
+        value == 'vlm' ||
+        value == 'vlm_task' ||
+        value == 'vlm_step' ||
+        value == 'vlm_action' ||
+        value.contains('vlm'),
+  );
 }
 
 Map<String, dynamic> _normalizeTimelineCard(

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:ui/features/task/pages/execution_history/function_run_result_sheet.dart';
+import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
 import 'package:ui/features/task/pages/execution_history/widgets/reusable_command_card.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
@@ -857,14 +858,13 @@ class _CommandFunctionDetailSheetState
                                 text: _text(context, '暂无步骤', 'No steps'),
                               )
                             else
-                              FunctionRunStepList(
+                              RunLogStyleFunctionStepList(
                                 title:
                                     '${_text(context, '执行步骤', 'Step results')} · ${detail.steps.length}',
                                 steps: detail.steps
                                     .map((step) => step.raw)
                                     .toList(growable: false),
                                 initiallyExpanded: true,
-                                showStatusIcon: false,
                                 actionBuilder: (context, index, rawStep) {
                                   if (index < 0 ||
                                       index >= detail.steps.length) {

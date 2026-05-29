@@ -9,6 +9,7 @@ import 'package:ui/l10n/generated/app_localizations.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/services/app_background_service.dart';
+import 'package:ui/services/run_log_function_enhancement_job_service.dart';
 import 'package:ui/services/scheduled_task_scheduler_service.dart';
 import 'package:ui/services/storage_service.dart';
 import 'package:ui/theme/app_theme_controller.dart';
@@ -63,6 +64,7 @@ Future<void> bootstrapMain(List<String> args) async {
   );
   WidgetsBinding.instance.allowFirstFrame();
   unawaited(ScheduledTaskSchedulerService.initialize());
+  unawaited(RunLogFunctionEnhancementJobService.resumePendingJobs());
   unawaited(OmnibotResourceService.ensureWorkspacePathsLoaded());
 }
 
@@ -98,6 +100,7 @@ Future<void> bootstrapSubEngine(List<String> args) async {
       child: MyApp(args: args),
     ),
   );
+  unawaited(RunLogFunctionEnhancementJobService.resumePendingJobs());
 }
 
 Brightness _resolveStartupBrightness(AppThemeMode mode) {
