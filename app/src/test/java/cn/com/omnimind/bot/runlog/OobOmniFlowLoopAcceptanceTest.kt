@@ -415,7 +415,7 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val oobResult = call["oob_result"] as? Map<*, *>
             assertNotNull(oobResult)
-            assertEquals("oob_fixed_replay", oobResult?.get("runner"))
+            assertEquals("oob_omniflow_loop", oobResult?.get("runner"))
             assertEquals(false, oobResult?.get("model_required"))
 
             val stepResults = call["step_results"] as? List<*>

@@ -10,8 +10,8 @@ package cn.com.omnimind.bot.runlog
  */
 object RunLogReplayPolicy {
     const val schemaVersion: String = "oob.runlog_replay_policy.v1"
-    const val fixedReplayOnly: Boolean = true
-    const val fixedReplayRunner: String = "oob_fixed_replay"
+    const val fixedReplayOnly: Boolean = false
+    const val fixedReplayRunner: String = "oob_omniflow_loop"
 
     val omniflowActions: Set<String> = setOf(
         "click",
@@ -44,6 +44,12 @@ object RunLogReplayPolicy {
         "scroll_up" to "swipe",
         "scroll_left" to "swipe",
         "scroll_right" to "swipe",
+        "back" to "press_back",
+        "pressback" to "press_back",
+        "press_back_button" to "press_back",
+        "home" to "press_home",
+        "presshome" to "press_home",
+        "press_home_button" to "press_home",
         "presskey" to "press_key",
         "key_event" to "press_key",
         "keyevent" to "press_key",

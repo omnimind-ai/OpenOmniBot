@@ -694,15 +694,12 @@ class VLMOperationService(
                 var vlmResult: VLMResult
                 var sceneTurn: SceneChatCompletionTurn? = null
                 var currentUserTextSnapshot = ""
-                val hasIndexedEvidenceForRetry =
-                    _context.currentPageSummary.contains("OOB Accessibility tree / indexed page evidence")
                 conversationState.updateStreamingReasoning("")
                 lastReasoningOverlay = ""
                 lastReasoningOverlayAt = 0L
 
                 while (true) {
-                    val includeCurrentScreenshot =
-                        toolCallRetryCount == 0 || !hasIndexedEvidenceForRetry
+                    val includeCurrentScreenshot = true
                     val requestScreenshot = screenshot.takeIf { includeCurrentScreenshot }
                     val requestMarkedScreenshot = markedScreenshot.takeIf { includeCurrentScreenshot }
                     val requestEnvelope = vlmClient.buildUIOperationRequest(

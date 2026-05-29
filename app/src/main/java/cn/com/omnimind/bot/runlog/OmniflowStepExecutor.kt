@@ -123,8 +123,8 @@ object OmniflowStepExecutor {
             StepArgsResult(
                 args = initialArgs,
                 meta = attemptedRemapResult.meta + mapOf(
-                    "fallback_replay_mode" to "fixed_replay",
-                    "fixed_replay_args_used" to true,
+                    "fallback_replay_mode" to "recorded_action_replay",
+                    "recorded_action_args_used" to true,
                 )
             )
         } else {
@@ -225,17 +225,20 @@ object OmniflowStepExecutor {
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         delay(POST_STEP_DELAY_MS)
-        val checker = if (fixedReplay) {
-            emptyMap()
-        } else {
-            beforeActionCheckerSummary(action, remapResult.meta, controlEffects)
-        }
+        val checker = replayCheckerSummary(
+            step = step,
+            action = action,
+            args = args,
+            fixedReplay = fixedReplay,
+            transfer = remapResult.meta,
+            controlEffects = controlEffects,
+        )
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
             "executor" to "omniflow",
             "model_free" to true,
-            "replay_mode" to if (actionTransferApplied) "action_transfer" else "fixed_replay",
+            "replay_mode" to replayMode(actionTransferApplied, transferRequested, remapResult.meta),
             "success" to true,
             "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
         ).apply {
@@ -249,6 +252,17 @@ object OmniflowStepExecutor {
                 put("control_effects", controlEffects)
             }
         }
+    }
+
+    private fun replayMode(
+        actionTransferApplied: Boolean,
+        transferRequested: Boolean,
+        transfer: Map<String, Any?>,
+    ): String = when {
+        actionTransferApplied -> "action_transfer"
+        transferRequested && transfer["recorded_action_args_used"] == true -> "recorded_action_replay"
+        transferRequested -> "action_transfer_skipped"
+        else -> "direct_replay"
     }
 
     fun remapStepArgs(step: Map<String, Any?>): StepArgsResult =
@@ -527,6 +541,34 @@ object OmniflowStepExecutor {
             "controllers" to controlEffects.mapNotNull { it["controller"]?.toString() }
                 .takeIf { it.isNotEmpty() },
         ).filterValues { it != null }
+    }
+
+    private suspend fun replayCheckerSummary(
+        step: Map<String, Any?>,
+        action: String,
+        args: Map<String, Any?>,
+        fixedReplay: Boolean,
+        transfer: Map<String, Any?>,
+        controlEffects: List<Map<String, Any?>>,
+    ): Map<String, Any?> {
+        if (action == "open_app") {
+            val postcondition = verifyPostcondition(step, action, args)
+            if (postcondition.isNotEmpty()) {
+                return linkedMapOf<String, Any?>(
+                    "phase" to "after_action",
+                    "effect" to "verify",
+                    "verified" to true,
+                    "action" to action,
+                ).apply {
+                    putAll(postcondition)
+                }
+            }
+        }
+        return if (fixedReplay) {
+            emptyMap()
+        } else {
+            beforeActionCheckerSummary(action, transfer, controlEffects)
+        }
     }
 
     private suspend fun runPreTransferControls(

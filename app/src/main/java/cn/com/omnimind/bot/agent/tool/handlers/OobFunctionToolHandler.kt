@@ -502,7 +502,7 @@ class OobFunctionToolHandler(
                 delegatedToolUsed -> "oob_function_mixed_runner"
                 else -> RunLogReplayPolicy.fixedReplayRunner
             },
-            "replay_mode" to if (RunLogReplayPolicy.fixedReplayOnly) "fixed_replay" else "action_transfer",
+            "replay_mode" to if (RunLogReplayPolicy.fixedReplayOnly) "fixed_replay" else "omniflow_loop",
             "step_count" to steps.size,
             "success_step_count" to successCount,
             "model_used" to false,
