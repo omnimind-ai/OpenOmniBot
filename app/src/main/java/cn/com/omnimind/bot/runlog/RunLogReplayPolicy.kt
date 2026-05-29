@@ -10,6 +10,8 @@ package cn.com.omnimind.bot.runlog
  */
 object RunLogReplayPolicy {
     const val schemaVersion: String = "oob.runlog_replay_policy.v1"
+    const val fixedReplayOnly: Boolean = true
+    const val fixedReplayRunner: String = "oob_fixed_replay"
 
     val omniflowActions: Set<String> = setOf(
         "click",

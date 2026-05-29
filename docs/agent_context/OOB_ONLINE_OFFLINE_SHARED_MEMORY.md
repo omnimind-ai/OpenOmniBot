@@ -1,7 +1,7 @@
 # OOB Online/Offline Shared Memory
 
 Status: Living implementation note
-Last Updated: 2026-05-26
+Last Updated: 2026-05-29
 
 This document is the shared memory for OOB's native OmniFlow layer, online VLM
 agent, offline replay path, RunLog conversion, UDEG recall, and prompt assembly.
@@ -120,8 +120,16 @@ Startup and device normalization:
 
 ## Current Invariants
 
-- The online agent still grounds every action on live screenshot/XML. Recall
-  guidance is context, not proof of task completion.
+- The online agent grounds every action on fresh live XML/indexed page evidence
+  and the current screenshot. Recall guidance is context, not proof of task
+  completion.
+- Online VLM precise actions are index-first: `click`, `input_text`, and
+  `long_press` prefer `element_index`; `scroll` prefers `scrollable_index`.
+  Coordinates are fallback only.
+- Before dispatching a precise action, `VLMOperationService` reads latest XML
+  once and re-grounds by stable `node_id`, then `element_index`, then unique
+  target description. Dynamic page changes no longer cause a pre-action
+  stability retry loop.
 - UDEG recall starts from page match. After a node is hit, the decision context
   is the node skill and its attached Function/segment capabilities. It must not
   globally scan every Function as the primary decision path.
@@ -1260,10 +1268,9 @@ For a complete local validation pass:
   `omniflow_run_1779792168364_1`; `oob_function_run` took 4,311 ms
   (`runner_duration_ms=4,305`) for 2 steps.
 - Provider config:
-  `bash scripts/configure-oob-model-provider.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest`
-  succeeded and bound `scene.dispatch.model`, `scene.vlm.operation.primary`,
-  `scene.compactor.context`, and `scene.compactor.context.chat` to
-  `profile-dashscope`.
+  configure the target device with the chosen provider profile/model before
+  online Agent/VLM validation. The validation record should note only whether
+  the relevant scenes were bound successfully, not a hard-coded provider name.
 - Agent-conversation Function management:
   `DebugAgentConversationFunctionReceiver` and
   `scripts/oob-agent-conversation-function-validation.sh` were added so a real

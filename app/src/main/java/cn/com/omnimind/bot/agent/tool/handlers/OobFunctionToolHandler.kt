@@ -1,6 +1,4 @@
 package cn.com.omnimind.bot.agent.tool.handlers
-
-import cn.com.omnimind.assists.task.vlmserver.VLMSettingsToggleCompletionChecker
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
@@ -193,7 +191,7 @@ class OobFunctionToolHandler(
         env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment? = null,
         parentToolCallId: String? = null,
         toolName: String = functionId,
-        allowAgentFallback: Boolean = true,
+        allowAgentFallback: Boolean = false,
         allowToolDelegationWithoutRouter: Boolean = false,
         callStack: List<String> = emptyList(),
     ): Map<String, Any?> {
@@ -227,41 +225,19 @@ class OobFunctionToolHandler(
             callStack
         }
         val steps = materializedSteps(materializedSpec)
-        val terminalPostconditions = terminalPostconditions(materializedSpec, spec)
-        var terminalEvaluation = evaluateTerminalPostconditions(terminalPostconditions)
-        if (terminalEvaluation == null || !terminalEvaluation.satisfied) {
-            accessibilityPreflightFailure(
-                functionId = functionId,
-                spec = spec,
-                auditRunId = auditRunId,
-                startedAtMs = runStartedAtMs,
-                steps = steps,
-            )?.let { return it }
-        }
+        accessibilityPreflightFailure(
+            functionId = functionId,
+            spec = spec,
+            auditRunId = auditRunId,
+            startedAtMs = runStartedAtMs,
+            steps = steps,
+        )?.let { return it }
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
         var modelRequired = false
         var failureReason: String? = null
 
-        if (terminalEvaluation?.satisfied == true) {
-            stepResults += terminalSatisfiedSkipResults(
-                steps = steps,
-                startIndex = 0,
-                evaluation = terminalEvaluation,
-            )
-        }
-
         for ((index, step) in steps.withIndex()) {
-            if (terminalEvaluation?.satisfied == true) break
-            evaluateTerminalPostconditions(terminalPostconditions)?.takeIf { it.satisfied }?.let { evaluation ->
-                terminalEvaluation = evaluation
-                stepResults += terminalSatisfiedSkipResults(
-                    steps = steps,
-                    startIndex = index,
-                    evaluation = evaluation,
-                )
-                break
-            }
             val stepStartedAtMs = System.currentTimeMillis()
             toolHandle?.throwIfStopRequested()
             val stepIndex = index + 1
@@ -509,32 +485,6 @@ class OobFunctionToolHandler(
             }
         }
 
-        if (failureReason == null && terminalPostconditions.isNotEmpty() && terminalEvaluation?.satisfied != true) {
-            terminalEvaluation = evaluateTerminalPostconditions(terminalPostconditions)
-            if (terminalEvaluation?.satisfied != true) {
-                val finishedAtMs = System.currentTimeMillis()
-                val summary = terminalEvaluation?.summary
-                    ?: "Terminal postcondition failed"
-                stepResults += linkedMapOf<String, Any?>(
-                    "step_id" to "terminal_postcondition",
-                    "index" to stepResults.size,
-                    "tool" to "terminal_postcondition",
-                    "executor" to "omniflow",
-                    "model_free" to true,
-                    "success" to false,
-                    "needs_agent" to false,
-                    "fallback_available" to false,
-                    "error_code" to "OOB_TERMINAL_POSTCONDITION_FAILED",
-                    "summary" to summary,
-                    "terminal_postconditions" to terminalEvaluation?.results,
-                    "started_at_ms" to finishedAtMs,
-                    "finished_at_ms" to finishedAtMs,
-                    "duration_ms" to 0L,
-                ).filterValues { it != null }
-                failureReason = summary
-            }
-        }
-
         val runFinishedAtMs = System.currentTimeMillis()
         val successCount = stepResults.count { it["success"] != false }
         val allSuccess = stepResults.size == steps.size && stepResults.none { it["success"] == false }
@@ -550,14 +500,15 @@ class OobFunctionToolHandler(
             "runner" to when {
                 modelRequired -> "oob_function_agent_fallback_required"
                 delegatedToolUsed -> "oob_function_mixed_runner"
-                else -> "oob_omniflow_replay"
+                else -> RunLogReplayPolicy.fixedReplayRunner
             },
+            "replay_mode" to if (RunLogReplayPolicy.fixedReplayOnly) "fixed_replay" else "action_transfer",
             "step_count" to steps.size,
             "success_step_count" to successCount,
             "model_used" to false,
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
-            "fallback_available" to (!allSuccess || modelRequired),
+            "fallback_available" to (allowAgentFallback && modelRequired),
             "error_code" to stepResults.firstOrNull { it["success"] == false }
                 ?.get("error_code"),
             "error_message" to failureReason,
@@ -1101,7 +1052,7 @@ class OobFunctionToolHandler(
             "source" to "omniflow_replay",
             "runSource" to "omniflow_replay",
             "run_source" to "omniflow_replay",
-            "runner" to (result?.get("runner") ?: "oob_omniflow_replay"),
+            "runner" to (result?.get("runner") ?: RunLogReplayPolicy.fixedReplayRunner),
             "toolTitle" to if (functionId.isNotBlank()) {
                 "${helper.localized("复用指令")}：$functionId"
             } else {
@@ -1481,145 +1432,6 @@ class OobFunctionToolHandler(
         ).filterValues { it != null }
     }
 
-    private suspend fun evaluateTerminalPostconditions(
-        postconditions: List<Map<String, Any?>>,
-    ): TerminalPostconditionEvaluation? {
-        if (postconditions.isEmpty()) return null
-        val results = postconditions.mapNotNull { postcondition ->
-            evaluateTerminalPostcondition(postcondition)
-        }
-        if (results.isEmpty()) return null
-        val satisfied = results.all { it["success"] == true }
-        val summary = results.joinToString("; ") { result ->
-            firstNonBlank(result["summary"], result["reason"], result["kind"])
-        }.ifBlank {
-            if (satisfied) "Terminal postcondition satisfied" else "Terminal postcondition failed"
-        }
-        return TerminalPostconditionEvaluation(
-            satisfied = satisfied,
-            summary = summary,
-            results = results,
-        )
-    }
-
-    private suspend fun evaluateTerminalPostcondition(
-        postcondition: Map<String, Any?>,
-    ): Map<String, Any?>? {
-        val kind = firstNonBlank(postcondition["kind"]).lowercase()
-        if (kind != "android_settings_toggle") return null
-        val goal = firstNonBlank(postcondition["goal"], postcondition["description"])
-        if (goal.isBlank()) return null
-        val snapshot = runCatching {
-            OmniflowStepExecutor.currentPageSnapshotForRecovery("terminal_postcondition")
-        }.getOrDefault(emptyMap())
-        val currentXml = snapshot["observation_xml"]?.toString()
-        val currentPackageName = firstNonBlank(
-            snapshot["effective_package"],
-            snapshot["package_name"],
-        )
-        val xmlResult = VLMSettingsToggleCompletionChecker.check(
-            goal = goal,
-            currentXml = currentXml,
-            stateSnapshot = VLMSettingsToggleCompletionChecker.StateSnapshot(),
-            currentPackageName = currentPackageName,
-            targetPackageName = "com.android.settings",
-        )
-        val deviceState = VLMSettingsToggleCompletionChecker.readDeviceState(context)
-        val deviceOnlyResult = VLMSettingsToggleCompletionChecker.check(
-            goal = goal,
-            currentXml = null,
-            stateSnapshot = deviceState,
-            currentPackageName = currentPackageName,
-            targetPackageName = "com.android.settings",
-        )
-        val deviceAwareResult = VLMSettingsToggleCompletionChecker.check(
-            goal = goal,
-            currentXml = currentXml,
-            stateSnapshot = deviceState,
-            currentPackageName = currentPackageName,
-            targetPackageName = "com.android.settings",
-        )
-        val result = when {
-            xmlResult.complete && xmlResult.stateSource == "xml_checked" -> xmlResult
-            hasAuthoritativeToggleState(deviceOnlyResult) -> deviceOnlyResult
-            else -> xmlResult.takeIf { it.complete } ?: deviceAwareResult
-        }
-        return linkedMapOf<String, Any?>(
-            "kind" to kind,
-            "success" to result.complete,
-            "reason" to result.reason,
-            "summary" to result.summary.ifBlank { result.reason },
-            "goal" to goal,
-            "source" to firstNonBlank(postcondition["source"]).takeIf { it.isNotBlank() },
-            "device_state" to linkedMapOf(
-                "wifi_enabled" to deviceState.wifiEnabled,
-                "bluetooth_enabled" to deviceState.bluetoothEnabled,
-            ).filterValues { it != null },
-            "state_source" to result.stateSource.takeIf { it.isNotBlank() },
-            "device_state_satisfied" to deviceOnlyResult.complete,
-            "xml_state_satisfied" to xmlResult.complete,
-            "current_package" to currentPackageName.takeIf { it.isNotBlank() },
-        ).filterValues { it != null }
-    }
-
-    private fun hasAuthoritativeToggleState(
-        result: VLMSettingsToggleCompletionChecker.Result,
-    ): Boolean =
-        result.complete || result.reason.startsWith("state_mismatch")
-
-    private fun terminalPostconditions(
-        materializedSpec: Map<String, Any?>,
-        originalSpec: Map<String, Any?>,
-    ): List<Map<String, Any?>> {
-        val execution = stringMap(materializedSpec["execution"])
-        val originalExecution = stringMap(originalSpec["execution"])
-        val raw = listArg(materializedSpec["terminal_postconditions"]) +
-            listArg(execution["terminal_postconditions"]) +
-            listArg(originalSpec["terminal_postconditions"]) +
-            listArg(originalExecution["terminal_postconditions"])
-        val seen = linkedSetOf<String>()
-        return raw.mapNotNull { item ->
-            stringMap(item).takeIf { it.isNotEmpty() }
-        }.filter { postcondition ->
-            val key = listOf(
-                firstNonBlank(postcondition["kind"]),
-                firstNonBlank(postcondition["goal"], postcondition["description"]),
-            ).joinToString("::")
-            seen.add(key)
-        }
-    }
-
-    private fun terminalSatisfiedSkipResults(
-        steps: List<Map<String, Any?>>,
-        startIndex: Int,
-        evaluation: TerminalPostconditionEvaluation?,
-    ): List<Map<String, Any?>> {
-        val now = System.currentTimeMillis()
-        return steps.drop(startIndex).mapIndexed { offset, step ->
-            val index = startIndex + offset
-            linkedMapOf<String, Any?>(
-                "step_id" to (step["id"]?.toString() ?: "step_${index + 1}"),
-                "index" to index,
-                "tool" to firstNonBlank(
-                    step["tool"],
-                    step["callable_tool"],
-                    step["omniflow_action"],
-                    step["local_action"],
-                ),
-                "executor" to "omniflow",
-                "model_free" to true,
-                "skipped" to true,
-                "skip_reason" to "terminal_postcondition_satisfied",
-                "success" to true,
-                "summary" to (evaluation?.summary ?: "Terminal postcondition already satisfied"),
-                "terminal_postconditions" to evaluation?.results,
-                "started_at_ms" to now,
-                "finished_at_ms" to now,
-                "duration_ms" to 0L,
-            ).filterValues { it != null }
-        }
-    }
-
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
         return OobFunctionSchemaBuilder.materializedSteps(materializedSpec)
     }
@@ -1708,7 +1520,7 @@ class OobFunctionToolHandler(
             "description" to spec["description"]?.toString().orEmpty(),
             "source" to "omniflow_replay",
             "run_source" to "omniflow_replay",
-            "runner" to "oob_omniflow_replay",
+            "runner" to RunLogReplayPolicy.fixedReplayRunner,
             "step_count" to 0,
             "success_step_count" to 0,
             "model_used" to false,
@@ -1822,12 +1634,6 @@ class OobFunctionToolHandler(
         val targetTool: String,
         val targetArgs: Map<String, Any?>,
         val functionId: String,
-    )
-
-    private data class TerminalPostconditionEvaluation(
-        val satisfied: Boolean,
-        val summary: String,
-        val results: List<Map<String, Any?>>,
     )
 
     private companion object {

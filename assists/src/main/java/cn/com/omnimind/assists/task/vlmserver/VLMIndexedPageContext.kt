@@ -203,6 +203,65 @@ object VLMIndexedPageContext {
         )
     }
 
+    fun elementTargetByNodeId(
+        currentXml: String?,
+        displayWidth: Int,
+        displayHeight: Int,
+        nodeId: String?
+    ): IndexedTarget? {
+        val normalizedNodeId = nodeId?.trim().orEmpty()
+        if (normalizedNodeId.isBlank()) return null
+        val snapshot = buildIndexedSnapshot(currentXml, displayWidth, displayHeight) ?: return null
+        val index = snapshot.candidates.indexOfFirst { it.nodeId == normalizedNodeId }
+        if (index < 0) return null
+        val node = snapshot.candidates[index]
+        return IndexedTarget(
+            index = index,
+            label = node.displayLabel.take(MAX_LABEL_CHARS),
+            centerX = node.bounds.centerX,
+            centerY = node.bounds.centerY,
+            nodeId = node.nodeId.takeIf { it.isNotBlank() }
+        )
+    }
+
+    fun uniqueElementTargetByDescription(
+        currentXml: String?,
+        displayWidth: Int,
+        displayHeight: Int,
+        targetDescription: String,
+        preferEditable: Boolean = false
+    ): IndexedTarget? {
+        val query = normalizeMatchText(targetDescription)
+        if (query.isBlank()) return null
+        val snapshot = buildIndexedSnapshot(currentXml, displayWidth, displayHeight) ?: return null
+        val scored = snapshot.candidates
+            .mapIndexedNotNull { index, node ->
+                val score = descriptionMatchScore(query, node, preferEditable)
+                if (score >= MIN_UNIQUE_MATCH_SCORE) {
+                    IndexedNodeScore(index = index, node = node, score = score)
+                } else {
+                    null
+                }
+            }
+            .sortedWith(
+                compareByDescending<IndexedNodeScore> { it.score }
+                    .thenBy { it.node.bounds.top }
+                    .thenBy { it.node.bounds.left }
+            )
+        val best = scored.firstOrNull() ?: return null
+        val competing = scored.drop(1).firstOrNull()
+        if (competing != null && best.score - competing.score < MIN_UNIQUE_MATCH_MARGIN) {
+            return null
+        }
+        return IndexedTarget(
+            index = best.index,
+            label = best.node.displayLabel.take(MAX_LABEL_CHARS),
+            centerX = best.node.bounds.centerX,
+            centerY = best.node.bounds.centerY,
+            nodeId = best.node.nodeId.takeIf { it.isNotBlank() }
+        )
+    }
+
     fun scrollTarget(
         currentXml: String?,
         displayWidth: Int,
@@ -409,6 +468,60 @@ object VLMIndexedPageContext {
     private fun firstNonBlank(vararg values: String): String =
         values.firstOrNull { it.isNotBlank() }.orEmpty()
 
+    private fun descriptionMatchScore(
+        normalizedQuery: String,
+        node: PageNode,
+        preferEditable: Boolean
+    ): Int {
+        val labels = listOf(
+            node.displayLabel,
+            node.formLabel,
+            node.resourceId.substringAfterLast('/').substringAfterLast(':'),
+            node.label
+        )
+            .map(::normalizeMatchText)
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (labels.isEmpty()) return 0
+
+        val queryTokens = normalizedQuery.split(' ').filter { it.length >= 2 }
+        if (queryTokens.isEmpty()) return 0
+        var best = 0
+        labels.forEach { label ->
+            val labelTokens = label.split(' ').filter { it.length >= 2 }
+            val tokenCoverage = queryTokens.count { token ->
+                labelTokens.any { labelToken ->
+                    labelToken == token || labelToken.contains(token) || token.contains(labelToken)
+                }
+            }
+            val base = when {
+                label == normalizedQuery -> 100
+                label.contains(normalizedQuery) -> 92
+                normalizedQuery.contains(label) && label.length >= 4 -> 88
+                tokenCoverage == queryTokens.size -> 82
+                else -> 0
+            }
+            if (base > best) best = base
+        }
+        if (best == 0) return 0
+        var adjusted = best
+        if (preferEditable) {
+            adjusted += when {
+                node.editable -> 10
+                node.isFormFieldLike -> 6
+                else -> -18
+            }
+        }
+        if (!node.actionable) adjusted -= 6
+        return adjusted.coerceIn(0, 120)
+    }
+
+    private fun normalizeMatchText(value: String): String =
+        value.lowercase()
+            .replace(Regex("""[^a-z0-9\u4e00-\u9fa5]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
     private fun norm(value: Float, origin: Float, size: Float): Int =
         (((value - origin) / size.coerceAtLeast(1f)) * 1000f)
             .roundToInt()
@@ -427,6 +540,12 @@ object VLMIndexedPageContext {
         val scrollables: List<PageNode>,
         val focusedEditable: PageNode?,
         val formFields: List<PageNode>
+    )
+
+    private data class IndexedNodeScore(
+        val index: Int,
+        val node: PageNode,
+        val score: Int
     )
 
     private data class PageNode(
@@ -617,6 +736,8 @@ object VLMIndexedPageContext {
     private const val MAX_SECTION_CHARS = 2_600
     private const val MAX_CONTEXT_CHARS = 3_600
     private const val MARKED_SCREENSHOT_JPEG_QUALITY = 92
+    private const val MIN_UNIQUE_MATCH_SCORE = 82
+    private const val MIN_UNIQUE_MATCH_MARGIN = 8
     private val FORM_FIELD_TERMS = setOf(
         "name",
         "phone",

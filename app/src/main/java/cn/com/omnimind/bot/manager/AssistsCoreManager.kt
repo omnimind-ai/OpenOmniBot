@@ -2115,7 +2115,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 payload["runner"],
                 payload["runRunner"],
                 payload["run_runner"]
-            ).ifBlank { "oob_omniflow_replay" }
+            ).ifBlank { "oob_fixed_replay" }
         }
         return linkedMapOf(
             "card_id" to entryId,
@@ -2222,6 +2222,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             (normalizedToolName in setOf("call_tool", "oob_tool_call") && hasFunctionIdArgument) ||
             evidence.any { value ->
                 value.contains("oob_omniflow_replay") ||
+                    value.contains("oob_fixed_replay") ||
                     value.contains("omniflow_replay") ||
                     value.contains("oob_function_runner") ||
                     value == OOB_REUSABLE_EXECUTION_STATUS_COMPLETED_LOCAL
@@ -4019,7 +4020,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             functionId = functionId,
                             spec = spec,
                             materializedSpec = materializedSpec,
-                            allowAgentFallback = true,
+                            allowAgentFallback = false,
                             allowToolDelegationWithoutRouter = false
                         )
                     }

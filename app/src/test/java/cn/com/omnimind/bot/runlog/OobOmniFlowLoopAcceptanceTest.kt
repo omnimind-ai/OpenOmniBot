@@ -130,7 +130,7 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
-    fun `replay skips settings toggle function when terminal state already satisfied`() = runBlocking {
+    fun `fixed replay ignores legacy terminal postconditions and executes steps`() = runBlocking {
         val context = TempFilesContext()
         val backend = RecordingOmniflowBackend(
             initialPackage = "com.android.settings",
@@ -184,8 +184,11 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(false, call["fallback"])
             val results = call["step_results"] as? List<*>
             val firstResult = results?.single() as? Map<*, *>
-            assertEquals(true, firstResult?.get("skipped"))
-            assertEquals("terminal_postcondition_satisfied", firstResult?.get("skip_reason"))
+            assertEquals("omniflow", firstResult?.get("executor"))
+            assertEquals("click", firstResult?.get("tool"))
+            assertEquals(true, firstResult?.get("success"))
+            assertFalse(firstResult?.containsKey("skipped") == true)
+            assertEquals(listOf(360f to 513f), backend.clicks)
         } finally {
             backendHandle.close()
             context.root.deleteRecursively()
@@ -412,7 +415,7 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val oobResult = call["oob_result"] as? Map<*, *>
             assertNotNull(oobResult)
-            assertEquals("oob_omniflow_replay", oobResult?.get("runner"))
+            assertEquals("oob_fixed_replay", oobResult?.get("runner"))
             assertEquals(false, oobResult?.get("model_required"))
 
             val stepResults = call["step_results"] as? List<*>
@@ -1221,11 +1224,12 @@ class OobOmniFlowLoopAcceptanceTest {
     ) : OmniflowActionBackend {
         private var currentPackage = initialPackage
         val launchedPackages = mutableListOf<String>()
+        val clicks = mutableListOf<Pair<Float, Float>>()
 
         override fun isReady(): Boolean = true
 
         override suspend fun click(x: Float, y: Float) {
-            error("click should not be used by this test")
+            clicks += x to y
         }
 
         override suspend fun longPress(x: Float, y: Float, durationMs: Long) {

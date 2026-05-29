@@ -5,7 +5,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 class OmniflowStepExecutorTest {
@@ -118,7 +117,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute records only pre action checker diagnostics`() = runBlocking {
+    fun `execute uses fixed replay without checker diagnostics`() = runBlocking {
         val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
@@ -144,10 +143,13 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
+            assertEquals("fixed_replay", result["replay_mode"])
             assertFalse(result.containsKey("postcondition"))
-            val checker = result["checker"] as Map<*, *>
-            assertEquals("before_action", checker["phase"])
-            assertEquals("continue", checker["effect"])
+            assertFalse(result.containsKey("checker"))
+            assertFalse(result.containsKey("control_effects"))
+            val click = backend.clickPoints.single()
+            assertEquals(120f, click.first, 0.01f)
+            assertEquals(240f, click.second, 0.01f)
         }
     }
 
@@ -586,7 +588,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `point transfer preserves intra node offset for webview regions`() = runBlocking {
+    fun `fixed replay preserves recorded webview coordinates`() = runBlocking {
         val backend = FakeBackend(beforeXml = WEBVIEW_CURRENT_XML, afterXml = WEBVIEW_CURRENT_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
@@ -604,41 +606,41 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
+            assertEquals("fixed_replay", result["replay_mode"])
             val click = backend.clickPoints.single()
-            assertEquals(360f, click.first, 0.01f)
-            assertEquals(440f, click.second, 0.01f)
-            assertFalse("transfer must not collapse webview clicks to target node center", click.first == 600f && click.second == 600f)
+            assertEquals(180f, click.first, 0.01f)
+            assertEquals(220f, click.second, 0.01f)
         }
     }
 
     @Test
-    fun `coordinate remap abstains without anchor match by default`() = runBlocking {
+    fun `coordinate remap miss falls back to fixed replay coordinates`() = runBlocking {
         val backend = FakeBackend(beforeXml = AFTER_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
-            try {
-                OmniflowStepExecutor.execute(
-                    step = mapOf(
-                        "executor" to "omniflow",
-                        "omniflow_action" to "click",
-                        "coordinate_hook" to "omniflow",
-                        "args" to mapOf("x" to 120, "y" to 240),
-                        "source_context" to mapOf(
-                            "src_ctx" to mapOf("page" to SOURCE_XML),
-                        ),
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
                     ),
-                    stepId = "step_no_anchor",
-                    stepTitle = "click stale target",
-                )
-                fail("Expected strict action transfer to abstain")
-            } catch (expected: OmniflowStepExecutor.ExecutionException) {
-                assertEquals("OOB_ACTION_TRANSFER_FAILED", expected.errorCode)
-                assertEquals("no_anchor_match", expected.diagnostics["reason"])
-            }
+                ),
+                stepId = "step_no_anchor",
+                stepTitle = "click stale target",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals("fixed_replay", result["replay_mode"])
+            val click = backend.clickPoints.single()
+            assertEquals(120f, click.first, 0.01f)
+            assertEquals(240f, click.second, 0.01f)
         }
     }
 
     @Test
-    fun `pre action checker dismisses blocking ad overlay before transfer`() = runBlocking {
+    fun `fixed replay does not dismiss blocking overlay before recorded click`() = runBlocking {
         val backend = FakeBackend(beforeXml = AD_OVERLAY_XML, afterXml = SOURCE_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
@@ -656,15 +658,16 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            val effects = result["control_effects"] as List<*>
-            val first = effects.single() as Map<*, *>
-            assertEquals("dismiss_blocking_overlay", first["controller"])
-            assertEquals(2, backend.clickPoints.size)
+            assertEquals("fixed_replay", result["replay_mode"])
+            assertFalse(result.containsKey("control_effects"))
+            assertEquals(1, backend.clickPoints.size)
+            assertEquals(120f, backend.clickPoints.single().first, 0.01f)
+            assertEquals(240f, backend.clickPoints.single().second, 0.01f)
         }
     }
 
     @Test
-    fun `pre action checker hides keyboard when it obscures target`() = runBlocking {
+    fun `fixed replay does not hide keyboard before recorded click`() = runBlocking {
         val backend = FakeBackend(beforeXml = KEYBOARD_XML, afterXml = KEYBOARD_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
@@ -678,10 +681,12 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            assertEquals(1, backend.hideKeyboardCount)
-            val effects = result["control_effects"] as List<*>
-            val first = effects.single() as Map<*, *>
-            assertEquals("hide_keyboard_if_obscuring", first["controller"])
+            assertEquals("fixed_replay", result["replay_mode"])
+            assertEquals(0, backend.hideKeyboardCount)
+            assertFalse(result.containsKey("control_effects"))
+            val click = backend.clickPoints.single()
+            assertEquals(540f, click.first, 0.01f)
+            assertEquals(1720f, click.second, 0.01f)
         }
     }
 

@@ -7,11 +7,11 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 ## Step Guidance Essentials
 
-- AndroidWorld first-step policy lives here; choose the simplest action that changes one variable, then verify.
-- M3A/Mobilerun-style per-step loop: observe one current screenshot,
-  Accessibility tree / indexed UI state, short history, and previous tool
-  result; choose one action, then use after-action feedback to correct the next
-  step. Marked screenshots are optional fallback evidence, not the default.
+- First-step policy lives here; choose the simplest action that changes one variable, then verify.
+- M3A/Mobilerun-style per-step loop: observe one fresh Accessibility tree /
+  indexed UI state, current screenshot, short history, and previous tool result;
+  choose one action, then use after-action feedback to correct the next step.
+  Marked screenshots are optional fallback evidence, not the default.
 - Mobilerun-style structured loop is a reference pattern, not a runtime
   replacement: inject current device state, indexed page evidence, screenshot,
   and the previous tool result; require exactly one executable tool call; then
@@ -25,11 +25,17 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
   black.
 - OOB indexed page evidence: choose by visible label/role; include `element_index`
   or `scrollable_index` when available and emit 0-1000 normalized centers as fallback.
+  The runtime will re-ground clicks/input/long-press by stable `node_id`,
+  `element_index`, or unique target description against the latest XML before
+  dispatch.
 - Pass `packageName` when known; derive unknown packages from installed apps.
 - Permission/onboarding: choose safe Continue/Allow/OK, not Deny/Delete/Pay.
 - Focused editable input: use `type`; otherwise click intended edit/search field first.
-- Visible but not focused editable input: use `input_text(target_description, content, x, y)` so the field is grounded before typing.
-- Slider/seekbar: 0-1000 normalized; `Display brightness`: do not click; max x1=70,y1=110,x2=990,y2=110; min x1=990,y1=110,x2=10,y2=110.
+- Visible but not focused editable input: use
+  `input_text(target_description, content, element_index?, x, y)` so the field is
+  grounded before typing.
+- Slider/seekbar: use a horizontal drag toward the requested endpoint; do not
+  repeat taps on the thumb or hard-code screen-specific coordinates.
 - Numeric keypad targets: click visible digit buttons; do not `type`.
 - After each action, read `screen_changed`, `appeared_texts`,
   `disappeared_texts`, `after_visible_texts`, and `after_focused_editable` from
@@ -50,7 +56,9 @@ connected by artifacts, but do not merge their responsibilities.
 2. For every action turn, read one fresh current-page snapshot: current package,
    Accessibility XML, indexed UI evidence, screenshot, display size, and
    timestamp. Reuse it only for tool-call format correction on the same
-   unchanged screen. Page-stability retry and the next action must read again.
+   unchanged screen. Before dispatching a precise action, read latest XML once
+   and re-ground against it; do not fail the turn just because the page changed
+   during model latency.
 3. Build dynamic page context only from that fresh snapshot. UDEG recall is:
    `page match -> UDEG node -> node skill-like decision context -> VLM/tool decision`.
    The UDEG node skill is OOB's page-level app-card equivalent. Inject it into
@@ -223,8 +231,8 @@ Use `vlm_task` for live Android GUI work:
 
 ```json
 {
-  "goal": "From the Settings home screen, scroll until About phone is visible, open it, verify the About phone page is visible, then finish.",
-  "packageName": "com.android.settings",
+  "goal": "From the target app home screen, navigate to the requested page, verify the visible finish condition, then finish.",
+  "packageName": "<target-package>",
   "startFromCurrent": false,
   "maxSteps": 12,
   "needSummary": true
@@ -406,10 +414,10 @@ adb -s emulator-5556 shell cat /sdcard/oob_verify.xml | rg 'Display|Brightness|t
 Treat the task as verified only when the VLM/Function result and the live
 foreground package/page agree.
 
-## First-Step AndroidWorld Rules
+## First-Step Runtime Rules
 
-Keep AndroidWorld first-step behavior in this skill guidance. Do not encode
-task-suite-specific prompt policy in the core VLM first-step optimizer.
+Keep first-step behavior in this skill guidance. Do not encode benchmark-suite
+or app-specific prompt policy in the core VLM first-step optimizer.
 
 For the AndroidWorld/M3A alignment method, see
 `references/androidworld-m3a-method.md`. This is a method record only: it does
@@ -510,11 +518,12 @@ The script prints a compact summary by default; use `--raw-json` only when the
 full app-side payload is needed for debugging.
 
 To validate that an online Agent conversation can register and run a Function
-by calling the tools itself, configure the provider and run:
+by calling the tools itself, configure the provider for your target device and
+run:
 
 ```bash
-bash scripts/configure-oob-model-provider.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest
-scripts/oob-agent-conversation-function-validation.sh --device emulator-5554 --profile-id profile-dashscope --model qwen-vl-max-latest
+bash scripts/configure-oob-model-provider.sh --device <device-serial> --profile-id <profile-id> --model <model>
+scripts/oob-agent-conversation-function-validation.sh --device <device-serial> --profile-id <profile-id> --model <model>
 ```
 
 This validation starts a real in-app Agent run through `AgentRunService` with
@@ -561,18 +570,18 @@ Simple registration example:
 
 ```json
 {
-  "functionId": "open_android_settings",
-  "name": "Open Android Settings",
-  "description": "Launch Android Settings from any app.",
-  "packageName": "com.android.settings",
+  "functionId": "open_target_app",
+  "name": "Open Target App",
+  "description": "Launch the target app from any app.",
+  "packageName": "<target-package>",
   "steps": [
     {
       "action": "open_app",
-      "packageName": "com.android.settings"
+      "packageName": "<target-package>"
     },
     {
       "action": "finished",
-      "content": "Settings opened"
+      "content": "Target app opened"
     }
   ]
 }
@@ -589,7 +598,7 @@ For page-scoped recall, include:
 {
   "sourcePage": {
     "xml": "<hierarchy>...</hierarchy>",
-    "packageName": "com.android.settings"
+    "packageName": "<target-package>"
   }
 }
 ```
@@ -638,27 +647,16 @@ Token control:
 - If a searchable list still does not expose the requested target after bounded
   scanning, use a visible search affordance instead of continuing a scroll loop.
   Search for the pending target label, then click the matching result.
-- For sliders, seekbars, and system panels such as brightness or volume, never
-  repeat the same `click` on the slider. Use the `scroll` action as a horizontal
-  drag to the actual endpoint: to set max, set `x1` near the left/current thumb
-  and `x2` at 90-95% of screen or slider width at the slider y. On a 720px wide
-  AndroidWorld phone, action arguments are 0-1000 normalized coordinates: if
-  XML only shows `Display brightness`, the valid next action is
-  `scroll(x1=70,y1=110,x2=990,y2=110)`, which executes at the far-right safe
-  edge, not `click`. To set min, use a leftward drag from the far right to the
-  far left, `scroll(x1=990,y1=110,x2=10,y2=110)`. Do not describe a min action
-  as "scroll left" while emitting rightward coordinates such as
-  `x1=50,x2=702`; `x1` must be greater than `x2` for minimum brightness. Do
-  not stop around the middle such as executed `x2=490`, and do not settle for
-  executed `x2=680` when the task asks for maximum brightness.
-- For nested Settings pages such as Apps > Default apps, if the task lists
-  multiple rows (for example Browser app before Phone app), click the first
+- For sliders, seekbars, and similar system panels, never repeat the same
+  `click` on the slider. Use the `scroll` action as a horizontal drag within the
+  live slider bounds or visible screen region: drag right for maximum and left
+  for minimum. Coordinates must be derived from current XML/indexed evidence or
+  the current screenshot, not from a hard-coded device profile.
+- For nested list pages, if the task lists multiple rows, click the first
   pending named row even if a later row is also visible.
-- For on-screen numeric keypads such as Clock timers, enter values by clicking
-  the visible digit buttons in order. Use `type` only when the focused node is an
-  editable text field; a keypad made of clickable digit buttons is not an
-  editable text field. For a Clock timer value like 0h 1m 30s, click `1`, then
-  `3`, then `0`, and stop without pressing Start.
+- For on-screen numeric keypads, enter values by clicking the visible digit
+  buttons in order. Use `type` only when the focused node is an editable text
+  field; a keypad made of clickable digit buttons is not an editable text field.
 - If the last action did not change visible text, selected state, or system
   value, do not repeat it more than once. Re-ground on the current screenshot/XML
   and choose a different action such as swipe, back, or a specific visible
@@ -677,8 +675,8 @@ Run a live VLM task through `call_tool`:
 {
   "tool_name": "vlm_task",
   "arguments": {
-    "goal": "Open Settings, find About phone, verify the page title is visible, then finish.",
-    "packageName": "com.android.settings",
+    "goal": "Open the target app, navigate to the requested page, verify the visible finish condition, then finish.",
+    "packageName": "<target-package>",
     "maxSteps": 12,
     "needSummary": true
   }

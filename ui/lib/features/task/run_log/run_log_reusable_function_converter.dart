@@ -38,6 +38,7 @@ OmniFlow Function Enhancer skill contract:
 - Improve reuse clarity without silently changing execution.
 - Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
 - Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
+- Per-step enhancement must mark each step with useful/merge/drop/noise metadata when applicable, but this metadata must not change executable replay by itself.
 - If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
 - The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.
 ''';
@@ -359,6 +360,7 @@ class RunLogReusableFunctionConverter {
       title,
     ]);
     final steps = <Map<String, dynamic>>[];
+    final cleanupEvents = <Map<String, dynamic>>[];
     final parametersBySignature = <String, Map<String, dynamic>>{};
     final seenParameterNames = <String>{};
     final snapshots = cards
@@ -379,8 +381,30 @@ class RunLogReusableFunctionConverter {
 
     for (var index = 0; index < snapshots.length; index++) {
       final snapshot = snapshots[index];
-      if (snapshot.success == false) continue;
-      if (RunLogReplayPolicy.shouldSkipTool(snapshot.toolName)) continue;
+      if (snapshot.success == false) {
+        cleanupEvents.add(
+          _cleanupEvent(
+            sourceIndex: index,
+            action: 'drop',
+            reason: 'failed_card',
+            toolName: snapshot.toolName,
+            title: snapshot.title,
+          ),
+        );
+        continue;
+      }
+      if (RunLogReplayPolicy.shouldSkipTool(snapshot.toolName)) {
+        cleanupEvents.add(
+          _cleanupEvent(
+            sourceIndex: index,
+            action: 'drop',
+            reason: 'non_replayable_noise_tool',
+            toolName: snapshot.toolName,
+            title: snapshot.title,
+          ),
+        );
+        continue;
+      }
       final rawArgs = _replayArgsForSnapshot(snapshot);
       final args = _canonicalCallToolArgs(snapshot.toolName, rawArgs);
       final shouldSkipPerceptionStep =
@@ -390,7 +414,18 @@ class RunLogReusableFunctionConverter {
       // present. The VLM-driven actions (click/scroll/input_text with legacy route kind
       // metadata) are recorded as separate omniflow cards with source_context
       // for coordinate remapping.
-      if (shouldSkipPerceptionStep) continue;
+      if (shouldSkipPerceptionStep) {
+        cleanupEvents.add(
+          _cleanupEvent(
+            sourceIndex: index,
+            action: 'drop',
+            reason: 'perception_wrapper_replaced_by_recorded_actions',
+            toolName: snapshot.toolName,
+            title: snapshot.title,
+          ),
+        );
+        continue;
+      }
 
       final executionIndex = steps.length;
       final stepId = 'step_${executionIndex + 1}';
@@ -511,9 +546,32 @@ class RunLogReusableFunctionConverter {
           'requires_runtime_validation': true,
         },
       };
-      if (_isDuplicateTextInputStep(steps.isEmpty ? null : steps.last, step)) {
+      final previousStep = steps.isEmpty ? null : steps.last;
+      if (_isDuplicateTextInputStep(previousStep, step)) {
+        _recordMergedSourceStep(
+          keptStep: previousStep!,
+          droppedStep: step,
+          sourceIndex: index,
+          reason: 'duplicate_text_input_same_target',
+          title: snapshot.title,
+          toolName: snapshot.toolName,
+        );
+        cleanupEvents.add(
+          _cleanupEvent(
+            sourceIndex: index,
+            keptStepIndex: previousStep['index'],
+            keptStepId: previousStep['id'],
+            action: 'merge',
+            reason: 'duplicate_text_input_same_target',
+            toolName: snapshot.toolName,
+            title: snapshot.title,
+          ),
+        );
         continue;
       }
+      step['cleanup_annotation'] = _defaultStepCleanupAnnotation(
+        useEnglish: useEnglish,
+      );
       steps.add(step);
 
       _collectParametersFromArgs(
@@ -529,6 +587,10 @@ class RunLogReusableFunctionConverter {
     }
 
     final parameters = parametersBySignature.values.toList(growable: false);
+    final cleanupSummary = _buildStepCleanupSummary(
+      steps: steps,
+      cleanupEvents: cleanupEvents,
+    );
     final packageName = _firstNonBlank([
       ...steps.map((step) => step['package_name']),
       payload['final_package_name'],
@@ -568,6 +630,9 @@ class RunLogReusableFunctionConverter {
         'title': title,
         'converted_at': now,
         'converter': 'oob_run_log_reusable_function_converter',
+      },
+      'metadata': {
+        if (cleanupSummary.isNotEmpty) 'oob_step_cleanup': cleanupSummary,
       },
       'parameters': parameters,
       'constraints': {
@@ -1166,7 +1231,14 @@ Return exactly one JSON object. Use this example shape:
     }
   ],
   "steps": [
-    {"index": 0, "title": "short action title", "description": "what this action does", "importance": "key"}
+    {
+      "index": 0,
+      "title": "short action title",
+      "description": "what this action does",
+      "importance": "key",
+      "cleanup_action": "keep",
+      "cleanup_reason": "why this step is useful or can be merged/dropped"
+    }
   ],
   "agent_reuse": {
     "reuse_when": ["when this recorded trajectory matches the current app/page"],
@@ -1197,6 +1269,8 @@ Rules:
 - Segment candidates must use inclusive contiguous step indexes from the existing execution.steps. Do not claim a segment is already registered as a new command.
 - Keep titles concise and action-oriented.
 - Include every input step index from execution.steps.
+- cleanup_action must be one of keep, merge_candidate, drop_candidate, or noise.
+- Mark repeated, wrapper, state-refresh, wait-like, or no-op steps as merge_candidate/drop_candidate/noise with a short cleanup_reason. This is annotation only; do not remove steps.
 
 Input digest:
 $compact
@@ -1227,7 +1301,14 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
     }
   ],
   "steps": [
-    {"index": 0, "title": "简短动作标题", "description": "这个动作做了什么", "importance": "key"}
+    {
+      "index": 0,
+      "title": "简短动作标题",
+      "description": "这个动作做了什么",
+      "importance": "key",
+      "cleanup_action": "keep",
+      "cleanup_reason": "说明这一步为什么有用，或为什么可合并/可删除"
+    }
   ],
   "agent_reuse": {
     "reuse_when": ["当前 app/页面与记录轨迹一致时"],
@@ -1258,6 +1339,8 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 - segment 候选必须使用现有 execution.steps 的闭区间连续 step index。不要声称 segment 已经注册成新的复用指令。
 - 标题要短，像动作说明。
 - execution.steps 里的每个 step index 都要覆盖。
+- cleanup_action 只能是 keep、merge_candidate、drop_candidate 或 noise。
+- 对重复、wrapper、刷新状态、类似 wait、无页面变化的步骤，标成 merge_candidate/drop_candidate/noise 并写简短 cleanup_reason。这只是标注，不要删除步骤。
 
 输入摘要：
 $compact
@@ -1333,7 +1416,7 @@ You are editing only per-step titles and descriptions for an OOB reusable comman
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 Return exactly one JSON object:
-{"steps":[{"index":0,"title":"short action title","description":"what this action does","importance":"key"}]}
+{"steps":[{"index":0,"title":"short action title","description":"what this action does","importance":"key","cleanup_action":"keep","cleanup_reason":"why this step is useful or can be merged/dropped"}]}
 
 Rules:
 - Return raw JSON only. Do not use Markdown or explanations.
@@ -1342,6 +1425,8 @@ Rules:
 - Do not include name, parameters, execution, tools, args, or agent_reuse.
 - Keep titles concise and action-oriented.
 - Describe visible user intent, not raw coordinates or low-level implementation.
+- cleanup_action must be one of keep, merge_candidate, drop_candidate, or noise.
+- Mark repeated, wrapper, state-refresh, wait-like, or no-op steps as merge_candidate/drop_candidate/noise with a short cleanup_reason. This is annotation only; do not remove steps.
 
 Input digest:
 $input
@@ -1353,7 +1438,7 @@ $input
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 只返回一个 JSON object：
-{"steps":[{"index":0,"title":"简短动作标题","description":"这个动作做了什么","importance":"key"}]}
+{"steps":[{"index":0,"title":"简短动作标题","description":"这个动作做了什么","importance":"key","cleanup_action":"keep","cleanup_reason":"说明这一步为什么有用，或为什么可合并/可删除"}]}
 
 规则：
 - 只返回原始 JSON。不要 Markdown，不要解释。
@@ -1362,6 +1447,8 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')
 - 不要包含 name、parameters、execution、tools、args 或 agent_reuse。
 - 标题要短，像动作说明。
 - 描述可见的用户意图，不要描述裸坐标或底层实现。
+- cleanup_action 只能是 keep、merge_candidate、drop_candidate 或 noise。
+- 对重复、wrapper、刷新状态、类似 wait、无页面变化的步骤，标成 merge_candidate/drop_candidate/noise 并写简短 cleanup_reason。这只是标注，不要删除步骤。
 
 输入摘要：
 $input
@@ -1782,9 +1869,17 @@ $fallback
           steps[index].putIfAbsent('summary', () => stepDescription);
           steps[index].putIfAbsent('title', () => stepDescription);
         }
+        final cleanupAnnotation = _stepCleanupAnnotationFromAi(
+          aiStep,
+          fallback: _asStringKeyMap(steps[index]['cleanup_annotation']),
+        );
+        if (cleanupAnnotation.isNotEmpty) {
+          steps[index]['cleanup_annotation'] = cleanupAnnotation;
+        }
       }
       execution['steps'] = steps;
       result['execution'] = execution;
+      _syncStepCleanupMetadata(result, steps);
 
       final rawActions = result['actions'];
       if (rawActions is List) {
@@ -3035,6 +3130,9 @@ String _safeImportance(dynamic value) {
     'key' || 'critical' || 'important' => 'key',
     'support' || 'supporting' => 'support',
     'normal' => 'normal',
+    'noise' || 'noisy' || 'useless' => 'noise',
+    'redundant' || 'duplicate' => 'redundant',
+    'optional' => 'optional',
     _ => '',
   };
 }
@@ -3527,6 +3625,285 @@ String? _replayActionForSnapshot(_RunLogActionSnapshot snapshot) {
   return RunLogReplayPolicy.omniflowActionForToolName(
     _firstNonBlank([argsMap['action'], argsMap['omniflow_action']]),
   );
+}
+
+Map<String, dynamic> _cleanupEvent({
+  required int sourceIndex,
+  required String action,
+  required String reason,
+  required String toolName,
+  required String title,
+  dynamic keptStepIndex,
+  dynamic keptStepId,
+}) {
+  return {
+    'source_index': sourceIndex,
+    'action': action,
+    'reason': reason,
+    'tool': RunLogReplayPolicy.normalizeToolName(toolName),
+    if (title.trim().isNotEmpty) 'title': _compactPreview(title),
+    if (keptStepIndex != null) 'kept_step_index': keptStepIndex,
+    if (keptStepId != null) 'kept_step_id': keptStepId,
+  };
+}
+
+Map<String, dynamic> _defaultStepCleanupAnnotation({required bool useEnglish}) {
+  return {
+    'schema_version': 'oob.step_cleanup_annotation.v1',
+    'source': 'run_log_local_converter',
+    'cleanup_action': 'keep',
+    'usefulness': 'useful',
+    'confidence': 'high',
+    'reason': _text(
+      useEnglish,
+      '保留为可执行复用步骤。',
+      'Kept as an executable reusable step.',
+    ),
+  };
+}
+
+void _recordMergedSourceStep({
+  required Map<String, dynamic> keptStep,
+  required Map<String, dynamic> droppedStep,
+  required int sourceIndex,
+  required String reason,
+  required String title,
+  required String toolName,
+}) {
+  final keptSourceIndices = _stepSourceIndices(keptStep);
+  if (!keptSourceIndices.contains(sourceIndex)) {
+    keptSourceIndices.add(sourceIndex);
+  }
+  keptStep['source_indices'] = keptSourceIndices;
+
+  final mergedSteps = _asStringKeyMapList(
+    keptStep['merged_steps'],
+  ).toList(growable: true);
+  mergedSteps.add({
+    'source_index': sourceIndex,
+    'step_id': _firstNonBlank([droppedStep['id'], 'step_${sourceIndex + 1}']),
+    'tool': RunLogReplayPolicy.normalizeToolName(toolName),
+    if (title.trim().isNotEmpty) 'title': _compactPreview(title),
+    'reason': reason,
+  });
+  keptStep['merged_steps'] = mergedSteps;
+
+  final annotation = _asStringKeyMap(keptStep['cleanup_annotation']);
+  final mergedSourceIndices = annotation['merged_source_indices'] is List
+      ? List<dynamic>.from(annotation['merged_source_indices'] as List)
+      : <dynamic>[];
+  if (!mergedSourceIndices.contains(sourceIndex)) {
+    mergedSourceIndices.add(sourceIndex);
+  }
+  keptStep['cleanup_annotation'] = {
+    ...annotation,
+    'schema_version': 'oob.step_cleanup_annotation.v1',
+    'source': 'run_log_local_converter',
+    'cleanup_action': 'merged_duplicate',
+    'usefulness': 'useful_with_merged_noise',
+    'confidence': 'high',
+    'reason': reason,
+    'merged_source_indices': mergedSourceIndices,
+    'merged_step_count': mergedSourceIndices.length,
+  };
+}
+
+List<int> _stepSourceIndices(Map<String, dynamic> step) {
+  final raw = step['source_indices'];
+  final output = <int>[];
+  if (raw is List) {
+    for (final item in raw) {
+      final index = _asInt(item);
+      if (index != null && index >= 0 && !output.contains(index)) {
+        output.add(index);
+      }
+    }
+  }
+  final sourceIndex = _asInt(step['source_index']);
+  if (sourceIndex != null &&
+      sourceIndex >= 0 &&
+      !output.contains(sourceIndex)) {
+    output.add(sourceIndex);
+  }
+  final index = _asInt(step['index']);
+  if (output.isEmpty && index != null && index >= 0) {
+    output.add(index);
+  }
+  return output;
+}
+
+Map<String, dynamic> _buildStepCleanupSummary({
+  required List<Map<String, dynamic>> steps,
+  required List<Map<String, dynamic>> cleanupEvents,
+}) {
+  final annotatedSteps = steps
+      .map(_asStringKeyMap)
+      .where((step) {
+        final annotation = _asStringKeyMap(step['cleanup_annotation']);
+        return annotation.isNotEmpty &&
+            _firstNonBlank([annotation['cleanup_action']]) != 'keep';
+      })
+      .map(
+        (step) => {
+          'step_id': _firstNonBlank([step['id']]),
+          'index': step['index'],
+          'annotation': _asStringKeyMap(step['cleanup_annotation']),
+        },
+      )
+      .toList(growable: false);
+  if (cleanupEvents.isEmpty && annotatedSteps.isEmpty) {
+    return const <String, dynamic>{};
+  }
+  return {
+    'schema_version': 'oob.step_cleanup.v1',
+    'source': 'run_log_local_converter',
+    'mode': 'deterministic_safe_drop_plus_metadata_annotations',
+    'execution_rewrite_allowed': false,
+    'dropped_count': cleanupEvents
+        .where((event) => event['action'] == 'drop')
+        .length,
+    'merged_count': cleanupEvents
+        .where((event) => event['action'] == 'merge')
+        .length,
+    'annotated_step_count': annotatedSteps.length,
+    if (cleanupEvents.isNotEmpty) 'events': cleanupEvents,
+    if (annotatedSteps.isNotEmpty) 'annotated_steps': annotatedSteps,
+  };
+}
+
+Map<String, dynamic> _stepCleanupAnnotationFromAi(
+  Map<String, dynamic> aiStep, {
+  required Map<String, dynamic> fallback,
+}) {
+  final importance = _safeImportance(aiStep['importance']);
+  final rawAction = _firstNonBlank([
+    aiStep['cleanup_action'],
+    aiStep['cleanupAction'],
+    aiStep['cleanup'],
+    aiStep['action'] == 'drop' || aiStep['action'] == 'merge'
+        ? aiStep['action']
+        : null,
+  ]);
+  final normalizedAction = _normalizeCleanupAction(rawAction);
+  final isNoise =
+      _asBool(aiStep['is_noise'] ?? aiStep['isNoise']) == true ||
+      importance == 'noise';
+  final reason = _boundedText(
+    _firstNonBlank([
+      aiStep['cleanup_reason'],
+      aiStep['cleanupReason'],
+      aiStep['noise_reason'],
+      aiStep['noiseReason'],
+      aiStep['reason'],
+    ]),
+    maxLength: 240,
+  );
+  final category = _boundedText(
+    _firstNonBlank([
+      aiStep['cleanup_category'],
+      aiStep['cleanupCategory'],
+      aiStep['noise_type'],
+      aiStep['noiseType'],
+      aiStep['category'],
+    ]),
+    maxLength: 80,
+  );
+
+  if (importance.isEmpty &&
+      normalizedAction.isEmpty &&
+      !isNoise &&
+      reason.isEmpty &&
+      category.isEmpty) {
+    return fallback;
+  }
+
+  final cleanupAction = normalizedAction.isNotEmpty
+      ? normalizedAction
+      : isNoise
+      ? 'noise'
+      : fallback['cleanup_action']?.toString() ?? 'keep';
+
+  final output = <String, dynamic>{
+    ...fallback,
+    'schema_version': 'oob.step_cleanup_annotation.v1',
+    'source': 'run_log_agent_label_enhancer',
+    'cleanup_action': cleanupAction,
+    'usefulness': _usefulnessForCleanupAction(cleanupAction, importance),
+    'confidence': _safeCleanupConfidence(aiStep['confidence']),
+    'execution_rewrite_allowed': false,
+    if (importance.isNotEmpty) 'importance': importance,
+    if (reason.isNotEmpty) 'reason': reason,
+    if (category.isNotEmpty) 'category': category,
+  };
+  final mergeWith = _asInt(
+    aiStep['merge_with_index'] ??
+        aiStep['mergeWithIndex'] ??
+        aiStep['merge_with_step_index'] ??
+        aiStep['mergeWithStepIndex'],
+  );
+  if (mergeWith != null && mergeWith >= 0) {
+    output['merge_with_index'] = mergeWith;
+  }
+  return output;
+}
+
+String _normalizeCleanupAction(String raw) {
+  final text = raw.trim().toLowerCase().replaceAll('-', '_');
+  return switch (text) {
+    'keep' || 'useful' => 'keep',
+    'merge' || 'merge_candidate' || 'merged' => 'merge_candidate',
+    'drop' || 'delete' || 'remove' || 'drop_candidate' => 'drop_candidate',
+    'noise' || 'noisy' || 'noop' || 'no_op' => 'noise',
+    'review' || 'review_candidate' => 'review',
+    _ => '',
+  };
+}
+
+String _usefulnessForCleanupAction(String cleanupAction, String importance) {
+  if (importance == 'noise') return 'noise';
+  return switch (cleanupAction) {
+    'drop_candidate' => 'probably_useless',
+    'merge_candidate' => 'redundant_candidate',
+    'noise' => 'noise',
+    'review' => 'review_required',
+    'merged_duplicate' => 'useful_with_merged_noise',
+    _ => 'useful',
+  };
+}
+
+String _safeCleanupConfidence(dynamic raw) {
+  final text = raw?.toString().trim().toLowerCase() ?? '';
+  return switch (text) {
+    'high' || 'certain' => 'high',
+    'medium' || 'med' => 'medium',
+    'low' || 'uncertain' => 'low',
+    _ => 'medium',
+  };
+}
+
+void _syncStepCleanupMetadata(
+  Map<String, dynamic> functionJson,
+  List<Map<String, dynamic>> steps,
+) {
+  final metadata = <String, dynamic>{
+    ..._asStringKeyMap(functionJson['metadata']),
+  };
+  final existingCleanup = _asStringKeyMap(metadata['oob_step_cleanup']);
+  final existingEvents = _asStringKeyMapList(existingCleanup['events']);
+  final summary = _buildStepCleanupSummary(
+    steps: steps,
+    cleanupEvents: existingEvents,
+  );
+  if (summary.isEmpty) {
+    functionJson['metadata'] = metadata;
+    return;
+  }
+  metadata['oob_step_cleanup'] = {
+    ...existingCleanup,
+    ...summary,
+    'source': existingCleanup['source'] ?? summary['source'],
+  };
+  functionJson['metadata'] = metadata;
 }
 
 bool _isDuplicateTextInputStep(
@@ -4600,6 +4977,17 @@ Map<String, dynamic> _asStringKeyMap(dynamic value) {
     return const <String, dynamic>{};
   }
   return decoded.map((key, item) => MapEntry(key.toString(), item));
+}
+
+List<Map<String, dynamic>> _asStringKeyMapList(dynamic value) {
+  final decoded = _decodeJsonIfNeeded(value);
+  if (decoded is! List) {
+    return const <Map<String, dynamic>>[];
+  }
+  return decoded
+      .map(_asStringKeyMap)
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
 }
 
 Map<String, dynamic> _firstMap(Map<String, dynamic> source, List<String> keys) {

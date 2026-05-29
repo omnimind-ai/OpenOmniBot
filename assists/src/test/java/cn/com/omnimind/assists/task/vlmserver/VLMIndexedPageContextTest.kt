@@ -135,6 +135,74 @@ class VLMIndexedPageContextTest {
         assertTrue(target.y2 in 300f..330f)
     }
 
+    @Test
+    fun `resolves unique target description to indexed element`() {
+        val target = VLMIndexedPageContext.uniqueElementTargetByDescription(
+            currentXml = SETTINGS_XML,
+            displayWidth = 720,
+            displayHeight = 1280,
+            targetDescription = "Connected devices"
+        )
+
+        requireNotNull(target)
+        assertEquals("Connected devices", target.label)
+        assertEquals(313f, target.centerX, 0.01f)
+        assertEquals(782f, target.centerY, 0.01f)
+    }
+
+    @Test
+    fun `resolves element target by stable node id`() {
+        val target = VLMIndexedPageContext.elementTargetByNodeId(
+            currentXml = CONTACT_FORM_XML,
+            displayWidth = 720,
+            displayHeight = 1280,
+            nodeId = "36"
+        )
+
+        requireNotNull(target)
+        assertEquals("Last name", target.label)
+        assertEquals(356f, target.centerX, 0.01f)
+        assertEquals(799.5f, target.centerY, 0.01f)
+        assertEquals("36", target.nodeId)
+    }
+
+    @Test
+    fun `prefers editable target for input text description`() {
+        val target = VLMIndexedPageContext.uniqueElementTargetByDescription(
+            currentXml = CONTACT_FORM_XML,
+            displayWidth = 720,
+            displayHeight = 1280,
+            targetDescription = "Phone",
+            preferEditable = true
+        )
+
+        requireNotNull(target)
+        assertEquals("Phone", target.label)
+        assertEquals("56", target.nodeId)
+    }
+
+    @Test
+    fun `does not resolve ambiguous target description`() {
+        val ambiguousXml =
+            """
+            <hierarchy>
+              <node bounds="[0,0][720,1280]">
+                <node text="Phone" class="android.widget.TextView" clickable="true" bounds="[80,100][300,180]" />
+                <node text="Phone" class="android.widget.TextView" clickable="true" bounds="[80,220][300,300]" />
+              </node>
+            </hierarchy>
+            """
+
+        val target = VLMIndexedPageContext.uniqueElementTargetByDescription(
+            currentXml = ambiguousXml,
+            displayWidth = 720,
+            displayHeight = 1280,
+            targetDescription = "Phone"
+        )
+
+        assertNull(target)
+    }
+
     companion object {
         private const val SETTINGS_XML =
             """

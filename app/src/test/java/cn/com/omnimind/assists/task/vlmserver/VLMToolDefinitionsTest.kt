@@ -26,7 +26,8 @@ class VLMToolDefinitionsTest {
 
         assertFalse(promptGuide.contains("wait("))
         assertFalse(promptGuide.contains("waiting actions"))
-        assertTrue(promptGuide.contains("input_text(target_description, content, x, y)"))
+        assertTrue(promptGuide.contains("input_text(target_description, content, element_index?, x, y)"))
+        assertTrue(promptGuide.contains("Coordinates are fallback only"))
         assertTrue(promptGuide.contains("page settling and stability detection are handled internally"))
     }
 }

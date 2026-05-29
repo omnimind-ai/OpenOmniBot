@@ -231,14 +231,14 @@ object AgentToolDefinitions {
             "Use a vision-language model to execute an on-device screen task. This tool blocks until the task finishes, needs user input, encounters a locked screen, or times out, and then returns the terminal state. Set `needSummary=true` when you need a final summarized result.",
         "任务目标，使用第一人称描述。" to
             "Task goal written in the first person.",
-        "可选视觉推理模型或场景 ID。一般留空；调试或 AndroidWorld 验收时可传 scene.vlm.operation.primary 或具体模型 ID。" to
-            "Optional vision reasoning model or scene ID. Usually leave unset; for debugging or AndroidWorld acceptance, pass scene.vlm.operation.primary or a specific model ID.",
+        "可选视觉推理模型或场景 ID。一般留空；需要调试或固定模型时才传具体值。" to
+            "Optional vision reasoning model or scene ID. Usually leave unset; pass a concrete value only for debugging or pinned-model runs.",
         "目标应用包名。" to
             "Target app package name.",
         "是否在结束后生成总结。设为 true 时，工具结果会尽量直接返回最终整理文本。" to
             "Whether to generate a summary after completion. When true, the tool result tries to return a final polished summary directly.",
-        "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20；达到上限时，如果已经成功执行了 UI 动作，会以有界运行成功返回。" to
-            "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20. If the limit is reached after successful UI actions, the bounded run returns as successful.",
+        "可选最大执行步数。达到上限但模型未明确完成时，任务应返回未完成或超步错误。" to
+            "Optional maximum execution steps. If the limit is reached before the model explicitly finishes, the task should return incomplete or max-step failure.",
         "仅在用户明确要求从当前页面继续时设为 true。" to
             "Only set this to true when the user explicitly asks to continue from the current screen.",
         "通过应用内置的 Alpine（proot）环境执行一次性的非交互终端命令。这是默认首选的终端工具，适合文件处理、脚本、网络诊断、git、python、包管理等绝大多数 CLI 任务；不用于手机界面操作，也不用于交互式 TUI。只有明确需要跨多轮保留 cwd、环境或后台进程时，才改用 terminal_session_*。" to
@@ -602,7 +602,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("model") {
                         put("type", "string")
-                        put("description", "可选视觉推理模型或场景 ID。一般留空；调试或 AndroidWorld 验收时可传 scene.vlm.operation.primary 或具体模型 ID。")
+                        put("description", "可选视觉推理模型或场景 ID。一般留空；需要调试或固定模型时才传具体值。")
                     }
                     putJsonObject("packageName") {
                         put("type", "string")
@@ -614,11 +614,12 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("maxSteps") {
                         put("type", "integer")
-                        put("description", "可选最大执行步数。AndroidWorld 或验收用例建议设为 8-20。")
+                        put("default", 12)
+                        put("description", "可选最大执行步数。默认 12，上限 64。达到上限但模型未明确完成时返回未完成或超步错误。")
                     }
                     putJsonObject("timeoutMs") {
                         put("type", "integer")
-                        put("description", "可选控制面等待超时，单位毫秒。默认 600000；设备端 VLM 会在同一个 vlm_task 内按 maxSteps 持续执行，不要用第二个 vlm_task 续接同一目标。")
+                        put("description", "可选控制面等待超时，单位毫秒。默认 600000；超时会停止设备端 VLM，避免后台继续执行。")
                     }
                     putJsonObject("startFromCurrent") {
                         put("type", "boolean")
@@ -626,8 +627,8 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("disableOmniFlowRecall") {
                         put("type", "boolean")
-                        put("default", true)
-                        put("description", "可选，默认 true。true 时不注入复用指令/UDEG 召回上下文，按当前截图/XML 裸跑在线 VLM。只有需要显式召回辅助时才设为 false。")
+                        put("default", false)
+                        put("description", "可选，默认 false。false 时注入 OmniFlow/UDEG page skill 召回上下文辅助在线 VLM 决策；只有要严格裸跑 baseline 时才设为 true。")
                     }
                     putJsonObject("allowOmniFlowFunctionAutoExecute") {
                         put("type", "boolean")
@@ -2493,7 +2494,7 @@ object AgentToolDefinitions {
                     }
                     putJsonObject("continueWithAgent") {
                         put("type", "boolean")
-                        put("description", "当 Function 内含需要在线规划的步骤时，允许 agent 继续接管。")
+                        put("description", "兼容字段；fixed replay 默认忽略，不会自动转 Agent。需要继续时应显式启动 VLM。")
                     }
                     putJsonObject("executionMode") {
                         put("type", "string")

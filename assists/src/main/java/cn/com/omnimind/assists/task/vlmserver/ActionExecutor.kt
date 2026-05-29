@@ -86,34 +86,11 @@ class ActionExecutor(
         ensureActionActive()
         val result = when (val action = vlmStep.action) {
             is ClickAction -> {
-                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
-                    deviceOperator.clickNodeById(nodeId, action.targetDescription)
-                }
-                if (nodeResult?.success == true) {
-                    nodeResult
-                } else {
-                    if (nodeResult != null) {
-                        OmniLog.w(TAG, "click node failed, falling back to coordinates: ${nodeResult.message}")
-                    }
-                    deviceOperator.clickCoordinate(action.x.toFloat(), action.y.toFloat())
-                }
+                deviceOperator.clickCoordinate(action.x, action.y)
             }
 
             is LongPressAction -> {
-                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
-                    deviceOperator.longClickNodeById(
-                        nodeId = nodeId,
-                        targetDescription = action.targetDescription
-                    )
-                }
-                if (nodeResult?.success == true) {
-                    nodeResult
-                } else {
-                    if (nodeResult != null) {
-                        OmniLog.w(TAG, "long click node failed, falling back to coordinates: ${nodeResult.message}")
-                    }
-                    deviceOperator.longClickCoordinate(action.x.toFloat(), action.y.toFloat())
-                }
+                deviceOperator.longClickCoordinate(action.x, action.y)
             }
 
             is TypeAction -> {
@@ -121,19 +98,19 @@ class ActionExecutor(
             }
 
             is InputTextAction -> {
-                val nodeResult = action.nodeId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodeId ->
+                val nodeId = action.nodeId?.trim().orEmpty()
+                val nodeInputResult = if (nodeId.isNotEmpty()) {
                     deviceOperator.inputTextToNodeById(
                         nodeId = nodeId,
                         text = action.content,
                         targetDescription = action.targetDescription
                     )
-                }
-                if (nodeResult?.success == true) {
-                    nodeResult
                 } else {
-                    if (nodeResult != null) {
-                        OmniLog.w(TAG, "input node failed, falling back to coordinate focus: ${nodeResult.message}")
-                    }
+                    null
+                }
+                if (nodeInputResult?.success == true) {
+                    nodeInputResult
+                } else {
                     val clickResult = deviceOperator.clickCoordinate(action.x, action.y)
                     if (!clickResult.success) {
                         clickResult
@@ -158,10 +135,10 @@ class ActionExecutor(
                 // VLM 模型返回的 duration 是秒，需要转换为毫秒
                 val durationMs = (action.duration * 1000).toLong()
                 deviceOperator.slideCoordinateWithContext(
-                    action.x1.toFloat(),
-                    action.y1.toFloat(),
-                    action.x2.toFloat(),
-                    action.y2.toFloat(),
+                    action.x1,
+                    action.y1,
+                    action.x2,
+                    action.y2,
                     durationMs,
                     action.targetDescription
                 )

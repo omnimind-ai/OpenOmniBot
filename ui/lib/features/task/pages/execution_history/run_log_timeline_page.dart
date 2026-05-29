@@ -2003,6 +2003,7 @@ class _RunLogStyleFunctionStepTile extends StatelessWidget {
     final source = _runLogStepSource(snapshot);
     final sourceColor = _runLogStepSourceColor(context, source);
     final hasSourceBadge = _hasRunLogSourceBadge(source);
+    final cleanupInfo = _functionStepCleanupInfo(context, step);
     final displayTitle = _runLogStepDisplayTitle(context, snapshot);
     final preview = snapshot.previewText(context);
     final statusColor = success ? _successColor(context) : _errorColor(context);
@@ -2056,6 +2057,10 @@ class _RunLogStyleFunctionStepTile extends StatelessWidget {
                       compileKind: snapshot.compileKind,
                       l10n: context.l10n,
                     ),
+                  if (cleanupInfo != null) ...[
+                    const SizedBox(width: 4),
+                    _FunctionStepCleanupBadge(info: cleanupInfo),
+                  ],
                   const Spacer(),
                   if (snapshot.durationMs != null) ...[
                     Text(
@@ -5461,6 +5466,151 @@ class _RunLogStepSourceBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FunctionStepCleanupBadge extends StatelessWidget {
+  const _FunctionStepCleanupBadge({required this.info});
+
+  final _FunctionStepCleanupInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: info.tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: info.color.withValues(
+            alpha: context.isDarkTheme ? 0.18 : 0.10,
+          ),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: info.color.withValues(alpha: 0.26)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(info.icon, size: 11, color: info.color),
+            const SizedBox(width: 3),
+            Text(
+              info.label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: info.color,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FunctionStepCleanupInfo {
+  const _FunctionStepCleanupInfo({
+    required this.label,
+    required this.tooltip,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final String tooltip;
+  final Color color;
+  final IconData icon;
+}
+
+_FunctionStepCleanupInfo? _functionStepCleanupInfo(
+  BuildContext context,
+  Map<String, dynamic> step,
+) {
+  final annotation = _asStringKeyMap(
+    step['cleanup_annotation'] ?? step['cleanupAnnotation'],
+  );
+  final mergedSteps = _asStringKeyMapList(
+    step['merged_steps'] ?? step['mergedSteps'],
+  );
+  final importance = _firstNonBlank([
+    annotation['importance'],
+    step['importance'],
+  ]).trim().toLowerCase();
+  var action = _normalizeFunctionStepCleanupAction(
+    _firstNonBlank([
+      annotation['cleanup_action'],
+      annotation['cleanupAction'],
+      annotation['action'],
+      step['cleanup_action'],
+      step['cleanupAction'],
+    ]),
+  );
+  if (action.isEmpty && mergedSteps.isNotEmpty) {
+    action = 'merged_duplicate';
+  }
+  if (action == 'keep' && importance == 'noise') {
+    action = 'noise';
+  }
+  if (action == 'keep' || action.isEmpty) {
+    return null;
+  }
+
+  final reason = _firstNonBlank([
+    annotation['reason'],
+    annotation['cleanup_reason'],
+    annotation['cleanupReason'],
+    annotation['noise_reason'],
+    annotation['noiseReason'],
+  ]);
+  final mergedCount =
+      _asInt(annotation['merged_step_count']) ??
+      _asInt(annotation['mergedStepCount']) ??
+      mergedSteps.length;
+  final color = switch (action) {
+    'merged_duplicate' => _successColor(context),
+    'merge_candidate' => _routeColor(context),
+    'drop_candidate' => _warningColor(context),
+    'noise' => context.omniPalette.textSecondary,
+    'review' => _routeColor(context),
+    _ => context.omniPalette.textSecondary,
+  };
+  final icon = switch (action) {
+    'merged_duplicate' || 'merge_candidate' => Icons.merge_type_rounded,
+    'drop_candidate' => Icons.remove_circle_outline_rounded,
+    'noise' => Icons.filter_alt_off_outlined,
+    'review' => Icons.rate_review_outlined,
+    _ => Icons.info_outline_rounded,
+  };
+  final label = switch (action) {
+    'merged_duplicate' =>
+      mergedCount > 0
+          ? _text(context, '已合并 $mergedCount', 'Merged $mergedCount')
+          : _text(context, '已合并', 'Merged'),
+    'merge_candidate' => _text(context, '可合并', 'Merge'),
+    'drop_candidate' => _text(context, '可删除', 'Drop'),
+    'noise' => _text(context, '噪声', 'Noise'),
+    'review' => _text(context, '待确认', 'Review'),
+    _ => action,
+  };
+  final tooltip = reason.trim().isEmpty ? label : '$label · $reason';
+  return _FunctionStepCleanupInfo(
+    label: label,
+    tooltip: tooltip,
+    color: color,
+    icon: icon,
+  );
+}
+
+String _normalizeFunctionStepCleanupAction(String raw) {
+  final text = raw.trim().toLowerCase().replaceAll('-', '_');
+  return switch (text) {
+    'keep' || 'useful' => 'keep',
+    'merged_duplicate' || 'merged_duplicate_step' => 'merged_duplicate',
+    'merge' || 'merged' || 'merge_candidate' => 'merge_candidate',
+    'drop' || 'delete' || 'remove' || 'drop_candidate' => 'drop_candidate',
+    'noise' || 'noisy' || 'noop' || 'no_op' => 'noise',
+    'review' || 'review_candidate' => 'review',
+    _ => '',
+  };
 }
 
 class _RunLogStepSnapshot {

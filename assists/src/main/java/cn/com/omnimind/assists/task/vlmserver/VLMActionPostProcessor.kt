@@ -46,29 +46,24 @@ object VLMActionPostProcessor {
         }
 
         val page = parsePage(currentXml)
-        correctPrematureFinishedForOrderedTarget(
-            step = step,
-            context = context,
-            page = page,
-            displayWidth = displayWidth,
-            displayHeight = displayHeight
-        )?.let { return it }
         correctTypeToNumericKeypadClick(step, page)?.let { return it }
         correctTextInputToNarrativeFormFieldTarget(step, context, page)?.let { return it }
 
-        correctPendingSettingsTopLevelTarget(
-            step = step,
-            context = context,
-            currentPackageName = currentPackage,
-            page = page
-        )?.let { return it }
-        correctGetStateToSettingsToggleTarget(
-            step = step,
-            context = context,
-            currentPackageName = currentPackage,
-            page = page,
-            displayWidth = displayWidth
-        )?.let { return it }
+        if (ENABLE_APP_SPECIFIC_SETTINGS_CORRECTIONS) {
+            correctPendingSettingsTopLevelTarget(
+                step = step,
+                context = context,
+                currentPackageName = currentPackage,
+                page = page
+            )?.let { return it }
+            correctGetStateToSettingsToggleTarget(
+                step = step,
+                context = context,
+                currentPackageName = currentPackage,
+                page = page,
+                displayWidth = displayWidth
+            )?.let { return it }
+        }
 
         if (step.action is ClickAction) {
             correctRepeatedSystemAnrWait(
@@ -89,27 +84,29 @@ object VLMActionPostProcessor {
             if (isOrderedGoalClickSatisfied(step, context, page)) {
                 return Result(step = step)
             }
-            correctWrongSettingsTopLevelTarget(
-                step = step,
-                context = context,
-                currentPackageName = currentPackage,
-                page = page,
-                displayWidth = displayWidth,
-                displayHeight = displayHeight
-            )?.let { return it }
-            correctSettingsToggleTarget(
-                step = step,
-                context = context,
-                currentPackageName = currentPackage,
-                page = page,
-                displayWidth = displayWidth
-            )?.let { return it }
-            correctMissingSettingsTopLevelTarget(
-                step = step,
-                context = context,
-                currentPackageName = currentPackage,
-                page = page
-            )?.let { return it }
+            if (ENABLE_APP_SPECIFIC_SETTINGS_CORRECTIONS) {
+                correctWrongSettingsTopLevelTarget(
+                    step = step,
+                    context = context,
+                    currentPackageName = currentPackage,
+                    page = page,
+                    displayWidth = displayWidth,
+                    displayHeight = displayHeight
+                )?.let { return it }
+                correctSettingsToggleTarget(
+                    step = step,
+                    context = context,
+                    currentPackageName = currentPackage,
+                    page = page,
+                    displayWidth = displayWidth
+                )?.let { return it }
+                correctMissingSettingsTopLevelTarget(
+                    step = step,
+                    context = context,
+                    currentPackageName = currentPackage,
+                    page = page
+                )?.let { return it }
+            }
         }
 
         correctSliderEndpointAction(
@@ -137,58 +134,6 @@ object VLMActionPostProcessor {
         }
 
         return Result(step = step)
-    }
-
-    private fun correctPrematureFinishedForOrderedTarget(
-        step: VLMStep,
-        context: UIContext,
-        page: PageModel,
-        displayWidth: Int,
-        displayHeight: Int
-    ): Result? {
-        if (step.action !is FinishedAction) return null
-        val progress = orderedGoalProgress(context) ?: return null
-        val pendingTarget = progress.pendingTarget ?: return null
-
-        if (step.hasOrderedTargetCompletionEvidence(pendingTarget)) {
-            return null
-        }
-
-        val visibleTarget = page.bestOrderedGoalClickTarget(pendingTarget)
-        if (visibleTarget != null) {
-            return corrected(
-                step = step,
-                action = ClickAction(
-                    targetDescription = visibleTarget.label,
-                    x = visibleTarget.bounds.centerX,
-                    y = visibleTarget.bounds.centerY
-                ),
-                reason = "premature_finished_ordered_target",
-                extraSummary = "Pending ordered target: ${pendingTarget.label}"
-            )
-        }
-
-        page.bestSearchScroll(displayWidth, displayHeight, pendingTarget.label)?.let { scroll ->
-            if (!page.hasNavigateUp() || page.hasAnyOrderedTargetVisible(progress.targets)) {
-                return corrected(
-                    step = step,
-                    action = scroll,
-                    reason = "premature_finished_ordered_target_scroll",
-                    extraSummary = "Pending ordered target: ${pendingTarget.label}"
-                )
-            }
-        }
-
-        if (page.hasNavigateUp()) {
-            return corrected(
-                step = step,
-                action = PressBackAction(),
-                reason = "premature_finished_ordered_target_go_back",
-                extraSummary = "Pending ordered target: ${pendingTarget.label}"
-            )
-        }
-
-        return null
     }
 
     private fun correctOrderedGoalClickTarget(
@@ -1565,23 +1510,25 @@ object VLMActionPostProcessor {
     }
 
     private fun visibleGoal(context: UIContext, step: VLMStep, page: PageModel): VisibleGoal {
-        val progress = settingsProgress(context)
-        val pendingDomain = progress?.pendingDomain
-        if (pendingDomain != null && page.hasVisibleSettingsDomainTarget(pendingDomain)) {
-            return VisibleGoal(settingsDomainFocusText(pendingDomain), pendingDomain)
-        }
+        if (ENABLE_APP_SPECIFIC_SETTINGS_CORRECTIONS) {
+            val progress = settingsProgress(context)
+            val pendingDomain = progress?.pendingDomain
+            if (pendingDomain != null && page.hasVisibleSettingsDomainTarget(pendingDomain)) {
+                return VisibleGoal(settingsDomainFocusText(pendingDomain), pendingDomain)
+            }
 
-        val actionDomain = settingsDomainForText(stepIntentText(step))
-        val overallDomains = orderedSettingsDomains(context.overallTask).toSet()
-        if (
-            actionDomain != null &&
-            actionDomain in overallDomains &&
-                page.hasVisibleSettingsDomainTarget(actionDomain)
-        ) {
-            return VisibleGoal(settingsDomainFocusText(actionDomain), actionDomain)
-        }
-        pendingSettingsDomain(context)?.let { domain ->
-            return VisibleGoal(settingsDomainFocusText(domain), domain)
+            val actionDomain = settingsDomainForText(stepIntentText(step))
+            val overallDomains = orderedSettingsDomains(context.overallTask).toSet()
+            if (
+                actionDomain != null &&
+                actionDomain in overallDomains &&
+                    page.hasVisibleSettingsDomainTarget(actionDomain)
+            ) {
+                return VisibleGoal(settingsDomainFocusText(actionDomain), actionDomain)
+            }
+            pendingSettingsDomain(context)?.let { domain ->
+                return VisibleGoal(settingsDomainFocusText(domain), domain)
+            }
         }
 
         return VisibleGoal(firstNonBlank(context.activeGoal(), context.overallTask), null)
@@ -1854,14 +1801,6 @@ object VLMActionPostProcessor {
             return false
         }
         return orderedTargetTextScore(target, narrativeEvidence) >= MIN_ORDERED_TARGET_VISIBLE_SCORE
-    }
-
-    private fun VLMStep.hasOrderedTargetCompletionEvidence(target: OrderedGoalTarget): Boolean {
-        val finishedContent = (action as? FinishedAction)?.content.orEmpty()
-        val evidence = listOf(observation, summary, finishedContent)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-        return orderedTargetTextScore(target, evidence) >= MIN_ORDERED_TARGET_VISIBLE_SCORE
     }
 
     private fun orderedTargetTextScore(target: OrderedGoalTarget, text: String): Double {
@@ -2529,6 +2468,7 @@ object VLMActionPostProcessor {
         "回到",
         "后退"
     )
+    private const val ENABLE_APP_SPECIFIC_SETTINGS_CORRECTIONS = false
     private const val MIN_TARGET_AREA = 24f * 24f
     private const val MIN_SCROLLABLE_AREA = 120f * 160f
     private const val MAX_TARGET_AREA_RATIO = 0.45f

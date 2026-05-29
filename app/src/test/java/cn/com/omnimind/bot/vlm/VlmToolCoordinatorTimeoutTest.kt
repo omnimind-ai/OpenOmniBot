@@ -26,6 +26,14 @@ class VlmToolCoordinatorTimeoutTest {
     }
 
     @Test
+    fun `vlm max steps defaults to bounded execution`() {
+        assertEquals(12, VlmToolCoordinator.resolveMaxSteps(null))
+        assertEquals(12, VlmToolCoordinator.resolveMaxSteps(0))
+        assertEquals(1, VlmToolCoordinator.resolveMaxSteps(1))
+        assertEquals(64, VlmToolCoordinator.resolveMaxSteps(120))
+    }
+
+    @Test
     fun `manual cancel marks active vlm task cancelled`() {
         val taskId = "test-vlm-cancel-${System.nanoTime()}"
         val state = McpTaskManager.createTask(

@@ -149,8 +149,15 @@ object PromptTemplate {
             appendLine(
                 t(
                     locale,
-                    "遵守 system 协议：每轮恰好一个原生 tool_call；坐标必须是 0-1000 单个数值；优先使用 indexed evidence 的 element_index/scrollable_index；只有当前截图或工具结果证明任务已完成才调用 finished；不要输出等待/空操作。",
-                    "Follow the system protocol: exactly one native tool_call; coordinates are 0-1000 scalar values; prefer indexed evidence element_index/scrollable_index; call finished only when the current screenshot or tool result proves completion; do not output wait/no-op actions."
+                    "遵守 system 协议：每轮恰好一个原生 tool_call；把 Accessibility tree / indexed page evidence 当作主要 grounding；click/input_text/long_press 优先填写 element_index，scroll 优先填写 scrollable_index，坐标必须是 0-1000 单个数值且只作为兜底；只有当前截图/XML/工具结果证明任务已完成才调用 finished；不要输出等待/空操作。",
+                    "Follow the system protocol: exactly one native tool_call; treat Accessibility tree / indexed page evidence as the primary grounding source; for click/input_text/long_press prefer element_index, for scroll prefer scrollable_index, coordinates must be 0-1000 scalar values and are fallback only; call finished only when the current screenshot/XML/tool result proves completion; do not output wait/no-op actions."
+                )
+            )
+            appendLine(
+                t(
+                    locale,
+                    "完成判断：只有当前页面已经显示用户目标的最终状态，或上一轮工具结果明确完成了不可见系统动作，才调用 finished。还需要打开页面、选择项目、输入内容、保存、发送、确认、等待结果，或只是看到了目标入口，都不算完成；不确定时继续执行下一步或调用 get_state。",
+                    "Completion rule: call finished only when the current page already shows the user's final target state, or the previous tool result explicitly completed an invisible system action. If any page opening, item selection, typing, saving, sending, confirmation, result wait, or visible target entry remains, the task is not complete; when uncertain, continue with the next action or call get_state."
                 )
             )
             appendLine(

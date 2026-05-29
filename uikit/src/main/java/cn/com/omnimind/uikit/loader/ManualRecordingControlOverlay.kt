@@ -20,6 +20,7 @@ import cn.com.omnimind.uikit.UIKit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -42,6 +43,7 @@ object ManualRecordingControlOverlay {
     private var dragStartY = 0
     private var dragging = false
     private var dragPausedRecording = false
+    private var transientStatusToken = 0
     private var captureStateCallback: (suspend () -> Map<String, Any?>)? = null
 
     enum class State {
@@ -85,10 +87,12 @@ object ManualRecordingControlOverlay {
      * Shows the overlay in active recording state.
      */
     fun markRecording() {
-        synchronized(this) {
+        val context = synchronized(this) {
             state = State.RECORDING
             bindState(overlayView, State.RECORDING)
+            overlayView?.context
         }
+        ManualTouchRecordLoader.show(context ?: UIKit.appContext)
     }
 
     /**
@@ -99,6 +103,7 @@ object ManualRecordingControlOverlay {
             state = State.READY
             bindState(overlayView, State.READY)
         }
+        ManualTouchRecordLoader.hide()
     }
 
     /**
@@ -109,6 +114,7 @@ object ManualRecordingControlOverlay {
             state = State.PAUSED
             bindState(overlayView, State.PAUSED)
         }
+        ManualTouchRecordLoader.hide()
     }
 
     fun dismiss() {
@@ -118,6 +124,7 @@ object ManualRecordingControlOverlay {
     }
 
     private fun dismissLocked() {
+        ManualTouchRecordLoader.hide()
         val view = overlayView
         val manager = windowManager
         val params = overlayParams
@@ -132,6 +139,41 @@ object ManualRecordingControlOverlay {
         if (view != null && manager != null && view.isAttachedToWindow) {
             runCatching { manager.removeView(view) }
                 .onFailure { OmniLog.w(TAG, "dismiss failed: ${it.message}") }
+        }
+    }
+
+    fun ensureOnTop() {
+        synchronized(this) {
+            val view = overlayView ?: return
+            val manager = windowManager ?: return
+            val params = overlayParams ?: return
+            if (!view.isAttachedToWindow) return
+            runCatching {
+                manager.removeView(view)
+                manager.addView(view, params)
+            }.onFailure { error ->
+                OmniLog.w(TAG, "ensure on top failed: ${error.message}")
+            }
+        }
+    }
+
+    fun showTransientStatus(message: String, durationMs: Long = 800L) {
+        val token = synchronized(this) {
+            transientStatusToken += 1
+            transientStatusToken
+        }
+        recordingControlScope.launch {
+            withContext(Dispatchers.Main) {
+                setTitleText(message)
+            }
+            delay(durationMs)
+            withContext(Dispatchers.Main) {
+                synchronized(this@ManualRecordingControlOverlay) {
+                    if (transientStatusToken == token) {
+                        bindState(overlayView, state)
+                    }
+                }
+            }
         }
     }
 
@@ -476,9 +518,7 @@ object ManualRecordingControlOverlay {
 
     private fun bindState(view: View?, state: State) {
         val container = view as? LinearLayout ?: return
-        val title = (0 until container.childCount)
-            .map { container.getChildAt(it) }
-            .firstOrNull { it.tag == "manual_recording_title" } as? TextView
+        val title = findChildByTag(container, "manual_recording_title") as? TextView
         val button = (0 until container.childCount)
             .map { container.getChildAt(it) }
             .firstOrNull { it.tag == "manual_recording_finish_action" } as? TextView
@@ -531,5 +571,17 @@ object ManualRecordingControlOverlay {
                 State.PAUSED -> "结束手动录制"
             }
         }
+    }
+
+    private fun setTitleText(message: String) {
+        val container = overlayView as? LinearLayout ?: return
+        val title = findChildByTag(container, "manual_recording_title") as? TextView ?: return
+        title.text = message
+    }
+
+    private fun findChildByTag(container: LinearLayout, tag: String): View? {
+        return (0 until container.childCount)
+            .map { container.getChildAt(it) }
+            .firstOrNull { it.tag == tag }
     }
 }

@@ -195,7 +195,7 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `settings toggle run log exports terminal postcondition`() {
+    fun `settings toggle run log does not export terminal postcondition`() {
         val spec = compile(
             listOf(
                 card(
@@ -209,12 +209,9 @@ class RunLogReusableFunctionCompilerTest {
             goal = "打开蓝牙",
         )
 
-        val terminal = spec["terminal_postconditions"] as? List<*>
-        val postcondition = terminal?.single() as? Map<*, *>
-        assertEquals("android_settings_toggle", postcondition?.get("kind"))
-        assertEquals("打开蓝牙", postcondition?.get("goal"))
+        assertNull(spec["terminal_postconditions"])
         val execution = spec["execution"] as Map<*, *>
-        assertEquals(terminal, execution["terminal_postconditions"])
+        assertNull(execution["terminal_postconditions"])
     }
 
     @Test

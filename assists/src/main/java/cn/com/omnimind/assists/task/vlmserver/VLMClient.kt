@@ -460,7 +460,8 @@ class VLMClient(
                 targetDescription = requireString(args, "target_description"),
                 x = requireFloat(args, "x"),
                 y = requireFloat(args, "y"),
-                elementIndex = optionalInt(args, "element_index")
+                elementIndex = optionalInt(args, "element_index"),
+                nodeId = optionalString(args, "node_id")
             )
             "type" -> TypeAction(
                 content = requireString(args, "content")
@@ -470,7 +471,8 @@ class VLMClient(
                 content = requireString(args, "content", "text", "value"),
                 x = requireFloat(args, "x"),
                 y = requireFloat(args, "y"),
-                elementIndex = optionalInt(args, "element_index")
+                elementIndex = optionalInt(args, "element_index"),
+                nodeId = optionalString(args, "node_id")
             )
             "scroll" -> ScrollAction(
                 targetDescription = requireString(args, "target_description"),
@@ -486,7 +488,8 @@ class VLMClient(
                 targetDescription = requireString(args, "target_description"),
                 x = requireFloat(args, "x"),
                 y = requireFloat(args, "y"),
-                elementIndex = optionalInt(args, "element_index")
+                elementIndex = optionalInt(args, "element_index"),
+                nodeId = optionalString(args, "node_id")
             )
             "open_app" -> OpenAppAction(
                 packageName = requireString(args, "package_name")

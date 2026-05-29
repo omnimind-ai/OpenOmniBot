@@ -1,7 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
-import cn.com.omnimind.assists.task.vlmserver.VLMSettingsToggleCompletionChecker
 import com.google.gson.GsonBuilder
 
 object RunLogReusableFunctionCompiler {
@@ -52,7 +51,6 @@ object RunLogReusableFunctionCompiler {
         val goal = record.goal.ifBlank { record.operationDescription }
         val name = record.operationDescription.ifBlank { goal }.ifBlank { functionId }.take(80)
         val capabilities = executionCapabilities(steps)
-        val terminalPostconditions = terminalPostconditionsFor(goal)
         return linkedMapOf<String, Any?>(
             "schema_version" to "oob.reusable_function.v1",
             "function_id" to functionId,
@@ -60,7 +58,6 @@ object RunLogReusableFunctionCompiler {
             "description" to goal.ifBlank { name },
             "parameters" to parameters,
             "actions" to actions,
-            "terminal_postconditions" to terminalPostconditions.takeIf { it.isNotEmpty() },
             "metadata" to linkedMapOf(
                 "source" to "run_log_import",
                 "run_id" to record.runId,
@@ -102,8 +99,6 @@ object RunLogReusableFunctionCompiler {
                 "runner" to "oob_tool_sequence",
                 "entrypoint" to "execute",
                 "capabilities" to capabilities,
-                "fallback_runner" to "oob.agent.run",
-                "terminal_postconditions" to terminalPostconditions.takeIf { it.isNotEmpty() },
                 "steps" to steps,
                 "step_count" to steps.size,
                 "omniflow_step_count" to capabilities["omniflow_step_count"],
@@ -116,19 +111,6 @@ object RunLogReusableFunctionCompiler {
                 "runner" to "oob_agent_reusable_function",
                 "storage" to "workspace",
             ),
-        )
-    }
-
-    private fun terminalPostconditionsFor(goal: String): List<Map<String, Any?>> {
-        val normalizedGoal = goal.trim()
-        if (normalizedGoal.isEmpty()) return emptyList()
-        if (!VLMSettingsToggleCompletionChecker.mayHandle(normalizedGoal)) return emptyList()
-        return listOf(
-            linkedMapOf(
-                "kind" to "android_settings_toggle",
-                "goal" to normalizedGoal,
-                "source" to "vlm_settings_toggle_completion",
-            )
         )
     }
 

@@ -583,7 +583,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `converts wrong settings top level click into scroll for missing target domain`() {
+    fun `does not apply settings domain scroll correction by default`() {
         val step = VLMStep(
             observation = "settings home",
             thought = "open Apps",
@@ -607,10 +607,9 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("wrong_settings_domain_scroll", result.reason)
-        val action = result.step.action as ScrollAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Display", ignoreCase = true))
+        assertFalse(result.applied)
+        val action = result.step.action as ClickAction
+        assertEquals("Apps Assistant, recent apps, default apps LinearLayout", action.targetDescription)
     }
 
     @Test
@@ -779,7 +778,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `backs out of settings subpage when requested top level target is absent`() {
+    fun `does not apply settings subpage back correction by default`() {
         val step = VLMStep(
             observation = "internet settings",
             thought = "enable bluetooth",
@@ -803,13 +802,12 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("missing_settings_target_go_back", result.reason)
-        assertTrue(result.step.action is PressBackAction)
+        assertFalse(result.applied)
+        assertTrue(result.step.action is ClickAction)
     }
 
     @Test
-    fun `redirects wifi toggle click to wifi row instead of connected network`() {
+    fun `does not apply wifi toggle retargeting by default`() {
         val step = VLMStep(
             observation = "wifi list",
             thought = "turn off wifi",
@@ -833,16 +831,15 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("settings_toggle_target", result.reason)
+        assertFalse(result.applied)
         val action = result.step.action as ClickAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Wi-Fi", ignoreCase = true))
-        assertTrue(action.x >= 560f)
-        assertTrue(action.y in 590f..660f)
+        assertEquals("Toggle switch to turn off WiFi", action.targetDescription)
+        assertEquals(442f, action.x, 0.01f)
+        assertEquals(800f, action.y, 0.01f)
     }
 
     @Test
-    fun `converts get state loop on settings toggle page into visible target click`() {
+    fun `does not convert get state into settings toggle click by default`() {
         val step = VLMStep(
             observation = "bluetooth settings",
             thought = "蓝牙可能仍在开启，刷新状态",
@@ -864,12 +861,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("get_state_settings_toggle_target", result.reason)
-        val action = result.step.action as ClickAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Bluetooth", ignoreCase = true))
-        assertTrue(action.x >= 560f)
-        assertTrue(action.y in 850f..930f)
+        assertFalse(result.applied)
+        assertTrue(result.step.action is GetStateAction)
     }
 
     @Test
@@ -906,7 +899,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `prefers remaining settings domain after earlier domain mutation`() {
+    fun `uses only generic visible target matching when settings domain correction is disabled`() {
         val step = VLMStep(
             observation = "settings home",
             thought = "continue with the next part of the task",
@@ -932,14 +925,13 @@ class VLMActionPostProcessorTest {
         )
 
         assertTrue(result.applied)
-        assertEquals("visible_goal_target", result.reason)
-        val action = result.step.action as ClickAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Connected devices", ignoreCase = true))
-        assertTrue(action.y in 740f..850f)
+        assertEquals("generic_click_to_search_scroll", result.reason)
+        val action = result.step.action as ScrollAction
+        assertFalse(action.targetDescription, action.targetDescription.contains("Connected devices", ignoreCase = true))
     }
 
     @Test
-    fun `backs out of stale settings domain when next ordered domain is pending`() {
+    fun `does not back out of stale settings domain by default`() {
         val step = VLMStep(
             observation = "network preferences",
             thought = "tap the visible row",
@@ -964,9 +956,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("pending_settings_target_go_back", result.reason)
-        assertTrue(result.step.action is PressBackAction)
+        assertFalse(result.applied)
+        assertTrue(result.step.action is ClickAction)
     }
 
     @Test
@@ -1005,7 +996,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `does not back out when settings subpage contains requested target`() {
+    fun `does not retarget settings subpage toggle by default`() {
         val step = VLMStep(
             observation = "internet settings",
             thought = "turn off wifi",
@@ -1029,11 +1020,10 @@ class VLMActionPostProcessorTest {
             displayHeight = 1280
         )
 
-        assertTrue(result.applied)
-        assertEquals("settings_toggle_target", result.reason)
+        assertFalse(result.applied)
         val action = result.step.action as ClickAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Wi-Fi", ignoreCase = true))
-        assertTrue(action.x >= 560f)
+        assertEquals("Wi-Fi toggle switch to turn off WiFi", action.targetDescription)
+        assertEquals(360f, action.x, 0.01f)
     }
 
     @Test
@@ -1136,7 +1126,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `converts premature finished into pending ordered target click when visible`() {
+    fun `does not rewrite finished into pending ordered target click`() {
         val step = VLMStep(
             observation = "default apps list",
             thought = "all done",
@@ -1157,10 +1147,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 2400
         )
 
-        assertTrue(result.applied)
-        assertEquals("premature_finished_ordered_target", result.reason)
-        val action = result.step.action as ClickAction
-        assertTrue(action.targetDescription, action.targetDescription.contains("Browser app", ignoreCase = true))
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
     }
 
     @Test
@@ -1235,7 +1223,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `converts premature finished into back when pending ordered target is not visible`() {
+    fun `does not rewrite finished into back when pending ordered target is not visible`() {
         val step = VLMStep(
             observation = "phone detail page",
             thought = "phone page is visible",
@@ -1256,9 +1244,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 2400
         )
 
-        assertTrue(result.applied)
-        assertEquals("premature_finished_ordered_target_go_back", result.reason)
-        assertTrue(result.step.action is PressBackAction)
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
     }
 
     @Test
@@ -1294,7 +1281,7 @@ class VLMActionPostProcessorTest {
     }
 
     @Test
-    fun `does not let later milestone skip backtracking ordered target`() {
+    fun `does not rewrite finished based on later milestone backtracking`() {
         val step = VLMStep(
             observation = "phone detail page",
             thought = "phone page is visible",
@@ -1316,9 +1303,8 @@ class VLMActionPostProcessorTest {
             displayHeight = 2400
         )
 
-        assertTrue(result.applied)
-        assertEquals("premature_finished_ordered_target_go_back", result.reason)
-        assertTrue(result.step.action is PressBackAction)
+        assertFalse(result.applied)
+        assertTrue(result.step.action is FinishedAction)
     }
 
     @Test

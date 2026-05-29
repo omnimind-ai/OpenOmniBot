@@ -61,11 +61,12 @@ WORKFLOW:
                 ),
                 "maxSteps" to mapOf(
                     "type" to "integer",
-                    "description" to "Optional maximum execution steps. For AndroidWorld or acceptance tests, prefer 8-20."
+                    "default" to 12,
+                    "description" to "Optional maximum execution steps. Defaults to 12 and is capped at 64. If the model does not explicitly finish before the limit, the task reports incomplete or max-step failure."
                 ),
                 "timeoutMs" to mapOf(
                     "type" to "integer",
-                    "description" to "Optional control-plane wait timeout in milliseconds. Default is 120000; acceptance tests may use a larger value while the on-device VLM keeps executing."
+                    "description" to "Optional control-plane wait timeout in milliseconds. If it expires, OOB stops the on-device VLM task instead of leaving it running."
                 ),
                 "startFromCurrent" to mapOf(
                     "type" to "boolean",
@@ -77,8 +78,8 @@ WORKFLOW:
                 ),
                 "disableOmniFlowRecall" to mapOf(
                     "type" to "boolean",
-                    "default" to true,
-                    "description" to "Optional flag. Default true: run fresh online VLM from the current screenshot/XML without OmniFlow recall context. Set false only when recall guidance is explicitly needed."
+                    "default" to false,
+                    "description" to "Optional flag. Default false: inject OmniFlow/UDEG page-skill recall context for the live VLM decision. Set true only for a strict no-recall baseline."
                 ),
                 "allowOmniFlowFunctionAutoExecute" to mapOf(
                     "type" to "boolean",
@@ -457,7 +458,7 @@ BEHAVIOR:
                 "functionId" to mapOf("type" to "string", "description" to "Function id to run."),
                 "arguments" to mapOf("type" to "object", "description" to "Materialization arguments for the Function."),
                 "dryRun" to mapOf("type" to "boolean", "description" to "Only return guard decision without executing."),
-                "continueWithAgent" to mapOf("type" to "boolean", "description" to "Allow Agent fallback for non-deterministic steps."),
+                "continueWithAgent" to mapOf("type" to "boolean", "description" to "Compatibility flag ignored by fixed replay; start VLM explicitly if continuation is needed."),
                 "executionMode" to mapOf("type" to "string", "description" to "foreground or background. Default: foreground."),
                 "confirmed" to mapOf("type" to "boolean", "description" to "Set true only after user confirmation for guarded operations.")
             ),

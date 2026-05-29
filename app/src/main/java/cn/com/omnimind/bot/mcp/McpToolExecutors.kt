@@ -50,7 +50,7 @@ object McpToolExecutors {
             skipGoHome = startFromCurrent,
             disableOmniFlowRecall = boolArgOrDefault(
                 args,
-                default = true,
+                default = false,
                 "disableOmniFlowRecall",
                 "disable_omniflow_recall",
                 "disableRecall",

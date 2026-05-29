@@ -7,8 +7,18 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
+import cn.com.omnimind.assists.ManualOverlayTouchGesture
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.omniintelligence.models.ScrollDirection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import kotlin.math.abs
 import kotlin.math.max
@@ -73,7 +83,9 @@ internal data class ManualVlmTraceSnapshot(
     val pendingActionSummary: String?,
     val accessibilityEventCount: Int,
     val rawTouchEnabled: Boolean,
-    val rawTouchAvailable: Boolean
+    val rawTouchAvailable: Boolean,
+    val overlayTouchRecordedCount: Int,
+    val recordingBackend: String
 ) {
     fun asMap(): Map<String, Any?> = linkedMapOf(
         "is_started" to isStarted,
@@ -83,11 +95,14 @@ internal data class ManualVlmTraceSnapshot(
         "pending_action_summary" to pendingActionSummary,
         "accessibility_event_count" to accessibilityEventCount,
         "raw_touch_enabled" to rawTouchEnabled,
-        "raw_touch_available" to rawTouchAvailable
+        "raw_touch_available" to rawTouchAvailable,
+        "overlay_touch_recorded_count" to overlayTouchRecordedCount,
+        "recording_backend" to recordingBackend
     ).filterValues { it != null }
 }
 
 internal object ManualRecordingDiagnostics {
+    const val COMPLETE_OVERLAY_TOUCH = "complete_overlay_touch"
     const val COMPLETE_RAW_TOUCH = "complete_raw_touch"
     const val MISSING_RAW_TOUCH = "missing_raw_touch"
     const val RAW_TOUCH_INTERRUPTED = "raw_touch_interrupted"
@@ -111,6 +126,7 @@ internal object ManualRecordingDiagnostics {
     }
 
     fun warningMessage(completeness: String): String? = when (completeness) {
+        COMPLETE_OVERLAY_TOUCH -> null
         COMPLETE_RAW_TOUCH -> null
         RAW_TOUCH_INTERRUPTED -> "raw touch 录制中断，本次轨迹可能遗漏点击/滑动"
         else -> "raw touch 不可用，本次使用 A11Event 录制，可能遗漏部分点击/滑动"
@@ -596,6 +612,8 @@ class ManualVlmTraceRecorder(
     private val ownPackageName = context.packageName
     private val recordingLock = Any()
     private val recordedActions = mutableListOf<ManualVlmRecordedAction>()
+    private val overlayRecordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val overlayRecordJobs = mutableSetOf<Job>()
     private val nodeScrollState = mutableMapOf<String, ManualScrollSnapshot>()
     private val rawGestureBeforeXml = mutableMapOf<Long, String?>()
     private val rawGestureBeforeScreenshot = mutableMapOf<Long, ManualVlmScreenshotRef?>()
@@ -619,8 +637,19 @@ class ManualVlmTraceRecorder(
     private var rawGeteventDroppedLineCount: Int = 0
     private val rawGeteventRecentLines = ArrayDeque<Map<String, Any?>>()
     private var rawTouchActiveAtStop: Boolean? = null
+    private var overlayGestureStartedCount: Int = 0
+    private var overlayGestureRecordedCount: Int = 0
+    private var overlayGestureIgnoredControlCount: Int = 0
+    private var overlayGestureFailedCount: Int = 0
+    private var overlayCoordinateReplayCount: Int = 0
+    private var overlayCoordinateReplayFailedCount: Int = 0
+    private var overlayNodeReplayFallbackCount: Int = 0
+    private var overlayNodeReplayFallbackFailedCount: Int = 0
+    private var overlayGestureActiveCount: Int = 0
+    private var overlayPostRecordTimeoutCount: Int = 0
     private var suppressedSemanticActionEventCount: Int = 0
     private var suppressedNonRawActionCount: Int = 0
+    private var suppressedOverlayDuplicateActionCount: Int = 0
     private var windowTransitionEventCount: Int = 0
     private var unattributedWindowTransitionCount: Int = 0
     private var lastUnattributedWindowTransitionSignature: String = ""
@@ -671,6 +700,7 @@ class ManualVlmTraceRecorder(
     fun pause(): Boolean {
         if (!isStarted) return false
         if (isPaused) return true
+        awaitOverlayRecordJobs()
         val currentXml = captureCurrentXml()
         val currentScreenshot = captureCurrentScreenshotRef("pause")
         flushPendingText(currentXml)
@@ -702,6 +732,7 @@ class ManualVlmTraceRecorder(
     }
 
     fun stop(): ManualVlmTraceResult {
+        awaitOverlayRecordJobs()
         if (isStarted) {
             AssistsService.removeListener(listener)
             isStarted = false
@@ -733,8 +764,132 @@ class ManualVlmTraceRecorder(
             pendingActionSummary = pendingSummary,
             accessibilityEventCount = accessibilityEventCount,
             rawTouchEnabled = enableRawTouch,
-            rawTouchAvailable = rawTouchStatus?.available == true
+            rawTouchAvailable = rawTouchStatus?.available == true,
+            overlayTouchRecordedCount = overlayGestureRecordedCount,
+            recordingBackend = recordingBackendForStatus()
         )
+    }
+
+    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): Boolean {
+        synchronized(recordingLock) {
+            if (!isStarted || isPaused) return false
+            overlayGestureStartedCount += 1
+        }
+        val beforeXml = synchronized(recordingLock) { lastXmlSnapshot }
+        val beforeScreenshot = synchronized(recordingLock) { lastScreenshotSnapshot }
+        val touchX = if (gesture.actionName == "swipe") {
+            (gesture.startX + gesture.endX) / 2f
+        } else {
+            gesture.startX
+        }
+        val touchY = if (gesture.actionName == "swipe") {
+            (gesture.startY + gesture.endY) / 2f
+        } else {
+            gesture.startY
+        }
+        if (coordinateHitsIgnoredTarget(beforeXml, touchX, touchY)) {
+            synchronized(recordingLock) {
+                overlayGestureIgnoredControlCount += 1
+            }
+            OmniLog.d(TAG, "manual overlay touch ignored OOB/control gesture")
+            return false
+        }
+
+        synchronized(recordingLock) {
+            overlayGestureActiveCount += 1
+        }
+        val executed = runCatching {
+            performOverlayGesture(gesture)
+            true
+        }.getOrElse { error ->
+            synchronized(recordingLock) {
+                overlayGestureFailedCount += 1
+            }
+            OmniLog.w(TAG, "manual overlay touch execution failed: ${error.message}")
+            false
+        }
+        launchOverlayPostRecord(gesture, beforeXml, beforeScreenshot)
+        return executed
+    }
+
+    private fun launchOverlayPostRecord(
+        gesture: ManualOverlayTouchGesture,
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
+    ) {
+        val job = overlayRecordScope.launch {
+            settleAndRecordOverlayGesture(gesture, beforeXml, beforeScreenshot)
+        }
+        synchronized(recordingLock) {
+            overlayRecordJobs.add(job)
+        }
+        job.invokeOnCompletion {
+            synchronized(recordingLock) {
+                overlayRecordJobs.remove(job)
+            }
+        }
+    }
+
+    private fun settleAndRecordOverlayGesture(
+        gesture: ManualOverlayTouchGesture,
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?
+    ) {
+        try {
+            Thread.sleep(OVERLAY_TOUCH_SETTLE_MS)
+            val afterXml = captureCurrentXml()
+            val afterScreenshot = captureCurrentScreenshotRef("overlay_after")
+            synchronized(recordingLock) {
+                if (!isStarted) return
+                flushPendingText(beforeXml)
+                flushPendingScroll(beforeXml)
+                when (gesture.actionName) {
+                    "click", "long_press" -> appendOverlayClickGesture(
+                        gesture = gesture,
+                        beforeXml = beforeXml,
+                        afterXml = afterXml,
+                        beforeScreenshot = beforeScreenshot,
+                        afterScreenshot = afterScreenshot
+                    )
+                    "swipe" -> appendOverlaySwipeGesture(
+                        gesture = gesture,
+                        beforeXml = beforeXml,
+                        afterXml = afterXml,
+                        beforeScreenshot = beforeScreenshot,
+                        afterScreenshot = afterScreenshot
+                    )
+                    else -> {
+                        overlayGestureFailedCount += 1
+                        OmniLog.w(TAG, "manual overlay touch ignored unknown action=${gesture.actionName}")
+                        return
+                    }
+                }
+                overlayGestureRecordedCount += 1
+                lastXmlSnapshot = afterXml ?: beforeXml
+                lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
+            }
+        } finally {
+            synchronized(recordingLock) {
+                overlayGestureActiveCount = (overlayGestureActiveCount - 1).coerceAtLeast(0)
+            }
+        }
+    }
+
+    private fun awaitOverlayRecordJobs() {
+        val jobs = synchronized(recordingLock) { overlayRecordJobs.toList() }
+        if (jobs.isEmpty()) return
+        val completed = runBlocking {
+            withTimeoutOrNull(OVERLAY_POST_RECORD_STOP_TIMEOUT_MS) {
+                jobs.joinAll()
+                true
+            }
+        } == true
+        if (!completed) {
+            synchronized(recordingLock) {
+                overlayPostRecordTimeoutCount += 1
+            }
+            OmniLog.w(TAG, "manual overlay post record wait timed out pending=${jobs.size}")
+        }
     }
 
     private fun handleAccessibilityEvent(event: AccessibilityEvent) {
@@ -751,6 +906,10 @@ class ManualVlmTraceRecorder(
         incrementCount(accessibilityEventTypeCounts, eventTypeName(event.eventType))
         if (shouldIgnorePackage(packageName)) {
             accessibilityIgnoredPackageCount += 1
+            return
+        }
+        if (isOverlayTouchActive() && isReplayableAccessibilityAction(event.eventType)) {
+            suppressOverlayDuplicateAction(event)
             return
         }
 
@@ -784,13 +943,25 @@ class ManualVlmTraceRecorder(
         OmniLog.d(TAG, "manual trace semantic action suppressed: ${eventTypeName(event.eventType)}")
     }
 
+    private fun suppressOverlayDuplicateAction(event: AccessibilityEvent) {
+        suppressedOverlayDuplicateActionCount += 1
+        suppressSemanticActionEvent(event)
+        OmniLog.d(TAG, "manual trace overlay duplicate suppressed: ${eventTypeName(event.eventType)}")
+    }
+
+    private fun isReplayableAccessibilityAction(eventType: Int): Boolean {
+        return eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
+    }
+
     private fun recordWindowTransitionObservation(
         event: AccessibilityEvent,
         beforeXml: String?,
         afterXml: String?
     ) {
         windowTransitionEventCount += 1
-        if (isRawTouchActive()) return
+        if (isRawTouchActive() || isOverlayTouchActive()) return
         val beforeFingerprint = pageStableFingerprint(beforeXml)
         val afterFingerprint = pageStableFingerprint(afterXml)
         if (beforeFingerprint.isBlank() || afterFingerprint.isBlank()) return
@@ -860,6 +1031,8 @@ class ManualVlmTraceRecorder(
     }
 
     private fun isRawTouchActive(): Boolean = rawTouchRecorder?.isActive() == true
+
+    private fun isOverlayTouchActive(): Boolean = overlayGestureActiveCount > 0
 
     private fun rememberRawGestureStart(start: ManualRawTouchStart) {
         synchronized(recordingLock) {
@@ -1033,6 +1206,178 @@ class ManualVlmTraceRecorder(
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
                 eventContext = rawEventContextFor(gesture, target)
+            )
+        )
+    }
+
+    private suspend fun performOverlayGesture(gesture: ManualOverlayTouchGesture) {
+        when (gesture.actionName) {
+            "click" -> performOverlayClickGesture(gesture)
+            "long_press" -> AccessibilityController.longClickCoordinate(
+                gesture.startX,
+                gesture.startY,
+                gesture.durationMs.coerceAtLeast(OVERLAY_LONG_PRESS_MIN_DURATION_MS)
+            )
+            "swipe" -> {
+                val direction = overlaySwipeDirection(gesture)
+                AccessibilityController.scrollCoordinate(
+                    x = gesture.startX,
+                    y = gesture.startY,
+                    direction = direction,
+                    distance = gesture.distancePx.coerceAtLeast(OVERLAY_SWIPE_MIN_DISTANCE_PX),
+                    duration = gesture.durationMs.coerceAtLeast(OVERLAY_SWIPE_MIN_DURATION_MS)
+                )
+            }
+            else -> throw IllegalArgumentException("Unsupported overlay gesture: ${gesture.actionName}")
+        }
+    }
+
+    private suspend fun performOverlayClickGesture(gesture: ManualOverlayTouchGesture) {
+        val coordinateResult = runCatching {
+            AccessibilityController.clickCoordinate(gesture.startX, gesture.startY)
+        }
+        if (coordinateResult.isSuccess) {
+            synchronized(recordingLock) {
+                overlayCoordinateReplayCount += 1
+            }
+            return
+        }
+
+        val coordinateError = coordinateResult.exceptionOrNull()
+        synchronized(recordingLock) {
+            overlayCoordinateReplayFailedCount += 1
+        }
+        OmniLog.w(TAG, "overlay click coordinate replay failed: ${coordinateError?.message}")
+
+        val nodeResult = runCatching {
+            AccessibilityController.clickNodeAtCoordinate(gesture.startX, gesture.startY)
+        }
+        if (nodeResult.isSuccess) {
+            synchronized(recordingLock) {
+                overlayNodeReplayFallbackCount += 1
+            }
+            return
+        }
+
+        val nodeError = nodeResult.exceptionOrNull()
+        synchronized(recordingLock) {
+            overlayNodeReplayFallbackFailedCount += 1
+        }
+        throw IllegalStateException(
+            "Overlay click replay failed: coordinate=${coordinateError?.message}; node=${nodeError?.message}",
+            nodeError ?: coordinateError
+        )
+    }
+
+    private fun appendOverlayClickGesture(
+        gesture: ManualOverlayTouchGesture,
+        beforeXml: String?,
+        afterXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?,
+        afterScreenshot: ManualVlmScreenshotRef?
+    ) {
+        val x = gesture.startX
+        val y = gesture.startY
+        val target = targetAtCoordinateFromXml(
+            xml = beforeXml,
+            x = x,
+            y = y,
+            fallbackPackageName = packageNameFromXml(beforeXml),
+            preferScrollable = false
+        )?.asOverlayTarget() ?: coordinateOnlyTarget(beforeXml, x, y, "overlay_touch_coordinate_only")
+        val label = target.label.ifBlank { "屏幕坐标 ${x.toInt()},${y.toInt()}" }
+        val recordedActionName = gesture.actionName
+        val title = when (recordedActionName) {
+            "long_press" -> "人工长按 $label"
+            else -> "人工点击 $label"
+        }
+        val params = linkedMapOf<String, Any?>(
+            "target_description" to label,
+            "x" to x,
+            "y" to y,
+            "bounds" to boundsString(target.bounds),
+            "node_class" to target.className,
+            "node_resource_id" to target.resourceId,
+            "node_text" to target.text,
+            "node_content_description" to target.contentDescription,
+            "duration_ms" to gesture.durationMs.takeIf { recordedActionName == "long_press" },
+            "gesture_duration_ms" to gesture.durationMs,
+            "gesture_distance_px" to gesture.distancePx,
+            "recording_backend" to OVERLAY_TOUCH_BACKEND,
+            "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+            "target_resolution" to target.resolution,
+            "display_width" to gesture.displayWidth.takeIf { it > 0 },
+            "display_height" to gesture.displayHeight.takeIf { it > 0 }
+        ).filterValues { it != null }
+        appendRecordedAction(
+            ManualVlmRecordedAction(
+                actionName = recordedActionName,
+                title = title,
+                params = params,
+                packageName = target.packageName,
+                beforeXml = beforeXml,
+                afterXml = afterXml,
+                beforeScreenshot = beforeScreenshot,
+                afterScreenshot = afterScreenshot,
+                startedAtMs = gesture.startedAtMs,
+                finishedAtMs = gesture.finishedAtMs,
+                summary = title,
+                eventContext = overlayEventContextFor(gesture, target)
+            )
+        )
+    }
+
+    private fun appendOverlaySwipeGesture(
+        gesture: ManualOverlayTouchGesture,
+        beforeXml: String?,
+        afterXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?,
+        afterScreenshot: ManualVlmScreenshotRef?
+    ) {
+        val midX = (gesture.startX + gesture.endX) / 2f
+        val midY = (gesture.startY + gesture.endY) / 2f
+        val target = targetAtCoordinateFromXml(
+            xml = beforeXml,
+            x = midX,
+            y = midY,
+            fallbackPackageName = packageNameFromXml(beforeXml),
+            preferScrollable = true
+        )?.asOverlayTarget() ?: coordinateOnlyTarget(beforeXml, midX, midY, "overlay_touch_coordinate_only")
+        val direction = overlaySwipeDirectionName(gesture)
+        val label = target.label.ifBlank { "当前页面" }
+        val title = "人工滑动 $label"
+        val params = linkedMapOf<String, Any?>(
+            "target_description" to label,
+            "x1" to gesture.startX,
+            "y1" to gesture.startY,
+            "x2" to gesture.endX,
+            "y2" to gesture.endY,
+            "duration_ms" to gesture.durationMs.coerceAtLeast(OVERLAY_SWIPE_MIN_DURATION_MS),
+            "gesture_distance_px" to gesture.distancePx,
+            "direction" to direction,
+            "bounds" to boundsString(target.bounds),
+            "node_class" to target.className,
+            "node_resource_id" to target.resourceId,
+            "recording_backend" to OVERLAY_TOUCH_BACKEND,
+            "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+            "target_resolution" to target.resolution,
+            "display_width" to gesture.displayWidth.takeIf { it > 0 },
+            "display_height" to gesture.displayHeight.takeIf { it > 0 }
+        ).filterValues { it != null }
+        appendRecordedAction(
+            ManualVlmRecordedAction(
+                actionName = "swipe",
+                title = title,
+                params = params,
+                packageName = target.packageName,
+                beforeXml = beforeXml,
+                afterXml = afterXml,
+                beforeScreenshot = beforeScreenshot,
+                afterScreenshot = afterScreenshot,
+                startedAtMs = gesture.startedAtMs,
+                finishedAtMs = gesture.finishedAtMs,
+                summary = title,
+                eventContext = overlayEventContextFor(gesture, target)
             )
         )
     }
@@ -1907,8 +2252,8 @@ class ManualVlmTraceRecorder(
     }
 
     private fun captureCurrentScreenshotRef(stage: String): ManualVlmScreenshotRef? {
-        screenshotSkippedCount += 1
-        OmniLog.d(TAG, "manual trace screenshot capture skipped stage=$stage")
+        // Manual recording is XML-only. Screenshots are intentionally not captured
+        // on this path to keep takeover latency low and avoid extra artifacts.
         return null
     }
 
@@ -1919,6 +2264,15 @@ class ManualVlmTraceRecorder(
         }
         val suffix = if (actions.size > MAX_SUMMARY_ACTIONS) "；..." else ""
         return "用户在接管期间手动完成了 ${actions.size} 步操作：$actionSummary$suffix。请基于当前屏幕继续执行原任务。"
+    }
+
+    private fun recordingBackendForStatus(): String {
+        return when {
+            overlayGestureRecordedCount > 0 -> OVERLAY_TOUCH_BACKEND
+            rawTouchStatus?.available == true && enableRawTouch -> "mixed"
+            enableRawTouch -> "accessibility_event_with_raw_unavailable"
+            else -> "accessibility_event"
+        }
     }
 
     private fun appendRecordedAction(action: ManualVlmRecordedAction) {
@@ -1989,6 +2343,30 @@ class ManualVlmTraceRecorder(
         "target_bounds" to boundsString(target.bounds)
     ).filterValues { it != null }
 
+    private fun overlayEventContextFor(
+        gesture: ManualOverlayTouchGesture,
+        target: ManualEventTarget
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "event_type" to "OVERLAY_TOUCH_${gesture.actionName.uppercase()}",
+        "event_has_source" to false,
+        "recording_backend" to OVERLAY_TOUCH_BACKEND,
+        "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+        "gesture_duration_ms" to gesture.durationMs,
+        "gesture_distance_px" to gesture.distancePx,
+        "direction" to overlaySwipeDirectionName(gesture).takeIf { gesture.actionName == "swipe" },
+        "start_x" to gesture.startX,
+        "start_y" to gesture.startY,
+        "end_x" to gesture.endX,
+        "end_y" to gesture.endY,
+        "display_width" to gesture.displayWidth.takeIf { it > 0 },
+        "display_height" to gesture.displayHeight.takeIf { it > 0 },
+        "target_resolution" to target.resolution,
+        "target_package" to target.packageName,
+        "target_resource_id" to target.resourceId,
+        "target_class" to target.className,
+        "target_bounds" to boundsString(target.bounds)
+    ).filterValues { it != null }
+
     private fun rawSwipeDirection(gesture: ManualRawTouchGesture): String {
         val dx = gesture.endX - gesture.startX
         val dy = gesture.endY - gesture.startY
@@ -1999,20 +2377,55 @@ class ManualVlmTraceRecorder(
         }
     }
 
+    private fun overlaySwipeDirection(gesture: ManualOverlayTouchGesture): ScrollDirection {
+        return when (overlaySwipeDirectionName(gesture)) {
+            "up" -> ScrollDirection.UP
+            "down" -> ScrollDirection.DOWN
+            "left" -> ScrollDirection.LEFT
+            "right" -> ScrollDirection.RIGHT
+            else -> ScrollDirection.DOWN
+        }
+    }
+
+    private fun overlaySwipeDirectionName(gesture: ManualOverlayTouchGesture): String {
+        val explicit = gesture.direction?.lowercase()
+        if (explicit == "up" || explicit == "down" || explicit == "left" || explicit == "right") {
+            return explicit
+        }
+        val dx = gesture.endX - gesture.startX
+        val dy = gesture.endY - gesture.startY
+        return if (abs(dx) > abs(dy)) {
+            if (dx > 0) "right" else "left"
+        } else {
+            if (dy > 0) "down" else "up"
+        }
+    }
+
+    private fun ManualEventTarget.asOverlayTarget(): ManualEventTarget =
+        copy(resolution = resolution.replace("raw_touch", "overlay_touch"))
+
     private fun buildDiagnostics(): Map<String, Any?> {
         val rawActions = recordedActions.count {
             it.params["recording_backend"]?.toString() == "device_getevent"
         }
-        val semanticActions = recordedActions.size - rawActions
+        val overlayActions = recordedActions.count {
+            it.params["recording_backend"]?.toString() == OVERLAY_TOUCH_BACKEND
+        }
+        val semanticActions = recordedActions.size - rawActions - overlayActions
         val rawTouchAvailable = rawTouchStatus?.available == true
-        val completeness = ManualRecordingDiagnostics.completeness(
-            rawTouchAvailable = rawTouchAvailable,
-            rawTouchActiveAtStop = rawTouchActiveAtStop
-        )
-        val guaranteesNoMissingClicks = ManualRecordingDiagnostics.guaranteesNoMissingClicks(
-            rawTouchAvailable = rawTouchAvailable,
-            rawTouchActiveAtStop = rawTouchActiveAtStop
-        )
+        val overlayTouchAvailable = overlayGestureStartedCount > 0 || overlayGestureRecordedCount > 0
+        val completeness = when {
+            overlayTouchAvailable -> ManualRecordingDiagnostics.COMPLETE_OVERLAY_TOUCH
+            else -> ManualRecordingDiagnostics.completeness(
+                rawTouchAvailable = rawTouchAvailable,
+                rawTouchActiveAtStop = rawTouchActiveAtStop
+            )
+        }
+        val guaranteesNoMissingClicks = overlayTouchAvailable ||
+            ManualRecordingDiagnostics.guaranteesNoMissingClicks(
+                rawTouchAvailable = rawTouchAvailable,
+                rawTouchActiveAtStop = rawTouchActiveAtStop
+            )
         val warningMessage = if (enableRawTouch) {
             ManualRecordingDiagnostics.warningMessage(completeness)
         } else {
@@ -2046,9 +2459,26 @@ class ManualVlmTraceRecorder(
                 "ignored_package_event_count" to accessibilityIgnoredPackageCount,
                 "event_type_counts" to accessibilityEventTypeCounts.toMap(),
                 "suppressed_semantic_action_event_count" to suppressedSemanticActionEventCount,
+                "suppressed_overlay_duplicate_action_count" to suppressedOverlayDuplicateActionCount,
                 "suppressed_non_raw_action_count" to suppressedNonRawActionCount,
-                "records_replayable_actions" to true,
+                "records_replayable_actions" to !overlayTouchAvailable,
+                "records_text_input_when_overlay_active" to overlayTouchAvailable,
                 "recorded_action_count" to semanticActions
+            ),
+            "overlay_touch" to linkedMapOf(
+                "available" to overlayTouchAvailable,
+                "backend" to OVERLAY_TOUCH_BACKEND,
+                "started_gesture_count" to overlayGestureStartedCount,
+                "recorded_gesture_count" to overlayGestureRecordedCount,
+                "ignored_control_gesture_count" to overlayGestureIgnoredControlCount,
+                "failed_gesture_count" to overlayGestureFailedCount,
+                "coordinate_replay_count" to overlayCoordinateReplayCount,
+                "coordinate_replay_failed_count" to overlayCoordinateReplayFailedCount,
+                "node_replay_fallback_count" to overlayNodeReplayFallbackCount,
+                "node_replay_fallback_failed_count" to overlayNodeReplayFallbackFailedCount,
+                "pending_post_record_count" to synchronized(recordingLock) { overlayRecordJobs.size },
+                "post_record_timeout_count" to overlayPostRecordTimeoutCount,
+                "recorded_action_count" to overlayActions
             ),
             "unattributed_window_transitions" to linkedMapOf(
                 "event_count" to windowTransitionEventCount,
@@ -2059,17 +2489,23 @@ class ManualVlmTraceRecorder(
             ),
             "manual_recording" to linkedMapOf(
                 "action_source" to when {
+                    overlayActions > 0 && semanticActions > 0 -> "overlay_touch_with_a11_text"
+                    overlayActions > 0 -> "overlay_touch"
                     rawActions > 0 && semanticActions > 0 -> "mixed"
                     rawActions > 0 -> "raw_touch"
                     else -> "accessibility_event"
                 },
+                "overlay_touch_available" to overlayTouchAvailable,
                 "raw_touch_enabled" to enableRawTouch,
                 "raw_touch_required" to false,
-                "a11_replay_actions_enabled" to true,
+                "a11_replay_actions_enabled" to !overlayTouchAvailable,
+                "a11_text_input_enabled" to true,
                 "action_count" to recordedActions.size,
+                "overlay_action_count" to overlayActions,
                 "raw_action_count" to rawActions,
                 "semantic_action_count" to semanticActions,
                 "suppressed_non_raw_action_count" to suppressedNonRawActionCount,
+                "suppressed_overlay_duplicate_action_count" to suppressedOverlayDuplicateActionCount,
                 "completeness" to completeness,
                 "missing_raw_touch" to (enableRawTouch && !rawTouchAvailable),
                 "raw_touch_active_at_stop" to rawTouchActiveAtStop,
@@ -2247,6 +2683,13 @@ class ManualVlmTraceRecorder(
     private companion object {
         private const val TAG = "ManualVlmTraceRecorder"
         private const val DUPLICATE_EVENT_WINDOW_MS = 400L
+        private const val OVERLAY_TOUCH_BACKEND = "overlay_touch"
+        private const val SCREEN_ABSOLUTE_COORDINATE_SPACE = "screen_absolute_px"
+        private const val OVERLAY_TOUCH_SETTLE_MS = 350L
+        private const val OVERLAY_POST_RECORD_STOP_TIMEOUT_MS = 1200L
+        private const val OVERLAY_LONG_PRESS_MIN_DURATION_MS = 600L
+        private const val OVERLAY_SWIPE_MIN_DURATION_MS = 120L
+        private const val OVERLAY_SWIPE_MIN_DISTANCE_PX = 16f
         private const val RAW_TOUCH_BACKEND = "device_getevent"
         private const val RAW_TOUCH_SETTLE_MS = 350L
         private const val MAX_LABEL_LENGTH = 80

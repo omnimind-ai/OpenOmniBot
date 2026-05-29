@@ -112,6 +112,9 @@ class AccessibilityController() {
             if (!AssistsCore.isAccessibilityServiceEnabled()) {
                 throw PermissionException("无障碍服务未启用或权限未授予!")
             }
+            if (!initController() || actionController == null) {
+                throw IllegalStateException("Accessibility action controller is not ready")
+            }
         }
 
         //
@@ -284,8 +287,9 @@ class AccessibilityController() {
         ) {
             checkAccessibilityPermissions()
             withTimeout(2000) {
-                actionController?.clickCoordinate(x, y)?.await()
-
+                val controller = actionController
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.clickCoordinate(x, y).await()
             }
         }
 
@@ -303,8 +307,26 @@ class AccessibilityController() {
                 ) ?: throw IllegalStateException(
                     "Node '$nodeId' is not clickable: ${targetDescription.ifBlank { nodeSemanticLabel(node.info) }}"
                 )
-                actionController?.clickNode(clickableNode)
+                val controller = actionController
                     ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.clickNode(clickableNode)
+            }
+        }
+
+        suspend fun clickNodeAtCoordinate(
+            x: Float,
+            y: Float,
+            targetDescription: String = ""
+        ) {
+            checkAccessibilityPermissions()
+            withTimeout(1200) {
+                val clickableNode = findClickableNodeAtCoordinate(x, y)
+                    ?: throw IllegalArgumentException(
+                        "No clickable node at coordinate ${x.toInt()},${y.toInt()}: $targetDescription"
+                    )
+                val controller = actionController
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.clickNode(clickableNode)
             }
         }
 
@@ -313,7 +335,9 @@ class AccessibilityController() {
         ) {
             checkAccessibilityPermissions()
             withTimeout(2000 + duration) {
-                actionController?.longClickCoordinate(x, y, duration)?.await()
+                val controller = actionController
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.longClickCoordinate(x, y, duration).await()
             }
         }
 
@@ -331,8 +355,9 @@ class AccessibilityController() {
                 ) ?: throw IllegalStateException(
                     "Node '$nodeId' is not long-clickable: ${targetDescription.ifBlank { nodeSemanticLabel(node.info) }}"
                 )
-                actionController?.longClickNode(longClickableNode)
+                val controller = actionController
                     ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.longClickNode(longClickableNode)
             }
         }
 
@@ -615,6 +640,28 @@ class AccessibilityController() {
 
         private fun findNodeById(nodeId: String): AccessibilityNode? =
             captureAction?.getNodeMap()?.get(nodeId.trim())
+
+        private fun findClickableNodeAtCoordinate(x: Float, y: Float): AccessibilityNodeInfo? {
+            val px = x.toInt()
+            val py = y.toInt()
+            return captureAction?.getNodeMap()?.values.orEmpty()
+                .asSequence()
+                .mapNotNull { node ->
+                    if (!node.show || !node.info.isEnabled) return@mapNotNull null
+                    val clickableNode = findActionableAncestor(
+                        node = node.info,
+                        supportsAction = { it.isEnabled && it.isClickable }
+                    ) ?: return@mapNotNull null
+                    val bounds = clickableNode.boundsInScreenOrNull() ?: node.bounds
+                    if (bounds.isEmpty || !bounds.contains(px, py)) return@mapNotNull null
+                    CoordinateClickCandidate(
+                        node = clickableNode,
+                        area = bounds.width().coerceAtLeast(1) * bounds.height().coerceAtLeast(1)
+                    )
+                }
+                .minByOrNull { it.area }
+                ?.node
+        }
 
         private fun inputTextIntoNode(
             node: AccessibilityNodeInfo,
@@ -1134,6 +1181,11 @@ class AccessibilityController() {
         private data class SliderCandidate(
             val node: AccessibilityNode,
             val score: Float
+        )
+
+        private data class CoordinateClickCandidate(
+            val node: AccessibilityNodeInfo,
+            val area: Int
         )
 
         private val TERM_REGEX = Regex("""[\p{L}\p{N}]+""")

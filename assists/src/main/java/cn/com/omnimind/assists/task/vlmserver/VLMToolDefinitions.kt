@@ -39,7 +39,7 @@ object VLMToolDefinitions {
     private fun buildToolSpecs(locale: PromptLocale): List<ToolSpec> = listOf(
         ToolSpec(
             name = "click",
-            description = t(locale, "点击一个可见目标。", "Tap a visible target."),
+            description = t(locale, "点击一个可见目标；有 indexed evidence 时优先给 element_index。", "Tap a visible target; when indexed evidence is available, prefer element_index."),
             parameters = objectSchema(
                 properties = linkedMapOf(
                     "target_description" to stringSchema(
@@ -48,31 +48,31 @@ object VLMToolDefinitions {
                     "element_index" to integerSchema(
                         t(
                             locale,
-                            "可选。OOB indexed page evidence 中目标元素的 #index；提供后系统会用该元素中心覆盖坐标。",
-                            "Optional. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                            "优先填写。OOB indexed page evidence 中目标元素的 #index；提供后系统会用 live XML 中该元素中心覆盖坐标。",
+                            "Prefer this. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that live XML element center over raw coordinates."
                         )
                     ),
                     "x" to coordinateNumberSchema(
-                        t(locale, "点击位置的 X 坐标。", "X coordinate of the tap target.")
+                        t(locale, "兜底点击位置的 X 坐标。", "Fallback X coordinate of the tap target.")
                     ),
                     "y" to coordinateNumberSchema(
-                        t(locale, "点击位置的 Y 坐标。", "Y coordinate of the tap target.")
+                        t(locale, "兜底点击位置的 Y 坐标。", "Fallback Y coordinate of the tap target.")
                     )
                 ),
                 required = listOf("target_description", "x", "y")
             ),
             promptGuide = t(
                 locale,
-                "- click(target_description, x, y): 点击一个可见目标。",
-                "- click(target_description, x, y): Tap a visible target."
+                "- click(target_description, element_index?, x, y): 点击可见目标；优先填写 indexed evidence 的 element_index，x/y 只是兜底。",
+                "- click(target_description, element_index?, x, y): Tap a visible target; prefer indexed evidence element_index, x/y are fallback only."
             )
         ),
         ToolSpec(
             name = "input_text",
             description = t(
                 locale,
-                "点击一个可见输入目标并输入文本。",
-                "Tap a visible input target and type text into it."
+                "向一个可见输入目标输入文本；有 indexed evidence 时优先给 element_index。",
+                "Type text into a visible input target; when indexed evidence is available, prefer element_index."
             ),
             parameters = objectSchema(
                 properties = linkedMapOf(
@@ -85,23 +85,23 @@ object VLMToolDefinitions {
                     "element_index" to integerSchema(
                         t(
                             locale,
-                            "可选。OOB indexed page evidence 中目标输入框的 #index；提供后系统会用该元素中心覆盖坐标。",
-                            "Optional. The #index of the input target in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                            "优先填写。OOB indexed page evidence 中目标输入框的 #index；提供后系统会优先用 node_id/ACTION_SET_TEXT 输入，失败才用坐标兜底。",
+                            "Prefer this. The #index of the input target in OOB indexed page evidence; the runtime first uses node_id/ACTION_SET_TEXT, then falls back to coordinates if needed."
                         )
                     ),
                     "x" to coordinateNumberSchema(
-                        t(locale, "目标输入框中心的 X 坐标。", "X coordinate of the input target center.")
+                        t(locale, "兜底目标输入框中心的 X 坐标。", "Fallback X coordinate of the input target center.")
                     ),
                     "y" to coordinateNumberSchema(
-                        t(locale, "目标输入框中心的 Y 坐标。", "Y coordinate of the input target center.")
+                        t(locale, "兜底目标输入框中心的 Y 坐标。", "Fallback Y coordinate of the input target center.")
                     )
                 ),
                 required = listOf("target_description", "content", "x", "y")
             ),
             promptGuide = t(
                 locale,
-                "- input_text(target_description, content, x, y): 点击可见输入框并输入文本；当目标输入框未聚焦时优先使用。",
-                "- input_text(target_description, content, x, y): Tap a visible input field and type text; prefer this when the target field is not focused."
+                "- input_text(target_description, content, element_index?, x, y): 向输入框输入；优先填写 element_index，系统会先走 XML 节点输入，x/y 只是兜底。",
+                "- input_text(target_description, content, element_index?, x, y): Type into an input field; prefer element_index so the runtime can use XML node input first, x/y are fallback only."
             )
         ),
         ToolSpec(
@@ -165,8 +165,8 @@ object VLMToolDefinitions {
                     "element_index" to integerSchema(
                         t(
                             locale,
-                            "可选。OOB indexed page evidence 中目标元素的 #index；提供后系统会用该元素中心覆盖坐标。",
-                            "Optional. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that element center over raw coordinates."
+                            "优先填写。OOB indexed page evidence 中目标元素的 #index；提供后系统会用 live XML 中该元素中心覆盖坐标。",
+                            "Prefer this. The #index of the target element in OOB indexed page evidence; when provided, the runtime uses that live XML element center over raw coordinates."
                         )
                     ),
                     "x" to coordinateNumberSchema(t(locale, "长按位置的 X 坐标。", "X coordinate of the long press.")),
@@ -176,8 +176,8 @@ object VLMToolDefinitions {
             ),
             promptGuide = t(
                 locale,
-                "- long_press(target_description, x, y): 长按一个目标。",
-                "- long_press(target_description, x, y): Long-press a target."
+                "- long_press(target_description, element_index?, x, y): 长按目标；优先填写 element_index，x/y 只是兜底。",
+                "- long_press(target_description, element_index?, x, y): Long-press a target; prefer element_index, x/y are fallback only."
             )
         ),
         ToolSpec(
@@ -253,7 +253,11 @@ object VLMToolDefinitions {
         ),
         ToolSpec(
             name = "finished",
-            description = t(locale, "任务真正完成时结束。", "End the task only when it is truly complete."),
+            description = t(
+                locale,
+                "仅当当前页面或上一轮工具结果直接证明用户目标已经完成时结束。",
+                "End only when the current page or previous tool result directly proves the user's goal is complete."
+            ),
             parameters = objectSchema(
                 properties = linkedMapOf(
                     "content" to stringSchema(
@@ -263,8 +267,8 @@ object VLMToolDefinitions {
             ),
             promptGuide = t(
                 locale,
-                "- finished(content?): 仅在任务真正完成时调用。",
-                "- finished(content?): Call only when the task is truly complete."
+                "- finished(content?): 仅在当前页面或上一轮工具结果直接证明目标完成时调用；不确定就继续执行或 get_state。",
+                "- finished(content?): Call only when the current page or previous tool result directly proves completion; if uncertain, continue or call get_state."
             )
         ),
         ToolSpec(
@@ -375,8 +379,8 @@ object VLMToolDefinitions {
             append(
                 t(
                     locale,
-                    "注意：所有 function.arguments 必须是严格合法的 JSON object。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式。若上下文提供 OOB indexed page evidence，优先填写 element_index 或 scrollable_index，并仍给出坐标兜底。不要返回停留、延时或空操作类动作；页面停留和稳定检测由系统内部处理。",
-                    "Important: every function.arguments value must be a strictly valid JSON object. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields. Do not emit invalid forms such as \"x\": 827, 76. If OOB indexed page evidence is available, prefer element_index or scrollable_index while still providing fallback coordinates. Do not return idle, delay, or no-op actions; page settling and stability detection are handled internally."
+                    "注意：所有 function.arguments 必须是严格合法的 JSON object。把 OOB indexed page evidence 作为主要 grounding：click/input_text/long_press 优先填写 element_index，scroll 优先填写 scrollable_index。坐标必须分别写入 x / y / x1 / y1 / x2 / y2 字段，不要写成 \"x\": 827, 76 这类非法格式，坐标只作为兜底。不要返回停留、延时或空操作类动作；页面停留和稳定检测由系统内部处理。",
+                    "Important: every function.arguments value must be a strictly valid JSON object. Use OOB indexed page evidence as the primary grounding: for click/input_text/long_press prefer element_index, and for scroll prefer scrollable_index. Coordinates must be written into x / y / x1 / y1 / x2 / y2 as separate scalar fields; do not emit invalid forms such as \"x\": 827, 76. Coordinates are fallback only. Do not return idle, delay, or no-op actions; page settling and stability detection are handled internally."
                 )
             )
         }

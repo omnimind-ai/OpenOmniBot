@@ -118,7 +118,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
 
             assertEquals(true, run["success"])
             assertEquals(false, run["model_required"])
-            assertEquals("oob_omniflow_replay", run["runner"])
+            assertEquals("oob_fixed_replay", run["runner"])
             assertTrue(run["run_id"]?.toString()?.startsWith("omniflow_run_") == true)
             assertEquals(run["run_id"], run["audit_run_id"])
             val step = stepResults(run).single()

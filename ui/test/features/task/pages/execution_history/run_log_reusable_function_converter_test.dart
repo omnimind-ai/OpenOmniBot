@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/services.dart';
 import 'package:ui/features/task/run_log/run_log_reusable_function_converter.dart';
 import 'package:ui/features/task/run_log/run_log_replay_policy.dart';
 
@@ -181,6 +180,13 @@ void main() {
       ),
       isFalse,
     );
+
+    final cleanup = (spec['metadata'] as Map)['oob_step_cleanup'] as Map;
+    expect(cleanup['execution_rewrite_allowed'], isFalse);
+    expect(cleanup['dropped_count'], 1);
+    final events = (cleanup['events'] as List).cast<Map>();
+    expect(events.single['source_index'], 1);
+    expect(events.single['reason'], 'non_replayable_noise_tool');
   });
 
   test('deduplicates repeated legacy type input events', () {
@@ -207,6 +213,20 @@ void main() {
     expect(steps, hasLength(1));
     expect(steps.single['tool'], 'input_text');
     expect((steps.single['args'] as Map)['content'], 'hello');
+    expect(steps.single['source_indices'], [0, 1]);
+
+    final annotation = steps.single['cleanup_annotation'] as Map;
+    expect(annotation['cleanup_action'], 'merged_duplicate');
+    expect(annotation['merged_source_indices'], [1]);
+
+    final mergedSteps = (steps.single['merged_steps'] as List).cast<Map>();
+    expect(mergedSteps.single['source_index'], 1);
+    expect(mergedSteps.single['reason'], 'duplicate_text_input_same_target');
+
+    final cleanup = (spec['metadata'] as Map)['oob_step_cleanup'] as Map;
+    expect(cleanup['execution_rewrite_allowed'], isFalse);
+    expect(cleanup['merged_count'], 1);
+    expect(cleanup['annotated_step_count'], 1);
   });
 
   test('normalizes Omniflow action aliases before export', () {
@@ -887,6 +907,7 @@ Actual output:
       expect(prompt, contains('Use this example shape'));
       expect(prompt, contains('OmniFlow Function Enhancer skill contract'));
       expect(prompt, contains('candidate_bindings'));
+      expect(prompt, contains('cleanup_action'));
       expect(prompt, contains(r'$.execution.steps[1].args.content'));
       expect(prompt, contains('Work one section at a time'));
       expect(prompt, contains('enhanced, unchanged, partial, or failed'));
@@ -1003,6 +1024,80 @@ Actual output:
         'contact_name',
         'phone_number',
       ]);
+    },
+  );
+
+  test(
+    'agent enhancement annotates cleanup candidates without rewriting execution',
+    () async {
+      final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-cleanup-annotation',
+        title: 'Tap duplicate control',
+        payload: const {'goal': 'Tap duplicate control'},
+        cards: [
+          card('click', const {
+            'target_description': 'Open',
+            'x': 120,
+            'y': 240,
+          }),
+        ],
+        useEnglish: true,
+      );
+      final beforeStep = stepsFrom(fallback).single;
+
+      final enhanced =
+          await RunLogReusableFunctionConverter.applyLabelEnhancementAsync({
+            'steps': [
+              {
+                'index': 0,
+                'title': 'Tap duplicate button',
+                'description': 'Duplicate tap after the target was selected.',
+                'importance': 'noise',
+                'cleanup_action': 'drop',
+                'cleanup_reason':
+                    'Repeated tap after the same target was already clicked.',
+              },
+            ],
+            'execution': {
+              'steps': [
+                {
+                  'tool': 'shell_exec',
+                  'executor': 'agent',
+                  'args': {'cmd': 'rm -rf /'},
+                },
+              ],
+            },
+          }, fallback);
+
+      final afterStep = stepsFrom(enhanced).single;
+      expect(afterStep['tool'], beforeStep['tool']);
+      expect(afterStep['executor'], beforeStep['executor']);
+      expect(afterStep['args'], beforeStep['args']);
+      expect(afterStep['title'], 'Tap duplicate button');
+      expect(
+        afterStep['description'],
+        'Duplicate tap after the target was selected.',
+      );
+
+      final annotation = afterStep['cleanup_annotation'] as Map;
+      expect(annotation['source'], 'run_log_agent_label_enhancer');
+      expect(annotation['cleanup_action'], 'drop_candidate');
+      expect(annotation['importance'], 'noise');
+      expect(annotation['execution_rewrite_allowed'], isFalse);
+      expect(
+        annotation['reason'],
+        'Repeated tap after the same target was already clicked.',
+      );
+
+      final cleanup = (enhanced['metadata'] as Map)['oob_step_cleanup'] as Map;
+      expect(cleanup['execution_rewrite_allowed'], isFalse);
+      expect(cleanup['annotated_step_count'], 1);
+      final annotatedSteps = (cleanup['annotated_steps'] as List).cast<Map>();
+      expect(annotatedSteps.single['index'], 0);
+      expect(
+        (annotatedSteps.single['annotation'] as Map)['cleanup_action'],
+        'drop_candidate',
+      );
     },
   );
 

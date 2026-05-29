@@ -291,7 +291,7 @@ class OobOmniFlowToolkitService(
             functionId = functionId,
             arguments = callArguments,
             startStepIndex = startStepIndex,
-            allowAgentFallback = true
+            allowAgentFallback = false
         )
         val success = runPayload["success"] == true && runPayload["model_required"] != true
         OobReusableFunctionStore.recordRun(
@@ -303,11 +303,11 @@ class OobOmniFlowToolkitService(
             stepCount = intArg(runPayload["step_count"], defaultValue = 0),
             errorMessage = runPayload["error_message"]?.toString()
         )
-        val fallback = !success || decision == "needs_agent"
+        val fallback = false
         val fallbackReason = when {
             runPayload["error_code"] != null -> runPayload["error_code"]?.toString()
             decision == "needs_agent" -> "agent_fallback_required"
-            fallback -> runPayload["error_message"]?.toString()?.ifBlank { "execution_failed" }
+            !success -> runPayload["error_message"]?.toString()?.ifBlank { "execution_failed" }
             else -> ""
         }.orEmpty()
 
@@ -631,7 +631,6 @@ class OobOmniFlowToolkitService(
                 "runner" to "oob_tool_sequence",
                 "entrypoint" to "execute",
                 "capabilities" to capabilities,
-                "fallback_runner" to "oob.agent.run",
                 "steps" to normalizedSteps,
                 "step_count" to normalizedSteps.size,
                 "omniflow_step_count" to capabilities["omniflow_step_count"],
@@ -1046,8 +1045,6 @@ class OobOmniFlowToolkitService(
         val functionId = firstNonBlank(request["functionId"], request["function_id"])
         val arguments = mapArg(request["arguments"])
         val dryRun = boolArg(request["dryRun"]) || boolArg(request["dry_run"])
-        val continueWithAgent = boolArg(request["continueWithAgent"]) ||
-            boolArg(request["continue_with_agent"])
         val confirmed = boolArg(request["confirmed"]) || boolArg(request["userConfirmed"])
         val startStepIndex = intArg(
             request["start_step_index"],
@@ -1094,7 +1091,7 @@ class OobOmniFlowToolkitService(
             functionId = functionId,
             arguments = arguments,
             startStepIndex = startStepIndex,
-            allowAgentFallback = continueWithAgent || decision == "needs_agent"
+            allowAgentFallback = false
         )
         OobReusableFunctionStore.recordRun(
             context = context,

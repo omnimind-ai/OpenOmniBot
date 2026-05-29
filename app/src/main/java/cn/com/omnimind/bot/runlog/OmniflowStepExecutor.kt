@@ -90,22 +90,49 @@ object OmniflowStepExecutor {
         if (actionRequiresAccessibility(action) && !backend.isReady()) {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
-        val preTransferControls = runPreTransferControls(action, normalizeArgsMap(step["args"]))
-        val remapResult = remapStepArgsWithRetries(step)
-        if (action in RunLogReplayPolicy.coordinateActions && shouldUseCoordinateHook(step)) {
-            val applied = remapResult.meta["applied"] as? Boolean
-            if (applied == false) {
-                val reason = remapResult.meta["reason"]?.toString()?.takeIf { it.isNotBlank() }
-                    ?: "coordinate_remap_unavailable"
-                throw ExecutionException(
-                    errorCode = "OOB_ACTION_TRANSFER_FAILED",
-                    message = "Action transfer failed: $reason",
-                    diagnostics = remapResult.meta,
+        val fixedReplay = RunLogReplayPolicy.fixedReplayOnly
+        val initialArgs = normalizeArgsMap(step["args"])
+        val transferRequested = !fixedReplay &&
+            action in RunLogReplayPolicy.coordinateActions &&
+            shouldUseCoordinateHook(step)
+        val preTransferControls = if (fixedReplay) {
+            emptyList()
+        } else {
+            runPreTransferControls(action, initialArgs)
+        }
+        val attemptedRemapResult = if (fixedReplay) {
+            StepArgsResult(initialArgs)
+        } else {
+            try {
+                remapStepArgsWithRetries(step)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                StepArgsResult(
+                    args = initialArgs,
+                    meta = mapOf(
+                        "applied" to false,
+                        "reason" to "action_transfer_exception",
+                        "algorithm" to "anchor_projection",
+                        "error_message" to e.message.orEmpty(),
+                    )
                 )
             }
         }
+        val remapResult = if (transferRequested && attemptedRemapResult.meta["applied"] == false) {
+            StepArgsResult(
+                args = initialArgs,
+                meta = attemptedRemapResult.meta + mapOf(
+                    "fallback_replay_mode" to "fixed_replay",
+                    "fixed_replay_args_used" to true,
+                )
+            )
+        } else {
+            attemptedRemapResult
+        }
+        val actionTransferApplied = transferRequested && remapResult.meta["applied"] == true
         val args = normalizeArgsMap(remapResult.args)
-        val preActionControls = runBeforeActionControls(action, args)
+        val preActionControls = if (fixedReplay) emptyList() else runBeforeActionControls(action, args)
         val controlEffects = preTransferControls + preActionControls
         val summary = when (action) {
             "click" -> {
@@ -198,12 +225,17 @@ object OmniflowStepExecutor {
             else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         delay(POST_STEP_DELAY_MS)
-        val checker = beforeActionCheckerSummary(action, remapResult.meta, controlEffects)
+        val checker = if (fixedReplay) {
+            emptyMap()
+        } else {
+            beforeActionCheckerSummary(action, remapResult.meta, controlEffects)
+        }
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
             "executor" to "omniflow",
             "model_free" to true,
+            "replay_mode" to if (actionTransferApplied) "action_transfer" else "fixed_replay",
             "success" to true,
             "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
         ).apply {

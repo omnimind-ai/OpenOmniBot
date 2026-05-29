@@ -38,6 +38,7 @@ class HumanTrajectoryLearningSessionTest {
             rawTouchActiveAtStop = true,
         )
 
+        assertEquals(null, ManualRecordingDiagnostics.warningMessage(ManualRecordingDiagnostics.COMPLETE_OVERLAY_TOUCH))
         assertEquals(ManualRecordingDiagnostics.MISSING_RAW_TOUCH, semanticOnly)
         assertEquals(ManualRecordingDiagnostics.RAW_TOUCH_INTERRUPTED, rawInterrupted)
         assertEquals(ManualRecordingDiagnostics.COMPLETE_RAW_TOUCH, rawComplete)
@@ -117,6 +118,49 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(action.eventContext, card["event_context"])
         assertEquals(action.eventContext, meta["event_context"])
         assertNotNull(card["tool_call"])
+    }
+
+    @Test
+    fun `manual recording run log card keeps overlay touch source`() {
+        val beforeXml = "<hierarchy package=\"com.android.settings\"><node text=\"Wi-Fi\" bounds=\"[0,0][100,100]\" /></hierarchy>"
+        val afterXml = "<hierarchy package=\"com.android.settings\"><node text=\"Network\" bounds=\"[0,0][100,100]\" /></hierarchy>"
+        val action = ManualVlmRecordedAction(
+            actionName = "click",
+            title = "人工点击 Wi-Fi",
+            params = linkedMapOf(
+                "target_description" to "Wi-Fi",
+                "x" to 50f,
+                "y" to 50f,
+                "recording_backend" to "overlay_touch",
+                "coordinate_space" to "screen_absolute_px",
+                "target_resolution" to "overlay_touch_coordinate_xml_grounded",
+                "display_width" to 1080,
+                "display_height" to 2400,
+            ),
+            packageName = "com.android.settings",
+            beforeXml = beforeXml,
+            afterXml = afterXml,
+            startedAtMs = 2000L,
+            finishedAtMs = 2100L,
+            summary = "人工点击 Wi-Fi",
+            eventContext = linkedMapOf(
+                "event_type" to "OVERLAY_TOUCH_CLICK",
+                "recording_backend" to "overlay_touch",
+                "coordinate_space" to "screen_absolute_px",
+            ),
+        )
+
+        val card = buildRunLogCardForTest("human-overlay-run", 1, action)
+        val params = card["params"] as Map<*, *>
+        val sourceContext = card["source_context"] as Map<*, *>
+        val sourceAction = sourceContext["action"] as Map<*, *>
+        val meta = sourceContext["_oob_meta"] as Map<*, *>
+
+        assertEquals("screen_absolute_px", params["coordinate_space"])
+        assertEquals("screen_absolute_px", sourceAction["coordinate_space"])
+        assertEquals("overlay_touch", meta["recording_backend"])
+        assertEquals("overlay_touch", meta["action_source"])
+        assertEquals(action.eventContext, meta["event_context"])
     }
 
     private fun screenshotRef(stage: String, path: String): ManualVlmScreenshotRef =

@@ -32,7 +32,9 @@ data class HumanTrajectoryLearningStatus(
     val pendingActionSummary: String? = null,
     val accessibilityEventCount: Int = 0,
     val rawTouchEnabled: Boolean = false,
-    val rawTouchAvailable: Boolean = false
+    val rawTouchAvailable: Boolean = false,
+    val overlayTouchRecordedCount: Int = 0,
+    val recordingBackend: String = "accessibility_event"
 ) {
     fun asMap(): Map<String, Any?> = linkedMapOf(
         "active" to active,
@@ -49,11 +51,8 @@ data class HumanTrajectoryLearningStatus(
         "accessibility_event_count" to accessibilityEventCount,
         "raw_touch_enabled" to rawTouchEnabled,
         "raw_touch_available" to rawTouchAvailable,
-        "recording_backend" to when {
-            rawTouchEnabled && rawTouchAvailable -> "mixed"
-            rawTouchEnabled -> "accessibility_event_with_raw_unavailable"
-            else -> "accessibility_event"
-        }
+        "overlay_touch_recorded_count" to overlayTouchRecordedCount,
+        "recording_backend" to recordingBackend
     ).filterValues { it != null }
 }
 
@@ -114,7 +113,9 @@ object HumanTrajectoryLearningSession {
             pendingActionSummary = recorderSnapshot.pendingActionSummary,
             accessibilityEventCount = recorderSnapshot.accessibilityEventCount,
             rawTouchEnabled = recorderSnapshot.rawTouchEnabled,
-            rawTouchAvailable = recorderSnapshot.rawTouchAvailable
+            rawTouchAvailable = recorderSnapshot.rawTouchAvailable,
+            overlayTouchRecordedCount = recorderSnapshot.overlayTouchRecordedCount,
+            recordingBackend = recorderSnapshot.recordingBackend
         )
     }
 
@@ -209,6 +210,16 @@ object HumanTrajectoryLearningSession {
             synchronized(lock) { activePaused = false }
         }
         return resumed
+    }
+
+    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): Boolean {
+        val session = synchronized(lock) { activeSession } ?: return false
+        if (synchronized(lock) { activePaused }) return false
+        return runCatching { session.recorder.recordOverlayGesture(gesture) }
+            .getOrElse { error ->
+                OmniLog.w(TAG, "manual overlay gesture failed: ${error.message}")
+                false
+            }
     }
 
     fun completeActive(): Boolean {

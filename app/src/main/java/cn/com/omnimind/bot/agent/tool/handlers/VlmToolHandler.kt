@@ -84,7 +84,7 @@ class VlmToolHandler(
                 "disable_omniflow_recall",
                 "disableRecall",
                 "disable_recall"
-            ) ?: true
+            ) ?: false
             val allowOmniFlowFunctionAutoExecute = firstBoolean(
                 args,
                 "allowOmniFlowFunctionAutoExecute",

@@ -83,6 +83,8 @@ object VlmToolCoordinator {
     private const val FINAL_STATE_OBSERVE_ATTEMPTS = 4
     private const val FINAL_STATE_OBSERVE_INTERVAL_MS = 350L
     private const val MAX_RECALL_RECOVERY_XML_CHARS = 6000
+    private const val DEFAULT_MAX_STEPS = 12
+    private const val MAX_MAX_STEPS = 64
     internal const val FINAL_STATE_MISMATCH_ERROR_CODE = "OOB_FINAL_STATE_MISMATCH"
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -97,12 +99,13 @@ object VlmToolCoordinator {
     ): VlmToolOutcome = withContext(Dispatchers.IO) {
         val taskId = taskIdOverride.trim().takeIf { it.isNotEmpty() } ?: UUID.randomUUID().toString()
         val needSummary = request.needSummary == true
+        val boundedRequest = request.copy(maxSteps = resolveMaxSteps(request.maxSteps))
 
         val missingPermissions = missingAutomationPermissions(context)
         if (missingPermissions.isNotEmpty()) {
             val taskState = McpTaskManager.createTask(
                 taskId = taskId,
-                goal = request.goal,
+                goal = boundedRequest.goal,
                 status = TaskStatus.ERROR,
                 needSummary = needSummary
             )
@@ -137,10 +140,11 @@ object VlmToolCoordinator {
         if (!ScreenStateUtil.isOperable()) {
             val taskState = McpTaskManager.createTask(
                 taskId = taskId,
-                goal = request.goal,
+                goal = boundedRequest.goal,
                 status = TaskStatus.SCREEN_LOCKED,
                 needSummary = needSummary
             )
+            taskState.vlmRequest = boundedRequest
             taskState.message = "屏幕锁定，等待解锁"
             taskState.addChatMessage("[SYSTEM] Screen locked, waiting for unlock...")
             emitProgress(
@@ -158,11 +162,11 @@ object VlmToolCoordinator {
 
         val taskState = McpTaskManager.createTask(
             taskId = taskId,
-            goal = request.goal,
+            goal = boundedRequest.goal,
             status = TaskStatus.RUNNING,
             needSummary = needSummary
         )
-        taskState.vlmRequest = request
+        taskState.vlmRequest = boundedRequest
         taskState.message = "任务启动中"
 
         emitProgress(
@@ -175,7 +179,7 @@ object VlmToolCoordinator {
 
         val (recallGuidance, recallBaseRequest) = buildRecallGuidanceAfterOptionalPrelaunch(
             context = context,
-            request = request,
+            request = boundedRequest,
         )
         taskState.vlmRequest = recallBaseRequest
         if (recallGuidance.guidance.isNotBlank()) {
@@ -194,7 +198,7 @@ object VlmToolCoordinator {
             )
         }
         tryExecuteRecallHitIfAllowed(
-            request = request,
+            request = boundedRequest,
             taskState = taskState,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
@@ -202,7 +206,7 @@ object VlmToolCoordinator {
                 OobOmniFlowToolkitService(context).callFunction(
                     mapOf(
                         "function_id" to functionId,
-                        "goal" to request.goal,
+                        "goal" to boundedRequest.goal,
                         "arguments" to emptyMap<String, Any?>(),
                         "start_step_index" to startStepIndex,
                     )
@@ -256,7 +260,7 @@ object VlmToolCoordinator {
         )
         return@withContext awaitTask(
             taskId = taskId,
-            goal = request.goal,
+            goal = boundedRequest.goal,
             progressReporter = progressReporter,
             waitTimeoutMs = executionRequest.waitTimeoutMs,
             targetPackageName = executionRequest.packageName,
@@ -358,9 +362,11 @@ object VlmToolCoordinator {
                     goal = taskState.goal,
                     needSummary = taskState.needSummary
                 )
+                val boundedRequest = request.copy(maxSteps = resolveMaxSteps(request.maxSteps))
+                taskState.vlmRequest = boundedRequest
                 val (recallGuidance, recallBaseRequest) = buildRecallGuidanceAfterOptionalPrelaunch(
                     context = context,
-                    request = request,
+                    request = boundedRequest,
                 )
                 taskState.vlmRequest = recallBaseRequest
                 if (recallGuidance.guidance.isNotBlank()) {
@@ -368,7 +374,7 @@ object VlmToolCoordinator {
                     taskState.markStateChanged()
                 }
                 tryExecuteRecallHitIfAllowed(
-                    request = request,
+                    request = boundedRequest,
                     taskState = taskState,
                     recallGuidance = recallGuidance,
                     progressReporter = progressReporter,
@@ -376,7 +382,7 @@ object VlmToolCoordinator {
                         OobOmniFlowToolkitService(context).callFunction(
                             mapOf(
                                 "function_id" to functionId,
-                                "goal" to request.goal,
+                                "goal" to boundedRequest.goal,
                                 "arguments" to emptyMap<String, Any?>(),
                                 "start_step_index" to startStepIndex,
                             )
@@ -563,9 +569,13 @@ object VlmToolCoordinator {
                 targetPackageName = targetPackageName,
             )
         }
-        return (state ?: TaskState(taskId = taskId, goal = goal, status = TaskStatus.RUNNING)).toOutcome(
+        val timeoutState = state ?: TaskState(taskId = taskId, goal = goal, status = TaskStatus.RUNNING)
+        if (timeoutState.status !in setOf(TaskStatus.FINISHED, TaskStatus.ERROR, TaskStatus.CANCELLED)) {
+            cancelTask(taskId, message = "任务等待超时，已停止设备端视觉执行")
+        }
+        return timeoutState.toOutcome(
             status = VlmToolOutcomeStatus.TIMEOUT,
-            message = "任务在等待时间内仍未结束，仍在设备上继续执行。"
+            message = "任务在等待时间内仍未结束，已停止设备端视觉执行。"
         )
     }
 
@@ -654,6 +664,11 @@ object VlmToolCoordinator {
         val requested = requestedWaitTimeoutMs?.takeIf { it > 0L }
             ?: return MAX_WAIT_TIMEOUT_MS
         return requested.coerceIn(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS)
+    }
+
+    internal fun resolveMaxSteps(requestedMaxSteps: Int?): Int {
+        val requested = requestedMaxSteps?.takeIf { it > 0 } ?: return DEFAULT_MAX_STEPS
+        return requested.coerceIn(1, MAX_MAX_STEPS)
     }
 
     internal fun missingAutomationPermissions(context: Context): List<String> {
@@ -761,12 +776,10 @@ object VlmToolCoordinator {
             }
 
             override fun onTaskFinish() {
-                fallbackMarkFinished(taskState)
                 McpTaskManager.scheduleTaskCleanup(taskId, scope)
             }
 
             override fun onVLMTaskFinish() {
-                fallbackMarkFinished(taskState)
                 McpTaskManager.scheduleTaskCleanup(taskId, scope)
             }
 
@@ -891,15 +904,6 @@ object VlmToolCoordinator {
             }
         }
         return RecallObservation(lastPackage, lastXml)
-    }
-
-    private fun fallbackMarkFinished(taskState: TaskState) {
-        if (taskState.status == TaskStatus.RUNNING) {
-            taskState.status = TaskStatus.FINISHED
-            taskState.message = taskState.finishedContent ?: "任务完成"
-            taskState.finishedContent = taskState.finishedContent ?: taskState.message
-            taskState.markStateChanged()
-        }
     }
 
     private suspend fun emitProgress(

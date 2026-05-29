@@ -1,6 +1,5 @@
 package cn.com.omnimind.assists.task.vlmserver
 
-import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.http.Http429Exception
 import cn.com.omnimind.baselib.llm.contentText
@@ -219,7 +218,7 @@ class VLMOperationService(
         stepSkillGuidance: String = ""
     ): TaskExecutionReport {
 
-        val normalizedMaxSteps = maxSteps?.takeIf { it > 0 }
+        val normalizedMaxSteps = maxSteps?.takeIf { it > 0 } ?: DEFAULT_VLM_MAX_STEPS
         OmniLog.d(Tag, "executeTask - package_name: $packageName, skipGoHome: $skipGoHome")
 
         // 重置 Compactor 触发记录
@@ -280,18 +279,10 @@ class VLMOperationService(
         }
 
         var stepIndex = 0
-        while (normalizedMaxSteps == null || stepIndex < normalizedMaxSteps) {
+        while (stepIndex < normalizedMaxSteps) {
             // 检查用户是否请求暂停（每一步执行前都检查）
             safePauseCheck("before_step_$stepIndex")
             context = drainExternalMemories(context)
-            tryCompleteSettingsToggleTask(
-                goal = goal,
-                context = context,
-                executionTrace = executionTrace,
-                stepIndex = stepIndex,
-                summaryScreenshotList = summaryScreenshotList
-            )?.let { return it }
-
             // === Context Compactor Logic (在超时计时之外执行) ===
             // 使用动态触发逻辑：随着步数增加，触发间隔逐渐从 12 步减少到 5 步
             if (shouldTriggerCompactor(stepIndex, normalizedMaxSteps)) {
@@ -462,13 +453,6 @@ class VLMOperationService(
                     summaryScreenshotList = summaryScreenshotList
                 )
             }
-            tryCompleteSettingsToggleTask(
-                goal = goal,
-                context = context,
-                executionTrace = executionTrace,
-                stepIndex = stepIndex + 1,
-                summaryScreenshotList = summaryScreenshotList
-            )?.let { return it }
             if (step.action is InfoAction) {
                 try {
                     //接管需要将任务执行时间清空
@@ -561,90 +545,16 @@ class VLMOperationService(
             stepIndex++
         }
 
-        val boundedMaxStepsSuccess = VLMTaskCompletionPolicy.shouldTreatMaxStepsAsBoundedSuccess(
-            normalizedMaxSteps = normalizedMaxSteps,
-            executionTrace = executionTrace,
-            lastError = lastError
-        )
+        val reachedMaxSteps = stepIndex >= normalizedMaxSteps
         return TaskExecutionReport(
-            success = boundedMaxStepsSuccess,
+            success = false,
             goal = goal,
             totalSteps = executionTrace.size,
             executionTrace = executionTrace,
             finalContext = context,
-            error = if (boundedMaxStepsSuccess) {
-                null
-            } else {
-                lastError ?: "任务未完成"
-            },
+            error = lastError ?: if (reachedMaxSteps) "达到最大步数，任务未完成" else "任务未完成",
             summaryScreenshotList = summaryScreenshotList,
-            doneReason = if (boundedMaxStepsSuccess) "max_steps_reached" else "error"
-        )
-    }
-
-    private fun appendSettingsToggleStateSummary(step: UIStep, goal: String): UIStep {
-        if (!VLMSettingsToggleCompletionChecker.mayHandle(goal)) return step
-        val markers = VLMSettingsToggleCompletionChecker.progressMarkers(
-            goal = goal,
-            stateSnapshot = VLMSettingsToggleCompletionChecker.readDeviceState(AssistsService.instance)
-        )
-        if (markers.isEmpty()) return step
-        val suffix = markers.joinToString(" ") { "[$it]" }
-        val summary = step.summary.trim()
-        return step.copy(summary = listOf(summary, suffix).filter { it.isNotBlank() }.joinToString(" "))
-    }
-
-    private suspend fun tryCompleteSettingsToggleTask(
-        goal: String,
-        context: UIContext,
-        executionTrace: MutableList<UIStep>,
-        stepIndex: Int,
-        summaryScreenshotList: List<String>
-    ): TaskExecutionReport? {
-        if (!VLMSettingsToggleCompletionChecker.mayHandle(context.overallTask)) return null
-        val currentPackageName = AccessibilityController.Companion.getPackageName().orEmpty()
-        val currentXml = captureCurrentXml()
-        val stateSnapshot = VLMSettingsToggleCompletionChecker.readDeviceState(AssistsService.instance)
-        val result = VLMSettingsToggleCompletionChecker.check(
-            goal = context.overallTask,
-            currentXml = currentXml,
-            stateSnapshot = stateSnapshot,
-            currentPackageName = currentPackageName,
-            targetPackageName = context.targetPackageName
-        )
-        if (!result.complete) return null
-
-        OmniLog.i(
-            Tag,
-            "Deterministic task completion applied: reason=${result.reason} goal=$goal summary=${result.summary}"
-        )
-        val now = System.currentTimeMillis()
-        val finishedStep = UIStep(
-            observation = "DETERMINISTIC_COMPLETION",
-            thought = "Detected that the requested Settings toggle state is already satisfied.",
-            action = FinishedAction(content = result.summary),
-            result = result.summary,
-            summary = "[deterministic_completion:${result.reason}] ${result.summary}",
-            observationXml = currentXml,
-            afterObservationXml = currentXml,
-            packageName = currentPackageName,
-            afterPackageName = currentPackageName,
-            startedAtMs = now,
-            finishedAtMs = now
-        )
-        onStepStarted(stepIndex, finishedStep)
-        onStepCompleted(stepIndex, finishedStep, true, null)
-        val finalContext = updateContext(finishedStep, context)
-        executionTrace.add(finishedStep)
-        return TaskExecutionReport(
-            success = true,
-            goal = goal,
-            totalSteps = executionTrace.size,
-            executionTrace = executionTrace,
-            finalContext = finalContext,
-            error = null,
-            summaryScreenshotList = summaryScreenshotList,
-            doneReason = result.reason
+            doneReason = if (reachedMaxSteps) "max_steps_reached" else "error"
         )
     }
 
@@ -1003,40 +913,32 @@ class VLMOperationService(
 
                     else -> {}
                 }
-                val postProcessResult = VLMActionPostProcessor.correct(
-                    step = processedStep,
-                    context = _context,
-                    currentXml = beforeXml,
-                    currentPackageName = _context.currentPackageName,
-                    stepIndex = stepIndex,
-                    displayWidth = pageSnapshot.displayWidth,
-                    displayHeight = pageSnapshot.displayHeight
-                )
-                if (postProcessResult.applied) {
-                    OmniLog.i(
-                        Tag,
-                        "Runtime action correction applied: reason=${postProcessResult.reason} " +
-                            "from=${processedStep.action.name} to=${postProcessResult.step.action.name}"
-                    )
-                    processedStep = postProcessResult.step
-                }
                 processedStep = groundIndexedActionTarget(
                     step = processedStep,
                     currentXml = beforeXml,
                     displayWidth = pageSnapshot.displayWidth,
                     displayHeight = pageSnapshot.displayHeight
                 )
-                processedStep = groundActionTarget(processedStep, beforeXml)
 
+                var dispatchXml = beforeXml
+                var dispatchPackageName =
+                    pageSnapshot.packageName ?: AccessibilityController.Companion.getPackageName()
                 if (needsPreciseLocation(processedStep.action)) {
-                    val afterXml = captureCurrentXml()
-                    if (!isPageStableByXml(beforeXml, afterXml)) {
-                        OmniLog.d(Tag, "页面不稳定，第${stabilityAttempt + 1}次重试")
-                        println("页面不稳定，第${stabilityAttempt + 1}次重试")
-                        safePauseCheck("before_retry_delay_$stabilityAttempt")
-                        delay(500)
-                        stabilityAttempt++  // 页面不稳定，增加重试计数
-                        continue
+                    val latestXml = captureCurrentXml()
+                    if (!isPageStableByXml(beforeXml, latestXml) && !latestXml.isNullOrBlank()) {
+                        OmniLog.d(
+                            Tag,
+                            "Pre-action page changed after VLM response; re-grounding ${processedStep.action.name} with latest XML instead of retrying"
+                        )
+                        dispatchXml = latestXml
+                        dispatchPackageName = AccessibilityController.Companion.getPackageName()
+                            ?: dispatchPackageName
+                        processedStep = groundIndexedActionTarget(
+                            step = processedStep,
+                            currentXml = latestXml,
+                            displayWidth = pageSnapshot.displayWidth,
+                            displayHeight = pageSnapshot.displayHeight
+                        )
                     }
                 } else {
                     OmniLog.d(
@@ -1049,13 +951,13 @@ class VLMOperationService(
                 ensureTaskActive("before_action_dispatch_${processedStep.action.name}_$stabilityAttempt")
 
                 val actionStartedAtMs = System.currentTimeMillis()
-                val beforePackageName = pageSnapshot.packageName ?: AccessibilityController.Companion.getPackageName()
+                val beforePackageName = dispatchPackageName
                 val runningStep = UIStep(
                     observation = processedStep.observation,
                     thought = processedStep.thought,
                     action = processedStep.action,
                     summary = processedStep.summary,
-                    observationXml = beforeXml,
+                    observationXml = dispatchXml,
                     packageName = beforePackageName,
                     startedAtMs = actionStartedAtMs,
                     tokenUsage = usageAggregate(),
@@ -1074,13 +976,13 @@ class VLMOperationService(
                 val actionFinishedAtMs = System.currentTimeMillis()
                 safePauseCheck("after_action_${processedStep.action.name}_${stabilityAttempt}")
                 val afterActionXml = waitForPostActionStableXml(
-                    beforeXml = beforeXml,
+                    beforeXml = dispatchXml,
                     expectPageChange = shouldWaitForChangedPostActionPage(processedStep.action)
                 )
                 val afterPackageName = AccessibilityController.Companion.getPackageName()
                 var finalStep = executedStep.copy(
                     summary = processedStep.summary,
-                    observationXml = beforeXml,
+                    observationXml = dispatchXml,
                     afterObservationXml = afterActionXml.takeIf { it.isNotBlank() },
                     packageName = beforePackageName,
                     afterPackageName = afterPackageName,
@@ -1104,8 +1006,6 @@ class VLMOperationService(
                         summary = processedStep.summary.ifBlank { "已刷新当前页面状态" }
                     )
                 }
-                finalStep = appendSettingsToggleStateSummary(finalStep, _context.overallTask)
-
                 OmniLog.d(
                     Tag,
                     "Execute action: ${finalStep.action.name}, result=${finalStep.result ?: "OK"}"
@@ -1432,30 +1332,6 @@ class VLMOperationService(
         return step.copy(action = updatedAction)
     }
 
-    private fun groundActionTarget(step: VLMStep, currentXml: String?): VLMStep {
-        if (step.action !is ClickAction && step.action !is InputTextAction && step.action !is LongPressAction) {
-            return step
-        }
-        val result = ActionTargetGrounder.ground(step.action, currentXml)
-        if (!result.applied) {
-            OmniLog.d(
-                Tag,
-                "Action grounding skipped: action=${step.action.name} reason=${result.reason} confidence=${result.confidence}"
-            )
-            return step
-        }
-        OmniLog.i(
-            Tag,
-            "Action grounding applied: action=${step.action.name} reason=${result.reason} confidence=${result.confidence} target=${result.targetLabel} (${result.originalX},${result.originalY})->(${result.groundedX},${result.groundedY})"
-        )
-        val groundingSummary = buildString {
-            append(step.summary)
-            if (isNotBlank()) append(" ")
-            append("[grounded:${result.reason}]")
-        }
-        return step.copy(action = result.action, summary = groundingSummary)
-    }
-
     private fun groundIndexedActionTarget(
         step: VLMStep,
         currentXml: String?,
@@ -1464,80 +1340,83 @@ class VLMOperationService(
     ): VLMStep {
         return when (val action = step.action) {
             is ClickAction -> {
-                val index = action.elementIndex ?: return step
-                val target = VLMIndexedPageContext.elementTarget(
+                val target = resolveIndexedElementTarget(
                     currentXml = currentXml,
                     displayWidth = displayWidth,
                     displayHeight = displayHeight,
-                    index = index
-                ) ?: run {
-                    OmniLog.w(Tag, "Indexed click grounding failed: missing element_index=$index")
-                    return step
-                }
+                    nodeId = action.nodeId,
+                    explicitIndex = action.elementIndex,
+                    targetDescription = action.targetDescription,
+                    preferEditable = false,
+                    actionName = "click"
+                ) ?: return step
                 OmniLog.i(
                     Tag,
-                    "Indexed click grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                    "Indexed click grounding applied: index=${target.index} label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
                 )
                 step.copy(
                     action = action.copy(
                         targetDescription = target.label.ifBlank { action.targetDescription },
                         x = target.centerX,
                         y = target.centerY,
+                        elementIndex = target.index,
                         nodeId = target.nodeId
                     ),
-                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                    summary = appendRuntimeTag(step.summary, "indexed_element:${target.index}")
                 )
             }
 
             is InputTextAction -> {
-                val index = action.elementIndex ?: return step
-                val target = VLMIndexedPageContext.elementTarget(
+                val target = resolveIndexedElementTarget(
                     currentXml = currentXml,
                     displayWidth = displayWidth,
                     displayHeight = displayHeight,
-                    index = index
-                ) ?: run {
-                    OmniLog.w(Tag, "Indexed input grounding failed: missing element_index=$index")
-                    return step
-                }
+                    nodeId = action.nodeId,
+                    explicitIndex = action.elementIndex,
+                    targetDescription = action.targetDescription,
+                    preferEditable = true,
+                    actionName = "input_text"
+                ) ?: return step
                 OmniLog.i(
                     Tag,
-                    "Indexed input grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                    "Indexed input grounding applied: index=${target.index} label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
                 )
                 step.copy(
                     action = action.copy(
                         targetDescription = target.label.ifBlank { action.targetDescription },
                         x = target.centerX,
                         y = target.centerY,
+                        elementIndex = target.index,
                         nodeId = target.nodeId
                     ),
-                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                    summary = appendRuntimeTag(step.summary, "indexed_element:${target.index}")
                 )
             }
 
             is LongPressAction -> {
-                val index = action.elementIndex ?: return step
-                val target = VLMIndexedPageContext.elementTarget(
+                val target = resolveIndexedElementTarget(
                     currentXml = currentXml,
                     displayWidth = displayWidth,
                     displayHeight = displayHeight,
-                    index = index
-                ) ?: run {
-                    OmniLog.w(Tag, "Indexed long_press grounding failed: missing element_index=$index")
-                    return step
-                }
+                    nodeId = action.nodeId,
+                    explicitIndex = action.elementIndex,
+                    targetDescription = action.targetDescription,
+                    preferEditable = false,
+                    actionName = "long_press"
+                ) ?: return step
                 OmniLog.i(
                     Tag,
-                    "Indexed long_press grounding applied: index=$index label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
+                    "Indexed long_press grounding applied: index=${target.index} label=${target.label} (${action.x},${action.y})->(${target.centerX},${target.centerY})"
                 )
                 step.copy(
                     action = action.copy(
                         targetDescription = target.label.ifBlank { action.targetDescription },
                         x = target.centerX,
                         y = target.centerY,
+                        elementIndex = target.index,
                         nodeId = target.nodeId
                     ),
-                    summary = appendRuntimeTag(step.summary, "indexed_element:$index")
+                    summary = appendRuntimeTag(step.summary, "indexed_element:${target.index}")
                 )
             }
 
@@ -1579,6 +1458,49 @@ class VLMOperationService(
 
             else -> step
         }
+    }
+
+    private fun resolveIndexedElementTarget(
+        currentXml: String?,
+        displayWidth: Int,
+        displayHeight: Int,
+        nodeId: String?,
+        explicitIndex: Int?,
+        targetDescription: String,
+        preferEditable: Boolean,
+        actionName: String
+    ): VLMIndexedPageContext.IndexedTarget? {
+        val targetByNodeId = VLMIndexedPageContext.elementTargetByNodeId(
+            currentXml = currentXml,
+            displayWidth = displayWidth,
+            displayHeight = displayHeight,
+            nodeId = nodeId
+        )
+        if (targetByNodeId != null) {
+            return targetByNodeId
+        }
+        if (explicitIndex != null) {
+            return VLMIndexedPageContext.elementTarget(
+                currentXml = currentXml,
+                displayWidth = displayWidth,
+                displayHeight = displayHeight,
+                index = explicitIndex
+            ) ?: run {
+                OmniLog.w(Tag, "Indexed $actionName grounding failed: missing element_index=$explicitIndex")
+                null
+            }
+        }
+        val target = VLMIndexedPageContext.uniqueElementTargetByDescription(
+            currentXml = currentXml,
+            displayWidth = displayWidth,
+            displayHeight = displayHeight,
+            targetDescription = targetDescription,
+            preferEditable = preferEditable
+        )
+        if (target == null && targetDescription.isNotBlank()) {
+            OmniLog.d(Tag, "Indexed $actionName text grounding skipped: no unique match for \"$targetDescription\"")
+        }
+        return target
     }
 
     private fun appendRuntimeTag(summary: String, tag: String): String {
@@ -1981,20 +1903,11 @@ private const val MAX_GET_STATE_ACTIONABLES = 18
 private const val MAX_GET_STATE_LABEL_CHARS = 80
 private const val MAX_GET_STATE_XML_CHARS = 6000
 private const val MAX_GET_STATE_RESULT_CHARS = 9000
+private const val DEFAULT_VLM_MAX_STEPS = 12
 private val PACKAGE_ATTR_PATTERN = Regex("""\bpackage\s*=\s*["']([^"']+)["']""")
 private val RESOURCE_ID_PACKAGE_PATTERN =
     Regex("""\bresource-id\s*=\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+):id/[^"']*["']""")
 private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+""")
-
-object VLMTaskCompletionPolicy {
-    fun shouldTreatMaxStepsAsBoundedSuccess(
-        normalizedMaxSteps: Int?,
-        executionTrace: List<UIStep>,
-        lastError: String?
-    ): Boolean {
-        return false
-    }
-}
 
 data class VLMOperationResult(
     val success: Boolean,
