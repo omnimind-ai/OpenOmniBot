@@ -62,8 +62,42 @@ class CodexAppServerProtocolPayloadTest {
 
         assertEquals("gpt-5-codex", params["model"])
         assertEquals("high", params["effort"])
-        assertEquals("plan", params["collaborationMode"])
+        val collaborationMode = params["collaborationMode"] as? Map<*, *>
+        val settings = collaborationMode?.get("settings") as? Map<*, *>
+        assertEquals("plan", collaborationMode?.get("mode"))
+        assertEquals("gpt-5-codex", settings?.get("model"))
+        assertEquals("high", settings?.get("reasoning_effort"))
         assertEquals("auto", params["serviceTier"])
+    }
+
+    @Test
+    fun resolveCodexCollaborationModeFillsStructuredModeSettings() {
+        val mode = resolveCodexCollaborationMode(
+            mapOf(
+                "model" to "gpt-5-codex",
+                "collaborationMode" to mapOf(
+                    "mode" to "plan",
+                    "settings" to mapOf("developer_instructions" to "Use a checklist.")
+                )
+            )
+        )
+        val settings = mode?.get("settings") as? Map<*, *>
+
+        assertEquals("plan", mode?.get("mode"))
+        assertEquals("gpt-5-codex", settings?.get("model"))
+        assertEquals("Use a checklist.", settings?.get("developer_instructions"))
+    }
+
+    @Test
+    fun resolveCodexCollaborationModeRequiresModel() {
+        val params = linkedMapOf<String, Any?>("threadId" to "thread-1")
+
+        addCodexOptionalRunParams(
+            params,
+            mapOf("collaborationMode" to "plan")
+        )
+
+        assertEquals(false, params.containsKey("collaborationMode"))
     }
 
     @Test

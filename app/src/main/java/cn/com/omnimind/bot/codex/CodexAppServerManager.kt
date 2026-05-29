@@ -971,8 +971,62 @@ internal fun addCodexOptionalRunParams(
 ) {
     args["model"]?.let { params["model"] = it }
     args["effort"]?.let { params["effort"] = it }
-    args["collaborationMode"]?.let { params["collaborationMode"] = it }
+    resolveCodexCollaborationMode(args)?.let { params["collaborationMode"] = it }
     args["serviceTier"]?.let { params["serviceTier"] = it }
+}
+
+internal fun resolveCodexCollaborationMode(args: Map<String, Any?>): Map<String, Any?>? {
+    val rawMode = args["collaborationMode"] ?: return null
+    val source = rawMode.asStringMap()
+    val mode = when {
+        source != null -> {
+            source.stringValue("mode")
+                ?: source.stringValue("value")
+                ?: source.stringValue("name")
+        }
+        rawMode is String -> rawMode.trim()
+        else -> rawMode.toString().trim()
+    }?.normalizeCodexCollaborationModeKind() ?: return null
+
+    val sourceSettings = source?.mapValue("settings").orEmpty()
+    val model = sourceSettings.stringValue("model")
+        ?: source?.stringValue("model")
+        ?: args.stringValue("model")
+        ?: return null
+    val reasoningEffort = sourceSettings.stringValue("reasoning_effort")
+        ?: sourceSettings.stringValue("reasoningEffort")
+        ?: source?.stringValue("reasoning_effort")
+        ?: source?.stringValue("reasoningEffort")
+        ?: args.stringValue("effort")
+    val developerInstructions = sourceSettings.stringValue("developer_instructions")
+        ?: sourceSettings.stringValue("developerInstructions")
+        ?: source?.stringValue("developer_instructions")
+        ?: source?.stringValue("developerInstructions")
+
+    val settings = linkedMapOf<String, Any?>("model" to model)
+    reasoningEffort?.let { settings["reasoning_effort"] = it }
+    developerInstructions?.let { settings["developer_instructions"] = it }
+    return linkedMapOf(
+        "mode" to mode,
+        "settings" to settings
+    )
+}
+
+private fun Any?.asStringMap(): Map<String, Any?>? {
+    val raw = this as? Map<*, *> ?: return null
+    return raw.entries.associate { (key, value) -> key.toString() to value }
+}
+
+private fun String.normalizeCodexCollaborationModeKind(): String? {
+    val normalized = trim().lowercase()
+    if (normalized.isEmpty()) {
+        return null
+    }
+    return when {
+        normalized == "plan" || normalized.contains("plan") -> "plan"
+        normalized == "default" -> "default"
+        else -> normalized
+    }
 }
 
 private fun buildCodexLocalConfigPayload(
