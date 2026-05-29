@@ -584,20 +584,12 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       setState(() {
         _isReplayingRunLog = false;
       });
-      showToast(
-        result.success
-            ? _runLogReplaySuccessMessage(context, result)
-            : _runLogReplayFailureMessage(context, result),
-        type: result.success ? ToastType.success : ToastType.error,
+      await showFunctionRunResultSheet(
+        context,
+        result: result,
+        title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
+        arguments: _defaultArgumentsForFunctionSpec(spec),
       );
-      if (!result.success && mounted) {
-        await showFunctionRunResultSheet(
-          context,
-          result: result,
-          title: _text(context, 'RunLog 重放结果', 'RunLog replay result'),
-          arguments: _defaultArgumentsForFunctionSpec(spec),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -6205,44 +6197,6 @@ Map<String, dynamic> _defaultArgumentsForFunctionSpec(
     arguments[name] = defaultValue;
   }
   return arguments;
-}
-
-String _runLogReplaySuccessMessage(
-  BuildContext context,
-  UtgManualRunResult result,
-) {
-  if (result.completedVlmFallback) {
-    return _localeValue(
-      context,
-      zh: '执行记录已通过 VLM 执行完成',
-      en: 'Execution completed by VLM',
-    );
-  }
-  if (result.startedAgentFallback) {
-    final taskId = result.taskId;
-    return _localeValue(
-      context,
-      zh: taskId.isEmpty ? '执行记录已交给 VLM 继续执行' : '执行记录已交给 VLM 继续执行：$taskId',
-      en: taskId.isEmpty
-          ? 'Execution handed off to VLM'
-          : 'Execution handed off to VLM: $taskId',
-    );
-  }
-  if (result.completedLocal) {
-    return context.l10n.omniflowAssetReplaySuccess;
-  }
-  return context.l10n.omniflowAssetReplaySuccess;
-}
-
-String _runLogReplayFailureMessage(
-  BuildContext context,
-  UtgManualRunResult result,
-) {
-  final error = result.errorMessage?.trim();
-  if (error != null && error.isNotEmpty) {
-    return error;
-  }
-  return context.l10n.omniflowAssetReplayFailed;
 }
 
 Color _successColor(BuildContext context) {
