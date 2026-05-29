@@ -3283,19 +3283,22 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 args["description"] ?: args["goal"] ?: call.argument<String>("description")
             )?.toString()?.trim().orEmpty()
             val learningResult = runCatching {
-                if (!awaitHumanTrajectoryRecordingBackend()) {
-                    throw IllegalStateException("无障碍服务未就绪，无法开始手动录制")
-                }
-                val sessionResult = HumanTrajectoryLearningSession.start(
-                    context = context,
-                    name = name,
-                    description = description
-                )
-                if (sessionResult.isCompleted) {
-                    sessionResult.await()
-                }
-                if (!HumanTrajectoryLearningSession.pauseActive()) {
-                    throw IllegalStateException("手动录制初始化失败，无法进入待机状态")
+                val sessionResult = withContext(Dispatchers.Default) {
+                    if (!awaitHumanTrajectoryRecordingBackend()) {
+                        throw IllegalStateException("无障碍服务未就绪，无法开始手动录制")
+                    }
+                    val startedSession = HumanTrajectoryLearningSession.start(
+                        context = context,
+                        name = name,
+                        description = description
+                    )
+                    if (startedSession.isCompleted) {
+                        startedSession.await()
+                    }
+                    if (!HumanTrajectoryLearningSession.pauseActive()) {
+                        throw IllegalStateException("手动录制初始化失败，无法进入待机状态")
+                    }
+                    startedSession
                 }
                 withContext(Dispatchers.Main) {
                     val controlShown = ManualRecordingControlOverlay.show(
@@ -3447,8 +3450,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
     fun pauseHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
-            val paused = HumanTrajectoryLearningSession.pauseActive()
-            val status = HumanTrajectoryLearningSession.status().asMap()
+            val (paused, status) = withContext(Dispatchers.Default) {
+                HumanTrajectoryLearningSession.pauseActive() to HumanTrajectoryLearningSession.status().asMap()
+            }
             withContext(Dispatchers.Main) {
                 if (paused) {
                     ManualRecordingControlOverlay.markPaused()
@@ -3472,8 +3476,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
     fun resumeHumanTrajectoryLearning(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
-            val resumed = HumanTrajectoryLearningSession.resumeActive()
-            val status = HumanTrajectoryLearningSession.status().asMap()
+            val (resumed, status) = withContext(Dispatchers.Default) {
+                HumanTrajectoryLearningSession.resumeActive() to HumanTrajectoryLearningSession.status().asMap()
+            }
             withContext(Dispatchers.Main) {
                 if (resumed) {
                     ManualRecordingControlOverlay.markRecording()

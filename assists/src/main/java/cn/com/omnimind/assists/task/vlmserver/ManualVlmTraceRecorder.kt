@@ -1,7 +1,6 @@
 package cn.com.omnimind.assists.task.vlmserver
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
@@ -9,13 +8,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
-import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
 import java.util.ArrayDeque
-import java.io.File
-import java.io.FileOutputStream
-import java.security.MessageDigest
-import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -613,9 +607,7 @@ class ManualVlmTraceRecorder(
     private var lastDiscreteAtMs: Long = 0L
     private var lastXmlSnapshot: String? = null
     private var lastScreenshotSnapshot: ManualVlmScreenshotRef? = null
-    private var screenshotSeq: Int = 0
-    private var screenshotStoredCount: Int = 0
-    private var screenshotFailedCount: Int = 0
+    private var screenshotSkippedCount: Int = 0
     private var accessibilityEventCount: Int = 0
     private var accessibilityIgnoredPackageCount: Int = 0
     private val accessibilityEventTypeCounts = linkedMapOf<String, Int>()
@@ -1915,68 +1907,9 @@ class ManualVlmTraceRecorder(
     }
 
     private fun captureCurrentScreenshotRef(stage: String): ManualVlmScreenshotRef? {
-        val capturedAtMs = System.currentTimeMillis()
-        return runCatching {
-            AccessibilityController.initController()
-            val capture = runBlocking {
-                AccessibilityController.captureScreenshotImage(
-                    isBitmap = true,
-                    isBase64 = false,
-                    isFile = false,
-                    isFilterOverlay = true,
-                    compressQuality = ImageQuality.SUMMARY
-                )
-            }
-            val bitmap = capture.imageBitmap ?: return null
-            try {
-                saveScreenshotRef(
-                    bitmap = bitmap,
-                    stage = stage,
-                    capturedAtMs = capturedAtMs
-                )
-            } finally {
-                if (!bitmap.isRecycled) bitmap.recycle()
-            }
-        }.getOrElse { error ->
-            screenshotFailedCount += 1
-            OmniLog.w(TAG, "manual trace screenshot capture failed: ${error.message}")
-            null
-        }
-    }
-
-    private fun saveScreenshotRef(
-        bitmap: Bitmap,
-        stage: String,
-        capturedAtMs: Long
-    ): ManualVlmScreenshotRef {
-        val safeSession = safePathSegment(sessionLabel)
-        val safeStage = safePathSegment(stage)
-        val dir = File(context.filesDir, "oob_runlog_artifacts/$safeSession/screenshots")
-        dir.mkdirs()
-        val seq = (++screenshotSeq).toString().padStart(4, '0')
-        val file = File(dir, "${seq}_${safeStage}.jpg")
-        FileOutputStream(file).use { stream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, SCREENSHOT_JPEG_QUALITY, stream)
-        }
-        val bytes = file.readBytes()
-        screenshotStoredCount += 1
-        val relativePath = file.relativeToOrSelf(context.filesDir).path
-        return ManualVlmScreenshotRef(
-            path = file.absolutePath,
-            relativePath = relativePath,
-            mimeType = "image/jpeg",
-            width = bitmap.width,
-            height = bitmap.height,
-            bytes = file.length(),
-            sha256 = sha256(bytes),
-            capturedAtMs = capturedAtMs,
-            captureStage = stage
-        )
-    }
-
-    private fun sha256(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        return digest.joinToString("") { byte -> "%02x".format(byte) }
+        screenshotSkippedCount += 1
+        OmniLog.d(TAG, "manual trace screenshot capture skipped stage=$stage")
+        return null
     }
 
     private fun buildSummary(actions: List<ManualVlmRecordedAction>): String {
@@ -2099,10 +2032,13 @@ class ManualVlmTraceRecorder(
             ),
             "screenshots" to linkedMapOf(
                 "schema_version" to "oob.runlog.screenshot_refs.v1",
+                "enabled" to false,
+                "disabled_reason" to "manual_recording_uses_xml_and_accessibility_events_only",
                 "storage" to "app_private_files",
                 "reference_style" to "path_only",
-                "stored_count" to screenshotStoredCount,
-                "failed_count" to screenshotFailedCount,
+                "stored_count" to 0,
+                "failed_count" to 0,
+                "skipped_count" to screenshotSkippedCount,
                 "root_relative_path" to "oob_runlog_artifacts/${safePathSegment(sessionLabel)}/screenshots"
             ),
             "accessibility_events" to linkedMapOf(
@@ -2313,7 +2249,6 @@ class ManualVlmTraceRecorder(
         private const val DUPLICATE_EVENT_WINDOW_MS = 400L
         private const val RAW_TOUCH_BACKEND = "device_getevent"
         private const val RAW_TOUCH_SETTLE_MS = 350L
-        private const val SCREENSHOT_JPEG_QUALITY = 90
         private const val MAX_LABEL_LENGTH = 80
         private const val MAX_SUMMARY_TEXT = 40
         private const val MAX_SUMMARY_ACTIONS = 8
