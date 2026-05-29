@@ -810,6 +810,15 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     if (isVisibleConversation && result.method == 'turn/completed') {
       _activeCodexTurnId = null;
     }
+    if (isVisibleConversation) {
+      final runtime = _runtimeCoordinator.runtimeFor(
+        conversationId: conversationId,
+        mode: kChatRuntimeModeCodex,
+      );
+      if (runtime != null) {
+        _syncCodexModeStateFromRuntime(runtime);
+      }
+    }
     if (!result.handled &&
         result.method != 'codex/stderr' &&
         result.method != 'codex/parseError') {
@@ -1042,9 +1051,9 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
     final activity = _codexThreadActivityFromResponse(response);
     final previousActive = runtime?.isAiResponding ?? false;
     final directActiveTurnId = _codexActiveTurnIdFromThreadResponse(response);
-    final isAiResponding = activity.known
-        ? activity.active
-        : (directActiveTurnId != null || assumeActive || previousActive);
+    final isAiResponding =
+        directActiveTurnId != null ||
+        (activity.known ? activity.active : (assumeActive || previousActive));
     final activeTurnId = isAiResponding
         ? (directActiveTurnId ??
               _codexLatestTurnIdFromThreadResponse(response) ??
@@ -1102,6 +1111,12 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       }
       _currentConversationIdByMode[ChatPageMode.codex] = runtimeId;
       _currentConversationByMode[ChatPageMode.codex] = conversation;
+      _isAiRespondingByMode[ChatPageMode.codex] = isAiResponding;
+      _isExecutingTaskByMode[ChatPageMode.codex] = isAiResponding;
+      _isDeepThinkingByMode[ChatPageMode.codex] = isAiResponding;
+      _currentThinkingStageByMode[ChatPageMode.codex] = isAiResponding
+          ? ThinkingStage.thinking.value
+          : ThinkingStage.complete.value;
       _currentDispatchTaskIdByMode[ChatPageMode.codex] = activeTaskId;
       _messagesByMode[ChatPageMode.codex]!
         ..clear()
@@ -1123,6 +1138,8 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
       conversation: conversation,
       isAiResponding: isAiResponding,
       isExecutingTask: isAiResponding,
+      isDeepThinking: isAiResponding,
+      deepThinkingContent: runtime?.deepThinkingContent ?? '',
       currentDispatchTaskId: activeTaskId,
       currentThinkingStage: isAiResponding
           ? ThinkingStage.thinking.value
@@ -1137,6 +1154,42 @@ mixin _ChatPageCodexMixin on _ChatPageStateBase {
         mode: kChatRuntimeModeCodex,
       );
     }
+    final updatedRuntime = _runtimeCoordinator.runtimeFor(
+      conversationId: runtimeId,
+      mode: kChatRuntimeModeCodex,
+    );
+    if (updatedRuntime != null) {
+      _syncCodexModeStateFromRuntime(updatedRuntime);
+    }
+  }
+
+  void _syncCodexModeStateFromRuntime(ChatConversationRuntimeState runtime) {
+    _isAiRespondingByMode[ChatPageMode.codex] = runtime.isAiResponding;
+    _isContextCompressingByMode[ChatPageMode.codex] =
+        runtime.isContextCompressing;
+    _isCheckingExecutableTaskByMode[ChatPageMode.codex] =
+        runtime.isCheckingExecutableTask;
+    _isSubmittingVlmReplyByMode[ChatPageMode.codex] =
+        runtime.isSubmittingVlmReply;
+    _vlmInfoQuestionByMode[ChatPageMode.codex] = runtime.vlmInfoQuestion;
+    _currentAiMessagesByMode[ChatPageMode.codex]!
+      ..clear()
+      ..addAll(runtime.currentAiMessages);
+    _deepThinkingContentByMode[ChatPageMode.codex] =
+        runtime.deepThinkingContent;
+    _isDeepThinkingByMode[ChatPageMode.codex] = runtime.isDeepThinking;
+    _currentDispatchTaskIdByMode[ChatPageMode.codex] =
+        runtime.currentDispatchTaskId;
+    _currentThinkingStageByMode[ChatPageMode.codex] =
+        runtime.currentThinkingStage;
+    _isInputAreaVisibleByMode[ChatPageMode.codex] = runtime.isInputAreaVisible;
+    _isExecutingTaskByMode[ChatPageMode.codex] = runtime.isExecutingTask;
+    _currentConversationByMode[ChatPageMode.codex] = runtime.conversation;
+    _chatIslandDisplayLayerByMode[ChatPageMode.codex] =
+        runtime.chatIslandDisplayLayer;
+    _lastAgentToolTypeByMode[ChatPageMode.codex] = runtime.lastAgentToolType;
+    _browserSessionSnapshotByMode[ChatPageMode.codex] =
+        runtime.browserSessionSnapshot;
   }
 
   bool _isRemoteCodexConfigured() {
@@ -1429,6 +1482,7 @@ _CodexThreadActivityState _codexThreadActivityFromResponse(
   Map<String, dynamic> response,
 ) {
   final thread = _asCodexMap(response['thread']) ?? response;
+  _CodexThreadActivityState? inactiveCandidate;
   for (final value in <dynamic>[
     response['active'],
     response['isActive'],
@@ -1446,24 +1500,42 @@ _CodexThreadActivityState _codexThreadActivityFromResponse(
     thread['turn_status'],
   ]) {
     final parsed = _codexActivityFromValue(value);
+    if (parsed == null) {
+      continue;
+    }
+    if (parsed.active) {
+      return parsed;
+    }
+    inactiveCandidate ??= parsed;
+  }
+  final latestTurnActivity = _codexLatestTurnActivityFromResponse(response);
+  if (latestTurnActivity != null) {
+    return latestTurnActivity;
+  }
+  if (inactiveCandidate != null) {
+    return inactiveCandidate;
+  }
+  return _CodexThreadActivityState.unknown;
+}
+
+_CodexThreadActivityState? _codexLatestTurnActivityFromResponse(
+  Map<String, dynamic> response,
+) {
+  final turns = _codexTurnsFromThreadResponse(response);
+  if (turns == null) {
+    return null;
+  }
+  for (var index = turns.length - 1; index >= 0; index -= 1) {
+    final turn = _asCodexMap(turns[index]);
+    if (turn == null) {
+      continue;
+    }
+    final parsed = _codexActivityFromValue(turn['status'] ?? turn['state']);
     if (parsed != null) {
       return parsed;
     }
   }
-  final turns = _codexTurnsFromThreadResponse(response);
-  if (turns != null) {
-    for (var index = turns.length - 1; index >= 0; index -= 1) {
-      final turn = _asCodexMap(turns[index]);
-      if (turn == null) {
-        continue;
-      }
-      final parsed = _codexActivityFromValue(turn['status'] ?? turn['state']);
-      if (parsed != null) {
-        return parsed;
-      }
-    }
-  }
-  return _CodexThreadActivityState.unknown;
+  return null;
 }
 
 _CodexThreadActivityState? _codexActivityFromValue(dynamic value) {

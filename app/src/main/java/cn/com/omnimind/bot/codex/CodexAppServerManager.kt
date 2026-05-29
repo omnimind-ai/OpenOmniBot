@@ -1252,6 +1252,7 @@ private fun extractActiveTurnId(value: Any?): String? {
 private fun codexThreadActivity(value: Any?): Boolean? {
     val root = value as? Map<*, *> ?: return null
     val thread = root["thread"] as? Map<*, *>
+    var inactiveCandidate: Boolean? = null
     val candidates = listOf(
         root["active"],
         root["isActive"],
@@ -1270,14 +1271,20 @@ private fun codexThreadActivity(value: Any?): Boolean? {
     )
     for (candidate in candidates) {
         val active = codexActivityFromValue(candidate)
-        if (active != null) {
-            return active
+        if (active == true) {
+            return true
+        }
+        if (active == false) {
+            inactiveCandidate = false
         }
     }
     val params = root["params"] as? Map<*, *>
     val fromParams = codexThreadActivity(params)
-    if (fromParams != null) {
-        return fromParams
+    if (fromParams == true) {
+        return true
+    }
+    if (fromParams == false) {
+        inactiveCandidate = false
     }
     val turns = (thread?.get("turns") as? List<*>) ?: (root["turns"] as? List<*>)
     if (turns != null) {
@@ -1289,7 +1296,7 @@ private fun codexThreadActivity(value: Any?): Boolean? {
             }
         }
     }
-    return null
+    return inactiveCandidate
 }
 
 private fun codexActivityFromValue(value: Any?): Boolean? {

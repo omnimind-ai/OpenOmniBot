@@ -168,6 +168,25 @@ void main() {
     expect(runtime.isAiResponding, isTrue);
   });
 
+  test('marks upstream turn started notification as processing', () {
+    final result = reducer.reduce(
+      runtime: runtime,
+      event: {
+        'method': 'turn/started',
+        'params': {
+          'threadId': 'thread-1',
+          'turn': {'id': 'turn-1', 'status': 'inProgress'},
+        },
+      },
+    );
+
+    expect(result.handled, isTrue);
+    expect(result.threadId, 'thread-1');
+    expect(result.turnId, 'turn-1');
+    expect(runtime.isAiResponding, isTrue);
+    expect(runtime.currentDispatchTaskId, 'turn-1');
+  });
+
   test('marks thread idle from object status payload', () {
     reducer.reduce(
       runtime: runtime,
