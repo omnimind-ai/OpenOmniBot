@@ -585,6 +585,46 @@ void main() {
     expect(find.byType(AgentAvatarButton), findsNothing);
   });
 
+  testWidgets('adjacent tool calls collapse into an expandable group', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    final messages = _buildCompletedAgentRunMessagesWithToolGroup();
+
+    await tester.pumpWidget(
+      _buildLocalizedApp(
+        child: SizedBox(
+          width: 400,
+          height: 520,
+          child: ChatMessageList(
+            messages: messages,
+            scrollController: controller,
+            onBeforeTaskExecute: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('agent-run-summary-task-1')));
+    await tester.pumpAndSettle();
+
+    final toolGroupToggle = find.byKey(
+      const ValueKey(
+        'agent-tool-call-group-toggle-task-1-task-1-tool-1-task-1-tool-2',
+      ),
+    );
+    expect(toolGroupToggle, findsOneWidget);
+    expect(find.text('运行 git status'), findsNothing);
+    expect(find.text('读取 README.md'), findsNothing);
+
+    await tester.tap(toolGroupToggle);
+    await tester.pumpAndSettle();
+
+    expect(find.text('运行 git status'), findsOneWidget);
+    expect(find.text('读取 README.md'), findsOneWidget);
+  });
+
   testWidgets('reopening run collapses thinking details by default again', (
     tester,
   ) async {
@@ -1056,6 +1096,78 @@ List<ChatMessageModel> _buildCompletedAgentRunMessages({bool isFinal = true}) {
         'kind': 'tool_completed',
         'seq': 20,
         'entryId': 'task-1-tool',
+        'isFinal': false,
+      },
+    ),
+    ChatMessageModel.cardMessage(
+      <String, dynamic>{
+        'type': 'deep_thinking',
+        'thinkingContent': '详细思考过程',
+        'stage': 4,
+        'isLoading': false,
+        'taskID': 'task-1',
+        'cardId': 'task-1-thinking',
+      },
+      id: 'task-1-thinking',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-1',
+        'kind': 'thinking_snapshot',
+        'seq': 10,
+        'entryId': 'task-1-thinking',
+        'isFinal': false,
+      },
+    ),
+    ChatMessageModel.userMessage('用户问题', id: 'task-1-user'),
+  ];
+}
+
+List<ChatMessageModel> _buildCompletedAgentRunMessagesWithToolGroup() {
+  return <ChatMessageModel>[
+    ChatMessageModel(
+      id: 'task-1-text',
+      type: 1,
+      user: 2,
+      content: const <String, dynamic>{'text': '最终回答', 'id': 'task-1-text'},
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-1',
+        'kind': 'text_snapshot',
+        'seq': 30,
+        'entryId': 'task-1-text',
+        'isFinal': true,
+      },
+    ),
+    ChatMessageModel.cardMessage(
+      <String, dynamic>{
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'workspace',
+        'toolTitle': '读取 README.md',
+        'summary': '读取完成',
+      },
+      id: 'task-1-tool-2',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-1',
+        'kind': 'tool_completed',
+        'seq': 25,
+        'entryId': 'task-1-tool-2',
+        'isFinal': false,
+      },
+    ),
+    ChatMessageModel.cardMessage(
+      <String, dynamic>{
+        'type': 'agent_tool_summary',
+        'status': 'success',
+        'toolType': 'terminal',
+        'toolTitle': '运行 git status',
+        'summary': '命令执行完成',
+        'terminalOutput': 'On branch main',
+      },
+      id: 'task-1-tool-1',
+      streamMeta: const <String, dynamic>{
+        'parentTaskId': 'task-1',
+        'kind': 'tool_completed',
+        'seq': 20,
+        'entryId': 'task-1-tool-1',
         'isFinal': false,
       },
     ),

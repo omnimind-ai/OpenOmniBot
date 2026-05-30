@@ -5,6 +5,7 @@ import 'package:ui/features/home/pages/chat/services/chat_conversation_runtime_c
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/services/codex_diff_parser.dart';
+import 'package:ui/services/codex_tool_call_parser.dart';
 
 class CodexReduceResult {
   const CodexReduceResult({
@@ -54,7 +55,10 @@ class CodexEventReducer {
     final itemId = _firstString([
       params['itemId'],
       params['item_id'],
+      params['callId'],
+      params['call_id'],
       _asStringMap(params['item'])?['id'],
+      _asStringMap(params['item'])?['callId'],
       params['id'],
     ]);
     final parentTaskId =
@@ -115,7 +119,13 @@ class CodexEventReducer {
       final item = _asStringMap(params['item']) ?? params;
       final itemType = _string(item['type']) ?? '';
       final startedItemId =
-          _firstString([item['id'], params['itemId'], params['id']]) ??
+          _firstString([
+            item['id'],
+            item['callId'],
+            params['itemId'],
+            params['callId'],
+            params['id'],
+          ]) ??
           parentTaskId;
       _touchActiveTurn(runtime, parentTaskId);
       if (itemType == 'reasoning') {
@@ -150,20 +160,24 @@ class CodexEventReducer {
             isFinal: false,
           );
         }
-      } else if (itemType == 'commandExecution' || itemType == 'fileChange') {
+      } else if (isCodexToolItemType(itemType)) {
+        final toolInfo = normalizeCodexToolCall(
+          item,
+          itemType: itemType,
+          fallbackStatus: 'running',
+        );
         final cardId =
-            '$startedItemId-codex-${itemType == 'commandExecution' ? 'command' : 'file'}';
+            '$startedItemId-codex-${codexToolCardSuffix(toolInfo.toolType, itemType: itemType)}';
         _upsertToolCard(
           runtime,
           cardId: cardId,
           taskId: parentTaskId,
-          toolType: itemType == 'commandExecution' ? 'terminal' : 'file',
-          title: itemType == 'commandExecution'
-              ? _commandTitle(item)
-              : _fileChangeTitle(item),
-          status: 'running',
-          summary: _extractText(item['summary']) ?? '',
-          progress: _extractText(item['status']) ?? '',
+          toolType: toolInfo.toolType,
+          title: toolInfo.toolTitle,
+          status: toolInfo.status,
+          summary: toolInfo.summary,
+          progress: toolInfo.progress,
+          terminalOutput: toolInfo.terminalOutput,
           raw: item,
           streamMeta: _streamMeta(
             runtime,
@@ -188,25 +202,6 @@ class CodexEventReducer {
             parentTaskId: parentTaskId,
             entryId: cardId,
             kind: 'permission_required',
-          ),
-        );
-      } else if (itemType == 'tool' || itemType == 'mcpToolCall') {
-        final cardId = '$startedItemId-codex-tool';
-        _upsertToolCard(
-          runtime,
-          cardId: cardId,
-          taskId: parentTaskId,
-          toolType: _string(item['toolType']) ?? 'tool',
-          title: _genericToolTitle(item),
-          status: 'running',
-          summary: _extractText(item['summary']) ?? '',
-          progress: _extractText(item['progress']) ?? '',
-          raw: item,
-          streamMeta: _streamMeta(
-            runtime,
-            parentTaskId: parentTaskId,
-            entryId: cardId,
-            kind: 'tool_started',
           ),
         );
       }
@@ -331,6 +326,7 @@ class CodexEventReducer {
     }
 
     if (method == 'item/fileChange/outputDelta' ||
+        method == 'item/fileChange/patchUpdated' ||
         method == 'turn/diff/updated') {
       final delta =
           _extractText(params['delta']) ??
@@ -416,6 +412,77 @@ class CodexEventReducer {
         threadId: threadId,
         turnId: turnId,
         requestId: requestId,
+      );
+    }
+
+    if (method == 'item/mcpToolCall/progress') {
+      final progress =
+          _extractText(params['message']) ??
+          _extractText(params['progress']) ??
+          '';
+      final cardId = '${itemId ?? parentTaskId}-codex-tool';
+      final existing = _toolCardData(runtime, cardId);
+      _upsertToolCard(
+        runtime,
+        cardId: cardId,
+        taskId: parentTaskId,
+        toolType: (existing?['toolType'] ?? 'mcp').toString(),
+        title:
+            (existing?['toolTitle'] ?? existing?['displayName'] ?? 'Codex tool')
+                .toString(),
+        status: 'running',
+        summary: progress,
+        progress: progress,
+        raw: params,
+        streamMeta: _streamMeta(
+          runtime,
+          parentTaskId: parentTaskId,
+          entryId: cardId,
+          kind: 'tool_progress',
+        ),
+      );
+      return CodexReduceResult(
+        handled: true,
+        method: method,
+        threadId: threadId,
+        turnId: turnId,
+      );
+    }
+
+    if (method == 'item/tool/call') {
+      final toolInfo = normalizeCodexToolCall(
+        <String, dynamic>{...params, 'type': 'dynamicToolCall'},
+        itemType: 'dynamicToolCall',
+        fallbackStatus: 'running',
+      );
+      final dynamicItemId =
+          _firstString([params['callId'], params['itemId'], itemId]) ??
+          parentTaskId;
+      final cardId =
+          '$dynamicItemId-codex-${codexToolCardSuffix(toolInfo.toolType, itemType: toolInfo.itemType)}';
+      _upsertToolCard(
+        runtime,
+        cardId: cardId,
+        taskId: parentTaskId,
+        toolType: toolInfo.toolType,
+        title: toolInfo.toolTitle,
+        status: toolInfo.status,
+        summary: toolInfo.summary,
+        progress: toolInfo.progress,
+        raw: <String, dynamic>{...params, 'type': 'dynamicToolCall'},
+        streamMeta: _streamMeta(
+          runtime,
+          parentTaskId: parentTaskId,
+          entryId: cardId,
+          kind: 'tool_started',
+        ),
+      );
+      return CodexReduceResult(
+        handled: true,
+        method: method,
+        threadId: threadId,
+        turnId: turnId,
+        requestId: message['id'],
       );
     }
 
@@ -761,33 +828,59 @@ class CodexEventReducer {
     );
     final existing = index == -1 ? null : runtime.messages[index];
     final existingCardData = existing?.cardData ?? const <String, dynamic>{};
+    final toolInfo = normalizeCodexToolCall(
+      raw,
+      fallbackToolType: toolType,
+      fallbackTitle: title,
+      fallbackStatus: status,
+    );
+    final effectiveToolType = toolInfo.toolType.isNotEmpty
+        ? toolInfo.toolType
+        : toolType;
+    final effectiveTitle = toolInfo.toolTitle.isNotEmpty
+        ? toolInfo.toolTitle
+        : title;
+    final normalizedSummary = summary.isNotEmpty
+        ? summary
+        : toolInfo.summary.isNotEmpty
+        ? toolInfo.summary
+        : '';
+    final normalizedProgress = progress.isNotEmpty
+        ? progress
+        : toolInfo.progress.isNotEmpty
+        ? toolInfo.progress
+        : '';
     final effectiveTerminalOutput = terminalOutput.isNotEmpty
         ? terminalOutput
+        : toolInfo.terminalOutput.isNotEmpty
+        ? toolInfo.terminalOutput
         : (existingCardData['terminalOutput'] ?? '').toString();
-    final diffText = toolType == 'file'
+    final diffText = effectiveToolType == 'file'
         ? _resolveFileDiffText(
             existingCardData: existingCardData,
             raw: raw,
             terminalOutput: effectiveTerminalOutput,
-            progress: progress,
-            summary: summary,
+            progress: normalizedProgress,
+            summary: normalizedSummary,
           )
         : '';
     final diffSummary = diffText.isEmpty ? null : parseCodexDiffText(diffText);
     final diffPreview = diffSummary == null
         ? ''
         : summarizeCodexDiff(diffSummary);
-    final effectiveSummary = toolType == 'file' && diffPreview.isNotEmpty
+    final effectiveSummary =
+        effectiveToolType == 'file' && diffPreview.isNotEmpty
         ? diffPreview
-        : summary.isNotEmpty
-        ? summary
+        : normalizedSummary.isNotEmpty
+        ? normalizedSummary
         : (existingCardData['summary'] ?? '').toString();
-    final effectiveProgress = toolType == 'file' && diffPreview.isNotEmpty
+    final effectiveProgress =
+        effectiveToolType == 'file' && diffPreview.isNotEmpty
         ? diffPreview
-        : progress.isNotEmpty
-        ? progress
+        : normalizedProgress.isNotEmpty
+        ? normalizedProgress
         : (existingCardData['progress'] ?? '').toString();
-    final resolvedFilePath = toolType == 'file'
+    final resolvedFilePath = effectiveToolType == 'file'
         ? _resolveFilePath(raw) ??
               (diffSummary?.primaryPath.trim().isNotEmpty == true
                   ? diffSummary!.primaryPath
@@ -797,25 +890,32 @@ class CodexEventReducer {
     final cardData = <String, dynamic>{
       'type': 'agent_tool_summary',
       'taskId': taskId,
-      'toolName': 'codex.$toolType',
-      'displayName': title,
-      'toolTitle': title,
+      'toolName': toolInfo.toolName,
+      'displayName': toolInfo.displayName,
+      'toolTitle': effectiveTitle,
       'cardId': cardId,
-      'toolType': toolType,
+      'toolType': effectiveToolType,
+      if (toolInfo.serverName != null) 'serverName': toolInfo.serverName,
       'status': status,
       'summary': effectiveSummary,
       'progress': effectiveProgress,
-      'argsJson': _safeJson(raw),
-      'resultPreviewJson': '',
-      'rawResultJson': _safeJson(raw),
+      'argsJson': toolInfo.argsJson.isNotEmpty
+          ? toolInfo.argsJson
+          : (existingCardData['argsJson'] ?? _safeJson(raw)).toString(),
+      'resultPreviewJson': toolInfo.resultPreviewJson.isNotEmpty
+          ? toolInfo.resultPreviewJson
+          : (existingCardData['resultPreviewJson'] ?? '').toString(),
+      'rawResultJson': toolInfo.rawResultJson.isNotEmpty
+          ? toolInfo.rawResultJson
+          : _safeJson(raw),
       'terminalOutput': effectiveTerminalOutput,
-      'terminalOutputDelta': progress,
+      'terminalOutputDelta': normalizedProgress,
       'showTerminalOutput':
           (effectiveTerminalOutput.isNotEmpty && diffText.isEmpty) ||
-          toolType == 'terminal',
+          effectiveToolType == 'terminal',
       'showRawResult': true,
     };
-    if (toolType == 'file') {
+    if (effectiveToolType == 'file') {
       cardData.addAll(<String, dynamic>{
         'diffText': diffText,
         'showDiff': diffText.isNotEmpty,
@@ -846,7 +946,7 @@ class CodexEventReducer {
         streamMeta: streamMeta,
       );
     }
-    runtime.lastAgentToolType = toolType;
+    runtime.lastAgentToolType = effectiveToolType;
   }
 
   void _upsertCodexRequestCard(
@@ -984,6 +1084,40 @@ class CodexEventReducer {
         '${itemId ?? taskId}-codex-thinking',
       );
     }
+    if (isCodexToolItemType(itemType)) {
+      final toolInfo = normalizeCodexToolCall(
+        item,
+        itemType: itemType,
+        fallbackStatus: 'success',
+      );
+      final completedItemId = itemId ?? _string(item['id']) ?? taskId;
+      final suffix = codexToolCardSuffix(toolInfo.toolType, itemType: itemType);
+      final cardId = '$completedItemId-codex-$suffix';
+      _upsertToolCard(
+        runtime,
+        cardId: cardId,
+        taskId: taskId,
+        toolType: toolInfo.toolType,
+        title: toolInfo.toolTitle,
+        status: toolInfo.status,
+        summary: toolInfo.summary,
+        progress: toolInfo.progress,
+        terminalOutput: toolInfo.terminalOutput,
+        raw: item,
+        streamMeta: _streamMeta(
+          runtime,
+          parentTaskId: taskId,
+          entryId: cardId,
+          kind: toolInfo.status == 'running'
+              ? 'tool_progress'
+              : 'tool_completed',
+          isFinal: toolInfo.status != 'running',
+        ),
+        touchTurn: false,
+      );
+      runtime.codexReplayDeltaOffsets.remove(cardId);
+      return;
+    }
     final completedItemId = itemId ?? taskId;
     for (final suffix in const ['command', 'file', 'plan', 'tool']) {
       _markToolCardComplete(runtime, '$completedItemId-codex-$suffix');
@@ -1054,6 +1188,14 @@ class CodexEventReducer {
     if (index == -1) return;
     final existing = runtime.messages[index];
     final cardData = Map<String, dynamic>.from(existing.cardData ?? const {});
+    final currentStatus = _string(cardData['status'])?.toLowerCase();
+    if (currentStatus == 'error' ||
+        currentStatus == 'timeout' ||
+        currentStatus == 'interrupted' ||
+        currentStatus == 'cancelled' ||
+        currentStatus == 'canceled') {
+      return;
+    }
     cardData['status'] = 'success';
     final parentTaskId =
         _string(cardData['taskId']) ??
@@ -1226,6 +1368,23 @@ class CodexEventReducer {
     }
   }
 
+  Map<String, dynamic>? _toolCardData(
+    ChatConversationRuntimeState runtime,
+    String cardId,
+  ) {
+    final index = runtime.messages.indexWhere(
+      (message) => message.id == cardId,
+    );
+    if (index == -1) {
+      return null;
+    }
+    final cardData = runtime.messages[index].cardData;
+    if (cardData?['type'] != 'agent_tool_summary') {
+      return null;
+    }
+    return cardData;
+  }
+
   Map<String, dynamic> _streamMeta(
     ChatConversationRuntimeState runtime, {
     required String parentTaskId,
@@ -1391,62 +1550,6 @@ class CodexEventReducer {
     return fromExisting.trim().isEmpty ? '' : fromExisting;
   }
 
-  String _genericToolTitle(Map<String, dynamic> params) {
-    final args = _toolArguments(params);
-    final toolName = _firstString([
-      params['toolName'],
-      params['tool_name'],
-      params['name'],
-      params['functionName'],
-      params['function_name'],
-      _asStringMap(params['function'])?['name'],
-      _asStringMap(params['tool'])?['name'],
-    ]);
-    final explicit = _firstString([
-      params['toolTitle'],
-      params['tool_title'],
-      params['displayName'],
-      params['display_name'],
-      args['toolTitle'],
-      args['tool_title'],
-      args['displayName'],
-      args['display_name'],
-    ]);
-    if (explicit != null) {
-      return _compactTitle(explicit, maxLength: 48);
-    }
-    final command = _firstString([args['command'], args['cmd'], params['cmd']]);
-    if (command != null) {
-      return _commandTitle({'command': command});
-    }
-    final detail = _firstString([
-      args['query'],
-      args['q'],
-      args['url'],
-      args['uri'],
-      args['path'],
-      args['filePath'],
-      args['file_path'],
-      params['query'],
-      params['url'],
-      params['path'],
-    ]);
-    final shortToolName = toolName == null ? null : _shortToolName(toolName);
-    if (detail != null) {
-      final detailTitle = _looksLikePath(detail)
-          ? (_lastPathSegment(detail) ?? detail)
-          : detail;
-      if (shortToolName != null && shortToolName.isNotEmpty) {
-        return _compactTitle('$shortToolName: $detailTitle', maxLength: 48);
-      }
-      return _compactTitle(detailTitle, maxLength: 48);
-    }
-    if (shortToolName != null && shortToolName.isNotEmpty) {
-      return _compactTitle(shortToolName, maxLength: 48);
-    }
-    return 'Codex tool';
-  }
-
   Map<String, dynamic> _toolArguments(Map<String, dynamic> params) {
     for (final key in const <String>['arguments', 'args', 'input']) {
       final map = _asStringMap(params[key]);
@@ -1506,23 +1609,6 @@ class CodexEventReducer {
         .where((part) => part.isNotEmpty)
         .toList(growable: false);
     return parts.isEmpty ? normalized : parts.last;
-  }
-
-  bool _looksLikePath(String value) {
-    return value.contains('/') || value.contains('\\');
-  }
-
-  String _shortToolName(String value) {
-    final normalized = value.trim();
-    if (normalized.isEmpty) {
-      return '';
-    }
-    final withoutNamespace = normalized.split(RegExp(r'[./:]')).last;
-    final parts = withoutNamespace
-        .split('__')
-        .where((part) => part.isNotEmpty)
-        .toList(growable: false);
-    return parts.isEmpty ? withoutNamespace : parts.last;
   }
 
   String _compactTitle(String value, {required int maxLength}) {

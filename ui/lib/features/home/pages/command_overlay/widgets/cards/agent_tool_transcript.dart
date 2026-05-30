@@ -151,6 +151,12 @@ IconData resolveAgentToolStatusIcon(String status, String toolType) {
   if (toolType == 'browser') {
     return Icons.language_rounded;
   }
+  if (toolType == 'search') {
+    return Icons.search_rounded;
+  }
+  if (toolType == 'image') {
+    return Icons.image_outlined;
+  }
   if (toolType == 'file') {
     return Icons.edit_note_rounded;
   }
@@ -168,6 +174,9 @@ IconData resolveAgentToolStatusIcon(String status, String toolType) {
   }
   if (toolType == 'subagent') {
     return Icons.hub_outlined;
+  }
+  if (toolType == 'review') {
+    return Icons.rate_review_outlined;
   }
   if (toolType == 'mcp') {
     return Icons.extension_outlined;

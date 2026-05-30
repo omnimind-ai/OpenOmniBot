@@ -110,6 +110,20 @@ diff --git a/lib/main.dart b/lib/main.dart
     expect(summary.deletions, 1);
   });
 
+  test('AgentToolEventData normalizes codex app-server tool calls', () {
+    final event = AgentToolEventData.fromMap({
+      'type': 'mcpToolCall',
+      'tool': 'mcp__filesystem__read_file',
+      'arguments': {'path': 'README.md'},
+      'status': 'completed',
+    });
+
+    expect(event.toolType, 'workspace');
+    expect(event.toolTitle, 'Read README.md');
+    expect(event.status, 'success');
+    expect(event.argsJson, contains('README.md'));
+  });
+
   testWidgets('CodexDiffViewer renders diff summary and file body', (
     tester,
   ) async {

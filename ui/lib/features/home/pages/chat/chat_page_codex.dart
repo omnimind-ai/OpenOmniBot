@@ -2286,14 +2286,25 @@ List<ChatMessageModel> _codexMessagesFromThreadResponse(
       }
       if (_codexHistoricalToolItemTypes.contains(itemType)) {
         seq += 1;
-        final toolKind = _codexToolKind(itemType);
+        final toolInfo = normalizeCodexToolCall(
+          item,
+          itemType: itemType,
+          fallbackStatus: 'success',
+        );
+        final toolKind = codexToolCardSuffix(
+          toolInfo.toolType,
+          itemType: itemType,
+        );
         final cardId = '$itemId-codex-$toolKind';
         final itemActivity = _codexActivityFromValue(
           item['status'] ?? item['state'],
         );
         final isRunning = isActiveTurn && itemActivity?.active != false;
-        final status = isRunning ? 'running' : 'success';
-        final toolTitle = _codexToolTitle(itemType, item);
+        final normalizedStatus = toolInfo.status == 'running' && !isRunning
+            ? 'success'
+            : toolInfo.status;
+        final status = isRunning ? 'running' : normalizedStatus;
+        final toolTitle = toolInfo.toolTitle;
         final summary = _codexExtractText(
           item['summary'] ??
               item['status'] ??
@@ -2301,9 +2312,13 @@ List<ChatMessageModel> _codexMessagesFromThreadResponse(
               item['text'] ??
               item['content'],
         );
-        final rawJson = _safeCodexJson(item);
-        final terminalOutput = _codexExtractText(item['output']);
-        final diffText = toolKind == 'file'
+        final rawJson = toolInfo.rawResultJson.isNotEmpty
+            ? toolInfo.rawResultJson
+            : _safeCodexJson(item);
+        final terminalOutput = toolInfo.terminalOutput.isNotEmpty
+            ? toolInfo.terminalOutput
+            : _codexExtractText(item['output']);
+        final diffText = toolInfo.toolType == 'file'
             ? extractCodexDiffText(
                     item,
                     outputText: terminalOutput,
@@ -2320,11 +2335,15 @@ List<ChatMessageModel> _codexMessagesFromThreadResponse(
             : summarizeCodexDiff(diffSummary);
         final effectiveSummary = toolKind == 'file' && diffPreview.isNotEmpty
             ? diffPreview
-            : summary;
+            : summary.isNotEmpty
+            ? summary
+            : toolInfo.summary;
         final effectiveProgress = toolKind == 'file' && diffPreview.isNotEmpty
             ? diffPreview
+            : toolInfo.progress.isNotEmpty
+            ? toolInfo.progress
             : summary;
-        final filePath = toolKind == 'file'
+        final filePath = toolInfo.toolType == 'file'
             ? extractCodexDiffPath(item) ??
                   (diffSummary?.primaryPath.trim().isNotEmpty == true
                       ? diffSummary!.primaryPath
@@ -2333,23 +2352,24 @@ List<ChatMessageModel> _codexMessagesFromThreadResponse(
         final cardData = <String, dynamic>{
           'type': 'agent_tool_summary',
           'taskId': turnId,
-          'toolName': 'codex.$toolKind',
-          'displayName': toolTitle,
+          'toolName': toolInfo.toolName,
+          'displayName': toolInfo.displayName,
           'toolTitle': toolTitle,
           'cardId': cardId,
-          'toolType': toolKind,
+          'toolType': toolInfo.toolType,
+          if (toolInfo.serverName != null) 'serverName': toolInfo.serverName,
           'status': status,
           'summary': effectiveSummary,
           'progress': effectiveProgress,
-          'argsJson': rawJson,
-          'resultPreviewJson': '',
+          'argsJson': toolInfo.argsJson,
+          'resultPreviewJson': toolInfo.resultPreviewJson,
           'rawResultJson': rawJson,
           'terminalOutput': terminalOutput,
           'terminalOutputDelta': '',
-          'showTerminalOutput': itemType == 'commandExecution',
+          'showTerminalOutput': toolInfo.toolType == 'terminal',
           'showRawResult': true,
         };
-        if (toolKind == 'file') {
+        if (toolInfo.toolType == 'file') {
           cardData.addAll(<String, dynamic>{
             'diffText': diffText,
             'showDiff': diffText.isNotEmpty,
@@ -2798,151 +2818,6 @@ int? _codexTimeValueMs(dynamic value) {
   return DateTime.tryParse(text)?.millisecondsSinceEpoch;
 }
 
-String _codexToolKind(String itemType) {
-  return switch (itemType) {
-    'commandExecution' => 'terminal',
-    'fileChange' => 'file',
-    'plan' => 'plan',
-    _ => 'tool',
-  };
-}
-
-String _codexToolTitle(String itemType, Map<String, dynamic> item) {
-  if (itemType == 'commandExecution') {
-    final command = _codexExtractText(item['command'] ?? item['cmd']).trim();
-    if (command.isNotEmpty) {
-      return _truncateCodexText(command, 48);
-    }
-    return 'Codex command';
-  }
-  if (itemType == 'fileChange') {
-    return _codexFileChangeTitle(item);
-  }
-  if (itemType == 'plan') {
-    return 'Codex plan';
-  }
-  return _codexGenericToolTitle(item);
-}
-
-String _codexFileChangeTitle(Map<String, dynamic> item) {
-  final path =
-      _asCodexString(
-        item['path'] ??
-            item['filePath'] ??
-            item['file_path'] ??
-            item['filename'] ??
-            item['fileName'],
-      ) ??
-      _codexFirstPathFromList(item['files']) ??
-      _codexFirstPathFromList(item['changes']);
-  if (path == null) {
-    return 'Codex file change';
-  }
-  final name = _codexLastPathSegment(path) ?? path;
-  return _truncateCodexText('Edit $name', 42);
-}
-
-String _codexGenericToolTitle(Map<String, dynamic> item) {
-  final args = _codexToolArgs(item);
-  final explicit = _asCodexString(
-    item['toolTitle'] ??
-        item['tool_title'] ??
-        item['displayName'] ??
-        item['display_name'] ??
-        args['toolTitle'] ??
-        args['tool_title'],
-  );
-  if (explicit != null) {
-    return _truncateCodexText(explicit, 48);
-  }
-  final detail = _asCodexString(
-    args['command'] ??
-        args['cmd'] ??
-        args['query'] ??
-        args['q'] ??
-        args['url'] ??
-        args['path'] ??
-        args['filePath'] ??
-        args['file_path'],
-  );
-  final toolName = _asCodexString(
-    item['toolName'] ?? item['tool_name'] ?? item['name'],
-  );
-  if (detail != null) {
-    final normalizedDetail = detail.contains('/') || detail.contains('\\')
-        ? (_codexLastPathSegment(detail) ?? detail)
-        : detail;
-    final shortName = toolName == null ? null : _codexShortToolName(toolName);
-    return _truncateCodexText(
-      shortName == null ? normalizedDetail : '$shortName: $normalizedDetail',
-      48,
-    );
-  }
-  if (toolName != null) {
-    return _truncateCodexText(_codexShortToolName(toolName), 48);
-  }
-  return 'Codex tool';
-}
-
-Map<String, dynamic> _codexToolArgs(Map<String, dynamic> item) {
-  for (final key in const <String>['arguments', 'args', 'input']) {
-    final map = _asCodexMap(item[key]);
-    if (map != null) {
-      return map;
-    }
-    final raw = _asCodexString(item[key]);
-    if (raw == null) {
-      continue;
-    }
-    try {
-      final decoded = jsonDecode(raw);
-      final decodedMap = _asCodexMap(decoded);
-      if (decodedMap != null) {
-        return decodedMap;
-      }
-    } catch (_) {
-      continue;
-    }
-  }
-  return const <String, dynamic>{};
-}
-
-String? _codexFirstPathFromList(dynamic value) {
-  if (value is! List) {
-    return null;
-  }
-  for (final item in value) {
-    if (item is String && item.trim().isNotEmpty) {
-      return item.trim();
-    }
-    final map = _asCodexMap(item);
-    final path = _asCodexString(
-      map?['path'] ??
-          map?['filePath'] ??
-          map?['file_path'] ??
-          map?['filename'] ??
-          map?['fileName'],
-    );
-    if (path != null) {
-      return path;
-    }
-  }
-  return null;
-}
-
-String _codexShortToolName(String toolName) {
-  final normalized = toolName.trim();
-  if (normalized.isEmpty) {
-    return normalized;
-  }
-  final withoutNamespace = normalized.split(RegExp(r'[./:]')).last;
-  final parts = withoutNamespace
-      .split('__')
-      .where((part) => part.isNotEmpty)
-      .toList(growable: false);
-  return parts.isEmpty ? withoutNamespace : parts.last;
-}
-
 String _truncateCodexText(String text, int maxLength) {
   final normalized = text.trim().replaceAll(RegExp(r'\s+'), ' ');
   if (normalized.length <= maxLength) {
@@ -2964,6 +2839,12 @@ const Set<String> _codexHistoricalToolItemTypes = <String>{
   'fileChange',
   'tool',
   'mcpToolCall',
+  'dynamicToolCall',
+  'webSearch',
+  'imageView',
+  'imageGeneration',
+  'collabAgentToolCall',
+  'collabToolCall',
   'plan',
 };
 

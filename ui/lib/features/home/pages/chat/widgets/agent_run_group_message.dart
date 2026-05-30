@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/chat/tool_activity_utils.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
-import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/agent_tool_transcript.dart';
+import 'package:ui/features/home/pages/command_overlay/widgets/cards/card_widget_factory.dart'
+    show OnBeforeTaskExecute, OnRequestAuthorize;
 import 'package:ui/features/home/pages/command_overlay/widgets/message_bubble.dart';
 import 'package:ui/models/chat_message_model.dart';
 import 'package:ui/services/agent_avatar_service.dart';
@@ -51,6 +54,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
   late final Animation<double> _opacity;
   late final Animation<double> _lift;
   bool _isNotifyingParentDuringAnimation = false;
+  final Set<String> _expandedToolGroupKeys = <String>{};
 
   @override
   void initState() {
@@ -85,6 +89,9 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
   @override
   void didUpdateWidget(covariant AgentRunGroupMessage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.group.taskId != oldWidget.group.taskId) {
+      _expandedToolGroupKeys.clear();
+    }
     if (widget.expanded == oldWidget.expanded) {
       return;
     }
@@ -149,7 +156,8 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
             message: message,
             onBeforeTaskExecute: widget.onBeforeTaskExecute,
             onCancelTask: widget.onCancelTask,
-            onRetryAgentMessage: () => widget.onRetryAgentMessage?.call(message),
+            onRetryAgentMessage: () =>
+                widget.onRetryAgentMessage?.call(message),
             enableThinkingCollapse: false,
             parentScrollController: widget.parentScrollController,
             onParentScrollHandoff: widget.onParentScrollHandoff,
@@ -183,31 +191,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
       child: Column(
         key: ValueKey('agent-run-process-${widget.group.taskId}'),
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: processMessages
-            .map((message) {
-              final hideAvatar =
-                  firstThinkingMessageId != null &&
-                  message.id == firstThinkingMessageId;
-              return MessageBubble(
-                key: ValueKey('agent-run-${widget.group.taskId}-${message.id}'),
-                message: message,
-                onBeforeTaskExecute: widget.onBeforeTaskExecute,
-                onCancelTask: widget.onCancelTask,
-                onRetryAgentMessage:
-                    () => widget.onRetryAgentMessage?.call(message),
-                enableThinkingCollapse: true,
-                thinkingAutoCollapseOnComplete: true,
-                showThinkingAvatarOverride: hideAvatar ? false : null,
-                parentScrollController: widget.parentScrollController,
-                onParentScrollHandoff: widget.onParentScrollHandoff,
-                onRequestAuthorize: widget.onRequestAuthorize,
-                onStreamingTextLayoutChanged:
-                    widget.onStreamingTextLayoutChanged,
-                visualProfile: widget.visualProfile,
-                appearanceConfig: widget.appearanceConfig,
-              );
-            })
-            .toList(growable: false),
+        children: _buildProcessWidgets(processMessages, firstThinkingMessageId),
       ),
       builder: (context, child) {
         final sizeFactor = _sizeFactor.value.clamp(0.0, 1.0);
@@ -232,6 +216,91 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
     );
   }
 
+  List<Widget> _buildProcessWidgets(
+    List<ChatMessageModel> processMessages,
+    String? firstThinkingMessageId,
+  ) {
+    final widgets = <Widget>[];
+    var index = 0;
+    while (index < processMessages.length) {
+      final message = processMessages[index];
+      if (_isAgentToolSummaryMessage(message)) {
+        final toolMessages = <ChatMessageModel>[message];
+        var nextIndex = index + 1;
+        while (nextIndex < processMessages.length &&
+            _isAgentToolSummaryMessage(processMessages[nextIndex])) {
+          toolMessages.add(processMessages[nextIndex]);
+          nextIndex += 1;
+        }
+        if (toolMessages.length > 1) {
+          final groupKey = _toolGroupKey(widget.group.taskId, toolMessages);
+          final expanded = _expandedToolGroupKeys.contains(groupKey);
+          widgets.add(
+            _AgentToolCallGroup(
+              key: ValueKey('agent-tool-call-group-$groupKey'),
+              groupKey: groupKey,
+              messages: toolMessages,
+              expanded: expanded,
+              onToggle: () => _toggleToolGroup(groupKey),
+              buildMessageBubble: _buildMessageBubble,
+            ),
+          );
+        } else {
+          widgets.add(
+            _buildMessageBubble(
+              toolMessages.single,
+              firstThinkingMessageId: firstThinkingMessageId,
+            ),
+          );
+        }
+        index = nextIndex;
+        continue;
+      }
+
+      widgets.add(
+        _buildMessageBubble(
+          message,
+          firstThinkingMessageId: firstThinkingMessageId,
+        ),
+      );
+      index += 1;
+    }
+    return widgets;
+  }
+
+  MessageBubble _buildMessageBubble(
+    ChatMessageModel message, {
+    String? firstThinkingMessageId,
+  }) {
+    final hideAvatar =
+        firstThinkingMessageId != null && message.id == firstThinkingMessageId;
+    return MessageBubble(
+      key: ValueKey('agent-run-${widget.group.taskId}-${message.id}'),
+      message: message,
+      onBeforeTaskExecute: widget.onBeforeTaskExecute,
+      onCancelTask: widget.onCancelTask,
+      onRetryAgentMessage: () => widget.onRetryAgentMessage?.call(message),
+      enableThinkingCollapse: true,
+      thinkingAutoCollapseOnComplete: true,
+      showThinkingAvatarOverride: hideAvatar ? false : null,
+      parentScrollController: widget.parentScrollController,
+      onParentScrollHandoff: widget.onParentScrollHandoff,
+      onRequestAuthorize: widget.onRequestAuthorize,
+      onStreamingTextLayoutChanged: widget.onStreamingTextLayoutChanged,
+      visualProfile: widget.visualProfile,
+      appearanceConfig: widget.appearanceConfig,
+    );
+  }
+
+  void _toggleToolGroup(String groupKey) {
+    setState(() {
+      if (!_expandedToolGroupKeys.add(groupKey)) {
+        _expandedToolGroupKeys.remove(groupKey);
+      }
+    });
+    widget.onStreamingTextLayoutChanged?.call();
+  }
+
   String? _firstThinkingMessageId(List<ChatMessageModel> processMessages) {
     for (final message in processMessages) {
       if ((message.cardData?['type'] ?? '').toString() == 'deep_thinking') {
@@ -239,6 +308,182 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
       }
     }
     return null;
+  }
+}
+
+bool _isAgentToolSummaryMessage(ChatMessageModel message) {
+  return (message.cardData?['type'] ?? '').toString() ==
+      kAgentToolSummaryCardType;
+}
+
+String _toolGroupKey(String taskId, List<ChatMessageModel> messages) {
+  return '$taskId-${messages.map((message) => message.id).join('-')}';
+}
+
+class _AgentToolCallGroup extends StatelessWidget {
+  const _AgentToolCallGroup({
+    super.key,
+    required this.groupKey,
+    required this.messages,
+    required this.expanded,
+    required this.onToggle,
+    required this.buildMessageBubble,
+  });
+
+  final String groupKey;
+  final List<ChatMessageModel> messages;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final MessageBubble Function(
+    ChatMessageModel message, {
+    String? firstThinkingMessageId,
+  })
+  buildMessageBubble;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final primaryCard = _primaryCardData(messages);
+    final status = (primaryCard['status'] ?? 'running').toString();
+    final toolType = (primaryCard['toolType'] ?? '').toString();
+    final mutedColor = palette.textSecondary.withValues(
+      alpha: context.isDarkTheme ? 0.78 : 0.68,
+    );
+    final titleColor = palette.textSecondary.withValues(
+      alpha: context.isDarkTheme ? 0.94 : 0.88,
+    );
+    final overlayColor = palette.accentPrimary.withValues(
+      alpha: context.isDarkTheme ? 0.10 : 0.06,
+    );
+    final title = _toolGroupTitle(messages);
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(top: 6, bottom: 4),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.90,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: _toolGroupTooltip(messages),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  key: ValueKey('agent-tool-call-group-toggle-$groupKey'),
+                  onTap: onToggle,
+                  splashColor: overlayColor,
+                  highlightColor: overlayColor,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 5, 5, 5),
+                    child: Row(
+                      children: [
+                        Icon(
+                          resolveAgentToolStatusIcon(status, toolType),
+                          size: 16,
+                          color: mutedColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0,
+                              height: 1.18,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${messages.length}',
+                          style: TextStyle(
+                            color: mutedColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: expanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                            color: mutedColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topLeft,
+              child: expanded
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: messages
+                            .map((message) => buildMessageBubble(message))
+                            .toList(growable: false),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _primaryCardData(List<ChatMessageModel> messages) {
+    for (final message in messages) {
+      final cardData = message.cardData;
+      if ((cardData?['status'] ?? '').toString() == 'running') {
+        return cardData!;
+      }
+    }
+    return messages.first.cardData ?? const <String, dynamic>{};
+  }
+
+  String _toolGroupTitle(List<ChatMessageModel> messages) {
+    final titles = messages
+        .map((message) => message.cardData)
+        .whereType<Map<String, dynamic>>()
+        .map(resolveAgentToolTitle)
+        .where((title) => title.trim().isNotEmpty)
+        .take(2)
+        .toList(growable: false);
+    final prefix = '${messages.length} 个工具调用';
+    if (titles.isEmpty) {
+      return prefix;
+    }
+    return '$prefix · ${titles.join(' · ')}';
+  }
+
+  String _toolGroupTooltip(List<ChatMessageModel> messages) {
+    return messages
+        .map((message) => message.cardData)
+        .whereType<Map<String, dynamic>>()
+        .map(resolveAgentToolTitle)
+        .where((title) => title.trim().isNotEmpty)
+        .join('\n');
   }
 }
 

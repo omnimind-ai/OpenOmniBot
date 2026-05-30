@@ -341,8 +341,11 @@ String resolveAgentToolStatusLabel(Map<String, dynamic> cardData) {
     default:
       if (toolType == 'terminal') return LegacyTextLocalizer.localize('运行中');
       if (toolType == 'browser') return LegacyTextLocalizer.localize('浏览中');
+      if (toolType == 'search') return LegacyTextLocalizer.localize('搜索中');
+      if (toolType == 'image') return LegacyTextLocalizer.localize('查看中');
       if (toolType == 'mcp') return LegacyTextLocalizer.localize('响应中');
       if (toolType == 'memory') return LegacyTextLocalizer.localize('处理中');
+      if (toolType == 'review') return LegacyTextLocalizer.localize('审阅中');
       return LegacyTextLocalizer.localize('执行中');
   }
 }
@@ -357,6 +360,10 @@ String resolveAgentToolTypeLabel(Map<String, dynamic> cardData) {
       return LegacyTextLocalizer.localize('终端');
     case 'browser':
       return LegacyTextLocalizer.localize('浏览器');
+    case 'search':
+      return LegacyTextLocalizer.localize('搜索');
+    case 'image':
+      return LegacyTextLocalizer.localize('图像');
     case 'workspace':
       return LegacyTextLocalizer.localize('工作区');
     case 'file':
@@ -379,6 +386,8 @@ String resolveAgentToolTypeLabel(Map<String, dynamic> cardData) {
       return 'Skill';
     case 'subagent':
       return LegacyTextLocalizer.localize('子任务');
+    case 'review':
+      return LegacyTextLocalizer.localize('审阅');
     case 'mcp':
       return 'MCP';
     default:

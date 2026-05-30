@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:ui/models/agent_stream_event.dart';
 import 'package:ui/services/agent_schedule_bridge_service.dart';
 import 'package:ui/services/app_state_service.dart';
+import 'package:ui/services/codex_tool_call_parser.dart';
 
 // 卡片推送
 typedef CardPushCallback<T> = void Function(Map<String, dynamic> cardData);
@@ -153,21 +154,42 @@ class AgentToolEventData {
         (key, value) => MapEntry(key.toString(), value),
       ),
     );
+    final itemType = _asNonEmptyString(raw['type']);
+    final normalized = normalizeCodexToolCall(
+      raw,
+      itemType: itemType,
+      fallbackToolType: _asNonEmptyString(raw['toolType']) ?? 'builtin',
+      fallbackTitle:
+          _asNonEmptyString(raw['toolTitle']) ??
+          _asNonEmptyString(raw['displayName']),
+      fallbackStatus: _asNonEmptyString(raw['status']) ?? '',
+    );
+    final explicitStatus = codexToolStatusIsExplicit(raw);
     return AgentToolEventData(
       taskId: (raw['taskId'] ?? '').toString(),
       cardId: (raw['cardId'] ?? '').toString(),
-      toolName: (raw['toolName'] ?? '').toString(),
-      displayName: (raw['displayName'] ?? raw['toolName'] ?? '').toString(),
-      toolTitle: (raw['toolTitle'] ?? '').toString(),
-      toolType: (raw['toolType'] ?? 'builtin').toString(),
-      serverName: raw['serverName']?.toString(),
-      status: (raw['status'] ?? '').toString(),
-      argsJson: (raw['argsJson'] ?? raw['args'] ?? '').toString(),
-      progress: (raw['progress'] ?? '').toString(),
-      summary: (raw['summary'] ?? '').toString(),
-      resultPreviewJson: (raw['resultPreviewJson'] ?? '').toString(),
-      rawResultJson: (raw['rawResultJson'] ?? '').toString(),
-      terminalOutput: (raw['terminalOutput'] ?? '').toString(),
+      toolName: _asNonEmptyString(raw['toolName']) ?? normalized.toolName,
+      displayName:
+          _asNonEmptyString(raw['displayName']) ??
+          _asNonEmptyString(raw['toolName']) ??
+          normalized.displayName,
+      toolTitle: _asNonEmptyString(raw['toolTitle']) ?? normalized.toolTitle,
+      toolType: _asNonEmptyString(raw['toolType']) ?? normalized.toolType,
+      serverName: _asNonEmptyString(raw['serverName']) ?? normalized.serverName,
+      status: explicitStatus ? normalized.status : '',
+      argsJson:
+          _asNonEmptyString(raw['argsJson']) ??
+          (raw['args'] is String ? _asNonEmptyString(raw['args']) : null) ??
+          normalized.argsJson,
+      progress: _asNonEmptyString(raw['progress']) ?? normalized.progress,
+      summary: _asNonEmptyString(raw['summary']) ?? normalized.summary,
+      resultPreviewJson:
+          _asNonEmptyString(raw['resultPreviewJson']) ??
+          normalized.resultPreviewJson,
+      rawResultJson:
+          _asNonEmptyString(raw['rawResultJson']) ?? normalized.rawResultJson,
+      terminalOutput:
+          _asNonEmptyString(raw['terminalOutput']) ?? normalized.terminalOutput,
       terminalOutputDelta: (raw['terminalOutputDelta'] ?? '').toString(),
       terminalSessionId: raw['terminalSessionId']?.toString(),
       terminalStreamState: (raw['terminalStreamState'] ?? '').toString(),
@@ -189,6 +211,11 @@ class AgentToolEventData {
       ),
       success: raw['success'] != false,
     );
+  }
+
+  static String? _asNonEmptyString(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
   }
 
   static List<Map<String, dynamic>> _readSubagentEvents(dynamic value) {

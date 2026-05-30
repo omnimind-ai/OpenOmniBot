@@ -193,6 +193,54 @@ diff --git a/lib/main.dart b/lib/main.dart
     expect(cardData['deletions'], 1);
   });
 
+  test('hydrates historical codex tool item variants as tool cards', () {
+    final messages = codexMessagesFromThreadResponseForTesting({
+      'thread': {
+        'id': 'thread-1',
+        'turns': [
+          {
+            'id': 'turn-1',
+            'items': [
+              {
+                'id': 'search-1',
+                'type': 'webSearch',
+                'query': 'Codex app server protocol',
+                'status': 'completed',
+              },
+              {
+                'id': 'image-1',
+                'type': 'imageView',
+                'path': '/tmp/screenshot.png',
+                'status': 'completed',
+              },
+              {
+                'id': 'tool-1',
+                'type': 'mcpToolCall',
+                'tool': 'mcp__filesystem__read_file',
+                'arguments': '{"path":"README.md"}',
+                'status': 'completed',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    final cards = messages.map((message) => message.cardData!).toList();
+    expect(
+      cards.map((card) => card['toolType']),
+      containsAll(<String>['search', 'image', 'workspace']),
+    );
+    expect(
+      cards.map((card) => card['toolTitle']),
+      containsAll(<String>[
+        'Search: Codex app server protocol',
+        'View screenshot.png',
+        'Read README.md',
+      ]),
+    );
+  });
+
   test('hydrates codex user image blocks as message attachments', () {
     final messages = codexMessagesFromThreadResponseForTesting({
       'thread': {
@@ -276,6 +324,107 @@ diff --git a/lib/main.dart b/lib/main.dart
 
     final cardData = runtime.messages.single.cardData!;
     expect(cardData['toolTitle'], 'query_docs: Riverpod provider override');
+  });
+
+  test('maps mcp read file calls into workspace tool cards', () {
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'item/started',
+          'params': {
+            'turnId': 'turn-1',
+            'item': {
+              'id': 'tool-1',
+              'type': 'mcpToolCall',
+              'tool': 'mcp__filesystem__read_file',
+              'arguments': '{"path":"README.md"}',
+            },
+          },
+        },
+      },
+    );
+
+    final cardData = runtime.messages.single.cardData!;
+    expect(cardData['type'], 'agent_tool_summary');
+    expect(cardData['toolType'], 'workspace');
+    expect(cardData['toolTitle'], 'Read README.md');
+    expect(cardData['argsJson'], contains('README.md'));
+  });
+
+  test('completed command snapshots update terminal output and status', () {
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'item/started',
+          'params': {
+            'turnId': 'turn-1',
+            'item': {
+              'id': 'cmd-1',
+              'type': 'commandExecution',
+              'command': 'npm test',
+            },
+          },
+        },
+      },
+    );
+
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'item/completed',
+          'params': {
+            'turnId': 'turn-1',
+            'itemId': 'cmd-1',
+            'item': {
+              'id': 'cmd-1',
+              'type': 'commandExecution',
+              'command': 'npm test',
+              'aggregatedOutput': 'test failed\n',
+              'exitCode': 1,
+            },
+          },
+        },
+      },
+    );
+
+    expect(runtime.messages, hasLength(1));
+    final cardData = runtime.messages.single.cardData!;
+    expect(cardData['toolType'], 'terminal');
+    expect(cardData['status'], 'error');
+    expect(cardData['terminalOutput'], 'test failed\n');
+  });
+
+  test('patch updated events keep file diff cards current', () {
+    reducer.reduce(
+      runtime: runtime,
+      event: {
+        'message': {
+          'method': 'item/fileChange/patchUpdated',
+          'params': {
+            'turnId': 'turn-1',
+            'itemId': 'file-1',
+            'changes': jsonEncode({
+              'path': '/repo/lib/app.dart',
+              'kind': {'type': 'update'},
+              'diff': '''
+@@ -1 +1 @@
+-old
++new
+''',
+            }),
+          },
+        },
+      },
+    );
+
+    final cardData = runtime.messages.single.cardData!;
+    expect(cardData['toolType'], 'file');
+    expect(cardData['showDiff'], isTrue);
+    expect(cardData['filePath'], '/repo/lib/app.dart');
+    expect(cardData['summary'], '1 file · +1 -1');
   });
 
   test('keeps agent message entries separate by codex item id', () {
