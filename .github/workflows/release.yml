@@ -26,8 +26,7 @@ jobs:
   build:
     runs-on:
       - self-hosted
-      - linux
-      - x64
+      - macOS
 
     steps:
       - name: Checkout repository
