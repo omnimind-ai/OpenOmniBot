@@ -83,6 +83,187 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `update function repairs wrong click target from human instruction`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "repair_takeout_target"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "打开美食",
+                    "description" to "错误地点击了美食入口",
+                    "sourcePage" to mapOf(
+                        "xml" to TAKEOUT_XML,
+                        "packageName" to "com.example.food",
+                    ),
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "click",
+                            "title" to "点击美食",
+                            "target_description" to "美食",
+                            "x" to 230,
+                            "y" to 140,
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val update = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "instruction" to "应该点「外卖」而不是点「美食」",
+                )
+            )
+
+            assertEquals(true, update["success"])
+            assertEquals("repair", update["mode"])
+            assertEquals(true, update["changed"])
+            assertEquals(true, update["saved"])
+            assertEquals(false, update["requires_confirmation"])
+
+            val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val function = stored["function"] as Map<*, *>
+            val execution = function["execution"] as Map<*, *>
+            val step = (execution["steps"] as List<*>).first() as Map<*, *>
+            val args = step["args"] as Map<*, *>
+            assertEquals("外卖", args["target_description"])
+            assertEquals(790.0, (args["x"] as Number).toDouble(), 0.001)
+            assertEquals(140.0, (args["y"] as Number).toDouble(), 0.001)
+            assertEquals("[600,80][980,200]", args["bounds"])
+            assertEquals("点击外卖", step["title"])
+
+            val selectorHints = args["selector_hints"] as Map<*, *>
+            assertEquals(listOf("外卖"), selectorHints["prefer_text"])
+            assertEquals(listOf("美食"), selectorHints["avoid_text"])
+
+            val metadata = function["metadata"] as Map<*, *>
+            val audit = metadata["oob_function_update"] as Map<*, *>
+            assertEquals("update_function", audit["tool"])
+            assertEquals("repair", audit["mode"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `update function gates inserts and deletes as structural changes`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "structural_step_update"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "打开应用并完成",
+                    "description" to "用于验证结构化步骤更新",
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "open_app",
+                            "packageName" to "com.example.food",
+                        ),
+                        mapOf(
+                            "action" to "finished",
+                            "content" to "Done",
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val insertPatch = mapOf(
+                "ops" to listOf(
+                    mapOf(
+                        "op" to "insert_step",
+                        "step_index" to 1,
+                        "step" to mapOf(
+                            "action" to "click",
+                            "title" to "点击外卖",
+                            "target_description" to "外卖",
+                            "x" to 790,
+                            "y" to 140,
+                        ),
+                    ),
+                ),
+            )
+            val blockedInsert = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "patch" to insertPatch,
+                )
+            )
+            assertEquals(false, blockedInsert["success"])
+            assertEquals("STRUCTURAL_CHANGE_NOT_ALLOWED", blockedInsert["error_code"])
+
+            val allowedInsert = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "mode" to "repair",
+                    "allowStructuralChange" to true,
+                    "patch" to insertPatch,
+                )
+            )
+            assertEquals(true, allowedInsert["success"])
+            assertEquals(true, allowedInsert["changed"])
+            assertEquals(true, allowedInsert["saved"])
+
+            val insertedStored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val insertedFunction = insertedStored["function"] as Map<*, *>
+            val insertedExecution = insertedFunction["execution"] as Map<*, *>
+            val insertedSteps = insertedExecution["steps"] as List<*>
+            assertEquals(3, insertedSteps.size)
+            assertEquals(3, (insertedExecution["step_count"] as Number).toInt())
+            insertedSteps.forEachIndexed { index, rawStep ->
+                assertEquals(index, ((rawStep as Map<*, *>)["index"] as Number).toInt())
+            }
+            val insertedStep = insertedSteps[1] as Map<*, *>
+            assertEquals("click", insertedStep["tool"])
+            assertEquals("点击外卖", insertedStep["title"])
+            val insertedArgs = insertedStep["args"] as Map<*, *>
+            assertEquals("外卖", insertedArgs["target_description"])
+            assertEquals(790, (insertedArgs["x"] as Number).toInt())
+            assertEquals(140, (insertedArgs["y"] as Number).toInt())
+            val stepIds = insertedSteps.map { rawStep -> (rawStep as Map<*, *>)["id"] }
+            assertEquals(stepIds.toSet().size, stepIds.size)
+
+            val allowedDelete = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "mode" to "repair",
+                    "allowStructuralChange" to true,
+                    "patch" to mapOf(
+                        "ops" to listOf(
+                            mapOf(
+                                "op" to "delete_step",
+                                "step_index" to 1,
+                                "reason" to "删除刚插入的测试动作",
+                            ),
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, allowedDelete["success"])
+            assertEquals(true, allowedDelete["changed"])
+            assertEquals(true, allowedDelete["saved"])
+
+            val deletedStored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val deletedFunction = deletedStored["function"] as Map<*, *>
+            val deletedExecution = deletedFunction["execution"] as Map<*, *>
+            val deletedSteps = deletedExecution["steps"] as List<*>
+            assertEquals(2, deletedSteps.size)
+            assertEquals(2, (deletedExecution["step_count"] as Number).toInt())
+            deletedSteps.forEachIndexed { index, rawStep ->
+                assertEquals(index, ((rawStep as Map<*, *>)["index"] as Number).toInt())
+            }
+            assertEquals("open_app", (deletedSteps[0] as Map<*, *>)["tool"])
+            assertEquals("finished", (deletedSteps[1] as Map<*, *>)["tool"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `guard and replay skip get state observation steps without agent fallback`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -412,6 +593,27 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(true, call["success"])
             assertEquals(false, call["fallback"])
             assertEquals(1, (call["actions_executed"] as Number).toInt())
+            val functionTiming = call["timing"] as? Map<*, *>
+            assertNotNull(functionTiming)
+            assertEquals("oob_function_execute", functionTiming?.get("source"))
+            val callPhaseMs = functionTiming?.get("call_phase_ms") as? Map<*, *>
+            assertNotNull(callPhaseMs)
+            assertTrue("missing call guard timing", callPhaseMs?.containsKey("guard_check_ms") == true)
+            assertTrue("missing call execute timing", callPhaseMs?.containsKey("execute_function_ms") == true)
+            val functionPhaseMs = functionTiming?.get("phase_ms") as? Map<*, *>
+            assertNotNull(functionPhaseMs)
+            listOf(
+                "load_function_spec_ms",
+                "check_arguments_ms",
+                "materialize_function_ms",
+                "slice_function_ms",
+                "create_runner_ms",
+                "run_materialized_function_ms",
+            ).forEach { phaseName ->
+                assertTrue("missing function timing phase $phaseName", functionPhaseMs?.containsKey(phaseName) == true)
+            }
+            assertNotNull(functionTiming?.get("startup_phase_ms") as? Map<*, *>)
+            assertNotNull(functionTiming?.get("runner_phase_ms") as? Map<*, *>)
 
             val oobResult = call["oob_result"] as? Map<*, *>
             assertNotNull(oobResult)
@@ -1401,6 +1603,13 @@ class OobOmniFlowLoopAcceptanceTest {
                 <node index="1" package="com.example.target" class="android.widget.TextView" text="Target details" content-desc="" resource-id="target:title" clickable="false" enabled="true" visible-to-user="true" bounds="[40,80][800,180]" />
                 <node index="2" package="com.example.target" class="android.widget.Button" text="Open settings" content-desc="" resource-id="target:open_settings" clickable="true" enabled="true" visible-to-user="true" bounds="[80,620][1000,760]" />
               </node>
+            </hierarchy>
+        """
+
+        private const val TAKEOUT_XML = """
+            <hierarchy bounds="[0,0][1080,1920]">
+              <node index="0" package="com.example.food" class="android.widget.TextView" text="美食" content-desc="" resource-id="food:tab_food" clickable="true" enabled="true" visible-to-user="true" bounds="[40,80][420,200]" />
+              <node index="1" package="com.example.food" class="android.widget.TextView" text="外卖" content-desc="" resource-id="food:tab_takeout" clickable="true" enabled="true" visible-to-user="true" bounds="[600,80][980,200]" />
             </hierarchy>
         """
     }

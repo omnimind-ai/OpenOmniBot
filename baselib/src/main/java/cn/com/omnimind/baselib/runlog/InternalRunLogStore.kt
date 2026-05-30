@@ -34,6 +34,7 @@ object InternalRunLogStore {
     private const val MAX_RUN_COUNT = 200
     private const val RUN_LOG_EVENT_SCHEMA_VERSION = "oob.run_log_event.v1"
     private const val SNAPSHOT_MIN_INTERVAL_MS = 1_000L
+    private const val REGISTERED_FUNCTION_BINDING_LIMIT = 20
 
     private val gson = GsonBuilder()
         .disableHtmlEscaping()
@@ -143,6 +144,44 @@ object InternalRunLogStore {
     }
 
     @Synchronized
+    fun bindRegisteredFunction(
+        context: Context,
+        runId: String,
+        functionId: String,
+        functionSpec: Map<String, Any?> = emptyMap()
+    ): Map<String, Any?> {
+        val normalizedRunId = runId.trim()
+        val normalizedFunctionId = functionId.trim()
+        if (normalizedRunId.isEmpty() || normalizedFunctionId.isEmpty()) {
+            return emptyMap()
+        }
+        val record = readRunLocked(context, normalizedRunId)
+            ?: InternalRunLogRecord(runId = normalizedRunId)
+        val binding = registeredFunctionBindingRecord(
+            functionId = normalizedFunctionId,
+            functionSpec = functionSpec,
+            registeredAtMs = System.currentTimeMillis()
+        )
+        val mergedDiagnostics = upsertRegisteredFunctionBinding(
+            diagnostics = record.diagnostics,
+            binding = binding
+        )
+        val eventSeq = appendRunEventLocked(
+            context = context,
+            runId = normalizedRunId,
+            eventType = "registered_function_bound",
+            payload = linkedMapOf("binding" to binding)
+        )
+        val updatedRecord = record.copy(
+            diagnostics = mergedDiagnostics,
+            eventSeq = eventSeq
+        )
+        saveRunLocked(context, updatedRecord)
+        pruneLocked(context)
+        return registeredFunctionBinding(context, updatedRecord)
+    }
+
+    @Synchronized
     fun upsertCard(
         context: Context,
         runId: String,
@@ -244,7 +283,9 @@ object InternalRunLogStore {
             "run_index_path" to File(dir, "index.json").absolutePath,
             "run_storage_dir" to dir.absolutePath,
             "event_schema_version" to RUN_LOG_EVENT_SCHEMA_VERSION,
-            "runs" to runs.map(::summaryMap)
+            "runs" to runs.map { record ->
+                summaryMap(record, registeredFunctionBinding(context, record))
+            }
         )
     }
 
@@ -272,6 +313,7 @@ object InternalRunLogStore {
         val record = readRunLocked(context, normalizedRunId)
             ?: return notFoundPayload(normalizedRunId)
         val tokenUsage = tokenUsageSummary(record.cards)
+        val registeredBinding = registeredFunctionBinding(context, record)
         return linkedMapOf(
             "success" to true,
             "provider" to PROVIDER,
@@ -300,10 +342,15 @@ object InternalRunLogStore {
             "token_usage_by_step" to tokenUsageByStep(record.cards),
             "token_usage_by_call" to tokenUsageByCall(record.cards),
             "cards" to record.cards
-        )
+        ).apply {
+            putAll(registeredBinding)
+        }
     }
 
-    private fun summaryMap(record: InternalRunLogRecord): Map<String, Any?> {
+    private fun summaryMap(
+        record: InternalRunLogRecord,
+        registeredBinding: Map<String, Any?> = emptyMap()
+    ): Map<String, Any?> {
         val tokenUsage = tokenUsageSummary(record.cards)
         return linkedMapOf(
             "run_id" to record.runId,
@@ -333,7 +380,196 @@ object InternalRunLogStore {
                 "source" to record.source,
                 "goal" to record.goal
             )
+        ).apply {
+            putAll(registeredBinding)
+        }
+    }
+
+    private fun registeredFunctionBinding(
+        context: Context,
+        record: InternalRunLogRecord
+    ): Map<String, Any?> {
+        val persistedBindings = registeredFunctionBindings(record.diagnostics)
+        val persistedFunctionIds = persistedBindings.mapNotNull { binding ->
+            textValue(binding["function_id"]).takeIf { it.isNotEmpty() }
+        }.distinct()
+        val functions = runCatching {
+            OobReusableFunctionStore.functionsForSourceRunId(
+                context = context,
+                runId = record.runId,
+                limit = REGISTERED_FUNCTION_BINDING_LIMIT
+            )
+        }.onFailure {
+            OmniLog.w(TAG, "load registered function binding failed: ${it.message}")
+        }.getOrDefault(emptyList())
+
+        val mergedFunctions = linkedMapOf<String, Map<String, Any?>>()
+        functions.forEach { function ->
+            val summary = stringMap(function["summary"])
+            val spec = stringMap(function["function_spec"])
+            val functionId = textValue(summary["function_id"]).ifBlank {
+                textValue(spec["function_id"])
+            }
+            if (functionId.isNotEmpty()) {
+                mergedFunctions[functionId] = sanitizeMap(function)
+            }
+        }
+        persistedFunctionIds.forEach { functionId ->
+            if (mergedFunctions.containsKey(functionId)) return@forEach
+            val spec = runCatching {
+                OobReusableFunctionStore.get(context, functionId)
+            }.getOrNull() ?: return@forEach
+            mergedFunctions[functionId] = linkedMapOf(
+                "summary" to functionSummaryFromSpec(spec),
+                "function_spec" to sanitizeMap(spec)
+            )
+        }
+
+        val summariesById = linkedMapOf<String, Map<String, Any?>>()
+        val specsById = linkedMapOf<String, Map<String, Any?>>()
+        mergedFunctions.forEach { (functionId, function) ->
+            val spec = stringMap(function["function_spec"])
+            val summary = stringMap(function["summary"]).takeIf { it.isNotEmpty() }
+                ?: spec.takeIf { it.isNotEmpty() }?.let(::functionSummaryFromSpec)
+                ?: emptyMap()
+            if (summary.isNotEmpty()) {
+                summariesById[functionId] = sanitizeMap(summary)
+            }
+            if (spec.isNotEmpty()) {
+                specsById[functionId] = sanitizeMap(spec)
+            }
+        }
+        persistedBindings.forEach { binding ->
+            val functionId = textValue(binding["function_id"])
+            if (functionId.isNotEmpty() && !summariesById.containsKey(functionId)) {
+                summariesById[functionId] = functionSummaryFromBinding(binding)
+            }
+        }
+        val functionIds = (persistedFunctionIds + mergedFunctions.keys).distinct()
+        val summaries = functionIds.mapNotNull { summariesById[it] }
+        val specs = functionIds.mapNotNull { specsById[it] }
+        val firstSummary = summaries.firstOrNull()
+        val firstSpec = specs.firstOrNull()
+        return linkedMapOf(
+            "registered_as_function" to functionIds.isNotEmpty(),
+            "is_registered_function" to functionIds.isNotEmpty(),
+            "registered_function_count" to functionIds.size,
+            "registered_function_ids" to functionIds,
+            "registered_function_id" to functionIds.firstOrNull().orEmpty(),
+            "registered_function_summary" to firstSummary?.let(::sanitizeMap),
+            "registered_function_summaries" to summaries.map(::sanitizeMap),
+            "registered_function_spec" to firstSpec?.let(::sanitizeMap),
+            "has_registered_function_binding" to persistedFunctionIds.isNotEmpty(),
+            "registered_function_binding_ids" to persistedFunctionIds,
+            "registered_function_bindings" to persistedBindings.map(::sanitizeMap),
         )
+    }
+
+    private fun registeredFunctionBindingRecord(
+        functionId: String,
+        functionSpec: Map<String, Any?>,
+        registeredAtMs: Long
+    ): Map<String, Any?> {
+        return linkedMapOf(
+            "function_id" to functionId,
+            "name" to textValue(functionSpec["name"]),
+            "description" to textValue(functionSpec["description"]),
+            "source_run_ids" to sourceRunIds(functionSpec),
+            "registered_at_ms" to registeredAtMs,
+            "registered_at" to formatTime(registeredAtMs),
+            "source" to "oob_run_log_registration"
+        ).filterValues { value ->
+            when (value) {
+                is String -> value.isNotBlank()
+                is List<*> -> value.isNotEmpty()
+                else -> true
+            }
+        }
+    }
+
+    private fun upsertRegisteredFunctionBinding(
+        diagnostics: Map<String, Any?>,
+        binding: Map<String, Any?>
+    ): Map<String, Any?> {
+        val functionId = textValue(binding["function_id"])
+        if (functionId.isEmpty()) return sanitizeMap(diagnostics)
+        val existing = registeredFunctionBindings(diagnostics)
+        val merged = (listOf(binding) + existing.filter {
+            textValue(it["function_id"]) != functionId
+        }).take(REGISTERED_FUNCTION_BINDING_LIMIT)
+        return sanitizeMap(
+            diagnostics + linkedMapOf(
+                "registered_function_id" to functionId,
+                "registered_function_ids" to merged.mapNotNull {
+                    textValue(it["function_id"]).takeIf(String::isNotEmpty)
+                }.distinct(),
+                "registered_function_bindings" to merged,
+                "registered_as_function" to true,
+                "registered_function_bound_at_ms" to binding["registered_at_ms"]
+            )
+        )
+    }
+
+    private fun registeredFunctionBindings(
+        diagnostics: Map<String, Any?>
+    ): List<Map<String, Any?>> {
+        val multi = listOfMaps(diagnostics["registered_function_bindings"])
+        if (multi.isNotEmpty()) return multi
+        val single = stringMap(diagnostics["registered_function_binding"])
+        if (single.isNotEmpty()) return listOf(single)
+        val functionId = textValue(diagnostics["registered_function_id"])
+        if (functionId.isEmpty()) return emptyList()
+        return listOf(linkedMapOf("function_id" to functionId))
+    }
+
+    private fun functionSummaryFromSpec(spec: Map<String, Any?>): Map<String, Any?> {
+        val execution = stringMap(spec["execution"])
+        val steps = specSteps(spec)
+        return linkedMapOf(
+            "function_id" to textValue(spec["function_id"]),
+            "name" to spec["name"],
+            "description" to spec["description"],
+            "step_count" to (numberToLong(execution["step_count"])?.toInt() ?: steps.size),
+            "source_run_ids" to sourceRunIds(spec)
+        )
+    }
+
+    private fun functionSummaryFromBinding(binding: Map<String, Any?>): Map<String, Any?> {
+        return linkedMapOf(
+            "function_id" to textValue(binding["function_id"]),
+            "name" to textValue(binding["name"]),
+            "description" to textValue(binding["description"]),
+            "source_run_ids" to ((binding["source_run_ids"] as? List<*>)?.mapNotNull {
+                it?.toString()?.trim()?.takeIf(String::isNotEmpty)
+            } ?: emptyList<String>()),
+            "registered_at_ms" to binding["registered_at_ms"],
+            "registered_at" to textValue(binding["registered_at"]),
+            "source" to textValue(binding["source"])
+        ).filterValues { value ->
+            when (value) {
+                is String -> value.isNotBlank()
+                is List<*> -> value.isNotEmpty()
+                null -> false
+                else -> true
+            }
+        }
+    }
+
+    private fun specSteps(spec: Map<String, Any?>): List<Map<String, Any?>> {
+        val execution = stringMap(spec["execution"])
+        return listOfMaps(execution["steps"])
+    }
+
+    private fun sourceRunIds(spec: Map<String, Any?>): List<String> {
+        val source = stringMap(spec["source"])
+        val metadata = stringMap(spec["metadata"])
+        return buildList {
+            textValue(source["run_id"]).takeIf(String::isNotEmpty)?.let(::add)
+            textValue(metadata["run_id"]).takeIf(String::isNotEmpty)?.let(::add)
+            (metadata["source_run_ids"] as? List<*>)?.forEach { raw ->
+                raw?.toString()?.trim()?.takeIf(String::isNotEmpty)?.let(::add)
+            }
+        }.distinct()
     }
 
     private fun runStatus(record: InternalRunLogRecord): String {
@@ -689,6 +925,12 @@ object InternalRunLogStore {
                 "diagnostics_updated" -> record.copy(
                     diagnostics = sanitizeMap(
                         record.diagnostics + stringMap(payload["diagnostics"])
+                    )
+                )
+                "registered_function_bound" -> record.copy(
+                    diagnostics = upsertRegisteredFunctionBinding(
+                        diagnostics = record.diagnostics,
+                        binding = stringMap(payload["binding"])
                     )
                 )
                 else -> record

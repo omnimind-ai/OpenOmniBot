@@ -132,6 +132,35 @@ class OobRunLogReplayService(
             )
         }
         val success = registryResult["success"] == true
+        val sourceRunIds = sourceRunIds(spec)
+        val runLogBindings = if (success) {
+            sourceRunIds.mapNotNull { runId ->
+                runCatching {
+                    InternalRunLogStore.bindRegisteredFunction(
+                        context = context,
+                        runId = runId,
+                        functionId = functionId,
+                        functionSpec = spec
+                    )
+                }.onFailure { error ->
+                    OmniLog.w(
+                        TAG,
+                        "bind registered function to runlog failed: $runId -> $functionId, ${error.message}"
+                    )
+                }.getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { binding ->
+                        linkedMapOf(
+                            "run_id" to runId,
+                            "function_id" to functionId,
+                            "success" to true,
+                            "binding" to binding
+                        )
+                    }
+            }
+        } else {
+            emptyList()
+        }
         return linkedMapOf(
             "success" to success,
             "function_id" to functionId,
@@ -147,7 +176,9 @@ class OobRunLogReplayService(
             "registry" to registryResult,
             "udeg" to udegResult,
             "normalized_from_function_id" to rawFunctionId.takeIf { it != functionId },
-            "source_run_ids" to sourceRunIds(spec)
+            "source_run_ids" to sourceRunIds,
+            "run_log_bindings" to runLogBindings,
+            "run_log_binding_count" to runLogBindings.size
         )
     }
 

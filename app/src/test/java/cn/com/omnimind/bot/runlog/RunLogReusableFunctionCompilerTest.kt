@@ -215,7 +215,7 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `recorded after observation becomes replay postcondition`() {
+    fun `recorded after observation stays as source context without postcondition`() {
         val spec = compile(
             listOf(
                 card(
@@ -231,11 +231,9 @@ class RunLogReusableFunctionCompilerTest {
         val click = stepsFrom(spec).single()
         val sourceContext = click["source_context"] as Map<*, *>
         val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
-        val postcondition = click["postcondition"] as Map<*, *>
 
         assertEquals(AFTER_XML, dstCtx["page"])
-        assertEquals("recorded_after_page_similarity", postcondition["kind"])
-        assertFalse(postcondition.containsKey("fallback"))
+        assertFalse(click.containsKey("postcondition"))
     }
 
     @Test
@@ -260,11 +258,10 @@ class RunLogReusableFunctionCompilerTest {
         val firstClick = stepsFrom(spec).first { it["tool"] == "click" }
         val sourceContext = firstClick["source_context"] as Map<*, *>
         val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
-        val postcondition = firstClick["postcondition"] as Map<*, *>
 
         assertEquals(AFTER_XML, dstCtx["page"])
         assertEquals("next_before_observation", dstCtx["repair_source"])
-        assertEquals("recorded_after_page_similarity", postcondition["kind"])
+        assertFalse(firstClick.containsKey("postcondition"))
     }
 
     @Test
@@ -509,7 +506,7 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
-    fun `settings search transition compiles weak transient postcondition`() {
+    fun `settings search transition keeps after context without postcondition`() {
         val spec = compile(
             listOf(
                 card(
@@ -529,11 +526,11 @@ class RunLogReusableFunctionCompilerTest {
         )
 
         val click = stepsFrom(spec).first { it["tool"] == "click" }
-        val postcondition = click["postcondition"] as Map<*, *>
+        val sourceContext = click["source_context"] as Map<*, *>
+        val dstCtx = sourceContext["dst_ctx"] as Map<*, *>
 
-        assertEquals("recorded_after_page_similarity", postcondition["kind"])
-        assertEquals(true, postcondition["allow_package_only_for_transient_search"])
-        assertEquals("settings_search_transition", postcondition["semantic_fallback"])
+        assertEquals(SETTINGS_SEARCH_XML, dstCtx["page"])
+        assertFalse(click.containsKey("postcondition"))
     }
 
     @Test

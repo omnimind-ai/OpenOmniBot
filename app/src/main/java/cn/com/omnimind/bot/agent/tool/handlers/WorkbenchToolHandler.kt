@@ -42,14 +42,10 @@ class WorkbenchToolHandler(
         "workbench_project_ingest_android",
         "workbench_project_ingest_oss",
         "workbench_project_progress_get",
-        // Run-log → 指令 (like Claude Code /project:xxx custom commands)
-        "oob_command_save",
-        "oob_command_list",
-        "oob_command_delete",
-        "oob_command_clear",
         "oob_function_list",
         "oob_function_get",
         "oob_function_register",
+        "update_function",
         "oob_function_guard_check",
         "oob_function_run",
         "oob_function_delete",
@@ -95,13 +91,10 @@ class WorkbenchToolHandler(
             "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env, callback)
             "workbench_project_ingest_oss" -> executeWorkbenchProjectIngestOss(args, env, callback)
             "workbench_project_progress_get" -> executeWorkbenchProjectProgressGet(args, env, callback)
-            "oob_command_save" -> executeOobFunctionSave(args, env)
-            "oob_command_list" -> executeOobFunctionList(env)
-            "oob_command_delete" -> executeOobFunctionDelete(args, env)
-            "oob_command_clear" -> executeOobFunctionClear(args, env)
             "oob_function_list" -> executeOobFunctionListTool(args, env)
             "oob_function_get" -> executeOobFunctionGetTool(args, env)
             "oob_function_register" -> executeOobFunctionRegisterTool(args, env)
+            "update_function" -> executeUpdateFunctionTool(args, env)
             "oob_function_guard_check" -> executeOobFunctionGuardCheckTool(args, env)
             "oob_function_run" -> executeOobFunctionRunTool(args, env)
             "oob_function_delete" -> executeOobFunctionDeleteTool(args, env)
@@ -111,88 +104,6 @@ class WorkbenchToolHandler(
             "oob_run_log_convert" -> executeOobRunLogConvert(args, env)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown workbench tool")
         }
-    }
-
-    // ── oob_function_save ──────────────────────────────────────────────────────
-    // Like Claude Code's /project:xxx custom commands — user manually saves a run
-    // as a named, replayable function stored in workspace/functions/.
-
-    private fun executeOobFunctionSave(
-        args: JsonObject,
-        env: AgentExecutionEnvironment
-    ): ToolExecutionResult {
-        val argsMap = helper.jsonObjectToMap(args)
-        val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
-        if (runId.isEmpty()) {
-            return ToolExecutionResult.Error("oob_command_save", "run_id is required")
-        }
-
-        // Override function_id if caller provides one
-        val overrideFunctionId = argsMap["function_id"]?.toString()?.trim()
-        val nameOverride = argsMap["name"]?.toString()?.trim()
-        val descriptionOverride = argsMap["description"]?.toString()?.trim()
-
-        val result = replayService.convertRunLog(
-            runId = runId,
-            register = true,
-            functionIdOverride = overrideFunctionId,
-            nameOverride = nameOverride,
-            descriptionOverride = descriptionOverride
-        )
-
-        val payload = result + mapOf(
-            "message" to "已保存为指令，可通过 function_id 直接调用。",
-            "usage" to "Agent 可以直接用 function_id 调用该指令。"
-        )
-        return contextResult("oob_command_save", "已保存指令", payload,
-            result["success"] == true, env)
-    }
-
-    private fun executeOobFunctionList(env: AgentExecutionEnvironment): ToolExecutionResult {
-        val payload = replayService.listFunctions()
-        val functions = (payload["functions"] as? List<*>) ?: emptyList<Any?>()
-        val summary = if (helper.isEnglishLocale) "${functions.size} commands" else "${functions.size} 条指令"
-        return contextResult("oob_command_list", summary, payload, true, env)
-    }
-
-    private fun executeOobFunctionDelete(
-        args: JsonObject,
-        env: AgentExecutionEnvironment
-    ): ToolExecutionResult {
-        val argsMap = helper.jsonObjectToMap(args)
-        val functionId = firstNonBlank(argsMap["function_id"], argsMap["functionId"])
-        if (functionId.isEmpty()) {
-            return ToolExecutionResult.Error("oob_command_delete", "function_id is required")
-        }
-        val payload = replayService.deleteFunction(functionId)
-        val deleted = payload["deleted"] == true || payload["success"] == true
-        return contextResult("oob_command_delete",
-            if (deleted) "已删除指令 $functionId" else "指令不存在",
-            payload, deleted, env)
-    }
-
-    private fun executeOobFunctionClear(
-        args: JsonObject,
-        env: AgentExecutionEnvironment
-    ): ToolExecutionResult {
-        val argsMap = helper.jsonObjectToMap(args)
-        val confirmed = when (val raw = argsMap["confirm"] ?: argsMap["confirmed"]) {
-            is Boolean -> raw
-            is String -> raw.equals("true", ignoreCase = true)
-            else -> false
-        }
-        if (!confirmed) {
-            return ToolExecutionResult.Error("oob_command_clear", "confirm=true is required")
-        }
-        val payload = replayService.clearFunctions()
-        val count = (payload["deleted_count"] as? Number)?.toInt() ?: 0
-        return contextResult(
-            "oob_command_clear",
-            "已清空 $count 条指令",
-            payload,
-            payload["success"] == true,
-            env,
-        )
     }
 
     private fun executeOobFunctionListTool(
@@ -241,6 +152,27 @@ class WorkbenchToolHandler(
             payload["error_message"]?.toString() ?: "复用指令注册失败"
         }
         return contextResult("oob_function_register", summary, payload, success, env)
+    }
+
+    private fun executeUpdateFunctionTool(
+        args: JsonObject,
+        env: AgentExecutionEnvironment
+    ): ToolExecutionResult {
+        val argsMap = helper.jsonObjectToMap(args)
+        val payload = omniflowToolkit.updateFunction(argsMap)
+        val success = payload["success"] == true
+        val functionId = firstNonBlank(payload["function_id"], argsMap["functionId"], argsMap["function_id"])
+        val changed = payload["changed"] == true
+        val saved = payload["saved"] == true
+        val requiresConfirmation = payload["requires_confirmation"] == true
+        val summary = when {
+            requiresConfirmation -> "需要确认要更新的步骤：$functionId"
+            success && saved -> "已更新复用指令 $functionId"
+            success && changed -> "已生成复用指令更新预览 $functionId"
+            success -> "复用指令无需更新 $functionId"
+            else -> payload["error_message"]?.toString() ?: "复用指令更新失败"
+        }
+        return contextResult("update_function", summary, payload, success, env)
     }
 
     private fun executeOobFunctionGuardCheckTool(

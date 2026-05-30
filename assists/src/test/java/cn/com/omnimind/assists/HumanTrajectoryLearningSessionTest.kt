@@ -133,6 +133,7 @@ class HumanTrajectoryLearningSessionTest {
                 "y" to 50f,
                 "recording_backend" to "overlay_touch",
                 "coordinate_space" to "screen_absolute_px",
+                "execution_mode" to "synthetic_replay",
                 "target_resolution" to "overlay_touch_coordinate_xml_grounded",
                 "display_width" to 1080,
                 "display_height" to 2400,
@@ -147,6 +148,7 @@ class HumanTrajectoryLearningSessionTest {
                 "event_type" to "OVERLAY_TOUCH_CLICK",
                 "recording_backend" to "overlay_touch",
                 "coordinate_space" to "screen_absolute_px",
+                "execution_mode" to "synthetic_replay",
             ),
         )
 
@@ -157,7 +159,9 @@ class HumanTrajectoryLearningSessionTest {
         val meta = sourceContext["_oob_meta"] as Map<*, *>
 
         assertEquals("screen_absolute_px", params["coordinate_space"])
+        assertEquals("synthetic_replay", params["execution_mode"])
         assertEquals("screen_absolute_px", sourceAction["coordinate_space"])
+        assertEquals("synthetic_replay", sourceAction["execution_mode"])
         assertEquals("overlay_touch", meta["recording_backend"])
         assertEquals("overlay_touch", meta["action_source"])
         assertEquals(action.eventContext, meta["event_context"])

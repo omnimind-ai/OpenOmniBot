@@ -31,9 +31,11 @@ class SystemToolHandler(
         "user_dialog"
     )
 
-    private val alarmToolService = AgentAlarmToolService(helper.context)
-    private val calendarToolService = AgentCalendarToolService(helper.context)
-    private val musicToolService = AgentMusicToolService(helper.context, workspaceManager)
+    private val alarmToolService by lazy { AgentAlarmToolService(helper.context) }
+    private val calendarToolService by lazy { AgentCalendarToolService(helper.context) }
+    private val musicToolService by lazy {
+        AgentMusicToolService(helper.context, workspaceManager)
+    }
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,

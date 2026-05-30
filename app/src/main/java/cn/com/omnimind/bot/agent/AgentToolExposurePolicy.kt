@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.agent
 
+import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
+
 /**
  * Controls which tools are exposed to the model for a single Agent run.
  *
@@ -20,8 +22,8 @@ data class AgentToolExposurePolicy(
         ?.toSet()
         ?.takeIf { it.isNotEmpty() }
 
-    fun isFunctionManagementProfile(): Boolean =
-        normalizeProfile(profile) == PROFILE_FUNCTION_MANAGEMENT
+    fun isLightweightProfile(): Boolean =
+        OobFunctionSkillProfile.isProfile(profile)
 
     fun effectiveAllowedTools(): Set<String>? {
         val explicit = normalizedAllowedTools()
@@ -30,22 +32,10 @@ data class AgentToolExposurePolicy(
     }
 
     companion object {
-        const val PROFILE_FUNCTION_MANAGEMENT = "function_management"
+        const val PROFILE_FUNCTION_MANAGEMENT = OobFunctionSkillProfile.PROFILE
 
-        val FUNCTION_MANAGEMENT_TOOLS: Set<String> = setOf(
-            "context_apps_query",
-            "vlm_task",
-            "oob_function_list",
-            "oob_function_get",
-            "oob_function_register",
-            "oob_function_guard_check",
-            "oob_function_run",
-            "oob_function_delete",
-            "oob_function_clear",
-            "oob_run_log_list",
-            "oob_run_log_get",
-            "oob_run_log_convert",
-        )
+        val FUNCTION_MANAGEMENT_TOOLS: Set<String>
+            get() = OobFunctionSkillProfile.toolNames
 
         val DEFAULT = AgentToolExposurePolicy()
 
@@ -60,10 +50,7 @@ data class AgentToolExposurePolicy(
         }
 
         fun allowedToolsForProfile(profile: String?): Set<String>? {
-            return when (normalizeProfile(profile)) {
-                PROFILE_FUNCTION_MANAGEMENT -> FUNCTION_MANAGEMENT_TOOLS
-                else -> null
-            }
+            return OobFunctionSkillProfile.allowedToolsForProfile(profile)
         }
 
         fun normalizeProfile(profile: String?): String = profile

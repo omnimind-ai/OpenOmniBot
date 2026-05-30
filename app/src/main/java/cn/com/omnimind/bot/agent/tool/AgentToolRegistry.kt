@@ -8,11 +8,9 @@ import cn.com.omnimind.baselib.shizuku.PrivilegedActionPolicy
 import cn.com.omnimind.baselib.shizuku.ShizukuBackend
 import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
-import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveredServer
 import cn.com.omnimind.bot.mcp.RemoteMcpToolDescriptor
-import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
-import cn.com.omnimind.bot.runlog.OobRunLogReplayService
+import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -101,12 +99,21 @@ class AgentToolRegistry(
                 )
             )
         }
+        if (OobFunctionSkillProfile.isProfile(toolExposurePolicy.profile)) {
+            runtimeDefinitions.addAll(OobFunctionSkillProfile.staticToolDefinitions(locale))
+        }
         runtimeDefinitions.addAll(AgentToolDefinitions.memoryTools(locale))
         runtimeDefinitions.addAll(AgentToolDefinitions.subagentTools(locale))
         discoveredServers.flatMap { it.tools }.forEach { tool ->
             runtimeDefinitions.add(toDynamicMcpToolDefinition(tool, locale))
         }
-        runtimeDefinitions.addAll(oobFunctionToolDefinitions(locale))
+        runtimeDefinitions.addAll(
+            OobFunctionSkillProfile.dynamicFunctionToolDefinitions(
+                context = context,
+                locale = locale,
+                forceInclude = OobFunctionSkillProfile.isProfile(toolExposurePolicy.profile)
+            )
+        )
 
         runtimeDefinitions.addAll(dynamicDefinitions)
 
@@ -116,10 +123,15 @@ class AgentToolRegistry(
         )
         val conversationFilteredDefinitions = AgentConversationModePolicy
             .filterToolDefinitionsForConversationMode(projectFilteredDefinitions, conversationMode)
+        val explicitAllowedToolNames = toolExposurePolicy.normalizedAllowedTools()
         val allowedToolNames = toolExposurePolicy.effectiveAllowedTools()
+        val includeOobFunctionToolsForProfile = explicitAllowedToolNames.isNullOrEmpty() &&
+            toolExposurePolicy.isLightweightProfile()
         val filteredDefinitions = filterToolDefinitionsForExposurePolicy(
             definitions = conversationFilteredDefinitions,
             allowedToolNames = allowedToolNames,
+            includeOobFunctionToolsForProfile = includeOobFunctionToolsForProfile,
+            toolProfile = toolExposurePolicy.profile,
         )
 
         val toolsByName = linkedMapOf<String, ChatCompletionTool>()
@@ -175,18 +187,34 @@ class AgentToolRegistry(
     private fun filterToolDefinitionsForExposurePolicy(
         definitions: List<JsonObject>,
         allowedToolNames: Set<String>?,
+        includeOobFunctionToolsForProfile: Boolean,
+        toolProfile: String?,
     ): List<JsonObject> {
         if (allowedToolNames.isNullOrEmpty()) {
             return definitions
         }
         return definitions.filter { definition ->
-            val toolName = (definition["function"] as? JsonObject)
+            val function = definition["function"] as? JsonObject
+            val toolName = function
                 ?.get("name")
                 ?.jsonPrimitive
                 ?.contentOrNull
                 ?.trim()
                 .orEmpty()
-            toolName in allowedToolNames
+            val toolType = function
+                ?.get("toolType")
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.trim()
+                .orEmpty()
+            toolName in allowedToolNames ||
+                (
+                    includeOobFunctionToolsForProfile &&
+                        OobFunctionSkillProfile.shouldKeepDynamicFunctionForProfile(
+                            profile = toolProfile,
+                            toolType = toolType
+                        )
+                    )
         }
     }
 
@@ -342,51 +370,6 @@ class AgentToolRegistry(
         }, locale)
     }
 
-    private fun oobFunctionToolDefinitions(locale: PromptLocale): List<JsonObject> {
-        if (!AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
-            return emptyList()
-        }
-        return runCatching {
-            OobRunLogReplayService(context)
-                .listFunctionSpecs(MAX_OOB_FUNCTION_TOOLS)
-                .mapNotNull { spec -> toOobFunctionToolDefinition(spec, locale) }
-        }.onFailure {
-            OmniLog.w(tag, "load oob function tools failed: ${it.message}")
-        }.getOrDefault(emptyList())
-    }
-
-    private fun toOobFunctionToolDefinition(
-        spec: Map<String, Any?>,
-        locale: PromptLocale
-    ): JsonObject? {
-        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
-        if (functionId.isEmpty()) return null
-        if (!MODEL_TOOL_NAME_REGEX.matches(functionId)) {
-            OmniLog.w(tag, "skip invalid oob function tool name: $functionId")
-            return null
-        }
-        val displayName = spec["name"]?.toString()?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: functionId
-        val description = spec["description"]?.toString()?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: displayName
-        val parameters = mapToJsonElement(
-            OobFunctionSchemaBuilder.inputSchema(spec)
-        ) as? JsonObject ?: JsonObject(emptyMap())
-
-        return AgentToolDefinitions.decorateToolDefinition(buildJsonObject {
-            put("type", JsonPrimitive("function"))
-            put("function", buildJsonObject {
-                put("name", JsonPrimitive(functionId))
-                put("displayName", JsonPrimitive(displayName))
-                put("toolType", JsonPrimitive("oob_function"))
-                put("description", JsonPrimitive(description))
-                put("parameters", parameters)
-            })
-        }, locale)
-    }
-
     private fun mapToJsonElement(value: Any?): JsonElement {
         return when (value) {
             null -> JsonNull
@@ -404,7 +387,6 @@ class AgentToolRegistry(
     }
 
     private companion object {
-        const val MAX_OOB_FUNCTION_TOOLS = 50
         val MODEL_TOOL_NAME_REGEX = Regex("^[A-Za-z0-9_-]{1,64}$")
     }
 }

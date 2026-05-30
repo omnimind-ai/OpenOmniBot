@@ -6,6 +6,7 @@ import cn.com.omnimind.bot.agent.workspace.memory.LongTermMemoryIndex
 import cn.com.omnimind.bot.agent.workspace.memory.MemoryRetrievalPipeline
 import cn.com.omnimind.bot.agent.workspace.memory.TurnMemoryLoadTracker
 import cn.com.omnimind.bot.mcp.RemoteMcpDiscoveryRegistry
+import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
 import cn.com.omnimind.bot.workbench.WorkbenchDisplayLayoutContext
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import java.util.concurrent.atomic.AtomicReference
@@ -76,7 +77,7 @@ class OmniAgentExecutor(
             val agentRunId = UUID.randomUUID().toString()
             val workspaceManager = AgentWorkspaceManager(context)
             val memoryService = WorkspaceMemoryService(context, workspaceManager)
-            val lightweightToolProfile = toolExposurePolicy.isFunctionManagementProfile()
+            val lightweightToolProfile = toolExposurePolicy.isLightweightProfile()
             val workspaceDescriptor = workspaceManager.buildWorkspaceDescriptor(
                 conversationId = conversationId,
                 agentRunId = agentRunId
@@ -120,23 +121,18 @@ class OmniAgentExecutor(
             }
             val skillIndexService = SkillIndexService(context, workspaceManager)
             val skillLoader = SkillLoader(workspaceManager)
-            val installedSkills = if (lightweightToolProfile) {
-                emptyList()
-            } else {
-                skillIndexService.listInstalledSkills()
-            }
+            val installedSkills = skillIndexService.listInstalledSkills()
             val failureLearningSkill = if (lightweightToolProfile) {
                 null
             } else SelfImprovingSkillFailureHook.resolveInstalledSkill(
                 installedSkills = installedSkills,
                 skillLoader = skillLoader
             )
-            val resolvedSkills = if (lightweightToolProfile) {
-                emptyList()
-            } else resolveSkillsForRun(
+            val resolvedSkills = resolveSkillsForRun(
                 userMessage = userMessage,
                 installedSkills = installedSkills,
-                skillLoader = skillLoader
+                skillLoader = skillLoader,
+                toolExposurePolicy = toolExposurePolicy,
             )
             callback.onSkillsResolved(resolvedSkills.map { it.toCallbackPayload() })
             val discoveredServers = RemoteMcpDiscoveryRegistry.discoverEnabledServers()
@@ -297,19 +293,38 @@ class OmniAgentExecutor(
     private fun resolveSkillsForRun(
         userMessage: String,
         installedSkills: List<SkillIndexEntry>,
-        skillLoader: SkillLoader
+        skillLoader: SkillLoader,
+        toolExposurePolicy: AgentToolExposurePolicy = AgentToolExposurePolicy.DEFAULT,
     ): List<ResolvedSkillContext> {
-        return SkillTriggerMatcher.resolveMatches(
+        val matches = SkillTriggerMatcher.resolveMatches(
             userMessage = userMessage,
             entries = installedSkills
-        ).mapNotNull { match ->
-            val compatibility = SkillCompatibilityChecker.evaluate(match.entry)
-            if (!compatibility.available) {
-                null
-            } else {
-                skillLoader.load(match.entry, match.triggerReason)
-            }
+        )
+        val forced = if (OobFunctionSkillProfile.isProfile(toolExposurePolicy.profile)) {
+            installedSkills.firstOrNull { it.id == OobFunctionSkillProfile.SKILL_ID }
+                ?.let { skill ->
+                    listOf(
+                        SkillMatchResult(
+                            entry = skill,
+                            confidence = 1.5,
+                            triggerReason = "function_management tool profile"
+                        )
+                    )
+                }
+                .orEmpty()
+        } else {
+            emptyList()
         }
+        return (forced + matches)
+            .distinctBy { it.entry.id }
+            .mapNotNull { match ->
+                val compatibility = SkillCompatibilityChecker.evaluate(match.entry)
+                if (!compatibility.available) {
+                    null
+                } else {
+                    skillLoader.load(match.entry, match.triggerReason)
+                }
+            }
     }
 
     private fun ResolvedSkillContext.toCallbackPayload(): Map<String, Any?> {

@@ -50,6 +50,7 @@ class OmniAction(
     }
     private val screenWidth: Float by lazy { windowBounds.width().toFloat() }
     private val screenHeight: Float by lazy { windowBounds.height().toFloat() }
+    private val gestureCallbackHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
 
     /**
      * accessibility click action
@@ -227,9 +228,12 @@ class OmniAction(
         y: Float,
         duration: Long,
     ): CompletableFuture<Unit> {
+        val safeX = x.coerceIn(0f, (screenWidth - 1f).coerceAtLeast(0f))
+        val safeY = y.coerceIn(0f, (screenHeight - 1f).coerceAtLeast(0f))
+        val endX = if (safeX < screenWidth - 1f) safeX + 0.1f else (safeX - 0.1f).coerceAtLeast(0f)
         val path = Path()
-        path.moveTo(x, y)
-        path.lineTo(x, y)
+        path.moveTo(safeX, safeY)
+        path.lineTo(endX, safeY)
 
         val gestureBuilder =
             GestureDescription
@@ -255,15 +259,23 @@ class OmniAction(
                 }
             }
 
-        val dispatchResult =
-            service.dispatchGesture(
-                gestureBuilder.build(),
-                callback,
-                null,
-            )
+        val dispatchGesture = Runnable {
+            val dispatchResult =
+                service.dispatchGesture(
+                    gestureBuilder.build(),
+                    callback,
+                    gestureCallbackHandler,
+                )
 
-        if (!dispatchResult) {
-            future.completeExceptionally(RuntimeException("Failed to dispatch gesture"))
+            if (!dispatchResult) {
+                future.completeExceptionally(RuntimeException("Failed to dispatch gesture"))
+            }
+        }
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            dispatchGesture.run()
+        } else if (!gestureCallbackHandler.post(dispatchGesture)) {
+            future.completeExceptionally(RuntimeException("Failed to post gesture dispatch"))
         }
 
         return future
@@ -320,9 +332,16 @@ class OmniAction(
                 }
             }
 
-        // Dispatch gesture
-        if (!service.dispatchGesture(gestureBuilder.build(), callback, null)) {
-            future.completeExceptionally(RuntimeException("Failed to dispatch scroll gesture"))
+        val dispatchGesture = Runnable {
+            if (!service.dispatchGesture(gestureBuilder.build(), callback, gestureCallbackHandler)) {
+                future.completeExceptionally(RuntimeException("Failed to dispatch scroll gesture"))
+            }
+        }
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            dispatchGesture.run()
+        } else if (!gestureCallbackHandler.post(dispatchGesture)) {
+            future.completeExceptionally(RuntimeException("Failed to post scroll gesture dispatch"))
         }
 
         return future

@@ -105,6 +105,29 @@ object OobReusableFunctionStore {
         readIndex(prefs(context))
 
     @Synchronized
+    fun functionsForSourceRunId(
+        context: Context,
+        runId: String,
+        limit: Int = 20
+    ): List<Map<String, Any?>> {
+        val normalizedRunId = runId.trim()
+        if (normalizedRunId.isEmpty()) return emptyList()
+        val safeLimit = limit.coerceIn(1, 100)
+        return readIndex(prefs(context))
+            .asSequence()
+            .mapNotNull { functionId -> get(context, functionId) }
+            .filter { spec -> normalizedRunId in sourceRunIds(spec) }
+            .take(safeLimit)
+            .map { spec ->
+                linkedMapOf<String, Any?>(
+                    "summary" to summaryMap(spec),
+                    "function_spec" to sanitizeMap(spec)
+                )
+            }
+            .toList()
+    }
+
+    @Synchronized
     fun clear(context: Context): Map<String, Any?> {
         val prefs = prefs(context)
         val indexedIds = readIndex(prefs)

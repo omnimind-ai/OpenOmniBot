@@ -2,7 +2,10 @@ package cn.com.omnimind.bot.runlog
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.SharedPreferences
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
@@ -10,6 +13,282 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InternalRunLogStoreTest {
+    @Test
+    fun `timeline and list bind registered function status`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-registered-${System.nanoTime()}"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Open Settings",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = linkedMapOf(
+                    "card_id" to "card-1",
+                    "tool_name" to "open_app",
+                    "tool_call" to linkedMapOf(
+                        "name" to "open_app",
+                        "arguments" to linkedMapOf(
+                            "package_name" to "com.android.settings"
+                        )
+                    )
+                )
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "finished"
+            )
+            OobReusableFunctionStore.register(
+                context = context,
+                functionSpec = linkedMapOf(
+                    "schema_version" to "oob.reusable_function.v1",
+                    "function_id" to "fn_open_settings_from_run",
+                    "name" to "Open Settings",
+                    "description" to "Open Android Settings",
+                    "source" to linkedMapOf(
+                        "kind" to "run_log",
+                        "run_id" to runId
+                    ),
+                    "metadata" to linkedMapOf(
+                        "source_run_ids" to listOf(runId)
+                    ),
+                    "execution" to linkedMapOf(
+                        "kind" to "tool_sequence",
+                        "steps" to listOf(
+                            linkedMapOf(
+                                "id" to "step_1",
+                                "tool" to "open_app",
+                                "executor" to "omniflow",
+                                "args" to linkedMapOf(
+                                    "package_name" to "com.android.settings"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            assertEquals(true, timeline["registered_as_function"])
+            assertEquals(true, timeline["is_registered_function"])
+            assertEquals("fn_open_settings_from_run", timeline["registered_function_id"])
+            assertEquals(1, timeline["registered_function_count"])
+            val ids = timeline["registered_function_ids"] as List<*>
+            assertEquals(listOf("fn_open_settings_from_run"), ids)
+            val summary = timeline["registered_function_summary"] as Map<*, *>
+            assertEquals("Open Settings", summary["name"])
+            val spec = timeline["registered_function_spec"] as Map<*, *>
+            assertEquals("fn_open_settings_from_run", spec["function_id"])
+
+            val listPayload = InternalRunLogStore.listRuns(context, limit = 10)
+            val runs = listPayload["runs"] as List<*>
+            val listed = runs.first { (it as Map<*, *>)["run_id"] == runId } as Map<*, *>
+            assertEquals(true, listed["registered_as_function"])
+            assertEquals("fn_open_settings_from_run", listed["registered_function_id"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `explicit runlog binding marks registered function without source run metadata`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-explicit-binding-${System.nanoTime()}"
+            val functionId = "fn_without_source_run_metadata"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Open app",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "finished"
+            )
+            val spec = linkedMapOf<String, Any?>(
+                "schema_version" to "oob.reusable_function.v1",
+                "function_id" to functionId,
+                "name" to "Open app without source metadata",
+                "description" to "Registered first, then explicitly bound to a RunLog",
+                "execution" to linkedMapOf(
+                    "kind" to "tool_sequence",
+                    "steps" to listOf(
+                        linkedMapOf(
+                            "id" to "step_1",
+                            "tool" to "open_app",
+                            "executor" to "omniflow",
+                            "args" to linkedMapOf(
+                                "package_name" to "com.android.settings"
+                            )
+                        )
+                    )
+                )
+            )
+            OobReusableFunctionStore.register(context, spec)
+
+            val bindResult = InternalRunLogStore.bindRegisteredFunction(
+                context = context,
+                runId = runId,
+                functionId = functionId,
+                functionSpec = spec
+            )
+
+            assertEquals(true, bindResult["registered_as_function"])
+            assertEquals(listOf(functionId), bindResult["registered_function_ids"])
+            assertEquals(listOf(functionId), bindResult["registered_function_binding_ids"])
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            assertEquals(true, timeline["registered_as_function"])
+            assertEquals(functionId, timeline["registered_function_id"])
+            assertEquals(true, timeline["has_registered_function_binding"])
+            val bindings = timeline["registered_function_bindings"] as List<*>
+            assertEquals(functionId, (bindings.single() as Map<*, *>)["function_id"])
+
+            val listPayload = InternalRunLogStore.listRuns(context, limit = 10)
+            val runs = listPayload["runs"] as List<*>
+            val listed = runs.first { (it as Map<*, *>)["run_id"] == runId } as Map<*, *>
+            assertEquals(true, listed["registered_as_function"])
+            assertEquals(functionId, listed["registered_function_id"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `runlog keeps registered status from explicit binding when function spec is unavailable`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-explicit-binding-only-${System.nanoTime()}"
+            val functionId = "fn_binding_only"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Open app",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "finished"
+            )
+            val spec = linkedMapOf<String, Any?>(
+                "schema_version" to "oob.reusable_function.v1",
+                "function_id" to functionId,
+                "name" to "Binding-only function",
+                "description" to "RunLog should remember that this was registered",
+                "execution" to linkedMapOf(
+                    "kind" to "tool_sequence",
+                    "steps" to listOf(
+                        linkedMapOf(
+                            "id" to "step_1",
+                            "tool" to "open_app",
+                            "executor" to "omniflow",
+                            "args" to linkedMapOf(
+                                "package_name" to "com.android.settings"
+                            )
+                        )
+                    )
+                )
+            )
+
+            InternalRunLogStore.bindRegisteredFunction(
+                context = context,
+                runId = runId,
+                functionId = functionId,
+                functionSpec = spec
+            )
+
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            assertEquals(true, timeline["registered_as_function"])
+            assertEquals(true, timeline["is_registered_function"])
+            assertEquals(functionId, timeline["registered_function_id"])
+            assertEquals(1, timeline["registered_function_count"])
+            val summary = timeline["registered_function_summary"] as Map<*, *>
+            assertEquals("Binding-only function", summary["name"])
+
+            val listPayload = InternalRunLogStore.listRuns(context, limit = 10)
+            val runs = listPayload["runs"] as List<*>
+            val listed = runs.first { (it as Map<*, *>)["run_id"] == runId } as Map<*, *>
+            assertEquals(true, listed["registered_as_function"])
+            assertEquals(functionId, listed["registered_function_id"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `registering function spec writes source run binding back to runlog`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-register-service-binding-${System.nanoTime()}"
+            val functionId = "fn_bound_by_register_service"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Open Settings",
+                source = "vlm",
+                toolName = "vlm"
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "finished"
+            )
+
+            val result = OobRunLogReplayService(
+                context = context,
+                workspaceFunctionStore = WorkspaceFunctionStore(File(context.root, "workspace"))
+            ).registerFunctionSpec(
+                linkedMapOf(
+                    "schema_version" to "oob.reusable_function.v1",
+                    "function_id" to functionId,
+                    "name" to "Open Settings From Registered RunLog",
+                    "description" to "Registered through replay service",
+                    "source" to linkedMapOf(
+                        "kind" to "run_log",
+                        "run_id" to runId
+                    ),
+                    "execution" to linkedMapOf(
+                        "kind" to "tool_sequence",
+                        "steps" to listOf(
+                            linkedMapOf(
+                                "id" to "step_1",
+                                "tool" to "open_app",
+                                "executor" to "omniflow",
+                                "args" to linkedMapOf(
+                                    "package_name" to "com.android.settings"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(1, result["run_log_binding_count"])
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            assertEquals(true, timeline["registered_as_function"])
+            assertEquals(functionId, timeline["registered_function_id"])
+            assertEquals(true, timeline["has_registered_function_binding"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     @Test
     fun `timeline applies append only running card events after snapshot`() {
         val context = TempFilesContext()
@@ -235,9 +514,121 @@ class InternalRunLogStoreTest {
 
     private class TempFilesContext : ContextWrapper(null) {
         val root: File = Files.createTempDirectory("runlog-store-test").toFile()
+        private val sharedPreferences = mutableMapOf<String, MemorySharedPreferences>()
 
         override fun getApplicationContext(): Context = this
 
         override fun getFilesDir(): File = root
+
+        override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
+            return sharedPreferences.getOrPut(name.orEmpty()) { MemorySharedPreferences() }
+        }
+    }
+
+    private class MemorySharedPreferences : SharedPreferences {
+        private val values = linkedMapOf<String, Any?>()
+
+        override fun getAll(): MutableMap<String, *> = linkedMapOf<String, Any?>().apply {
+            putAll(this@MemorySharedPreferences.values)
+        }
+
+        override fun getString(key: String?, defValue: String?): String? {
+            return values[key] as? String ?: defValue
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? {
+            return (values[key] as? Set<String>)?.toMutableSet() ?: defValues
+        }
+
+        override fun getInt(key: String?, defValue: Int): Int {
+            return values[key] as? Int ?: defValue
+        }
+
+        override fun getLong(key: String?, defValue: Long): Long {
+            return values[key] as? Long ?: defValue
+        }
+
+        override fun getFloat(key: String?, defValue: Float): Float {
+            return values[key] as? Float ?: defValue
+        }
+
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean {
+            return values[key] as? Boolean ?: defValue
+        }
+
+        override fun contains(key: String?): Boolean = values.containsKey(key)
+
+        override fun edit(): SharedPreferences.Editor = MemoryEditor()
+
+        override fun registerOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener?
+        ) = Unit
+
+        override fun unregisterOnSharedPreferenceChangeListener(
+            listener: SharedPreferences.OnSharedPreferenceChangeListener?
+        ) = Unit
+
+        private inner class MemoryEditor : SharedPreferences.Editor {
+            private val updates = linkedMapOf<String, Any?>()
+            private val removals = linkedSetOf<String>()
+            private var clear = false
+
+            override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                key?.let { updates[it] = value }
+                return this
+            }
+
+            override fun putStringSet(
+                key: String?,
+                values: MutableSet<String>?
+            ): SharedPreferences.Editor {
+                key?.let { updates[it] = values?.toSet() }
+                return this
+            }
+
+            override fun putInt(key: String?, value: Int): SharedPreferences.Editor {
+                key?.let { updates[it] = value }
+                return this
+            }
+
+            override fun putLong(key: String?, value: Long): SharedPreferences.Editor {
+                key?.let { updates[it] = value }
+                return this
+            }
+
+            override fun putFloat(key: String?, value: Float): SharedPreferences.Editor {
+                key?.let { updates[it] = value }
+                return this
+            }
+
+            override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor {
+                key?.let { updates[it] = value }
+                return this
+            }
+
+            override fun remove(key: String?): SharedPreferences.Editor {
+                key?.let(removals::add)
+                return this
+            }
+
+            override fun clear(): SharedPreferences.Editor {
+                clear = true
+                return this
+            }
+
+            override fun commit(): Boolean {
+                apply()
+                return true
+            }
+
+            override fun apply() {
+                if (clear) values.clear()
+                removals.forEach(values::remove)
+                updates.forEach { (key, value) ->
+                    if (value == null) values.remove(key) else values[key] = value
+                }
+            }
+        }
     }
 }

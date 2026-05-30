@@ -1,0 +1,4 @@
+interface:
+  display_name: "OOB Function Management"
+  short_description: "Manage RunLogs and reusable commands from chat"
+  default_prompt: "Use $oob-function-management to register the previous RunLog, convert a trajectory into a reusable command, list or inspect saved commands, update a command, or execute a selected reusable command with parameters."

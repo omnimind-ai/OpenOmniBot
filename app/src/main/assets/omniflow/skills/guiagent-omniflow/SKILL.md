@@ -3,9 +3,12 @@
 Use this skill when a user asks to reuse, replay, save, inspect, convert, or run
 a previous OOB device execution.
 
-OmniFlow is OOB's reusable execution library. It stores successful executions as
-reusable commands, checks them with guard policy, replays safe deterministic
-steps, and falls back to Agent planning when a step requires live context.
+OmniFlow behavior in OOB is skill-first. This skill documents how an agent
+should use OOB's reusable-command primitives: store successful executions as
+reusable commands, check them with guard policy, replay safe deterministic
+steps, and return explicit fallback when a step requires live context. Native
+Kotlin/MCP tools are backends that skills call; they are not a separate product
+runtime, controller, or component registry.
 
 ## Activation
 
@@ -48,7 +51,8 @@ with bounded VLM.
 
 ## Access Mode Selection
 
-If MCP is available, call `tools/list`.
+If MCP is available, call `tools/list`. Treat direct MCP tools as primitive
+backends for this skill, not as a separate OmniFlow workflow owner.
 
 Use Direct MCP mode if these tools exist:
 
@@ -194,19 +198,19 @@ Defaults:
 - Block reboot, shutdown, fastboot, block-device writes, filesystem format, and
   protected system partition writes.
 
-## Replay Validation
+## Replay Control
 
-Local OmniFlow replay must treat action dispatch and task success as different
-facts:
+Local OmniFlow replay uses pre-action controls only:
 
-- A deterministic step succeeds only when the action executes and any recorded
-  postcondition passes.
-- Recorded after-page checks are lightweight compatibility gates. If the current
-  page no longer matches the recorded post-action page, report fallback instead
-  of claiming success.
+- Before dispatch, dismiss obvious blocking overlays and hide the keyboard when
+  it covers the recorded target.
+- Run action transfer when source/current page anchors are available; otherwise
+  execute the recorded action coordinates directly.
+- Do not run post-action page/package validation. A deterministic step succeeds
+  when the action backend accepts the operation.
 - Reusable command replay may return `fallback=true`, `needs_agent`, or
   `model_required=true`; in that case switch to bounded live VLM only when the
-  user requested continued execution.
+  user explicitly requested continued execution.
 - Do not preserve `wait` steps as evidence. Page settling belongs to the native
   replay backend.
 

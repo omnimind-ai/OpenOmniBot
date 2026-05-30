@@ -10,8 +10,10 @@ object AgentToolFeatureStore {
     fun isOobFunctionAsToolEnabled(context: Context): Boolean {
         val prefs = context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_OOB_FUNCTION_AS_TOOL_USER_SET, false) &&
-            prefs.getBoolean(KEY_OOB_FUNCTION_AS_TOOL, false)
+        if (!prefs.getBoolean(KEY_OOB_FUNCTION_AS_TOOL_USER_SET, false)) {
+            return false
+        }
+        return prefs.getBoolean(KEY_OOB_FUNCTION_AS_TOOL, false)
     }
 
     fun setOobFunctionAsToolEnabled(context: Context, enabled: Boolean) {
@@ -27,8 +29,8 @@ object AgentToolFeatureStore {
         context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putBoolean(KEY_OOB_FUNCTION_AS_TOOL, false)
-            .putBoolean(KEY_OOB_FUNCTION_AS_TOOL_USER_SET, true)
+            .remove(KEY_OOB_FUNCTION_AS_TOOL)
+            .remove(KEY_OOB_FUNCTION_AS_TOOL_USER_SET)
             .apply()
     }
 

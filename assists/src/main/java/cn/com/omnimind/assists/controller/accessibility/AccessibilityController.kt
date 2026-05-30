@@ -283,10 +283,12 @@ class AccessibilityController() {
 
 
         suspend fun clickCoordinate(
-            x: Float, y: Float
+            x: Float,
+            y: Float,
+            timeoutMs: Long = 2000L
         ) {
             checkAccessibilityPermissions()
-            withTimeout(2000) {
+            withTimeout(timeoutMs) {
                 val controller = actionController
                     ?: throw IllegalStateException("Accessibility action controller is not ready")
                 controller.clickCoordinate(x, y).await()

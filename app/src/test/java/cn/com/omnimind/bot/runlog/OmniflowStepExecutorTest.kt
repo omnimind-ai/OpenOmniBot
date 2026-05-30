@@ -143,12 +143,69 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            assertEquals("recorded_action_replay", result["replay_mode"])
+            assertEquals("action_transfer", result["replay_mode"])
             assertFalse(result.containsKey("postcondition"))
             val checker = result["checker"] as? Map<*, *> ?: error("missing checker")
             assertEquals("before_action", checker["phase"])
             assertEquals(true, checker["verified"])
             assertFalse(result.containsKey("control_effects"))
+            val timing = result["timing"] as? Map<*, *> ?: error("missing timing")
+            assertEquals("oob_omniflow_step_executor", timing["source"])
+            val phaseMs = timing["phase_ms"] as? Map<*, *> ?: error("missing phase timing")
+            listOf("observe_ms", "checker_ms", "action_transfer_ms", "act_ms").forEach { phase ->
+                assertTrue("missing $phase", phaseMs.containsKey(phase))
+                assertTrue((phaseMs[phase] as Number).toLong() >= 0L)
+            }
+            assertTrue((result["duration_ms"] as Number).toLong() >= 0L)
+        }
+    }
+
+    @Test
+    fun `action transfer reuses the replay state captured for checker`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_single_state",
+                stepTitle = "click open",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals("action_transfer", result["replay_mode"])
+            assertEquals(1, backend.currentXmlReadCount)
+        }
+    }
+
+    @Test
+    fun `checker control action refreshes replay state before transfer`() = runBlocking {
+        val backend = FakeBackend(beforeXml = AD_OVERLAY_XML, afterXml = SOURCE_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_control_refresh",
+                stepTitle = "click behind ad",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals("action_transfer", result["replay_mode"])
+            assertEquals(2, backend.currentXmlReadCount)
+            assertEquals(2, backend.clickPoints.size)
         }
     }
 
@@ -309,7 +366,7 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute open app verifies package checker`() = runBlocking {
+    fun `execute open app does not emit post checker`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = SOURCE_XML,
             afterXml = AFTER_XML,
@@ -339,16 +396,12 @@ class OmniflowStepExecutorTest {
 
             assertEquals(true, result["success"])
             assertFalse(result.containsKey("postcondition"))
-            val checker = result["checker"] as? Map<*, *> ?: error("missing checker")
-            assertEquals("open_app_package", checker["kind"])
-            assertEquals(true, checker["success"])
-            assertEquals(true, checker["package_matched"])
-            assertEquals("com.example", checker["expected_package"])
+            assertFalse(result.containsKey("checker"))
         }
     }
 
     @Test
-    fun `execute opens app infers package from activity checker`() = runBlocking {
+    fun `execute opens app without activity post checker`() = runBlocking {
         val backend = FakeBackend(
             beforeXml = "",
             afterXml = "",
@@ -368,11 +421,7 @@ class OmniflowStepExecutorTest {
 
             assertEquals(true, result["success"])
             assertFalse(result.containsKey("postcondition"))
-            val checker = result["checker"] as? Map<*, *> ?: error("missing checker")
-            assertEquals("open_app_package", checker["kind"])
-            assertEquals(true, checker["success"])
-            assertEquals(true, checker["package_matched"])
-            assertEquals("com.android.settings", checker["expected_package"])
+            assertFalse(result.containsKey("checker"))
         }
     }
 
@@ -641,7 +690,7 @@ class OmniflowStepExecutorTest {
             )
 
             assertEquals(true, result["success"])
-            assertEquals("action_transfer", result["replay_mode"])
+            assertEquals("recorded_action_replay", result["replay_mode"])
             val click = backend.clickPoints.single()
             assertEquals(120f, click.first, 0.01f)
             assertEquals(240f, click.second, 0.01f)
@@ -713,6 +762,7 @@ class OmniflowStepExecutorTest {
     ) : OmniflowActionBackend {
         var clicked = false
             private set
+        private var currentXmlCallCount = 0
         private var preActionXmlReadCount = 0
         private var actionXmlReadCount = 0
         val launchRequests = mutableListOf<String>()
@@ -722,6 +772,8 @@ class OmniflowStepExecutorTest {
             private set
         var hideKeyboardCount = 0
             private set
+        val currentXmlReadCount: Int
+            get() = currentXmlCallCount
 
         override fun isReady(): Boolean = true
 
@@ -784,6 +836,7 @@ class OmniflowStepExecutorTest {
         }
 
         override fun currentXml(): String? {
+            currentXmlCallCount += 1
             if (!clicked) {
                 if (preActionXmlReadCount < missingXmlReadsBeforeAction) {
                     preActionXmlReadCount += 1

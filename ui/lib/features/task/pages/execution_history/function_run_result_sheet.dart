@@ -438,8 +438,6 @@ class _StepResultTile extends StatelessWidget {
       step['tool'],
       step['step_id'],
     ]);
-    final postcondition = _asMap(step['postcondition']);
-    final postconditionText = _postconditionText(context, postcondition);
     final errorText = _firstNonBlank([
       step['error_message'],
       step['errorMessage'],
@@ -523,19 +521,6 @@ class _StepResultTile extends StatelessWidget {
                       fontSize: 11,
                       color: _errorColor(context),
                       height: 1.3,
-                    ),
-                  ),
-                ],
-                if (postconditionText.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    postconditionText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textTertiary,
-                      fontFamily: 'monospace',
                     ),
                   ),
                 ],
@@ -876,33 +861,6 @@ String _runStateText(
   return result.success
       ? _text(context, '执行成功', 'Run succeeded')
       : _text(context, '执行失败', 'Run failed');
-}
-
-String _postconditionText(
-  BuildContext context,
-  Map<String, dynamic> postcondition,
-) {
-  if (postcondition.isEmpty) return '';
-  final kind = _firstNonBlank([postcondition['kind']]);
-  final success = _firstNonBlank([postcondition['success']]);
-  final score = _firstNonBlank([postcondition['score']]);
-  final minScore = _firstNonBlank([postcondition['min_score']]);
-  final matched = _firstNonBlank([postcondition['package_matched']]);
-  final fallback = _firstNonBlank([postcondition['fallback']]);
-  final error = _firstNonBlank([
-    postcondition['error_message'],
-    postcondition['error'],
-    postcondition['message'],
-  ]);
-  return [
-    kind.isEmpty ? _text(context, '后置校验', 'postcondition') : kind,
-    if (success.isNotEmpty) 'ok=$success',
-    if (score.isNotEmpty) 'score=$score',
-    if (minScore.isNotEmpty) 'min=$minScore',
-    if (matched.isNotEmpty) 'pkg=$matched',
-    if (fallback.isNotEmpty) 'fallback=$fallback',
-    if (error.isNotEmpty) error,
-  ].join(' · ');
 }
 
 String _resultErrorText(UtgManualRunResult result) {

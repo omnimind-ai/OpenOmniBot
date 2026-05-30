@@ -19,6 +19,19 @@ object OmniflowStepExecutor {
         val meta: Map<String, Any?> = emptyMap(),
     )
 
+    private data class ReplayState(
+        val snapshot: BackendSnapshot,
+        val page: PageModel?,
+        val capturedAtMs: Long,
+        val reason: String,
+    )
+
+    private data class ReplayAction(
+        val step: Map<String, Any?>,
+        val action: String,
+        val args: Map<String, Any?>,
+    )
+
     class ExecutionException(
         val errorCode: String,
         message: String,
@@ -82,6 +95,7 @@ object OmniflowStepExecutor {
         stepId: String,
         stepTitle: String,
     ): Map<String, Any?> {
+        val timing = ReplayStepTiming()
         val action = actionNameForStep(step)
         if (action !in RunLogReplayPolicy.omniflowActions) {
             throw IllegalArgumentException("Unsupported omniflow action: $action")
@@ -95,144 +109,201 @@ object OmniflowStepExecutor {
         val transferRequested = !fixedReplay &&
             action in RunLogReplayPolicy.coordinateActions &&
             shouldUseCoordinateHook(step)
-        val preTransferControls = if (fixedReplay) {
-            emptyList()
-        } else {
-            runPreTransferControls(action, initialArgs)
+        var currentState: ReplayState? = null
+
+        suspend fun replayState(reason: String): ReplayState {
+            val existing = currentState
+            if (existing != null) return existing
+            return observeReplayState(timing, reason).also { currentState = it }
         }
-        val attemptedRemapResult = if (fixedReplay) {
-            StepArgsResult(initialArgs)
-        } else {
-            try {
-                remapStepArgsWithRetries(step)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                StepArgsResult(
-                    args = initialArgs,
-                    meta = mapOf(
-                        "applied" to false,
-                        "reason" to "action_transfer_exception",
-                        "algorithm" to "anchor_projection",
-                        "error_message" to e.message.orEmpty(),
-                    )
+
+        suspend fun refreshReplayState(reason: String): ReplayState =
+            observeReplayState(timing, reason).also { currentState = it }
+
+        val preTransferControls = timing.measure("checker_ms") {
+            if (fixedReplay) {
+                emptyList()
+            } else {
+                runPreTransferControls(
+                    state = replayState("before_step"),
+                    replayAction = ReplayAction(step, action, initialArgs),
                 )
             }
         }
-        val remapResult = if (transferRequested && attemptedRemapResult.meta["applied"] == false) {
-            StepArgsResult(
-                args = initialArgs,
-                meta = attemptedRemapResult.meta + mapOf(
-                    "fallback_replay_mode" to "recorded_action_replay",
-                    "recorded_action_args_used" to true,
+        if (!fixedReplay && preTransferControls.isNotEmpty()) {
+            refreshReplayState("after_pre_transfer_controls")
+        }
+        val attemptedRemapResult = timing.measure("action_transfer_ms") {
+            if (fixedReplay) {
+                StepArgsResult(initialArgs)
+            } else {
+                try {
+                    remapStepArgsForState(step, replayState("action_transfer"))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    StepArgsResult(
+                        args = initialArgs,
+                        meta = mapOf(
+                            "applied" to false,
+                            "reason" to "action_transfer_exception",
+                            "algorithm" to "anchor_projection",
+                            "error_message" to e.message.orEmpty(),
+                        )
+                    )
+                }
+            }
+        }
+        var remapResult = recordedReplayFallbackIfNeeded(
+            transferRequested = transferRequested,
+            attempted = attemptedRemapResult,
+            initialArgs = initialArgs,
+        )
+        var args = normalizeArgsMap(remapResult.args)
+        val preActionControls = timing.measure("checker_ms") {
+            if (fixedReplay) {
+                emptyList()
+            } else {
+                runBeforeActionControls(
+                    state = replayState("before_action"),
+                    replayAction = ReplayAction(step, action, args),
                 )
-            )
-        } else {
-            attemptedRemapResult
+            }
+        }
+        if (!fixedReplay && preActionControls.isNotEmpty()) {
+            val refreshed = refreshReplayState("after_pre_action_controls")
+            if (transferRequested) {
+                val remappedAfterControl = timing.measure("action_transfer_ms") {
+                    try {
+                        remapStepArgsForState(step, refreshed)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        StepArgsResult(
+                            args = initialArgs,
+                            meta = mapOf(
+                                "applied" to false,
+                                "reason" to "action_transfer_exception",
+                                "algorithm" to "anchor_projection",
+                                "error_message" to e.message.orEmpty(),
+                            )
+                        )
+                    }
+                }
+                remapResult = recordedReplayFallbackIfNeeded(
+                    transferRequested = transferRequested,
+                    attempted = remappedAfterControl,
+                    initialArgs = initialArgs,
+                )
+                args = normalizeArgsMap(remapResult.args)
+            }
         }
         val actionTransferApplied = transferRequested && remapResult.meta["applied"] == true
-        val args = normalizeArgsMap(remapResult.args)
-        val preActionControls = if (fixedReplay) emptyList() else runBeforeActionControls(action, args)
         val controlEffects = preTransferControls + preActionControls
-        val summary = when (action) {
-            "click" -> {
-                val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
-                    ?: throw IllegalArgumentException("click requires x")
-                val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
-                    ?: throw IllegalArgumentException("click requires y")
-                backend.click(x, y)
-                "click"
-            }
-
-            "long_press" -> {
-                val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
-                    ?: throw IllegalArgumentException("long_press requires x")
-                val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
-                    ?: throw IllegalArgumentException("long_press requires y")
-                backend.longPress(
-                    x = x,
-                    y = y,
-                    durationMs = durationMs(args, defaultMs = 1000L)
-                )
-                "long_press"
-            }
-
-            "scroll", "swipe" -> {
-                val swipe = swipeSpec(args)
-                backend.scrollWithContext(
-                    x = swipe.x,
-                    y = swipe.y,
-                    direction = swipe.direction,
-                    distance = swipe.distance,
-                    durationMs = durationMs(args, defaultMs = 1500L),
-                    targetDescription = stringArg(args, "target_description", "targetDescription").orEmpty()
-                )
-                action
-            }
-
-            "type", "input_text" -> {
-                val text = stringArg(args, "content", "text", "value")
-                    ?: throw IllegalArgumentException("$action requires content")
-                backend.inputText(
-                    text = text,
-                    targetDescription = stringArg(
-                        args,
-                        "target_description",
-                        "targetDescription",
-                        "label",
-                        "selector",
-                    ).orEmpty(),
-                    x = numberArg(args, "x", "center_x", "centerX")?.toFloat(),
-                    y = numberArg(args, "y", "center_y", "centerY")?.toFloat(),
-                    nodeResourceId = stringArg(
-                        args,
-                        "node_resource_id",
-                        "nodeResourceId",
-                        "resource_id",
-                        "resourceId",
-                    ).orEmpty(),
-                )
-                action
-            }
-
-            "open_app" -> {
-                val packageName = stringArg(args, "package_name", "packageName")
-                    ?: throw IllegalArgumentException("open_app requires package_name")
-                val resetTask = booleanArg(args["reset_task"]) ||
-                    stringArg(args, "launch_mode")?.equals("fresh_task", ignoreCase = true) == true
-                if (resetTask) {
-                    backend.launchApplication(packageName, true)
-                } else {
-                    backend.launchApplication(packageName)
+        val summary = timing.measure("act_ms") {
+            when (action) {
+                "click" -> {
+                    val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+                        ?: throw IllegalArgumentException("click requires x")
+                    val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+                        ?: throw IllegalArgumentException("click requires y")
+                    backend.click(x, y)
+                    "click"
                 }
-                stabilizeOpenAppLaunch(packageName, resetTask)
-                "open_app"
-            }
 
-            "press_home", "press_back", "hot_key", "press_key" -> {
-                val key = stringArg(args, "key", "hotkey", "hot_key")
-                    ?: when (action) {
-                        "press_home" -> "HOME"
-                        "press_back" -> "BACK"
-                        else -> throw IllegalArgumentException("$action requires key")
+                "long_press" -> {
+                    val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+                        ?: throw IllegalArgumentException("long_press requires x")
+                    val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+                        ?: throw IllegalArgumentException("long_press requires y")
+                    backend.longPress(
+                        x = x,
+                        y = y,
+                        durationMs = durationMs(args, defaultMs = 1000L)
+                    )
+                    "long_press"
+                }
+
+                "scroll", "swipe" -> {
+                    val swipe = swipeSpec(args, replayState("act_swipe"))
+                    backend.scrollWithContext(
+                        x = swipe.x,
+                        y = swipe.y,
+                        direction = swipe.direction,
+                        distance = swipe.distance,
+                        durationMs = durationMs(args, defaultMs = 1500L),
+                        targetDescription = stringArg(args, "target_description", "targetDescription").orEmpty()
+                    )
+                    action
+                }
+
+                "type", "input_text" -> {
+                    val text = stringArg(args, "content", "text", "value")
+                        ?: throw IllegalArgumentException("$action requires content")
+                    backend.inputText(
+                        text = text,
+                        targetDescription = stringArg(
+                            args,
+                            "target_description",
+                            "targetDescription",
+                            "label",
+                            "selector",
+                        ).orEmpty(),
+                        x = numberArg(args, "x", "center_x", "centerX")?.toFloat(),
+                        y = numberArg(args, "y", "center_y", "centerY")?.toFloat(),
+                        nodeResourceId = stringArg(
+                            args,
+                            "node_resource_id",
+                            "nodeResourceId",
+                            "resource_id",
+                            "resourceId",
+                        ).orEmpty(),
+                    )
+                    action
+                }
+
+                "open_app" -> {
+                    val packageName = stringArg(args, "package_name", "packageName")
+                        ?: throw IllegalArgumentException("open_app requires package_name")
+                    val resetTask = booleanArg(args["reset_task"]) ||
+                        stringArg(args, "launch_mode")?.equals("fresh_task", ignoreCase = true) == true
+                    if (resetTask) {
+                        backend.launchApplication(packageName, true)
+                    } else {
+                        backend.launchApplication(packageName)
                     }
-                backend.pressHotKey(key)
-                action
+                    stabilizeOpenAppLaunch(packageName, resetTask, timing)
+                    "open_app"
+                }
+
+                "press_home", "press_back", "hot_key", "press_key" -> {
+                    val key = stringArg(args, "key", "hotkey", "hot_key")
+                        ?: when (action) {
+                            "press_home" -> "HOME"
+                            "press_back" -> "BACK"
+                            else -> throw IllegalArgumentException("$action requires key")
+                        }
+                    backend.pressHotKey(key)
+                    action
+                }
+
+                "finished" -> "finished"
+
+                else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
             }
-
-            "finished" -> "finished"
-
-            else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
-        delay(POST_STEP_DELAY_MS)
-        val checker = replayCheckerSummary(
-            step = step,
-            action = action,
-            args = args,
-            fixedReplay = fixedReplay,
-            transfer = remapResult.meta,
-            controlEffects = controlEffects,
-        )
+        timing.measureOverhead("settle_ms") {
+            delay(POST_STEP_DELAY_MS)
+        }
+        val checker = timing.measureOverhead("result_summary_ms") {
+            replayCheckerSummary(
+                action = action,
+                fixedReplay = fixedReplay,
+                transfer = remapResult.meta,
+                controlEffects = controlEffects,
+            )
+        }
+        val timingResult = timing.finish()
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
@@ -240,7 +311,11 @@ object OmniflowStepExecutor {
             "model_free" to true,
             "replay_mode" to replayMode(actionTransferApplied, transferRequested, remapResult.meta),
             "success" to true,
-            "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary)
+            "summary" to (stepTitle.takeIf { it.isNotBlank() } ?: summary),
+            "started_at_ms" to timingResult["started_at_ms"],
+            "finished_at_ms" to timingResult["finished_at_ms"],
+            "duration_ms" to timingResult["duration_ms"],
+            "timing" to timingResult,
         ).apply {
             if (remapResult.meta.isNotEmpty()) {
                 put("action_transfer", remapResult.meta)
@@ -267,6 +342,24 @@ object OmniflowStepExecutor {
 
     fun remapStepArgs(step: Map<String, Any?>): StepArgsResult =
         remapStepArgsInternal(step, currentXmlOverride = null)
+
+    private fun recordedReplayFallbackIfNeeded(
+        transferRequested: Boolean,
+        attempted: StepArgsResult,
+        initialArgs: Map<String, Any?>,
+    ): StepArgsResult {
+        return if (transferRequested && attempted.meta["applied"] == false) {
+            StepArgsResult(
+                args = initialArgs,
+                meta = attempted.meta + mapOf(
+                    "fallback_replay_mode" to "recorded_action_replay",
+                    "recorded_action_args_used" to true,
+                )
+            )
+        } else {
+            attempted
+        }
+    }
 
     private fun remapStepArgsInternal(
         step: Map<String, Any?>,
@@ -314,33 +407,14 @@ object OmniflowStepExecutor {
         }
     }
 
-    private suspend fun remapStepArgsWithRetries(step: Map<String, Any?>): StepArgsResult {
-        var last = remapStepArgsForExecution(step)
-        if (!shouldRetryCoordinateRemap(last)) {
-            return last
-        }
-        repeat(COORDINATE_REMAP_XML_READ_ATTEMPTS - 1) {
-            delay(COORDINATE_REMAP_XML_RETRY_DELAY_MS)
-            last = remapStepArgsForExecution(step)
-            if (!shouldRetryCoordinateRemap(last)) {
-                return last
-            }
-        }
-        return last
-    }
-
-    private suspend fun remapStepArgsForExecution(step: Map<String, Any?>): StepArgsResult =
-        remapStepArgsInternal(step, currentXmlOverride = readCurrentXmlForCoordinateRemap())
-
-    private suspend fun readCurrentXmlForCoordinateRemap(): String =
-        readBackendSnapshot().xml
+    private fun remapStepArgsForState(
+        step: Map<String, Any?>,
+        state: ReplayState,
+    ): StepArgsResult =
+        remapStepArgsInternal(step, currentXmlOverride = state.snapshot.xml)
 
     private fun readCurrentXmlForCoordinateRemapDirect(): String =
         readBackendSnapshotDirect().xml
-
-    private fun shouldRetryCoordinateRemap(result: StepArgsResult): Boolean =
-        result.meta["applied"] == false &&
-            result.meta["reason"]?.toString() in RETRYABLE_COORDINATE_REMAP_REASONS
 
     private fun shouldUseCoordinateHook(step: Map<String, Any?>): Boolean {
         val coordinateHook = step["coordinate_hook"]?.toString()?.trim()?.lowercase().orEmpty()
@@ -378,7 +452,10 @@ object OmniflowStepExecutor {
         val distance: Float,
     )
 
-    private fun swipeSpec(args: Map<String, Any?>): SwipeSpec {
+    private fun swipeSpec(
+        args: Map<String, Any?>,
+        state: ReplayState,
+    ): SwipeSpec {
         val x1 = numberArg(args, "x1")?.toFloat()
         val y1 = numberArg(args, "y1")?.toFloat()
         val x2 = numberArg(args, "x2")?.toFloat()
@@ -396,7 +473,7 @@ object OmniflowStepExecutor {
 
         val direction = directionArg(args)
             ?: throw IllegalArgumentException("swipe requires direction or x1/y1/x2/y2")
-        val rootCenter = currentRootCenter()
+        val rootCenter = currentRootCenter(state)
         val x: Float = numberArg(args, "x", "center_x", "centerX")?.toFloat()
             ?: rootCenter?.first
             ?: DEFAULT_SCREEN_CENTER_X
@@ -424,9 +501,13 @@ object OmniflowStepExecutor {
         }
     }
 
-    private suspend fun stabilizeOpenAppLaunch(packageName: String, resetTask: Boolean) {
+    private suspend fun stabilizeOpenAppLaunch(
+        packageName: String,
+        resetTask: Boolean,
+        timing: ReplayStepTiming,
+    ) {
         if (packageName.isBlank()) return
-        var lastPackage = effectiveCurrentPackage()
+        var lastPackage = effectiveCurrentPackage(timing)
         repeat(OPEN_APP_STABILITY_ATTEMPTS) { index ->
             val matchMode = packageMatchMode(packageName, lastPackage)
             if (matchMode != null) return
@@ -437,92 +518,13 @@ object OmniflowStepExecutor {
             }
             if (index < OPEN_APP_STABILITY_ATTEMPTS - 1) {
                 delay(OPEN_APP_STABILITY_DELAY_MS)
-                lastPackage = effectiveCurrentPackage()
+                lastPackage = effectiveCurrentPackage(timing)
             }
         }
     }
 
-    private suspend fun effectiveCurrentPackage(): String =
-        readBackendSnapshot().effectivePackage()
-
-    private suspend fun verifyPostcondition(
-        step: Map<String, Any?>,
-        action: String = actionNameForStep(step),
-        args: Map<String, Any?> = normalizeArgsMap(step["args"]),
-    ): Map<String, Any?> {
-        if (action == "open_app") {
-            return verifyOpenAppPackagePostcondition(args)
-        }
-        val postcondition = normalizeArgsMap(step["postcondition"])
-        if (postcondition.isEmpty()) return emptyMap()
-        val kind = postcondition["kind"]?.toString()?.trim().orEmpty()
-        if (kind != "recorded_after_page_similarity") return emptyMap()
-        val sourceContext = (step["source_context"] as? Map<*, *>)
-            ?: (normalizeArgsMap(step["args"])["source_context"] as? Map<*, *>)
-            ?: throw IllegalStateException("Postcondition failed: missing_source_context")
-        val dstCtx = sourceContext["dst_ctx"] as? Map<*, *>
-            ?: throw IllegalStateException("Postcondition failed: missing_recorded_after_context")
-        val expectedXml = firstNonBlank(
-            dstCtx["page"],
-            dstCtx["xml"],
-        )
-        if (expectedXml.isEmpty()) {
-            throw IllegalStateException("Postcondition failed: missing_recorded_after_xml")
-        }
-        val recordedExpectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
-        val expectedPackage = RunLogPagePackageInference.effectivePackage(
-            recordedExpectedPackage,
-            expectedXml,
-        )
-        val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
-            ?: MIN_POSTCONDITION_PAGE_SCORE
-        val requiredScore = postconditionRequiredScore(expectedXml, minScore)
-        val observation = readCurrentObservationForPostcondition(
-            expectedXml = expectedXml,
-            expectedPackage = expectedPackage,
-            minScore = requiredScore,
-        )
-        val currentXml = observation.xml
-        if (currentXml.isEmpty()) {
-            throw IllegalStateException("Postcondition failed: missing_current_xml")
-        }
-        val score = observation.score
-        val currentPackage = observation.packageName
-        val packageMatchMode = observation.packageMatchMode
-        val packageMatched = packageMatchMode != null
-        if (!packageMatched || score < requiredScore) {
-            transientSettingsSearchPostcondition(
-                step = step,
-                postcondition = postcondition,
-                expectedXml = expectedXml,
-                currentXml = currentXml,
-                expectedPackage = expectedPackage,
-                currentPackage = currentPackage,
-                packageMatched = packageMatched,
-                score = score,
-                minScore = requiredScore,
-            )?.let { return it }
-            throw IllegalStateException(
-                "Postcondition failed: page_similarity=$score min=$requiredScore " +
-                    "package_matched=$packageMatched expected_package=$expectedPackage current_package=$currentPackage"
-            )
-        }
-        return linkedMapOf(
-            "kind" to kind,
-            "success" to true,
-            "score" to score,
-            "min_score" to minScore,
-            "required_score" to requiredScore.takeIf { it > minScore },
-            "package_matched" to packageMatched,
-            "package_match_mode" to packageMatchMode.takeIf {
-                it != "exact" && it != "expected_missing" && it != "current_missing"
-            },
-            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
-            "recorded_expected_package" to recordedExpectedPackage
-                .takeIf { it.isNotBlank() && it != expectedPackage },
-            "current_package" to currentPackage.takeIf { it.isNotBlank() },
-        ).filterValues { it != null }
-    }
+    private suspend fun effectiveCurrentPackage(timing: ReplayStepTiming): String =
+        readBackendSnapshot(timing).effectivePackage()
 
     private fun beforeActionCheckerSummary(
         action: String,
@@ -544,26 +546,11 @@ object OmniflowStepExecutor {
     }
 
     private suspend fun replayCheckerSummary(
-        step: Map<String, Any?>,
         action: String,
-        args: Map<String, Any?>,
         fixedReplay: Boolean,
         transfer: Map<String, Any?>,
         controlEffects: List<Map<String, Any?>>,
     ): Map<String, Any?> {
-        if (action == "open_app") {
-            val postcondition = verifyPostcondition(step, action, args)
-            if (postcondition.isNotEmpty()) {
-                return linkedMapOf<String, Any?>(
-                    "phase" to "after_action",
-                    "effect" to "verify",
-                    "verified" to true,
-                    "action" to action,
-                ).apply {
-                    putAll(postcondition)
-                }
-            }
-        }
         return if (fixedReplay) {
             emptyMap()
         } else {
@@ -572,13 +559,14 @@ object OmniflowStepExecutor {
     }
 
     private suspend fun runPreTransferControls(
-        action: String,
-        args: Map<String, Any?>,
+        state: ReplayState,
+        replayAction: ReplayAction,
     ): List<Map<String, Any?>> {
+        val action = replayAction.action
+        val args = replayAction.args
         if (action == "finished" || action == "open_app") return emptyList()
         if (targetLooksLikeDismiss(args)) return emptyList()
-        val snapshot = readBackendSnapshot()
-        val page = parsePageModel(snapshot.xml) ?: return emptyList()
+        val page = state.page ?: return emptyList()
         val candidate = blockingOverlayDismissCandidate(page) ?: return emptyList()
         OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
         delay(PRE_ACTION_CONTROL_DELAY_MS)
@@ -596,12 +584,13 @@ object OmniflowStepExecutor {
     }
 
     private suspend fun runBeforeActionControls(
-        action: String,
-        args: Map<String, Any?>,
+        state: ReplayState,
+        replayAction: ReplayAction,
     ): List<Map<String, Any?>> {
+        val action = replayAction.action
+        val args = replayAction.args
         if (action !in setOf("click", "long_press", "scroll", "swipe")) return emptyList()
-        val snapshot = readBackendSnapshot()
-        val page = parsePageModel(snapshot.xml) ?: return emptyList()
+        val page = state.page ?: return emptyList()
         val keyboardTop = keyboardTop(page) ?: return emptyList()
         if (!actionTargetIntersectsKeyboard(action, args, keyboardTop)) return emptyList()
         OmniflowActionRuntime.backend.hideKeyboard()
@@ -614,109 +603,6 @@ object OmniflowStepExecutor {
                 "action" to "hide_keyboard",
                 "keyboard_top" to keyboardTop,
             )
-        )
-    }
-
-    private suspend fun preActionSatisfiedPostcondition(
-        step: Map<String, Any?>,
-        action: String,
-    ): Map<String, Any?>? {
-        if (action == "open_app" || action == "input_text" || action == "type") return null
-        val postcondition = normalizeArgsMap(step["postcondition"])
-        if (postcondition["kind"]?.toString()?.trim() != "recorded_after_page_similarity") return null
-        val sourceContext = (step["source_context"] as? Map<*, *>)
-            ?: (normalizeArgsMap(step["args"])["source_context"] as? Map<*, *>)
-            ?: return null
-        val dstCtx = sourceContext["dst_ctx"] as? Map<*, *> ?: return null
-        val expectedXml = firstNonBlank(
-            dstCtx["page"],
-            dstCtx["xml"],
-        )
-        if (expectedXml.isBlank()) return null
-        val recordedExpectedPackage = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"])
-        val expectedPackage = RunLogPagePackageInference.effectivePackage(
-            recordedExpectedPackage,
-            expectedXml,
-        )
-        val minScore = numberArg(postcondition, "min_score", "minScore")?.toFloat()
-            ?: MIN_POSTCONDITION_PAGE_SCORE
-        val requiredScore = postconditionRequiredScore(expectedXml, minScore)
-        val observation = readCurrentObservationSnapshot(
-            expectedXml = expectedXml,
-            expectedPackage = expectedPackage,
-        ) ?: return null
-        val preActionRequiredScore = max(requiredScore, PRE_ACTION_ALREADY_SATISFIED_MIN_SCORE)
-        if (observation.packageMatchMode == null || observation.score < preActionRequiredScore) return null
-
-        val srcCtx = sourceContext["src_ctx"] as? Map<*, *>
-        val sourceXml = firstNonBlank(
-            srcCtx?.get("page"),
-            srcCtx?.get("xml"),
-            sourceContext["page"],
-            sourceContext["xml"],
-        )
-        val sourceScore = if (sourceXml.isNotBlank()) {
-            pageSimilarityScore(sourceXml, observation.xml)
-        } else {
-            0f
-        }
-        if (sourceXml.isNotBlank()) {
-            val sourcePackage = RunLogPagePackageInference.effectivePackage(
-                firstNonBlank(srcCtx?.get("package_name"), srcCtx?.get("packageName")),
-                sourceXml,
-            )
-            val sourcePackageMatched = packageMatchMode(sourcePackage, observation.packageName) != null
-            if (sourcePackageMatched &&
-                sourceScore >= observation.score - PRE_ACTION_ALREADY_SATISFIED_SOURCE_MARGIN
-            ) {
-                return null
-            }
-        }
-
-        return linkedMapOf(
-            "kind" to "recorded_after_page_similarity",
-            "success" to true,
-            "score" to observation.score,
-            "min_score" to minScore,
-            "required_score" to preActionRequiredScore.takeIf { it > minScore },
-            "package_matched" to true,
-            "package_match_mode" to observation.packageMatchMode.takeIf {
-                it != "exact" && it != "expected_missing" && it != "current_missing"
-            },
-            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
-            "recorded_expected_package" to recordedExpectedPackage
-                .takeIf { it.isNotBlank() && it != expectedPackage },
-            "current_package" to observation.packageName.takeIf { it.isNotBlank() },
-            "pre_action_satisfied" to true,
-            "source_score" to sourceScore.takeIf { sourceXml.isNotBlank() },
-        ).filterValues { it != null }
-    }
-
-    private suspend fun verifyOpenAppPackagePostcondition(args: Map<String, Any?>): Map<String, Any?> {
-        val expectedPackage = stringArg(args, "package_name", "packageName")?.trim().orEmpty()
-        if (expectedPackage.isEmpty()) return emptyMap()
-        var lastPackage = ""
-        repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
-            lastPackage = readBackendSnapshot().effectivePackage().ifBlank { lastPackage }
-            val packageMatchMode = packageMatchMode(expectedPackage, lastPackage)
-            if (packageMatchMode != null) {
-                return linkedMapOf(
-                    "kind" to "open_app_package",
-                    "success" to true,
-                    "package_matched" to true,
-                    "package_match_mode" to packageMatchMode.takeIf {
-                        it != "exact" && it != "expected_missing" && it != "current_missing"
-                    },
-                    "expected_package" to expectedPackage,
-                    "current_package" to lastPackage.takeIf { it.isNotBlank() },
-                ).filterValues { it != null }
-            }
-            if (index < POSTCONDITION_XML_READ_ATTEMPTS - 1) {
-                delay(POSTCONDITION_XML_RETRY_DELAY_MS)
-            }
-        }
-        throw IllegalStateException(
-            "Postcondition failed: open_app_package expected_package=$expectedPackage current_package=$lastPackage"
         )
     }
 
@@ -751,13 +637,33 @@ object OmniflowStepExecutor {
             RunLogPagePackageInference.effectivePackage(rawPackage, xml, activityName)
     }
 
-    private suspend fun readBackendSnapshot(): BackendSnapshot {
-        return runCatching {
-            withContext(Dispatchers.Main.immediate) {
+    private suspend fun observeReplayState(
+        timing: ReplayStepTiming,
+        reason: String,
+    ): ReplayState {
+        val snapshot = readBackendSnapshot(timing)
+        return ReplayState(
+            snapshot = snapshot,
+            page = parsePageModel(snapshot.xml),
+            capturedAtMs = System.currentTimeMillis(),
+            reason = reason,
+        )
+    }
+
+    private suspend fun readBackendSnapshot(timing: ReplayStepTiming? = null): BackendSnapshot {
+        val readBlock: suspend () -> BackendSnapshot = {
+            runCatching {
+                withContext(Dispatchers.Main.immediate) {
+                    readBackendSnapshotDirect()
+                }
+            }.getOrElse {
                 readBackendSnapshotDirect()
             }
-        }.getOrElse {
-            readBackendSnapshotDirect()
+        }
+        return if (timing == null) {
+            readBlock()
+        } else {
+            timing.measureObserve(readBlock)
         }
     }
 
@@ -793,50 +699,6 @@ object OmniflowStepExecutor {
         "observation_xml_length" to snapshot.xml.length,
         "observation_xml" to snapshot.xml.takeIf { it.isNotBlank() },
     ).filterValues { it != null }
-
-    private data class PostconditionObservation(
-        val xml: String,
-        val packageName: String,
-        val score: Float,
-        val packageMatchMode: String?,
-    )
-
-    private suspend fun readCurrentObservationSnapshot(
-        expectedXml: String,
-        expectedPackage: String,
-    ): PostconditionObservation? {
-        val snapshot = readBackendSnapshot()
-        val currentXml = snapshot.xml
-        if (currentXml.isEmpty()) return null
-        val currentPackage = snapshot.effectivePackage()
-        return PostconditionObservation(
-            xml = currentXml,
-            packageName = currentPackage,
-            score = pageSimilarityScore(expectedXml, currentXml),
-            packageMatchMode = packageMatchMode(expectedPackage, currentPackage),
-        )
-    }
-
-    private fun postconditionRequiredScore(expectedXml: String, recordedMinScore: Float): Float {
-        val page = parsePageModel(expectedXml) ?: return recordedMinScore
-        val anchors = page.nodes
-            .filter { isAnchorCandidate(it, page.rootBounds) }
-            .take(MAX_POSTCONDITION_NODES)
-        if (anchors.size <= 1) return recordedMinScore
-        val meaningfulAnchorCount = anchors.count(::isMeaningfulPostconditionAnchor)
-        val adaptiveScore = if (meaningfulAnchorCount >= 3) {
-            MIN_RICH_POSTCONDITION_PAGE_SCORE
-        } else {
-            MIN_POSTCONDITION_PAGE_SCORE
-        }
-        return max(recordedMinScore, adaptiveScore)
-    }
-
-    private fun isMeaningfulPostconditionAnchor(node: UiNode): Boolean =
-        node.text.isNotBlank() ||
-            node.contentDesc.isNotBlank() ||
-            node.hintText.isNotBlank() ||
-            (node.resourceId.isNotBlank() && !isGenericResourceId(node.resourceId))
 
     private fun blockingOverlayDismissCandidate(page: PageModel): UiNode? {
         val hasOverlayCue = page.nodes.any(::hasAdOrModalCue)
@@ -951,143 +813,11 @@ object OmniflowStepExecutor {
             node.className,
         ).filter { it.isNotBlank() }.joinToString(" ").lowercase()
 
-    private suspend fun readCurrentObservationForPostcondition(
-        expectedXml: String,
-        expectedPackage: String,
-        minScore: Float,
-    ): PostconditionObservation {
-        var best = PostconditionObservation(
-            xml = "",
-            packageName = "",
-            score = 0f,
-            packageMatchMode = null,
-        )
-        repeat(POSTCONDITION_XML_READ_ATTEMPTS) { index ->
-            val snapshot = readBackendSnapshot()
-            val currentXml = snapshot.xml
-            if (currentXml.isNotEmpty()) {
-                val currentPackage = snapshot.effectivePackage()
-                val score = pageSimilarityScore(expectedXml, currentXml)
-                val packageMatchMode = packageMatchMode(expectedPackage, currentPackage)
-                val observation = PostconditionObservation(
-                    xml = currentXml,
-                    packageName = currentPackage,
-                    score = score,
-                    packageMatchMode = packageMatchMode,
-                )
-                if (packageMatchMode != null && score >= minScore) {
-                    return observation
-                }
-                if (isBetterPostconditionObservation(observation, best)) {
-                    best = observation
-                }
-            }
-            if (index < POSTCONDITION_XML_READ_ATTEMPTS - 1) {
-                delay(POSTCONDITION_XML_RETRY_DELAY_MS)
-            }
-        }
-        return best
-    }
-
-    private fun isBetterPostconditionObservation(
-        candidate: PostconditionObservation,
-        currentBest: PostconditionObservation,
-    ): Boolean {
-        val candidatePackageMatched = candidate.packageMatchMode != null
-        val bestPackageMatched = currentBest.packageMatchMode != null
-        if (candidatePackageMatched != bestPackageMatched) {
-            return candidatePackageMatched
-        }
-        if (candidate.score != currentBest.score) {
-            return candidate.score > currentBest.score
-        }
-        return candidate.xml.length > currentBest.xml.length
-    }
-
-    private fun transientSettingsSearchPostcondition(
-        step: Map<String, Any?>,
-        postcondition: Map<String, Any?>,
-        expectedXml: String,
-        currentXml: String,
-        expectedPackage: String,
-        currentPackage: String,
-        packageMatched: Boolean,
-        score: Float,
-        minScore: Float,
-    ): Map<String, Any?>? {
-        if (!booleanArg(postcondition["allow_package_only_for_transient_search"])) return null
-        if (!packageMatched) return null
-        val isSettingsSearchPackage =
-            expectedPackage == SETTINGS_SEARCH_PACKAGE || currentPackage == SETTINGS_SEARCH_PACKAGE
-        if (!isSettingsSearchPackage) return null
-        val hasSearchCue = isSettingsSearchTransitionStep(step) ||
-            containsSearchCue(expectedXml) ||
-            containsSearchCue(currentXml)
-        if (!hasSearchCue) return null
-        return linkedMapOf(
-            "kind" to "recorded_after_page_similarity",
-            "success" to true,
-            "score" to score,
-            "min_score" to minScore,
-            "package_matched" to true,
-            "expected_package" to expectedPackage.takeIf { it.isNotBlank() },
-            "current_package" to currentPackage.takeIf { it.isNotBlank() },
-            "semantic_fallback" to "settings_search_transition",
-            "semantic_fallback_reason" to "package_matched_for_transient_settings_search",
-        ).filterValues { it != null }
-    }
-
-    private fun isSettingsSearchTransitionStep(step: Map<String, Any?>): Boolean {
-        val args = normalizeArgsMap(step["args"])
-        val sourceContext = (step["source_context"] as? Map<*, *>)
-            ?: (args["source_context"] as? Map<*, *>)
-        val action = sourceContext?.get("action") as? Map<*, *>
-        val haystack = listOf(
-            step["title"],
-            args["target_description"],
-            args["targetDescription"],
-            args["label"],
-            action?.get("target_description"),
-            action?.get("targetDescription"),
-        ).joinToString(" ").lowercase()
-        return haystack.contains("search settings") ||
-            haystack.contains("search_action_bar") ||
-            haystack.contains("settings search")
-    }
-
-    private fun containsSearchCue(xml: String): Boolean {
-        val lower = xml.lowercase()
-        return lower.contains("search settings") ||
-            lower.contains("search_action_bar") ||
-            lower.contains(SETTINGS_SEARCH_PACKAGE)
-    }
-
     private fun booleanArg(value: Any?): Boolean =
         value == true || value?.toString()?.equals("true", ignoreCase = true) == true
 
-    private fun pageSimilarityScore(expectedXml: String, currentXml: String): Float {
-        val expected = parsePageModel(expectedXml) ?: return 0f
-        val current = parsePageModel(currentXml) ?: return 0f
-        val expectedNodes = expected.nodes
-            .filter { isAnchorCandidate(it, expected.rootBounds) }
-            .take(MAX_POSTCONDITION_NODES)
-        if (expectedNodes.isEmpty()) return 0f
-        val matched = expectedNodes.count { source ->
-            current.nodes.any { target ->
-                nodeSimilarity(source, target) >= MIN_POSTCONDITION_NODE_SIMILARITY
-            }
-        }
-        return (matched.toFloat() / expectedNodes.size.toFloat()).coerceIn(0f, 1f)
-    }
-
-    private fun currentRootCenter(): Pair<Float, Float>? {
-        val currentXml = OmniflowActionRuntime.backend.currentXml()
-            ?.trim()
-            .orEmpty()
-        if (currentXml.isEmpty()) return null
-        val page = parsePageModel(currentXml) ?: return null
-        return page.rootBounds.centerX to page.rootBounds.centerY
-    }
+    private fun currentRootCenter(state: ReplayState): Pair<Float, Float>? =
+        state.page?.let { it.rootBounds.centerX to it.rootBounds.centerY }
 
     private fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {
@@ -1909,11 +1639,78 @@ object OmniflowStepExecutor {
             else -> null
         }
 
+    private class ReplayStepTiming {
+        private val startedAtNanos = System.nanoTime()
+        private val phaseNanos = linkedMapOf<String, Long>()
+        private val overheadNanos = linkedMapOf<String, Long>()
+        private var observedNanos = 0L
+        val startedAtMs: Long = System.currentTimeMillis()
+
+        suspend fun <T> measure(phaseName: String, block: suspend () -> T): T {
+            val startedAt = System.nanoTime()
+            val observedBefore = observedNanos
+            return try {
+                block()
+            } finally {
+                val elapsed = elapsedNanos(startedAt)
+                val nestedObserve = (observedNanos - observedBefore).coerceAtLeast(0L)
+                addNanos(phaseNanos, phaseName, (elapsed - nestedObserve).coerceAtLeast(0L))
+            }
+        }
+
+        suspend fun <T> measureObserve(block: suspend () -> T): T {
+            val startedAt = System.nanoTime()
+            return try {
+                block()
+            } finally {
+                val elapsed = elapsedNanos(startedAt)
+                observedNanos += elapsed
+                addNanos(phaseNanos, "observe_ms", elapsed)
+            }
+        }
+
+        suspend fun <T> measureOverhead(phaseName: String, block: suspend () -> T): T {
+            val startedAt = System.nanoTime()
+            return try {
+                block()
+            } finally {
+                addNanos(overheadNanos, phaseName, elapsedNanos(startedAt))
+            }
+        }
+
+        fun finish(): Map<String, Any?> {
+            val finishedAtMs = System.currentTimeMillis()
+            val phases = linkedMapOf<String, Long>()
+            REPLAY_STEP_PHASE_NAMES.forEach { phaseName ->
+                phases[phaseName] = nanosToMs(phaseNanos[phaseName] ?: 0L)
+            }
+            phaseNanos.forEach { (phaseName, durationNanos) ->
+                phases.putIfAbsent(phaseName, nanosToMs(durationNanos))
+            }
+            val overhead = overheadNanos.mapValues { (_, durationNanos) -> nanosToMs(durationNanos) }
+                .filterValues { it > 0L }
+            return linkedMapOf<String, Any?>(
+                "source" to "oob_omniflow_step_executor",
+                "started_at_ms" to startedAtMs,
+                "finished_at_ms" to finishedAtMs,
+                "duration_ms" to nanosToMs(elapsedNanos(startedAtNanos)),
+                "phase_ms" to phases,
+                "overhead_ms" to overhead.takeIf { it.isNotEmpty() },
+            ).filterValues { it != null }
+        }
+
+        private fun addNanos(target: MutableMap<String, Long>, key: String, value: Long) {
+            target[key] = (target[key] ?: 0L) + value.coerceAtLeast(0L)
+        }
+
+        private fun elapsedNanos(startedAtNanos: Long): Long =
+            (System.nanoTime() - startedAtNanos).coerceAtLeast(0L)
+
+        private fun nanosToMs(nanos: Long): Long =
+            (nanos / 1_000_000L).coerceAtLeast(0L)
+    }
+
     private const val POST_STEP_DELAY_MS = 1000L
-    private const val POSTCONDITION_XML_READ_ATTEMPTS = 5
-    private const val POSTCONDITION_XML_RETRY_DELAY_MS = 400L
-    private const val COORDINATE_REMAP_XML_READ_ATTEMPTS = 5
-    private const val COORDINATE_REMAP_XML_RETRY_DELAY_MS = 300L
     private const val PRE_ACTION_CONTROL_DELAY_MS = 300L
     private const val DEFAULT_SCREEN_CENTER_X = 540f
     private const val DEFAULT_SCREEN_CENTER_Y = 960f
@@ -1923,23 +1720,16 @@ object OmniflowStepExecutor {
     private const val MIN_ANCHOR_SIMILARITY = 0.45f
     private const val MIN_ANCHOR_MATCH_SCORE = 0.12f
     private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.86f
-    private const val MIN_POSTCONDITION_PAGE_SCORE = 0.12f
-    private const val MIN_RICH_POSTCONDITION_PAGE_SCORE = 0.70f
-    private const val MIN_POSTCONDITION_NODE_SIMILARITY = 0.50f
-    private const val MAX_POSTCONDITION_NODES = 24
-    private const val PRE_ACTION_ALREADY_SATISFIED_MIN_SCORE = 0.72f
-    private const val PRE_ACTION_ALREADY_SATISFIED_SOURCE_MARGIN = 0.25f
     private const val MIN_DISMISS_OVERLAY_SCORE = 760f
     private const val KEYBOARD_OBSCURE_MARGIN_PX = 16f
     private const val OPEN_APP_STABILITY_ATTEMPTS = 5
     private const val OPEN_APP_STABILITY_DELAY_MS = 350L
     private const val OPEN_APP_RELAUNCH_ATTEMPT_INDEX = 1
-    private const val SETTINGS_SEARCH_PACKAGE = "com.google.android.settings.intelligence"
-    private val RETRYABLE_COORDINATE_REMAP_REASONS = setOf(
-        "missing_current_xml",
-        "invalid_current_page",
-        "no_anchor_match",
-        "missing_scroll_source_element",
+    private val REPLAY_STEP_PHASE_NAMES = listOf(
+        "observe_ms",
+        "checker_ms",
+        "action_transfer_ms",
+        "act_ms",
     )
     private val GENERIC_RESOURCE_TAILS = setOf(
         "title",

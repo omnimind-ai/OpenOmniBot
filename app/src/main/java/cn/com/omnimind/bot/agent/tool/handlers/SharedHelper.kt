@@ -200,13 +200,6 @@ class SharedHelper(
         "executionMode 仅支持 termux 或 proot" to
             "`executionMode` only supports `termux` or `proot`",
         "缺少 command" to "Missing command",
-        // oob_command_* tools
-        "已保存指令，可通过 function_id 直接调用。" to "Saved as command. Call it directly by function_id.",
-        "Agent 可以直接用 function_id 调用该指令。" to "Agent can call this command directly by function_id.",
-        "已保存指令" to "Command saved",
-        "条指令" to "commands",
-        "已删除指令" to "Command deleted",
-        "指令不存在" to "Command not found",
         "复用指令" to "Reusable Command",
         "正在执行复用指令" to "Running reusable command",
         "复用指令执行完成" to "Reusable command completed",

@@ -1,4 +1,4 @@
 interface:
-  display_name: "OmniFlow Function Enhancer"
-  short_description: "Polish RunLog Functions with explicit status"
-  default_prompt: "Use $omniflow-function-enhancer to improve an existing OmniFlow reusable Function from a RunLog, keeping execution unchanged and reporting enhanced, unchanged, partial, or failed."
+  display_name: "OmniFlow Function Updater"
+  short_description: "Enhance or repair saved RunLog Functions"
+  default_prompt: "Use $omniflow-function-enhancer to enhance or repair an existing OmniFlow reusable Function. Build a structured patch and save it through update_function; for corrections like 'should tap A instead of B', use mode=repair."

@@ -41,7 +41,7 @@ Search flow:
 ```json
 {
   "name": "搜索关键词",
-  "description": "在当前搜索页输入关键词并打开搜索结果。",
+  "description": "在当前搜索页定位搜索输入框，输入运行时搜索词并打开搜索结果。当前页面展示同类搜索框时可复用；搜索结果页出现与关键词相关的结果即为成功。",
   "parameters": [
     {
       "name": "search_query",
@@ -64,7 +64,7 @@ Message flow:
 ```json
 {
   "name": "发送消息给联系人",
-  "description": "在聊天页向指定联系人发送运行时消息文本。",
+  "description": "在目标联系人聊天页定位消息输入框，写入运行时消息文本并点击发送。当前已进入同一聊天输入页时可复用；消息列表出现刚发送的文本即为成功。",
   "parameters": [
     {
       "name": "message_text",
@@ -87,7 +87,7 @@ Settings flow with no runtime slot:
 ```json
 {
   "name": "打开系统设置",
-  "description": "打开 Android 系统设置首页。",
+  "description": "从当前界面打开 Android 系统设置首页。设备允许启动设置应用时可复用；设置首页或对应设置入口可见即为成功。",
   "parameters": [],
   "agent_reuse": {
     "reuse_when": ["设备可打开 Android 设置应用。"],

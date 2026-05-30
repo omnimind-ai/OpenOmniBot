@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
+import cn.com.omnimind.assists.ManualOverlayGestureReplayResult
 import cn.com.omnimind.assists.ManualOverlayTouchGesture
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
@@ -770,13 +771,15 @@ class ManualVlmTraceRecorder(
         )
     }
 
-    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): Boolean {
+    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): ManualOverlayGestureReplayResult {
         synchronized(recordingLock) {
-            if (!isStarted || isPaused) return false
+            if (!isStarted || isPaused) return ManualOverlayGestureReplayResult(executed = false)
             overlayGestureStartedCount += 1
         }
-        val beforeXml = synchronized(recordingLock) { lastXmlSnapshot }
+        val beforeXml = captureCurrentXml() ?: synchronized(recordingLock) { lastXmlSnapshot }
         val beforeScreenshot = synchronized(recordingLock) { lastScreenshotSnapshot }
+        val mayOpenIme = gesture.actionName == "click" &&
+            overlayClickMayOpenIme(beforeXml, gesture.startX, gesture.startY)
         val touchX = if (gesture.actionName == "swipe") {
             (gesture.startX + gesture.endX) / 2f
         } else {
@@ -792,7 +795,11 @@ class ManualVlmTraceRecorder(
                 overlayGestureIgnoredControlCount += 1
             }
             OmniLog.d(TAG, "manual overlay touch ignored OOB/control gesture")
-            return false
+            return ManualOverlayGestureReplayResult(
+                executed = false,
+                mayOpenIme = false,
+                ignoredControl = true
+            )
         }
 
         synchronized(recordingLock) {
@@ -809,7 +816,10 @@ class ManualVlmTraceRecorder(
             false
         }
         launchOverlayPostRecord(gesture, beforeXml, beforeScreenshot)
-        return executed
+        return ManualOverlayGestureReplayResult(
+            executed = executed,
+            mayOpenIme = mayOpenIme
+        )
     }
 
     private fun launchOverlayPostRecord(
@@ -1234,7 +1244,11 @@ class ManualVlmTraceRecorder(
 
     private suspend fun performOverlayClickGesture(gesture: ManualOverlayTouchGesture) {
         val coordinateResult = runCatching {
-            AccessibilityController.clickCoordinate(gesture.startX, gesture.startY)
+            AccessibilityController.clickCoordinate(
+                gesture.startX,
+                gesture.startY,
+                timeoutMs = OVERLAY_CLICK_REPLAY_TIMEOUT_MS
+            )
         }
         if (coordinateResult.isSuccess) {
             synchronized(recordingLock) {
@@ -1305,6 +1319,7 @@ class ManualVlmTraceRecorder(
             "gesture_distance_px" to gesture.distancePx,
             "recording_backend" to OVERLAY_TOUCH_BACKEND,
             "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+            "execution_mode" to SYNTHETIC_REPLAY_EXECUTION_MODE,
             "target_resolution" to target.resolution,
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
@@ -1360,6 +1375,7 @@ class ManualVlmTraceRecorder(
             "node_resource_id" to target.resourceId,
             "recording_backend" to OVERLAY_TOUCH_BACKEND,
             "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+            "execution_mode" to SYNTHETIC_REPLAY_EXECUTION_MODE,
             "target_resolution" to target.resolution,
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
@@ -1776,7 +1792,7 @@ class ManualVlmTraceRecorder(
 
     private fun shouldIgnorePackage(packageName: String?): Boolean {
         val normalized = packageName?.trim().orEmpty()
-        return normalized.isEmpty() || normalized == ownPackageName
+        return normalized.isNotEmpty() && normalized == ownPackageName
     }
 
     private fun navigationActionFor(packageName: String?, label: String): String? {
@@ -2049,6 +2065,27 @@ class ManualVlmTraceRecorder(
         }
     }
 
+    private fun overlayClickMayOpenIme(xml: String?, x: Float, y: Float): Boolean {
+        if (xml.isNullOrBlank()) return true
+        val packageName = packageNameFromXml(xml)
+        val rootArea = parseRootBounds(xml)?.area() ?: Int.MAX_VALUE
+        val candidates = parseXmlNodeCandidates(xml)
+            .filter { candidate ->
+                candidate.visible &&
+                    candidate.enabled &&
+                    candidate.bounds.containsPoint(x, y) &&
+                    !(
+                        shouldIgnoreTarget(
+                            packageName = candidate.packageName ?: packageName,
+                            label = candidate.bestLabel,
+                            resourceId = candidate.resourceId
+                        ) && candidate.isExplicitIgnoredControl(rootArea)
+                    )
+            }
+        if (candidates.isEmpty()) return true
+        return candidates.any { it.isEditableLike() }
+    }
+
     private fun XmlNodeCandidate.isExplicitIgnoredControl(rootArea: Int): Boolean {
         val text = listOfNotNull(bestLabel, resourceId, className).joinToString(" ").lowercase()
         if (OOB_CONTROL_HINTS.any { text.contains(it) }) return true
@@ -2063,6 +2100,16 @@ class ManualVlmTraceRecorder(
                 .coerceAtLeast(MAX_IGNORED_CONTROL_AREA_PX)
         }
         return area <= maxControlArea
+    }
+
+    private fun XmlNodeCandidate.isEditableLike(): Boolean {
+        val text = listOfNotNull(className, resourceId, bestLabel)
+            .joinToString(" ")
+            .lowercase()
+        return editable ||
+            text.contains("edittext") ||
+            text.contains("textinput") ||
+            text.contains("editable")
     }
 
     private fun packageNameFromXml(xml: String?): String? =
@@ -2351,6 +2398,7 @@ class ManualVlmTraceRecorder(
         "event_has_source" to false,
         "recording_backend" to OVERLAY_TOUCH_BACKEND,
         "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
+        "execution_mode" to SYNTHETIC_REPLAY_EXECUTION_MODE,
         "gesture_duration_ms" to gesture.durationMs,
         "gesture_distance_px" to gesture.distancePx,
         "direction" to overlaySwipeDirectionName(gesture).takeIf { gesture.actionName == "swipe" },
@@ -2468,6 +2516,7 @@ class ManualVlmTraceRecorder(
             "overlay_touch" to linkedMapOf(
                 "available" to overlayTouchAvailable,
                 "backend" to OVERLAY_TOUCH_BACKEND,
+                "execution_mode" to SYNTHETIC_REPLAY_EXECUTION_MODE,
                 "started_gesture_count" to overlayGestureStartedCount,
                 "recorded_gesture_count" to overlayGestureRecordedCount,
                 "ignored_control_gesture_count" to overlayGestureIgnoredControlCount,
@@ -2496,6 +2545,7 @@ class ManualVlmTraceRecorder(
                     else -> "accessibility_event"
                 },
                 "overlay_touch_available" to overlayTouchAvailable,
+                "execution_mode" to if (overlayTouchAvailable) SYNTHETIC_REPLAY_EXECUTION_MODE else null,
                 "raw_touch_enabled" to enableRawTouch,
                 "raw_touch_required" to false,
                 "a11_replay_actions_enabled" to !overlayTouchAvailable,
@@ -2685,11 +2735,13 @@ class ManualVlmTraceRecorder(
         private const val DUPLICATE_EVENT_WINDOW_MS = 400L
         private const val OVERLAY_TOUCH_BACKEND = "overlay_touch"
         private const val SCREEN_ABSOLUTE_COORDINATE_SPACE = "screen_absolute_px"
+        private const val SYNTHETIC_REPLAY_EXECUTION_MODE = "synthetic_replay"
         private const val OVERLAY_TOUCH_SETTLE_MS = 350L
         private const val OVERLAY_POST_RECORD_STOP_TIMEOUT_MS = 1200L
         private const val OVERLAY_LONG_PRESS_MIN_DURATION_MS = 600L
         private const val OVERLAY_SWIPE_MIN_DURATION_MS = 120L
         private const val OVERLAY_SWIPE_MIN_DISTANCE_PX = 16f
+        private const val OVERLAY_CLICK_REPLAY_TIMEOUT_MS = 650L
         private const val RAW_TOUCH_BACKEND = "device_getevent"
         private const val RAW_TOUCH_SETTLE_MS = 350L
         private const val MAX_LABEL_LENGTH = 80

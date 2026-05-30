@@ -866,6 +866,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
 
       final userMessage = latestUserUtterance();
       final attachments = _latestUserAgentAttachments();
+      final toolProfile = omniflowToolProfileForMessage(userMessage);
 
       final success = await AssistsMessageService.createAgentTask(
         taskId: aiMessageId,
@@ -879,6 +880,7 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
         modelOverride: _buildAgentModelOverridePayload(),
         reasoningEffort: _activeConversationReasoningEffort,
         terminalEnvironment: _buildAgentTerminalEnvironmentPayload(),
+        toolProfile: toolProfile,
       );
       if (!success) {
         _runtimeCoordinator.unregisterTask(aiMessageId);

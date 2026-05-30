@@ -908,6 +908,8 @@ Actual output:
       expect(prompt, contains('OmniFlow Function Enhancer skill contract'));
       expect(prompt, contains('candidate_bindings'));
       expect(prompt, contains('cleanup_action'));
+      expect(prompt, contains('user-visible operation sequence'));
+      expect(prompt, contains('success signal when known'));
       expect(prompt, contains(r'$.execution.steps[1].args.content'));
       expect(prompt, contains('Work one section at a time'));
       expect(prompt, contains('enhanced, unchanged, partial, or failed'));

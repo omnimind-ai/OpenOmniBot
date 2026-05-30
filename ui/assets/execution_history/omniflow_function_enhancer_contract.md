@@ -1,8 +1,14 @@
 OmniFlow Function Enhancer skill contract:
 - This is the saved Function enhancement pass; RunLog is provenance only.
+- Save changes only by calling `update_function`; do not hand-register rewritten Function JSON.
 - Improve reuse clarity without silently changing execution.
 - Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
+- Explicit user corrections such as `应该点「外卖」而不是点「美食」` must use `update_function` with mode=repair and a replace_target op.
+- Repair mode may update the selected step's target_description, selector hints, and coordinates/bounds when the desired node is found in XML.
+- Insert/delete executable actions only when the user explicitly asks for it; call `update_function` with mode=repair, allowStructuralChange=true, and an insert_step/delete_step op.
+- If the target step is ambiguous, return/ask for confirmation instead of guessing.
 - Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
+- Header enhancement must write a compact but detailed reusable description that helps the Agent decide when to call the Function later. Include the user-visible operation sequence, required app/page conditions, runtime inputs, and success signal when known; avoid coordinates and internal implementation details.
 - Per-step enhancement must mark each step with useful/merge/drop/noise metadata when applicable, but this metadata must not change executable replay by itself.
 - If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
 - The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.

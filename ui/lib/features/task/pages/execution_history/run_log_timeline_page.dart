@@ -231,12 +231,28 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       final payload = await AssistsMessageService.getInternalRunLogTimeline(
         runId: widget.runId,
       );
+      final restoredBinding = await _restoreRegisteredFunctionBinding(payload);
       if (!mounted) return;
       setState(() {
         _payload = payload;
         _cards = _extractTimelineCards(payload);
         final error = _runLogPayloadError(context, payload);
         _error = error;
+        _savedFunctionSpec = restoredBinding?.spec;
+        _savedFunctionImportResult = restoredBinding?.importResult;
+        if (restoredBinding != null) {
+          _functionPanelStatus = _RunLogFunctionPanelStatus.saved;
+          _functionPanelMessage = _text(
+            context,
+            '已保存为复用指令',
+            'Saved as reusable command',
+          );
+          _functionPanelError = null;
+        } else if (_functionPanelStatus == _RunLogFunctionPanelStatus.saved) {
+          _functionPanelStatus = _RunLogFunctionPanelStatus.idle;
+          _functionPanelMessage = null;
+          _functionPanelError = null;
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -246,6 +262,48 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<_RunLogRegisteredFunctionBinding?> _restoreRegisteredFunctionBinding(
+    Map<String, dynamic> payload,
+  ) async {
+    final functionId = _registeredFunctionIdFromPayload(payload);
+    if (functionId.isEmpty) return null;
+
+    var specJson = _registeredFunctionSpecFromPayload(payload);
+    if (specJson.isEmpty) {
+      final fetched = await AssistsMessageService.getOobReusableFunction(
+        functionId,
+      ).catchError((_) => null);
+      specJson = _asStringKeyMap(fetched);
+    }
+    if (specJson.isEmpty) {
+      specJson = _minimalRegisteredFunctionSpecFromPayload(payload, functionId);
+    }
+    final useEnglish = _localeValue(context, zh: false, en: true);
+    final agentPrompt = RunLogReusableFunctionConverter.buildAgentPrompt(
+      specJson,
+      useEnglish: useEnglish,
+    );
+    final spec = RunLogReusableFunctionSpec(
+      json: specJson,
+      agentPrompt: agentPrompt,
+      aiEnhanced: false,
+    );
+    final importResult = UtgRunLogImportResult.fromMap({
+      'success': true,
+      'run_id': widget.runId,
+      'function_id': functionId,
+      'created_function_id': functionId,
+      'functions_created': 0,
+      'asset_kind': 'oob_reusable_function',
+      'asset_state': 'native_local',
+      'source_run_ids': <String>[widget.runId],
+    });
+    return _RunLogRegisteredFunctionBinding(
+      spec: spec,
+      importResult: importResult,
+    );
   }
 
   @override
@@ -668,7 +726,9 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       );
       if (!mounted) return;
       _attachRunLogEnhancementJob(job);
-      _applyRunLogEnhancementJob(job);
+      final latestJob = await _latestEnhancementJobState(job);
+      if (!mounted) return;
+      _applyRunLogEnhancementJob(latestJob);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -865,6 +925,79 @@ UtgRunLogImportResult? _runLogImportResultFromEnhancementJob(
     'asset_kind': result['asset_kind'] ?? result['function_kind'],
     'asset_state': result['asset_state'],
   });
+}
+
+Future<RunLogFunctionEnhancementJob> _latestEnhancementJobState(
+  RunLogFunctionEnhancementJob job,
+) async {
+  final latest = await RunLogFunctionEnhancementJobService.latestFor(
+    runId: job.runId,
+    functionId: job.functionId,
+  );
+  if (latest?.jobId == job.jobId) {
+    return latest!;
+  }
+  return job;
+}
+
+class _RunLogRegisteredFunctionBinding {
+  const _RunLogRegisteredFunctionBinding({
+    required this.spec,
+    required this.importResult,
+  });
+
+  final RunLogReusableFunctionSpec spec;
+  final UtgRunLogImportResult importResult;
+}
+
+String _registeredFunctionIdFromPayload(Map<String, dynamic> payload) {
+  final ids = payload['registered_function_ids'];
+  return _firstNonBlank([
+    payload['registered_function_id'],
+    payload['registeredFunctionId'],
+    if (ids is List && ids.isNotEmpty) ids.first,
+    _asStringKeyMap(payload['registered_function_summary'])['function_id'],
+    _asStringKeyMap(payload['registeredFunctionSummary'])['function_id'],
+  ]);
+}
+
+Map<String, dynamic> _registeredFunctionSpecFromPayload(
+  Map<String, dynamic> payload,
+) {
+  return _asStringKeyMap(
+    payload['registered_function_spec'] ?? payload['registeredFunctionSpec'],
+  );
+}
+
+Map<String, dynamic> _minimalRegisteredFunctionSpecFromPayload(
+  Map<String, dynamic> payload,
+  String functionId,
+) {
+  final summary = _asStringKeyMap(
+    payload['registered_function_summary'] ??
+        payload['registeredFunctionSummary'],
+  );
+  return <String, dynamic>{
+    'schema_version': 'oob.reusable_function.v1',
+    'function_id': functionId,
+    'name': _firstNonBlank([
+      summary['name'],
+      payload['goal'],
+      payload['operation_description'],
+      functionId,
+    ]),
+    'description': _firstNonBlank([
+      summary['description'],
+      payload['operation_description'],
+      payload['goal'],
+    ]),
+    'source': <String, dynamic>{'kind': 'run_log', 'run_id': payload['run_id']},
+    'parameters': const <dynamic>[],
+    'execution': <String, dynamic>{
+      'kind': 'tool_sequence',
+      'steps': const <dynamic>[],
+    },
+  };
 }
 
 class _RunLogFunctionStatusStrip extends StatelessWidget {
@@ -3363,7 +3496,9 @@ class _ReusableFunctionSpecSheetState
       );
       if (!mounted) return;
       _attachEnhancementJob(job);
-      _applyEnhancementJob(job, showTerminalToast: false);
+      final latestJob = await _latestEnhancementJobState(job);
+      if (!mounted) return;
+      _applyEnhancementJob(latestJob, showTerminalToast: false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -7085,8 +7220,6 @@ Map<String, dynamic> _functionStepCompileResult(Map<String, dynamic> step) {
   return <String, dynamic>{
     if (step.containsKey('kind')) 'kind': step['kind'],
     if (step.containsKey('executor')) 'executor': step['executor'],
-    if (step.containsKey('postcondition'))
-      'postcondition': step['postcondition'],
     if (step.containsKey('tool_binding')) 'tool_binding': step['tool_binding'],
     if (step.containsKey('toolBinding')) 'tool_binding': step['toolBinding'],
     if (step.containsKey('agent_call')) 'agent_call': step['agent_call'],

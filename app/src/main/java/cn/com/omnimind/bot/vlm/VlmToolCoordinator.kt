@@ -79,13 +79,9 @@ object VlmToolCoordinator {
     private const val RECALL_OBSERVE_INTERVAL_MS = 250L
     private const val MIN_WAIT_TIMEOUT_MS = 30_000L
     private const val MAX_WAIT_TIMEOUT_MS = 600_000L
-    private const val FINAL_STATE_SETTLE_MS = 1_200L
-    private const val FINAL_STATE_OBSERVE_ATTEMPTS = 4
-    private const val FINAL_STATE_OBSERVE_INTERVAL_MS = 350L
     private const val MAX_RECALL_RECOVERY_XML_CHARS = 6000
     private const val DEFAULT_MAX_STEPS = 12
     private const val MAX_MAX_STEPS = 64
-    internal const val FINAL_STATE_MISMATCH_ERROR_CODE = "OOB_FINAL_STATE_MISMATCH"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -263,7 +259,6 @@ object VlmToolCoordinator {
             goal = boundedRequest.goal,
             progressReporter = progressReporter,
             waitTimeoutMs = executionRequest.waitTimeoutMs,
-            targetPackageName = executionRequest.packageName,
             returnOnWaitingInput = returnOnWaitingInput
         )
     }
@@ -303,7 +298,6 @@ object VlmToolCoordinator {
             goal = goal,
             progressReporter = progressReporter,
             waitTimeoutMs = request?.waitTimeoutMs,
-            targetPackageName = request?.packageName,
         )
     }
 
@@ -428,8 +422,7 @@ object VlmToolCoordinator {
                     taskId = taskId,
                     goal = taskState.goal,
                     progressReporter = progressReporter,
-                    waitTimeoutMs = executionRequest.waitTimeoutMs,
-                    targetPackageName = executionRequest.packageName
+                    waitTimeoutMs = executionRequest.waitTimeoutMs
                 )
             }
             delay(McpTaskManager.POLL_INTERVAL_MS)
@@ -446,7 +439,6 @@ object VlmToolCoordinator {
         goal: String,
         progressReporter: VlmToolProgressReporter,
         waitTimeoutMs: Long? = null,
-        targetPackageName: String? = null,
         returnOnWaitingInput: Boolean = true,
     ): VlmToolOutcome {
         val startWaitTime = System.currentTimeMillis()
@@ -521,11 +513,7 @@ object VlmToolCoordinator {
                         state.summaryUnavailable = true
                         state.markStateChanged()
                     }
-                    return finishOutcomeAfterPostcondition(
-                        state = state,
-                        progressReporter = progressReporter,
-                        targetPackageName = targetPackageName,
-                    )
+                    return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
                 }
                 TaskStatus.ERROR -> {
                     return state.toOutcome(
@@ -563,11 +551,7 @@ object VlmToolCoordinator {
 
         val state = McpTaskManager.getTask(taskId)
         if (state?.status == TaskStatus.FINISHED) {
-            return finishOutcomeAfterPostcondition(
-                state = state,
-                progressReporter = progressReporter,
-                targetPackageName = targetPackageName,
-            )
+            return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
         }
         val timeoutState = state ?: TaskState(taskId = taskId, goal = goal, status = TaskStatus.RUNNING)
         if (timeoutState.status !in setOf(TaskStatus.FINISHED, TaskStatus.ERROR, TaskStatus.CANCELLED)) {
@@ -577,87 +561,6 @@ object VlmToolCoordinator {
             status = VlmToolOutcomeStatus.TIMEOUT,
             message = "任务在等待时间内仍未结束，已停止设备端视觉执行。"
         )
-    }
-
-    private suspend fun finishOutcomeAfterPostcondition(
-        state: TaskState,
-        progressReporter: VlmToolProgressReporter,
-        targetPackageName: String?,
-    ): VlmToolOutcome {
-        return state.toOutcome(VlmToolOutcomeStatus.FINISHED)
-    }
-
-    private suspend fun verifyFinalTargetPackage(targetPackageName: String?): FinalTargetPackageCheck {
-        val normalizedTarget = targetPackageName.normalizePackageName()
-            ?: return FinalTargetPackageCheck.ok(targetPackageName = null, observedPackageName = null)
-        delay(FINAL_STATE_SETTLE_MS)
-        var lastObserved: String? = null
-        repeat(FINAL_STATE_OBSERVE_ATTEMPTS) { attempt ->
-            val observed = readCurrentPackageForFinalCheck()
-            if (observed != null) lastObserved = observed
-            val check = evaluateFinalTargetPackage(
-                targetPackageName = normalizedTarget,
-                observedPackageName = observed,
-            )
-            if (check.ok) return check
-            if (attempt < FINAL_STATE_OBSERVE_ATTEMPTS - 1) {
-                delay(FINAL_STATE_OBSERVE_INTERVAL_MS)
-            }
-        }
-        return evaluateFinalTargetPackage(
-            targetPackageName = normalizedTarget,
-            observedPackageName = lastObserved,
-        )
-    }
-
-    private fun readCurrentPackageForFinalCheck(): String? =
-        runCatching { AccessibilityController.getPackageName() }
-            .getOrNull()
-            .normalizePackageName()
-
-    private fun String?.normalizePackageName(): String? =
-        this?.trim()?.takeIf { it.isNotEmpty() }
-
-    internal fun evaluateFinalTargetPackage(
-        targetPackageName: String?,
-        observedPackageName: String?,
-    ): FinalTargetPackageCheck {
-        val target = targetPackageName.normalizePackageName()
-            ?: return FinalTargetPackageCheck.ok(targetPackageName = null, observedPackageName = observedPackageName.normalizePackageName())
-        val observed = observedPackageName.normalizePackageName()
-        if (observed == target) {
-            return FinalTargetPackageCheck.ok(targetPackageName = target, observedPackageName = observed)
-        }
-        return FinalTargetPackageCheck(
-            ok = false,
-            targetPackageName = target,
-            observedPackageName = observed,
-            errorCode = FINAL_STATE_MISMATCH_ERROR_CODE,
-            message = buildString {
-                append("任务报告已完成，但当前页面不在目标应用。")
-                append(" target=")
-                append(target)
-                append(" observed=")
-                append(observed ?: "unknown")
-            }
-        )
-    }
-
-    internal data class FinalTargetPackageCheck(
-        val ok: Boolean,
-        val targetPackageName: String?,
-        val observedPackageName: String?,
-        val errorCode: String? = null,
-        val message: String? = null,
-    ) {
-        companion object {
-            fun ok(targetPackageName: String?, observedPackageName: String?): FinalTargetPackageCheck =
-                FinalTargetPackageCheck(
-                    ok = true,
-                    targetPackageName = targetPackageName,
-                    observedPackageName = observedPackageName,
-                )
-        }
     }
 
     internal fun resolveWaitTimeoutMs(requestedWaitTimeoutMs: Long?): Long {

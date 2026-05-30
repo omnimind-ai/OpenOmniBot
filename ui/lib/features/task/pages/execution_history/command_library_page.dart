@@ -703,6 +703,25 @@ class _CommandFunctionDetailSheetState
     await _saveSpec(updatedSpec, context.l10n.functionLibraryStepDeleted);
   }
 
+  Future<void> _addStep(_FunctionDetailSnapshot detail) async {
+    if (_isSaving || detail.spec.isEmpty) return;
+    final newStep = await _showFunctionStepEditorDialog(
+      context,
+      _newFunctionStepTemplate(detail.steps.length),
+      isNew: true,
+    );
+    if (newStep == null || !mounted) return;
+    final updatedSpec = _appendFunctionStep(detail.spec, newStep);
+    if (updatedSpec == null) {
+      showToast(
+        context.l10n.functionLibraryStepSaveFailed,
+        type: ToastType.error,
+      );
+      return;
+    }
+    await _saveSpec(updatedSpec, _text(context, '步骤已添加', 'Step added'));
+  }
+
   Future<void> _saveSpec(
     Map<String, dynamic> updatedSpec,
     String successMessage,
@@ -853,6 +872,32 @@ class _CommandFunctionDetailSheetState
                               onRun: _isSaving ? null : () => widget.onRun(),
                             ),
                             const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailSectionTitle(
+                                    zh: '执行步骤',
+                                    en: 'Steps',
+                                  ),
+                                ),
+                                Tooltip(
+                                  message: _text(context, '添加步骤', 'Add step'),
+                                  child: IconButton(
+                                    icon: const Icon(
+                                      Icons.add_circle_outline_rounded,
+                                      size: 20,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    color: palette.textSecondary,
+                                    onPressed:
+                                        (!_isSaving && detail.spec.isNotEmpty)
+                                        ? () => _addStep(detail)
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
                             if (detail.steps.isEmpty)
                               _DetailEmptyText(
                                 text: _text(context, '暂无步骤', 'No steps'),
@@ -1552,20 +1597,181 @@ class _FunctionDetailSnapshot {
   }
 }
 
+const _customStepToolValue = '__custom_step_tool__';
+
+enum _FunctionStepArgType { string, integer, number, boolean }
+
+class _FunctionStepArgField {
+  const _FunctionStepArgField(
+    this.key, {
+    this.type = _FunctionStepArgType.string,
+    this.hint = '',
+  });
+
+  final String key;
+  final _FunctionStepArgType type;
+  final String hint;
+}
+
+class _FunctionStepOperationDefinition {
+  const _FunctionStepOperationDefinition({
+    required this.value,
+    required this.zhLabel,
+    required this.enLabel,
+    this.argsTemplate = const {},
+    this.fields = const [],
+  });
+
+  final String value;
+  final String zhLabel;
+  final String enLabel;
+  final Map<String, dynamic> argsTemplate;
+  final List<_FunctionStepArgField> fields;
+
+  String label(BuildContext context) => _text(context, zhLabel, enLabel);
+}
+
+const _functionStepOperations = <_FunctionStepOperationDefinition>[
+  _FunctionStepOperationDefinition(
+    value: 'click',
+    zhLabel: '点击',
+    enLabel: 'Click',
+    fields: [
+      _FunctionStepArgField(
+        'x',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField(
+        'y',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField('target_description'),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'long_press',
+    zhLabel: '长按',
+    enLabel: 'Long press',
+    fields: [
+      _FunctionStepArgField(
+        'x',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField(
+        'y',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField('duration_ms', type: _FunctionStepArgType.integer),
+      _FunctionStepArgField('target_description'),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'input_text',
+    zhLabel: '输入文本',
+    enLabel: 'Input text',
+    fields: [
+      _FunctionStepArgField('text'),
+      _FunctionStepArgField(
+        'x',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField(
+        'y',
+        type: _FunctionStepArgType.number,
+        hint: '0-1000',
+      ),
+      _FunctionStepArgField('target_description'),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'swipe',
+    zhLabel: '滑动',
+    enLabel: 'Swipe',
+    fields: [
+      _FunctionStepArgField('x1', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('y1', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('x2', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('y2', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('duration_ms', type: _FunctionStepArgType.integer),
+      _FunctionStepArgField('direction'),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'scroll',
+    zhLabel: '滚动',
+    enLabel: 'Scroll',
+    fields: [
+      _FunctionStepArgField('direction'),
+      _FunctionStepArgField('x1', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('y1', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('x2', type: _FunctionStepArgType.number),
+      _FunctionStepArgField('y2', type: _FunctionStepArgType.number),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'open_app',
+    zhLabel: '打开应用',
+    enLabel: 'Open app',
+    argsTemplate: {'reset_task': true, 'launch_mode': 'fresh_task'},
+    fields: [
+      _FunctionStepArgField('package_name'),
+      _FunctionStepArgField('reset_task', type: _FunctionStepArgType.boolean),
+      _FunctionStepArgField('launch_mode'),
+    ],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'press_back',
+    zhLabel: '返回',
+    enLabel: 'Back',
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'press_home',
+    zhLabel: '回到主页',
+    enLabel: 'Home',
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'press_key',
+    zhLabel: '按键',
+    enLabel: 'Press key',
+    fields: [_FunctionStepArgField('key')],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'hot_key',
+    zhLabel: '组合键',
+    enLabel: 'Hot key',
+    fields: [_FunctionStepArgField('key')],
+  ),
+  _FunctionStepOperationDefinition(
+    value: 'finished',
+    zhLabel: '完成',
+    enLabel: 'Finished',
+    argsTemplate: {'content': 'Done'},
+    fields: [_FunctionStepArgField('content')],
+  ),
+];
+
 Future<Map<String, dynamic>?> _showFunctionStepEditorDialog(
   BuildContext context,
-  Map<String, dynamic> rawStep,
-) {
+  Map<String, dynamic> rawStep, {
+  bool isNew = false,
+}) {
   return showDialog<Map<String, dynamic>>(
     context: context,
-    builder: (dialogContext) => _FunctionStepEditorDialog(rawStep: rawStep),
+    builder: (dialogContext) =>
+        _FunctionStepEditorDialog(rawStep: rawStep, isNew: isNew),
   );
 }
 
 class _FunctionStepEditorDialog extends StatefulWidget {
-  const _FunctionStepEditorDialog({required this.rawStep});
+  const _FunctionStepEditorDialog({required this.rawStep, required this.isNew});
 
   final Map<String, dynamic> rawStep;
+  final bool isNew;
 
   @override
   State<_FunctionStepEditorDialog> createState() =>
@@ -1574,37 +1780,133 @@ class _FunctionStepEditorDialog extends StatefulWidget {
 
 class _FunctionStepEditorDialogState extends State<_FunctionStepEditorDialog> {
   late final TextEditingController _titleController;
-  late final TextEditingController _toolController;
+  late final TextEditingController _customToolController;
   late final TextEditingController _argsController;
+  final Map<String, TextEditingController> _argControllers = {};
+  late String _selectedTool;
   String? _errorText;
 
   @override
   void initState() {
     super.initState();
+    final rawTool =
+        (widget.rawStep['tool'] ?? widget.rawStep['omniflow_action'] ?? '')
+            .toString()
+            .trim();
+    final operation = _operationDefinitionForTool(rawTool);
+    _selectedTool = operation?.value ?? _customStepToolValue;
     _titleController = TextEditingController(
       text: (widget.rawStep['title'] ?? '').toString(),
     );
-    _toolController = TextEditingController(
-      text: (widget.rawStep['tool'] ?? widget.rawStep['omniflow_action'] ?? '')
-          .toString(),
+    _customToolController = TextEditingController(
+      text: operation == null ? rawTool : '',
     );
     _argsController = TextEditingController(
       text: const JsonEncoder.withIndent('  ').convert(
-        widget.rawStep['args'] is Map ? widget.rawStep['args'] : const {},
+        widget.rawStep['args'] is Map
+            ? _stringKeyMap(widget.rawStep['args'])
+            : _selectedOperation?.argsTemplate ?? const {},
       ),
     );
+    _rebuildArgControllers(_decodedArgsOrEmpty());
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _toolController.dispose();
+    _customToolController.dispose();
     _argsController.dispose();
+    for (final controller in _argControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
+  _FunctionStepOperationDefinition? get _selectedOperation {
+    for (final operation in _functionStepOperations) {
+      if (operation.value == _selectedTool) return operation;
+    }
+    return null;
+  }
+
+  void _onOperationChanged(String? value) {
+    if (value == null || value == _selectedTool) return;
+    final previousArgs = _decodedArgsOrEmpty();
+    setState(() {
+      _selectedTool = value;
+      _errorText = null;
+      final definition = _selectedOperation;
+      if (definition != null) {
+        final nextArgs = <String, dynamic>{...definition.argsTemplate};
+        for (final field in definition.fields) {
+          if (previousArgs.containsKey(field.key)) {
+            nextArgs[field.key] = previousArgs[field.key];
+          }
+        }
+        _setArgsJson(nextArgs);
+        _rebuildArgControllers(nextArgs);
+      } else {
+        _rebuildArgControllers(previousArgs);
+      }
+    });
+  }
+
+  void _rebuildArgControllers(Map<String, dynamic> args) {
+    for (final controller in _argControllers.values) {
+      controller.dispose();
+    }
+    _argControllers.clear();
+    final fields =
+        _selectedOperation?.fields ?? const <_FunctionStepArgField>[];
+    for (final field in fields) {
+      _argControllers[field.key] = TextEditingController(
+        text: _argFieldText(args[field.key]),
+      );
+    }
+  }
+
+  void _syncArgsJsonFromFields() {
+    final definition = _selectedOperation;
+    if (definition == null) return;
+    final args = _decodedArgsOrEmpty();
+    for (final field in definition.fields) {
+      final raw = _argControllers[field.key]?.text.trim() ?? '';
+      if (raw.isEmpty) {
+        args.remove(field.key);
+      } else {
+        args[field.key] = _parseArgFieldValue(raw, field.type);
+      }
+    }
+    _setArgsJson(args);
+  }
+
+  void _setArgsJson(Map<String, dynamic> args) {
+    final pretty = const JsonEncoder.withIndent('  ').convert(args);
+    _argsController.value = TextEditingValue(
+      text: pretty,
+      selection: TextSelection.collapsed(offset: pretty.length),
+    );
+  }
+
+  Map<String, dynamic> _decodedArgsOrEmpty() {
+    try {
+      final decoded = jsonDecode(
+        _argsController.text.trim().isEmpty ? '{}' : _argsController.text,
+      );
+      if (decoded is Map) return _stringKeyMap(decoded);
+    } catch (_) {
+      return const {};
+    }
+    return const {};
+  }
+
   void _save() {
-    final enteredTool = _toolController.text.trim();
+    if (_selectedOperation != null) {
+      _syncArgsJsonFromFields();
+    }
+    final enteredTool = _selectedTool == _customStepToolValue
+        ? _customToolController.text.trim()
+        : _selectedTool;
     if (enteredTool.isEmpty) {
       setState(() {
         _errorText = context.l10n.functionLibraryStepToolRequired;
@@ -1631,34 +1933,34 @@ class _FunctionStepEditorDialogState extends State<_FunctionStepEditorDialog> {
       });
       return;
     }
-    final updated = Map<String, dynamic>.from(widget.rawStep);
-    final title = _titleController.text.trim();
-    updated['title'] = title;
-    updated['summary'] = title;
-    updated['tool'] = tool;
-    updated['args'] = Map<String, dynamic>.from(
-      decodedArgs.map((key, value) => MapEntry(key.toString(), value)),
+    Navigator.of(context).pop(
+      _buildFunctionStepFromEdit(
+        rawStep: widget.rawStep,
+        title: _titleController.text.trim(),
+        tool: tool,
+        args: _stringKeyMap(decodedArgs),
+      ),
     );
-    final executor = (updated['executor'] ?? '').toString().trim();
-    if (executor == 'omniflow') {
-      updated['omniflow_action'] = tool;
-      updated['local_action'] = tool;
-      updated['callable_tool'] = tool;
-    } else if (executor != 'agent') {
-      updated['callable_tool'] = tool;
-    }
-    Navigator.of(context).pop(updated);
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final selectedDefinition = _selectedOperation;
+    final fields =
+        selectedDefinition?.fields ?? const <_FunctionStepArgField>[];
     return AlertDialog(
-      title: Text(context.l10n.functionLibraryStepEditTitle),
+      title: Text(
+        widget.isNew
+            ? _text(context, '添加步骤', 'Add step')
+            : context.l10n.functionLibraryStepEditTitle,
+      ),
       content: SizedBox(
-        width: 420,
+        width: 460,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextField(
                 controller: _titleController,
@@ -1669,15 +1971,79 @@ class _FunctionStepEditorDialogState extends State<_FunctionStepEditorDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              TextField(
-                controller: _toolController,
+              DropdownButtonFormField<String>(
+                value: _selectedTool,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText: context.l10n.functionLibraryStepToolLabel,
                   border: const OutlineInputBorder(),
                   isDense: true,
                 ),
+                items: [
+                  for (final operation in _functionStepOperations)
+                    DropdownMenuItem<String>(
+                      value: operation.value,
+                      child: Text(
+                        '${operation.value} · ${operation.label(context)}',
+                      ),
+                    ),
+                  DropdownMenuItem<String>(
+                    value: _customStepToolValue,
+                    child: Text(_text(context, '自定义工具', 'Custom tool')),
+                  ),
+                ],
+                onChanged: _onOperationChanged,
               ),
-              const SizedBox(height: 10),
+              if (_selectedTool == _customStepToolValue) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _customToolController,
+                  decoration: InputDecoration(
+                    labelText: _text(context, '工具名', 'Tool name'),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                _text(context, '参数', 'Parameters'),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: palette.textTertiary,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (fields.isEmpty)
+                Text(
+                  _text(context, '此操作无需参数', 'This action has no parameters'),
+                  style: TextStyle(fontSize: 12, color: palette.textTertiary),
+                )
+              else
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final field in fields)
+                      SizedBox(
+                        width: _fieldWidth(field),
+                        child: TextField(
+                          controller: _argControllers[field.key],
+                          keyboardType: _keyboardTypeForArgField(field.type),
+                          decoration: InputDecoration(
+                            labelText: field.key,
+                            helperText: field.hint.isEmpty ? null : field.hint,
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => _syncArgsJsonFromFields(),
+                        ),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _argsController,
                 keyboardType: TextInputType.multiline,
@@ -1713,13 +2079,184 @@ class _FunctionStepEditorDialogState extends State<_FunctionStepEditorDialog> {
           child: Text(context.l10n.omniflowCancel),
         ),
         FilledButton.icon(
-          icon: const Icon(Icons.save_outlined, size: 18),
-          label: Text(context.l10n.omniflowSaveConfig),
+          icon: Icon(
+            widget.isNew ? Icons.add_rounded : Icons.save_outlined,
+            size: 18,
+          ),
+          label: Text(
+            widget.isNew
+                ? _text(context, '添加', 'Add')
+                : context.l10n.omniflowSaveConfig,
+          ),
           onPressed: _save,
         ),
       ],
     );
   }
+}
+
+Map<String, dynamic> _newFunctionStepTemplate(int index) {
+  const action = 'click';
+  final stepId = 'step_${index + 1}';
+  return <String, dynamic>{
+    'id': stepId,
+    'step_id': stepId,
+    'index': index,
+    'title': action,
+    'summary': action,
+    'kind': 'omniflow_action',
+    'executor': 'omniflow',
+    'omniflow_action': action,
+    'local_action': action,
+    'model_free': true,
+    'scriptable': true,
+    'tool': action,
+    'callable_tool': action,
+    'args': const <String, dynamic>{},
+  };
+}
+
+_FunctionStepOperationDefinition? _operationDefinitionForTool(String tool) {
+  final action =
+      RunLogReplayPolicy.omniflowActionForToolName(tool) ??
+      RunLogReplayPolicy.normalizeToolName(tool);
+  for (final operation in _functionStepOperations) {
+    if (operation.value == action) return operation;
+  }
+  return null;
+}
+
+Map<String, dynamic> _stringKeyMap(dynamic value) {
+  if (value is! Map) return const {};
+  return Map<String, dynamic>.fromEntries(
+    value.entries.map(
+      (entry) =>
+          MapEntry(entry.key.toString(), _jsonCompatibleValue(entry.value)),
+    ),
+  );
+}
+
+dynamic _jsonCompatibleValue(dynamic value) {
+  if (value is Map) return _stringKeyMap(value);
+  if (value is List) {
+    return value.map(_jsonCompatibleValue).toList(growable: false);
+  }
+  return value;
+}
+
+String _argFieldText(dynamic value) {
+  if (value == null) return '';
+  if (value is String || value is num || value is bool) {
+    return value.toString();
+  }
+  return jsonEncode(value);
+}
+
+dynamic _parseArgFieldValue(String raw, _FunctionStepArgType type) {
+  switch (type) {
+    case _FunctionStepArgType.integer:
+      return int.tryParse(raw) ?? raw;
+    case _FunctionStepArgType.number:
+      return num.tryParse(raw) ?? raw;
+    case _FunctionStepArgType.boolean:
+      final normalized = raw.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+      return raw;
+    case _FunctionStepArgType.string:
+      return raw;
+  }
+}
+
+TextInputType _keyboardTypeForArgField(_FunctionStepArgType type) {
+  switch (type) {
+    case _FunctionStepArgType.integer:
+      return TextInputType.number;
+    case _FunctionStepArgType.number:
+      return const TextInputType.numberWithOptions(decimal: true);
+    case _FunctionStepArgType.boolean:
+    case _FunctionStepArgType.string:
+      return TextInputType.text;
+  }
+}
+
+double _fieldWidth(_FunctionStepArgField field) {
+  if (field.type == _FunctionStepArgType.boolean) return 132;
+  if (field.type == _FunctionStepArgType.integer ||
+      field.type == _FunctionStepArgType.number) {
+    return 136;
+  }
+  switch (field.key) {
+    case 'text':
+    case 'content':
+    case 'package_name':
+    case 'target_description':
+      return 214;
+    default:
+      return 160;
+  }
+}
+
+Map<String, dynamic> _buildFunctionStepFromEdit({
+  required Map<String, dynamic> rawStep,
+  required String title,
+  required String tool,
+  required Map<String, dynamic> args,
+}) {
+  final updated = _stringKeyMap(rawStep);
+  final normalizedTool = RunLogReplayPolicy.normalizeToolName(tool);
+  final action = RunLogReplayPolicy.omniflowActionForToolName(tool);
+  final effectiveTool = action ?? normalizedTool;
+  final effectiveTitle = title.isNotEmpty ? title : effectiveTool;
+
+  updated['title'] = effectiveTitle;
+  updated['summary'] = effectiveTitle;
+  updated['tool'] = effectiveTool;
+  updated['args'] = _stringKeyMap(args);
+
+  if (action != null) {
+    updated['kind'] = 'omniflow_action';
+    updated['executor'] = 'omniflow';
+    updated['omniflow_action'] = action;
+    updated['local_action'] = action;
+    updated['model_free'] = true;
+    updated['scriptable'] = true;
+    updated['tool'] = action;
+    updated['callable_tool'] = action;
+    updated.remove('agent_call');
+    updated.remove('fallback_prompt');
+    updated.remove('fallbackPrompt');
+    updated.remove('source_tool');
+    if (RunLogReplayPolicy.isCoordinateAction(action)) {
+      updated['coordinate_hook'] = 'omniflow';
+    } else {
+      updated.remove('coordinate_hook');
+    }
+  } else {
+    updated.remove('omniflow_action');
+    updated.remove('local_action');
+    updated.remove('coordinate_hook');
+    updated['tool'] = effectiveTool;
+    updated['callable_tool'] = effectiveTool;
+    final existingExecutor = (rawStep['executor'] ?? '').toString().trim();
+    if (existingExecutor == 'agent') {
+      updated['executor'] = 'agent';
+      updated['kind'] = updated['kind'] ?? 'agent_replan';
+      updated['model_free'] = false;
+      updated['scriptable'] = false;
+    } else {
+      updated['executor'] = 'tool';
+      updated['kind'] = 'tool_call';
+      updated['model_free'] = false;
+      updated['scriptable'] = true;
+    }
+  }
+
+  return updated;
 }
 
 Map<String, dynamic>? _replaceFunctionStep(
@@ -1732,7 +2269,9 @@ Map<String, dynamic>? _replaceFunctionStep(
   final updatedSpec = Map<String, dynamic>.from(
     cloned.map((key, value) => MapEntry(key.toString(), value)),
   );
-  final execution = _FunctionSummary._asMap(updatedSpec['execution']);
+  final execution = Map<String, dynamic>.from(
+    _FunctionSummary._asMap(updatedSpec['execution']),
+  );
   final rawSteps = execution['steps'];
   if (rawSteps is! List) return null;
   final steps = rawSteps
@@ -1752,52 +2291,291 @@ Map<String, dynamic>? _replaceFunctionStep(
   if (index < 0 || index >= steps.length) return null;
   steps[index] = replacement;
   execution['steps'] = steps;
-  execution['step_count'] = steps.length;
   updatedSpec['execution'] = execution;
-  _syncCanonicalInputActionAfterStepEdit(updatedSpec, index, replacement);
+  _syncFunctionExecutionCounts(updatedSpec, execution, steps);
+  _syncCanonicalActionAfterStepEdit(updatedSpec, index, replacement);
   _updateBoundParameterDefaults(updatedSpec, index, replacement);
-  final metadata = _FunctionSummary._asMap(updatedSpec['metadata']);
-  if (metadata.isNotEmpty) {
-    metadata['step_count'] = steps.length;
-    updatedSpec['metadata'] = metadata;
+  return updatedSpec;
+}
+
+Map<String, dynamic>? _appendFunctionStep(
+  Map<String, dynamic> spec,
+  Map<String, dynamic> step,
+) {
+  final cloned = jsonDecode(jsonEncode(spec));
+  if (cloned is! Map) return null;
+  final updatedSpec = Map<String, dynamic>.from(
+    cloned.map((key, value) => MapEntry(key.toString(), value)),
+  );
+  final execution = Map<String, dynamic>.from(
+    _FunctionSummary._asMap(updatedSpec['execution']),
+  );
+  final rawSteps = execution['steps'];
+  final steps = rawSteps is List
+      ? rawSteps
+            .whereType<Map>()
+            .map(
+              (item) => Map<String, dynamic>.from(
+                item.map((key, value) => MapEntry(key.toString(), value)),
+              ),
+            )
+            .toList()
+      : <Map<String, dynamic>>[];
+  final nextIndex = steps.length;
+  final normalizedStep = _functionStepAtIndex(step, nextIndex);
+  steps.add(normalizedStep);
+  execution['steps'] = steps;
+  updatedSpec['execution'] = execution;
+  _syncFunctionExecutionCounts(updatedSpec, execution, steps);
+
+  final rawActions = updatedSpec['actions'];
+  if (rawActions is List) {
+    final actions = List<dynamic>.from(rawActions);
+    final action = _canonicalActionFromStep(normalizedStep);
+    if (action != null) {
+      actions.add(action);
+      updatedSpec['actions'] = actions;
+    }
   }
   return updatedSpec;
 }
 
-void _syncCanonicalInputActionAfterStepEdit(
+Map<String, dynamic> _functionStepAtIndex(
+  Map<String, dynamic> rawStep,
+  int index,
+) {
+  final step = _stringKeyMap(rawStep);
+  final stepId = 'step_${index + 1}';
+  step['id'] = stepId;
+  step['step_id'] = stepId;
+  step['index'] = index;
+  final tool = (step['tool'] ?? step['omniflow_action'] ?? '').toString();
+  if ((step['title'] ?? '').toString().trim().isEmpty) {
+    step['title'] = tool.trim().isEmpty ? stepId : tool;
+  }
+  if ((step['summary'] ?? '').toString().trim().isEmpty) {
+    step['summary'] = step['title'];
+  }
+  return step;
+}
+
+void _syncFunctionExecutionCounts(
+  Map<String, dynamic> spec,
+  Map<String, dynamic> execution,
+  List<Map<String, dynamic>> steps,
+) {
+  final omniflowStepCount = steps
+      .where((step) => (step['executor'] ?? '').toString() == 'omniflow')
+      .length;
+  final agentStepCount = steps
+      .where((step) => (step['executor'] ?? '').toString() == 'agent')
+      .length;
+  final scriptableStepCount = steps
+      .where((step) => step['scriptable'] == true)
+      .length;
+  final modelFreeStepCount = steps
+      .where((step) => step['model_free'] == true)
+      .length;
+
+  execution['step_count'] = steps.length;
+  execution['omniflow_step_count'] = omniflowStepCount;
+  execution['agent_step_count'] = agentStepCount;
+  execution['requires_agent_fallback'] = agentStepCount > 0;
+
+  final metadata = _FunctionSummary._asMap(spec['metadata']);
+  if (metadata.isNotEmpty) {
+    metadata['step_count'] = steps.length;
+    metadata['scriptable_step_count'] = scriptableStepCount;
+    metadata['model_free_step_count'] = modelFreeStepCount;
+    metadata['omniflow_step_count'] = omniflowStepCount;
+    metadata['agent_step_count'] = agentStepCount;
+    metadata['requires_agent_fallback'] = agentStepCount > 0;
+    spec['metadata'] = metadata;
+  }
+}
+
+void _syncCanonicalActionAfterStepEdit(
   Map<String, dynamic> spec,
   int index,
   Map<String, dynamic> step,
 ) {
   final rawActions = spec['actions'];
   if (rawActions is! List || index < 0 || index >= rawActions.length) return;
-  final tool =
-      RunLogReplayPolicy.omniflowActionForToolName(
-        (step['tool'] ?? step['omniflow_action'] ?? '').toString(),
-      ) ??
-      (step['tool'] ?? step['omniflow_action'] ?? '').toString();
-  if (tool != 'input_text') return;
   final rawAction = rawActions[index];
-  if (rawAction is! Map) return;
-  final action = Map<String, dynamic>.from(
-    rawAction.map((key, value) => MapEntry(key.toString(), value)),
-  );
-  action['type'] = 'input_text';
-  final title = (step['title'] ?? '').toString().trim();
-  if (title.isNotEmpty) action['description'] = title;
-  final existingText = (action['text'] ?? '').toString();
-  if (!existingText.contains(r'${')) {
-    final args = _FunctionSummary._asMap(step['args']);
-    for (final key in const ['text', 'content', 'value']) {
-      if (args.containsKey(key)) {
-        action['text'] = args[key];
-        break;
-      }
-    }
-  }
+  final existingAction = rawAction is Map ? _stringKeyMap(rawAction) : null;
+  final action = _canonicalActionFromStep(step, existingAction: existingAction);
+  if (action == null) return;
   final actions = List<dynamic>.from(rawActions);
   actions[index] = action;
   spec['actions'] = actions;
+}
+
+Map<String, dynamic>? _canonicalActionFromStep(
+  Map<String, dynamic> step, {
+  Map<String, dynamic>? existingAction,
+}) {
+  final rawTool =
+      (step['tool'] ?? step['omniflow_action'] ?? step['callable_tool'] ?? '')
+          .toString();
+  final action =
+      RunLogReplayPolicy.omniflowActionForToolName(rawTool) ??
+      RunLogReplayPolicy.normalizeToolName(rawTool);
+  final args = _stringKeyMap(step['args']);
+  final description = (step['title'] ?? step['summary'] ?? '')
+      .toString()
+      .trim();
+  final output = <String, dynamic>{};
+  if (description.isNotEmpty) {
+    output['description'] = description;
+  }
+
+  switch (action) {
+    case 'click':
+    case 'long_press':
+      output['type'] = action;
+      final target = _canonicalPointTarget(args);
+      if (target != null) output['target'] = target;
+      final prompt = _firstNonBlankArg(args, const [
+        'target_description',
+        'targetDescription',
+        'clickPrompt',
+        'label',
+      ]);
+      if (prompt.isNotEmpty) output['prompt'] = prompt;
+      return output;
+    case 'input_text':
+      output['type'] = 'input_text';
+      final existingText = (existingAction?['text'] ?? '').toString();
+      if (existingText.contains(r'${')) {
+        output['text'] = existingAction!['text'];
+      } else {
+        final text = _firstPresentArg(args, const ['text', 'content', 'value']);
+        if (text != null) output['text'] = text;
+      }
+      final target = _canonicalPointTarget(args);
+      if (target != null && target['kind'] == 'coords') {
+        output['target'] = target;
+      }
+      final prompt = _firstNonBlankArg(args, const [
+        'target_description',
+        'targetDescription',
+        'label',
+        'selector',
+      ]);
+      if (prompt.isNotEmpty) output['prompt'] = prompt;
+      return output;
+    case 'scroll':
+    case 'swipe':
+      output['type'] = 'swipe';
+      final target = _canonicalSwipeTarget(args);
+      if (target != null) output['target'] = target;
+      final direction = _firstNonBlankArg(args, const [
+        'direction',
+        'scroll_direction',
+      ]);
+      if (direction.isNotEmpty) output['direction'] = direction;
+      final distance = _firstPresentArg(args, const [
+        'distance',
+        'scroll_distance',
+      ]);
+      if (distance != null) output['distance'] = distance;
+      final endX = _firstPresentArg(args, const ['x2', 'end_x', 'endX']);
+      final endY = _firstPresentArg(args, const ['y2', 'end_y', 'endY']);
+      final duration = _firstPresentArg(args, const [
+        'duration_ms',
+        'durationMs',
+      ]);
+      if (endX != null) output['end_x'] = endX;
+      if (endY != null) output['end_y'] = endY;
+      if (duration != null) output['duration_ms'] = duration;
+      return output;
+    case 'open_app':
+      output['type'] = 'open_app';
+      final packageName = _firstNonBlankArg(args, const [
+        'package_name',
+        'packageName',
+      ]);
+      if (packageName.isNotEmpty) output['packageName'] = packageName;
+      return output;
+    case 'press_home':
+      output['type'] = 'press_key';
+      output['key'] = 'home';
+      return output;
+    case 'press_back':
+      output['type'] = 'press_key';
+      output['key'] = 'back';
+      return output;
+    case 'press_key':
+    case 'hot_key':
+      output['type'] = 'press_key';
+      final key = _firstNonBlankArg(args, const ['key', 'hotkey', 'hot_key']);
+      if (key.isNotEmpty) output['key'] = key;
+      return output;
+    case 'finished':
+      output['type'] = 'finished';
+      final content = _firstPresentArg(args, const ['content', 'summary']);
+      final enableSummary = _firstPresentArg(args, const [
+        'enable_summary',
+        'enableSummary',
+      ]);
+      final summaryPrompt = _firstPresentArg(args, const [
+        'summary_prompt',
+        'summaryPrompt',
+      ]);
+      if (content != null) output['content'] = content;
+      if (enableSummary != null) output['enableSummary'] = enableSummary;
+      if (summaryPrompt != null) output['summaryPrompt'] = summaryPrompt;
+      return output;
+    default:
+      output['type'] = 'external_tool';
+      output['toolName'] = rawTool.trim().isEmpty ? action : rawTool.trim();
+      output['arguments'] = args;
+      return output;
+  }
+}
+
+Map<String, dynamic>? _canonicalPointTarget(Map<String, dynamic> args) {
+  final x = _firstPresentArg(args, const ['x', 'center_x', 'centerX']);
+  final y = _firstPresentArg(args, const ['y', 'center_y', 'centerY']);
+  if (x != null && y != null) {
+    return <String, dynamic>{
+      'kind': 'coords',
+      'x': x,
+      'y': y,
+      if (_firstPresentArg(args, const ['xml_ref', 'xmlRef']) != null)
+        'xmlRef': _firstPresentArg(args, const ['xml_ref', 'xmlRef']),
+    };
+  }
+  final prompt = _firstNonBlankArg(args, const [
+    'target_description',
+    'targetDescription',
+    'clickPrompt',
+    'label',
+  ]);
+  if (prompt.isEmpty) return null;
+  return <String, dynamic>{'kind': 'prompt', 'prompt': prompt};
+}
+
+Map<String, dynamic>? _canonicalSwipeTarget(Map<String, dynamic> args) {
+  final x = _firstPresentArg(args, const ['x1', 'x', 'center_x', 'centerX']);
+  final y = _firstPresentArg(args, const ['y1', 'y', 'center_y', 'centerY']);
+  if (x == null || y == null) return null;
+  return <String, dynamic>{'kind': 'coords', 'x': x, 'y': y};
+}
+
+dynamic _firstPresentArg(Map<String, dynamic> args, List<String> keys) {
+  for (final key in keys) {
+    if (args.containsKey(key) && args[key] != null) return args[key];
+  }
+  return null;
+}
+
+String _firstNonBlankArg(Map<String, dynamic> args, List<String> keys) {
+  for (final key in keys) {
+    final value = args[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
 }
 
 Map<String, dynamic>? _removeFunctionStep(
@@ -1809,7 +2587,9 @@ Map<String, dynamic>? _removeFunctionStep(
   final updatedSpec = Map<String, dynamic>.from(
     cloned.map((key, value) => MapEntry(key.toString(), value)),
   );
-  final execution = _FunctionSummary._asMap(updatedSpec['execution']);
+  final execution = Map<String, dynamic>.from(
+    _FunctionSummary._asMap(updatedSpec['execution']),
+  );
   final rawSteps = execution['steps'];
   if (rawSteps is! List || rawSteps.length <= 1) return null;
   final steps = rawSteps
@@ -1833,19 +2613,14 @@ Map<String, dynamic>? _removeFunctionStep(
     steps[stepIndex]['index'] = stepIndex;
   }
   execution['steps'] = steps;
-  execution['step_count'] = steps.length;
   updatedSpec['execution'] = execution;
+  _syncFunctionExecutionCounts(updatedSpec, execution, steps);
   final actions = updatedSpec['actions'];
   if (actions is List && index < actions.length) {
     final updatedActions = List<dynamic>.from(actions)..removeAt(index);
     updatedSpec['actions'] = updatedActions;
   }
   _shiftBindingsAfterStepRemoval(updatedSpec, index);
-  final metadata = _FunctionSummary._asMap(updatedSpec['metadata']);
-  if (metadata.isNotEmpty) {
-    metadata['step_count'] = steps.length;
-    updatedSpec['metadata'] = metadata;
-  }
   return updatedSpec;
 }
 

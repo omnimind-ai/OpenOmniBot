@@ -17,6 +17,7 @@ ENABLE_RAW_TOUCH="${ENABLE_RAW_TOUCH:-0}"
 REQUIRE_RAW_TOUCH="${REQUIRE_RAW_TOUCH:-0}"
 EXPECTED_CLICKS=""
 EXPECTED_SWIPES=""
+DEBUG_OVERLAY_GESTURES="${DEBUG_OVERLAY_GESTURES:-0}"
 
 usage() {
   cat <<'EOF'
@@ -31,6 +32,11 @@ The recorder uses Accessibility events as the default action source. Raw
 getevent is disabled by default; pass --enable-raw-touch or
 --require-raw-touch to opt into app/su/Shizuku raw collection. It requires the
 OOB debug APK and OOB Accessibility service to be enabled.
+
+For deterministic device validation, pass --debug-overlay-gestures. That uses
+the debug receiver to send synthetic overlay gestures through the same
+HumanTrajectoryLearningSession.recordOverlayGesture backend used by the product
+manual recording overlay, then finishes automatically.
 EOF
 }
 
@@ -80,6 +86,10 @@ while [[ $# -gt 0 ]]; do
     --expected-swipes)
       EXPECTED_SWIPES="$2"
       shift 2
+      ;;
+    --debug-overlay-gestures)
+      DEBUG_OVERLAY_GESTURES=1
+      shift
       ;;
     -h|--help)
       usage
@@ -169,11 +179,61 @@ EOF
 }
 
 finish_recording() {
+  "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$RESULT_FILE" >/dev/null 2>&1 || true
   "${ADB[@]}" shell am broadcast \
     -a "$ACTION" \
     -n "$RECEIVER" \
     --es op finish >/dev/null
   wait_for_file "$RESULT_FILE" "$RESULT_TMP"
+}
+
+send_recording_op() {
+  local op="$1"
+  shift
+  "${ADB[@]}" shell am broadcast \
+    -a "$ACTION" \
+    -n "$RECEIVER" \
+    --es op "$op" \
+    "$@" >/dev/null
+}
+
+run_debug_overlay_gestures() {
+  local size width height tap_x tap_y swipe_x swipe_y1 swipe_y2
+  size="$("${ADB[@]}" shell wm size | tr -d '\r' | awk -F': ' '/Physical size/ {print $2; exit}')"
+  width="${size%x*}"
+  height="${size#*x}"
+  if [[ -z "$width" || -z "$height" || "$width" == "$height" ]]; then
+    width=720
+    height=1280
+  fi
+  tap_x=$((width / 2))
+  tap_y=$((height / 2))
+  swipe_x=$((width / 2))
+  swipe_y1=$((height * 4 / 5))
+  swipe_y2=$((height / 3))
+  "${ADB[@]}" shell am start -a android.settings.SETTINGS >/dev/null || true
+  sleep 1
+  send_recording_op resume
+  sleep 1
+  send_recording_op gesture \
+    --es actionName click \
+    --es x "$tap_x" \
+    --es y "$tap_y" \
+    --es durationMs 100 \
+    --es displayWidth "$width" \
+    --es displayHeight "$height"
+  sleep 1
+  send_recording_op gesture \
+    --es actionName swipe \
+    --es x1 "$swipe_x" \
+    --es y1 "$swipe_y1" \
+    --es x2 "$swipe_x" \
+    --es y2 "$swipe_y2" \
+    --es durationMs 500 \
+    --es direction up \
+    --es displayWidth "$width" \
+    --es displayHeight "$height"
+  sleep 1
 }
 
 finish_and_exit() {
@@ -189,6 +249,8 @@ finish_and_exit() {
   if [[ -n "${RAW_EVENT_OUTPUT// }" ]]; then
     mkdir -p "$(dirname "$RAW_EVENT_OUTPUT")"
   fi
+  local summary_status
+  set +e
   python3 - "$RESULT_TMP" "$OUTPUT_PATH" "$DEVICE_SERIAL" "$PACKAGE_NAME" "$REQUIRE_RAW_TOUCH" "$EXPECTED_CLICKS" "$EXPECTED_SWIPES" "$RAW_EVENT_OUTPUT" "$ARTIFACT_DIR" <<'PY'
 import json
 import re
@@ -585,6 +647,9 @@ if expected_swipes is not None and swipe_count < expected_swipes:
     sys.exit(1)
 sys.exit(0 if summary["success"] else 1)
 PY
+  summary_status=$?
+  set -e
+  exit "$summary_status"
 }
 
 "${ADB[@]}" get-state >/dev/null
@@ -609,6 +674,10 @@ if data.get("success") is not True:
 PY
 
 echo "Recording human run on $DEVICE_SERIAL; press Ctrl-C to stop." >&2
+if [[ "$DEBUG_OVERLAY_GESTURES" -eq 1 ]]; then
+  run_debug_overlay_gestures
+  finish_and_exit
+fi
 trap finish_and_exit INT TERM
 while true; do
   sleep 1

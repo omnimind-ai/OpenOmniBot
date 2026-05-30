@@ -115,7 +115,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 mapOf(
                     "success" to false,
                     "fallback" to true,
-                    "error" to "postcondition_failed",
+                    "error" to "execution_failed",
                 )
             },
         )
@@ -185,42 +185,6 @@ class VlmToolCoordinatorRecallExecutionTest {
         )
 
         assertEquals(false, request.allowOmniFlowFunctionAutoExecute)
-    }
-
-    @Test
-    fun `final package check passes when no target package is requested`() {
-        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
-            targetPackageName = null,
-            observedPackageName = "com.android.launcher3",
-        )
-
-        assertEquals(true, check.ok)
-        assertNull(check.errorCode)
-    }
-
-    @Test
-    fun `final package check passes when observed package matches target`() {
-        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
-            targetPackageName = " com.android.settings ",
-            observedPackageName = "com.android.settings",
-        )
-
-        assertEquals(true, check.ok)
-        assertEquals("com.android.settings", check.targetPackageName)
-        assertEquals("com.android.settings", check.observedPackageName)
-    }
-
-    @Test
-    fun `final package check fails when finished task left target app`() {
-        val check = VlmToolCoordinator.evaluateFinalTargetPackage(
-            targetPackageName = "com.android.settings",
-            observedPackageName = "com.android.launcher3",
-        )
-
-        assertEquals(false, check.ok)
-        assertEquals(VlmToolCoordinator.FINAL_STATE_MISMATCH_ERROR_CODE, check.errorCode)
-        assertTrue(check.message?.contains("target=com.android.settings") == true)
-        assertTrue(check.message?.contains("observed=com.android.launcher3") == true)
     }
 
     @Test

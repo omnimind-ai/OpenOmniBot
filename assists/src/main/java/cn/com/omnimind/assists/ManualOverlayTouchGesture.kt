@@ -26,3 +26,9 @@ data class ManualOverlayTouchGesture(
     val displayWidth: Int = 0,
     val displayHeight: Int = 0
 )
+
+data class ManualOverlayGestureReplayResult(
+    val executed: Boolean,
+    val mayOpenIme: Boolean = false,
+    val ignoredControl: Boolean = false
+)

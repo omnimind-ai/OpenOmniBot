@@ -1027,6 +1027,10 @@ class UtgRunLogSummary {
   final String finalPackageName;
   final int? tokenUsageTotal;
   final Map<String, dynamic> tokenUsage;
+  final bool registeredAsFunction;
+  final String registeredFunctionId;
+  final int registeredFunctionCount;
+  final List<String> registeredFunctionIds;
   final Map<String, dynamic> rawJson;
 
   const UtgRunLogSummary({
@@ -1057,6 +1061,10 @@ class UtgRunLogSummary {
     required this.finalPackageName,
     required this.tokenUsageTotal,
     required this.tokenUsage,
+    required this.registeredAsFunction,
+    required this.registeredFunctionId,
+    required this.registeredFunctionCount,
+    required this.registeredFunctionIds,
     required this.rawJson,
   });
 
@@ -1115,6 +1123,33 @@ class UtgRunLogSummary {
           (k, v) => MapEntry(k.toString(), v),
         ),
       ),
+      registeredAsFunction:
+          _parseBool(
+            raw['registered_as_function'] ??
+                raw['registeredAsFunction'] ??
+                raw['is_registered_function'] ??
+                raw['isRegisteredFunction'],
+          ) ??
+          false,
+      registeredFunctionId:
+          (raw['registered_function_id'] ?? raw['registeredFunctionId'] ?? '')
+              .toString(),
+      registeredFunctionCount: raw['registered_function_count'] is num
+          ? (raw['registered_function_count'] as num).toInt()
+          : int.tryParse(
+                  (raw['registered_function_count'] ??
+                          raw['registeredFunctionCount'] ??
+                          '0')
+                      .toString(),
+                ) ??
+                0,
+      registeredFunctionIds:
+          ((raw['registered_function_ids'] ?? raw['registeredFunctionIds'])
+                  as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList() ??
+          const <String>[],
       rawJson: Map<String, dynamic>.from(
         (raw['raw_run'] as Map<dynamic, dynamic>? ?? const {}).map(
           (k, v) => MapEntry(k.toString(), v),
@@ -1306,7 +1341,6 @@ class UtgFunctionEnrichResult {
   final String? description;
   final List<Map<String, dynamic>> slots;
   final List<String> preconditions;
-  final List<String> postconditions;
   final String? errorCode;
   final String? errorMessage;
 
@@ -1316,7 +1350,6 @@ class UtgFunctionEnrichResult {
     this.description,
     this.slots = const [],
     this.preconditions = const [],
-    this.postconditions = const [],
     this.errorCode,
     this.errorMessage,
   });
@@ -1337,11 +1370,6 @@ class UtgFunctionEnrichResult {
           const [],
       preconditions:
           (map['preconditions'] as List<dynamic>?)
-              ?.map((p) => p.toString())
-              .toList() ??
-          const [],
-      postconditions:
-          (map['postconditions'] as List<dynamic>?)
               ?.map((p) => p.toString())
               .toList() ??
           const [],
@@ -3320,6 +3348,8 @@ class AssistsMessageService {
     Map<String, dynamic>? modelOverride,
     String? reasoningEffort,
     Map<String, String>? terminalEnvironment,
+    String? toolProfile,
+    List<String> allowedTools = const [],
   }) async {
     try {
       final args = <String, dynamic>{
@@ -3359,6 +3389,15 @@ class AssistsMessageService {
       }
       if (terminalEnvironment != null && terminalEnvironment.isNotEmpty) {
         args['terminalEnvironment'] = terminalEnvironment;
+      }
+      if (toolProfile != null && toolProfile.trim().isNotEmpty) {
+        args['toolProfile'] = toolProfile.trim();
+      }
+      if (allowedTools.isNotEmpty) {
+        args['allowedTools'] = allowedTools
+            .map((tool) => tool.trim())
+            .where((tool) => tool.isNotEmpty)
+            .toList(growable: false);
       }
       final result = await assistCore.invokeMethod('createAgentTask', {
         ...args,

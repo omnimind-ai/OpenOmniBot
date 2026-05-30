@@ -12,6 +12,13 @@ It records what the code does now, not an idealized design.
 - Online means a live `vlm_task` executed by OOB native Kotlin/Flutter runtime.
 - Offline means RunLog collection -> reusable Function compilation -> local
   Function registration -> UDEG page-match recall -> deterministic replay.
+- All OOB/OmniFlow behavior is skill-first. User-facing workflows, prompt
+  policy, selection policy, and execution rules live in builtin skills such as
+  `vlm-android-gui`, `oob-function-management`, and
+  `omniflow-function-enhancer`. Kotlin provides native tool backends, storage,
+  replay, UDEG indexing, and small tool-profile routing only. MCP/native tools
+  are implementation primitives that skills call; they are not the product
+  capability boundary.
 - DroidRun/MobileRun and M3A are method references only. OOB does not depend on
   their code in this implementation.
 - AndroidWorld is a validation reference. The app does not need a full
@@ -52,10 +59,15 @@ Offline OmniFlow and replay:
 - `app/src/main/java/cn/com/omnimind/bot/runlog/OobUdegNodeStore.kt`
   - page-vector UDEG nodes, node-skill context, Function/segment attachment.
 - `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt`
-  - deterministic primitive replay executor.
+  - deterministic primitive replay executor and four-part per-step replay timing.
 - `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
   - materialized Function runner, nested `call_function` tool-card events, and
     per-step timing.
+- `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSkillProfile.kt`
+  - focused native tool-budget adapter for the `oob-function-management` skill.
+    It exposes management tool schemas and optional registered Function tools,
+    but does not own workflow prompt rules and is not a separate OmniFlow
+    controller.
 - `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
   - bridges explicit tool cards into chat stream events and `InternalRunLogStore`.
 
@@ -141,6 +153,10 @@ Startup and device normalization:
 - Agent conversations expose `oob_function_list/get/register/guard_check/run/delete/clear`
   directly through the workbench tool handler. These are explicit management and
   execution tools; their presence does not change default context-only recall.
+- The `function_management` profile force-loads the `oob-function-management`
+  skill and sends only the focused Function/RunLog tool schemas plus registered
+  Function tools. It is the tool budget for that skill, not a separate OmniFlow
+  agent, controller, MCP product surface, or component framework.
 - Registering or converting a Function does not enable Function-as-model-tool
   exposure. `oobFunctionAsToolEnabled` is false by default and must be explicitly
   enabled by the user/UI before Function ids are added to the model tool list.
@@ -993,6 +1009,24 @@ guard
 source = oob_native_omniflow_toolkit
 ```
 
+The outer `callFunction/runFunction` wrapper also adds:
+
+```text
+timing.call_started_at_ms
+timing.call_finished_at_ms
+timing.call_duration_ms
+timing.call_phase_ms = {
+  guard_check_ms,
+  execute_function_ms
+}
+```
+
+`guard_check_ms` matters because guard currently reads the Function spec,
+materializes arguments, and slices the segment before `executeFunction(...)`
+does its own execution preparation. A slow "start" before the first click should
+first be checked against `call_phase_ms.guard_check_ms`,
+`phase_ms.load_function_spec_ms`, and `startup_phase_ms.runner_pre_step_loop_ms`.
+
 `executeFunction(...)`:
 
 1. Loads Function spec from replay service.
@@ -1000,6 +1034,40 @@ source = oob_native_omniflow_toolkit
 3. Materializes spec with provided args.
 4. Slices from `start_step_index` when executing a recalled segment.
 5. Runs `OobFunctionToolHandler.runMaterializedFunction(...)`.
+
+The returned `timing` is rooted at `executeFunction(...)`, so it includes the
+slow startup path before the first replay action:
+
+```text
+timing.source = oob_function_execute
+timing.started_at_ms
+timing.finished_at_ms
+timing.duration_ms
+timing.phase_ms = {
+  load_function_spec_ms,
+  check_arguments_ms,
+  materialize_function_ms,
+  slice_function_ms,
+  create_runner_ms,
+  run_materialized_function_ms
+}
+timing.startup_phase_ms = {
+  load_function_spec_ms,
+  check_arguments_ms,
+  materialize_function_ms,
+  slice_function_ms,
+  create_runner_ms,
+  runner_pre_step_loop_ms
+}
+timing.startup_duration_ms
+timing.runner_duration_ms
+timing.runner_phase_ms
+```
+
+`startup_duration_ms` is the pre-run toolkit work plus the runner's
+`pre_step_loop_ms`; it is intended to diagnose "slow before the first click".
+`run_materialized_function_ms` includes the actual replay loop and should be
+read with `runner_phase_ms` and each primitive step's timing below.
 
 `OobFunctionToolHandler.runMaterializedFunction(...)`:
 
@@ -1020,13 +1088,37 @@ source = oob_native_omniflow_toolkit
    disappearing into `step_results`.
 7. Records each step result with `started_at_ms`, `finished_at_ms`,
    `duration_ms`.
-8. Returns runner timing:
+8. Primitive OmniFlow step results include internal timing:
+
+```text
+timing.source = oob_omniflow_step_executor
+timing.phase_ms.observe_ms
+timing.phase_ms.checker_ms
+timing.phase_ms.action_transfer_ms
+timing.phase_ms.act_ms
+timing.overhead_ms.settle_ms
+```
+
+`observe_ms` accumulates XML/package snapshot reads and is subtracted from
+`checker_ms`, `action_transfer_ms`, and `act_ms`, so the four main phase values
+are exclusive. `overhead_ms` is diagnostic and is not part of the four replay
+phases.
+
+9. Returns runner timing:
 
 ```text
 timing.source = oob_function_runner
 timing.started_at_ms
 timing.finished_at_ms
+timing.duration_ms
 timing.runner_duration_ms
+timing.phase_ms = {
+  materialized_steps_ms,
+  accessibility_preflight_ms,
+  pre_step_loop_ms,
+  step_loop_ms,
+  result_build_ms
+}
 ```
 
 Primitive replay in `OmniflowStepExecutor` supports:
@@ -1045,6 +1137,14 @@ For coordinate actions, replay remaps args through `source_context` and current
 XML using anchor projection. Remap metadata uses `algorithm = "anchor_projection"`
 and records reasons such as `missing_source_context`, `missing_current_xml`, or
 `no_anchor_match`.
+
+The primitive replay loop follows the same core shape as OmniFlow's execution
+control bus: one step is evaluated as `ReplayState + ReplayAction`. The
+functions are split for readability, but checker and action-transfer consume the
+same captured current-page state. If a checker emits and executes a control
+action, such as dismissing a blocking overlay or hiding the keyboard, the loop
+explicitly captures a new `ReplayState` before continuing. Action-transfer does
+not independently fetch another XML snapshot for the same state/action pair.
 
 ## Online/Offline Interaction
 
@@ -1078,7 +1178,9 @@ Currently available:
 - VLM stream logs include token usage per request attempt.
 - Recall records structured `duration_ms` and `phase_ms`.
 - Function runner records `runner_duration_ms`.
-- Function runner step results record per-step `duration_ms`.
+- Function runner step results record per-step `duration_ms`; primitive
+  OmniFlow step results also record four exclusive replay phases:
+  `observe_ms`, `checker_ms`, `action_transfer_ms`, and `act_ms`.
 
 Not yet fully structured:
 
@@ -1099,15 +1201,13 @@ Recent validation note:
 
 - A previous simple recall/replay open-app-like path completed around
   2.6s-2.9s plus about 1.2s post-run settle.
-- 2026-05-26 direct Function replay on `emulator-5556` passed after adding
-  activity-component package fallback to `open_app` package verification:
+- 2026-05-26 direct Function replay on `emulator-5556` passed under the older
+  replay package-observation implementation:
   `codex_open_settings_step_results_*` registered a two-step Function
   (`open_app com.android.settings`, `finished`), `oob_function_guard_check`
   returned `allow`, and `oob_function_run` returned `success=true`,
   `step_count=2`, `success_step_count=2`, `duration_ms=5199`.
-  The `open_app` step postcondition was `open_app_package`,
-  `package_matched=true`, `current_package=com.android.settings`, and adb
-  reported `topResumedActivity=com.android.settings/.Settings`.
+  adb reported `topResumedActivity=com.android.settings/.Settings`.
 - The same APK was started on `emulator-5554` with
   `--no-stop-conflicts --preserve-accessibility --host-port 28998`; startup
   reached `ready=1` without stopping Mobilerun/AndroidWorld services.
@@ -1151,24 +1251,24 @@ Recent validation note:
   startup-bridge compiler rule into
   `debug_f473f91c_clock_transient_fixed`. The converter recorded
   `transient_startup_bridge_dropped_count=1`, produced replay steps
-  `open_app`, `click`, `finished`, and replay succeeded in 3,217 ms. The
-  remaining `click Stopwatch` step was skipped by replay postcondition because
-  the fresh launch was already on the Stopwatch page. adb verified the same
-  Stopwatch final state. This validates the general conversion rule for
-  first-launch prompt noise, not a target-app-specific special case.
+  `open_app`, `click`, `finished`, and replay succeeded in 3,217 ms. In that
+  older build, the remaining `click Stopwatch` step was skipped because the
+  fresh launch was already on the Stopwatch page; current replay no longer uses
+  this after-action skip/verification path. adb verified the same Stopwatch final
+  state. This validates the general conversion rule for first-launch prompt
+  noise, not a target-app-specific special case.
 - The same old Clock RunLog exposed a real replay observation bug after
   reinstall: the foreground activity and UIAutomator XML were already
-  `com.google.android.deskclock`, but the native runner's `open_app`
-  postcondition read `current_package=""` from background-thread Accessibility
-  snapshots and failed. `OmniflowStepExecutor` now reads replay observations
-  through `Dispatchers.Main.immediate` with the existing direct-read fallback.
+  `com.google.android.deskclock`, but the older native runner's package
+  observation read `current_package=""` from background-thread Accessibility
+  snapshots and failed. That after-action verification path has since been
+  removed.
   Revalidation on `emulator-5556` with Function id
   `debug_f473f91c_clock_transient_fixed_3` passed: converter dropped 1
   transient startup bridge card, replay produced `open_app`, skipped
-  `click Stopwatch` via `pre_action_postcondition_satisfied`, then `finished`;
-  `replay_success=true`, `model_used=false`, runner duration 3,914 ms, and the
-  `open_app` postcondition reported
-  `current_package=com.google.android.deskclock`.
+  `click Stopwatch` under the older already-satisfied-page rule, then
+  `finished`; `replay_success=true`, `model_used=false`, and runner duration
+  3,914 ms.
 - 2026-05-26 a post-task overlay crash was fixed in the cat overlay finish path:
   if the CatView is already detached, `finish()` now skips `updateViewLayout`
   and still invokes the animation-end cleanup callback. This addresses observed
@@ -1189,8 +1289,7 @@ Recent validation note:
   `decision=allow`, and ran replay
   `omniflow_run_1779794111457_1`. `oob_function_run` succeeded with 2/2 steps,
   `runner=oob_omniflow_replay`, `model_used=false`,
-  `runner_duration_ms=6755`, and `open_app_package
-  current_package=com.android.settings`. External adb verification showed
+  `runner_duration_ms=6755`. External adb verification showed
   foreground `com.android.settings/.Settings` and UIAutomator XML package
   `com.android.settings` on the Settings homepage.
 - Do not claim broad AndroidWorld success without a real task run and state
@@ -1322,6 +1421,40 @@ For a complete local validation pass:
 - 5556 was not available in the current adb state. Attempting to start
   `Medium_Phone_API_36.1` on port 5556 did not reach `adb device`; keep the
   5556 requirement open until the emulator process is available.
+- Replay post-validation removal:
+  native OmniFlow replay no longer generates or executes `postcondition`
+  checks. Convert still preserves `dst_ctx` after-page evidence for context and
+  action transfer, but deterministic replay now stops at pre-action controls
+  (dismiss blocking overlay, hide keyboard), optional action transfer, and act.
+  `open_app` no longer emits an `open_app_package` checker card; Function run
+  control payloads no longer report `postcondition=passed/not_verified`.
+- 2026-05-30 skill-first validation:
+  `function_management` is now treated as the tool budget for the
+  `oob-function-management` skill, not a standalone OmniFlow controller. On
+  `emulator-5556`, `scripts/oob-device-manual-trace-validation.sh` recorded
+  two actions (`click`, `swipe`) with before/after XML and
+  `token_usage_total=0`; `scripts/oob-agent-function-management-validation.sh`
+  registered `debug_agent_skill_first_open_settings`, listed it, guard-checked
+  it, and ran it through
+  `AgentToolRegistry -> AgentToolRouter -> WorkbenchToolHandler` with
+  `oob_function_run` succeeding in 2,987 ms for 2 steps.
+- 2026-05-30 manual-recording script validation:
+  `scripts/oob-record-human-run.sh --device emulator-5556
+  --debug-overlay-gestures --expected-clicks 1 --expected-swipes 1` exercised
+  the same `HumanTrajectoryLearningSession.recordOverlayGesture(...)` backend
+  used by the product manual recording overlay. It returned
+  `success=true`, run id `human_1780132355919_27f8a117`, 3 actions
+  (`click`, `swipe`, `swipe`), `recording_completeness=complete_overlay_touch`,
+  `recording_action_source=overlay_touch_with_a11_text`,
+  `guarantees_no_missing_clicks=true`, and `token_usage_total=0`.
+  Converting by device-side run id with `scripts/oob-convert-runlog.sh
+  --run-id human_1780132355919_27f8a117 --function-id
+  debug_overlay_human_5556_function --run` succeeded: the Function was
+  registered/imported, UDEG indexed node `udeg_node_459831c59ab06792`, and
+  replay executed 4 model-free steps (`open_app`, `click`, `swipe`, `swipe`).
+  Converting the same large RunLog by inline `--run-log-path` previously hit an
+  adb broadcast size failure (`error: closed`), so device-side conversion
+  should prefer `--run-id` when the RunLog already lives in the app store.
 
 ## Known Failure Modes
 

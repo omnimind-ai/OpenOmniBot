@@ -6,6 +6,7 @@ import android.content.Intent
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.assists.HumanTrajectoryLearningResult
 import cn.com.omnimind.assists.HumanTrajectoryLearningSession
+import cn.com.omnimind.assists.ManualOverlayTouchGesture
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.util.OmniLog
@@ -19,6 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -37,6 +40,7 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
                     "start" -> startRecording(appContext, name, description, enableRawTouch)
                     "pause" -> pauseRecording()
                     "resume" -> resumeRecording()
+                    "gesture", "overlay_gesture" -> recordOverlayGesture(intent)
                     "finish", "stop", "complete" -> finishRecording(appContext)
                     "cancel" -> cancelRecording(appContext)
                     "status" -> statusPayload()
@@ -137,6 +141,78 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         ).filterValues { it != null }
     }
 
+    private suspend fun recordOverlayGesture(intent: Intent?): Map<String, Any?> {
+        if (!HumanTrajectoryLearningSession.isActive()) {
+            return errorPayload("NO_ACTIVE_RECORDING", "No active human recording session")
+        }
+        if (HumanTrajectoryLearningSession.isPaused()) {
+            return errorPayload("RECORDING_PAUSED", "Resume the human recording before sending a gesture")
+        }
+        val actionName = stringExtra(intent, "actionName")
+            ?: stringExtra(intent, "action")
+            ?: "click"
+        val startX = floatExtra(intent, "x1")
+            ?: floatExtra(intent, "startX")
+            ?: floatExtra(intent, "x")
+            ?: return errorPayload("MISSING_GESTURE_X", "Gesture x/startX is required")
+        val startY = floatExtra(intent, "y1")
+            ?: floatExtra(intent, "startY")
+            ?: floatExtra(intent, "y")
+            ?: return errorPayload("MISSING_GESTURE_Y", "Gesture y/startY is required")
+        val endX = floatExtra(intent, "x2")
+            ?: floatExtra(intent, "endX")
+            ?: startX
+        val endY = floatExtra(intent, "y2")
+            ?: floatExtra(intent, "endY")
+            ?: startY
+        val durationMs = longExtra(intent, "durationMs")
+            ?: longExtra(intent, "duration")
+            ?: if (actionName == "swipe") 500L else 80L
+        val distancePx = floatExtra(intent, "distancePx")
+            ?: distance(startX, startY, endX, endY)
+        val finishedAtMs = System.currentTimeMillis()
+        val gesture = ManualOverlayTouchGesture(
+            actionName = actionName,
+            startX = startX,
+            startY = startY,
+            endX = endX,
+            endY = endY,
+            durationMs = durationMs,
+            distancePx = distancePx,
+            direction = stringExtra(intent, "direction"),
+            startedAtMs = finishedAtMs - durationMs.coerceAtLeast(0L),
+            finishedAtMs = finishedAtMs,
+            displayWidth = intExtra(intent, "displayWidth") ?: 0,
+            displayHeight = intExtra(intent, "displayHeight") ?: 0
+        )
+        val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture)
+        delay(700L)
+        val status = HumanTrajectoryLearningSession.status().asMap()
+        return linkedMapOf(
+            "success" to replayResult.executed,
+            "phase" to "gesture_recorded",
+            "gesture" to linkedMapOf(
+                "action_name" to actionName,
+                "x1" to startX,
+                "y1" to startY,
+                "x2" to endX,
+                "y2" to endY,
+                "duration_ms" to durationMs,
+                "distance_px" to distancePx
+            ),
+            "recording_active" to status["recording_active"],
+            "recording_paused" to status["recording_paused"],
+            "action_count" to status["action_count"],
+            "latest_action_summary" to status["latest_action_summary"],
+            "may_open_ime" to replayResult.mayOpenIme,
+            "ignored_control" to replayResult.ignoredControl,
+            "status" to status,
+            "error_code" to if (replayResult.executed) null else "GESTURE_NOT_EXECUTED",
+            "error_message" to if (replayResult.executed) null else "Overlay gesture was not executed",
+            "source" to "oob_debug_human_run_recording"
+        ).filterValues { it != null }
+    }
+
     private suspend fun cancelRecording(context: Context): Map<String, Any?> {
         val result = activeResult
         val cancelled = HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
@@ -233,12 +309,28 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
     private fun resultFileFor(op: String): String = when (op) {
         "start" -> START_FILE
         "status" -> STATUS_FILE
+        "gesture", "overlay_gesture" -> GESTURE_FILE
         else -> RESULT_FILE
     }
 
     private fun writeJson(context: Context, fileName: String, payload: Map<String, Any?>) {
         File(context.filesDir, fileName).writeText(gson.toJson(payload))
     }
+
+    private fun stringExtra(intent: Intent?, key: String): String? =
+        intent?.getStringExtra(key)?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun floatExtra(intent: Intent?, key: String): Float? =
+        stringExtra(intent, key)?.toFloatOrNull()
+
+    private fun longExtra(intent: Intent?, key: String): Long? =
+        stringExtra(intent, key)?.toLongOrNull()
+
+    private fun intExtra(intent: Intent?, key: String): Int? =
+        stringExtra(intent, key)?.toIntOrNull()
+
+    private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =
+        sqrt((x2 - x1).toDouble().pow(2.0) + (y2 - y1).toDouble().pow(2.0)).toFloat()
 
     private fun Throwable.fullMessage(): String {
         val parts = mutableListOf<String>()
@@ -272,6 +364,7 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         const val START_FILE = "debug-human-run-recording-start.json"
         const val RESULT_FILE = "debug-human-run-recording-result.json"
         const val STATUS_FILE = "debug-human-run-recording-status.json"
+        const val GESTURE_FILE = "debug-human-run-recording-gesture.json"
         private const val RESULT_TIMEOUT_MS = 15_000L
         private val gson = GsonBuilder().disableHtmlEscaping().create()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

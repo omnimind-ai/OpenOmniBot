@@ -212,13 +212,16 @@ object HumanTrajectoryLearningSession {
         return resumed
     }
 
-    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): Boolean {
-        val session = synchronized(lock) { activeSession } ?: return false
-        if (synchronized(lock) { activePaused }) return false
+    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): ManualOverlayGestureReplayResult {
+        val session = synchronized(lock) { activeSession }
+            ?: return ManualOverlayGestureReplayResult(executed = false)
+        if (synchronized(lock) { activePaused }) {
+            return ManualOverlayGestureReplayResult(executed = false)
+        }
         return runCatching { session.recorder.recordOverlayGesture(gesture) }
             .getOrElse { error ->
                 OmniLog.w(TAG, "manual overlay gesture failed: ${error.message}")
-                false
+                ManualOverlayGestureReplayResult(executed = false)
             }
     }
 

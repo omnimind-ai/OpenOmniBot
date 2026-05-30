@@ -377,10 +377,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final fields = find.byType(TextField);
-    expect(fields, findsNWidgets(3));
+    expect(fields, findsAtLeastNWidgets(6));
     await tester.enterText(fields.at(0), '输入姓名');
-    await tester.enterText(fields.at(1), 'type');
-    await tester.enterText(fields.at(2), '{"text":"妈妈的新号码"}');
+    await tester.enterText(fields.at(1), '妈妈的新号码');
     await tester.tap(find.text('保存').last);
     await tester.pumpAndSettle();
 
@@ -396,6 +395,137 @@ void main() {
     expect(action['description'], '输入姓名');
     final properties = ((savedSpec?['parameters'] as Map)['properties'] as Map);
     expect((properties['query'] as Map)['default'], '妈妈的新号码');
+  });
+
+  testWidgets('Reusable command step can be added and saved', (tester) async {
+    Map<String, dynamic>? savedSpec;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(assistCoreChannel, (call) async {
+          if (call.method == 'listOobReusableFunctions') {
+            return <String, dynamic>{
+              'success': true,
+              'functions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'function_id': 'open_then_tap',
+                  'name': '打开后点击',
+                  'description': '打开后点击',
+                  'step_count': 1,
+                  'parameter_names': <String>[],
+                  'step_summaries': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 'step_1',
+                      'index': 0,
+                      'title': '点击菜单',
+                      'kind': 'omniflow_action',
+                      'executor': 'omniflow',
+                      'tool': 'click',
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          if (call.method == 'getOobReusableFunction') {
+            return <String, dynamic>{
+              'function_id': 'open_then_tap',
+              'name': '打开后点击',
+              'actions': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'type': 'click',
+                  'target': <String, dynamic>{
+                    'kind': 'coords',
+                    'x': 12,
+                    'y': 34,
+                  },
+                  'description': '点击菜单',
+                },
+              ],
+              'execution': <String, dynamic>{
+                'step_count': 1,
+                'steps': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'step_1',
+                    'step_id': 'step_1',
+                    'index': 0,
+                    'title': '点击菜单',
+                    'kind': 'omniflow_action',
+                    'executor': 'omniflow',
+                    'tool': 'click',
+                    'omniflow_action': 'click',
+                    'local_action': 'click',
+                    'callable_tool': 'click',
+                    'model_free': true,
+                    'scriptable': true,
+                    'args': <String, dynamic>{'x': 12, 'y': 34},
+                  },
+                ],
+              },
+              'metadata': <String, dynamic>{'step_count': 1},
+            };
+          }
+          if (call.method == 'registerOobReusableFunction') {
+            final arguments = Map<String, dynamic>.from(call.arguments as Map);
+            savedSpec = Map<String, dynamic>.from(
+              arguments['functionSpec'] as Map,
+            );
+            return <String, dynamic>{
+              'success': true,
+              'function_id': 'open_then_tap',
+              'created_function_id': 'open_then_tap',
+            };
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: CommandLibraryPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.info_outline_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add_circle_outline_rounded));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('open_app').last);
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(TextField);
+    expect(fields, findsAtLeastNWidgets(5));
+    await tester.enterText(fields.at(0), '打开设置');
+    await tester.enterText(fields.at(1), 'com.android.settings');
+    await tester.tap(find.text('添加').last);
+    await tester.pumpAndSettle();
+
+    final execution = savedSpec?['execution'] as Map;
+    final steps = execution['steps'] as List;
+    expect(steps, hasLength(2));
+    expect(execution['step_count'], 2);
+    expect(execution['omniflow_step_count'], 2);
+    expect(execution['agent_step_count'], 0);
+    final step = steps.last as Map;
+    expect(step['id'], 'step_2');
+    expect(step['index'], 1);
+    expect(step['title'], '打开设置');
+    expect(step['tool'], 'open_app');
+    expect(step['omniflow_action'], 'open_app');
+    final args = step['args'] as Map;
+    expect(args['package_name'], 'com.android.settings');
+    expect(args['reset_task'], true);
+    expect(args['launch_mode'], 'fresh_task');
+    final actions = savedSpec?['actions'] as List;
+    expect(actions, hasLength(2));
+    final action = actions.last as Map;
+    expect(action['type'], 'open_app');
+    expect(action['packageName'], 'com.android.settings');
+    expect(action['description'], '打开设置');
+    expect((savedSpec?['metadata'] as Map)['step_count'], 2);
   });
 
   testWidgets('Deleting a recorded step reindexes parameter bindings', (

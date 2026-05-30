@@ -85,7 +85,7 @@ class AgentSystemPromptTest {
     }
 
     @Test
-    fun buildUsesCompactPromptForFunctionManagementProfile() {
+    fun buildUsesLoadedSkillForFunctionManagementProfile() {
         val prompt = AgentSystemPrompt.build(
             workspace = AgentWorkspaceDescriptor(
                 id = "conversation-1",
@@ -114,7 +114,7 @@ class AgentSystemPromptTest {
             ),
             skillsRootShellPath = "/workspace/.omnibot/skills",
             skillsRootAndroidPath = "/data/user/0/cn.com.omnimind.bot/workspace/.omnibot/skills",
-            resolvedSkills = emptyList(),
+            resolvedSkills = listOf(oobFunctionManagementSkillFixture()),
             memoryContext = WorkspaceMemoryPromptContext(
                 soul = "long soul",
                 longTermMemory = "long memory",
@@ -128,15 +128,16 @@ class AgentSystemPromptTest {
             )
         )
 
-        assertTrue(prompt.contains("复用指令管理执行器"))
-        assertTrue(prompt.contains("oob_function_register"))
-        assertTrue(prompt.contains("oob_function_clear(confirm=true)"))
-        assertTrue(prompt.contains("allowOmniFlowFunctionAutoExecute=false"))
-        assertFalse(prompt.contains("已安装 skills"))
-        assertFalse(prompt.contains("Workspace 记忆上下文"))
-        assertFalse(prompt.contains("OOB Workbench"))
-        assertFalse(prompt.contains("terminal_execute"))
-        assertFalse(prompt.contains("workbench_project_hot_update"))
+        assertTrue(prompt.contains("oob-function-management"))
+        assertTrue(prompt.contains("Register The Previous RunLog"))
+        assertTrue(prompt.contains("oob_run_log_convert"))
+        assertTrue(prompt.contains("function_management tool profile"))
+        assertTrue(prompt.contains("Workspace 记忆上下文"))
+        assertTrue(prompt.contains("已安装 skills"))
+        assertTrue(prompt.contains("OOB Workbench"))
+        assertTrue(prompt.contains("terminal_execute"))
+        assertTrue(prompt.contains("workbench_project_hot_update"))
+        assertFalse(prompt.contains("复用指令管理执行器"))
     }
 
     @Test
@@ -275,4 +276,22 @@ class AgentSystemPromptTest {
         assertTrue(prompt.contains("data-oob-id"))
         assertTrue(prompt.contains("file_read(lineStart/lineCount)"))
     }
+
+    private fun oobFunctionManagementSkillFixture(): ResolvedSkillContext =
+        ResolvedSkillContext(
+            skillId = "oob-function-management",
+            frontmatter = mapOf("name" to "oob-function-management"),
+            bodyMarkdown = """
+                # OOB Function Management
+
+                ## Workflows
+
+                ### Register The Previous RunLog
+
+                1. Call `oob_run_log_list` and select the newest successful RunLog.
+                2. Call `oob_run_log_convert` with `register=true`.
+                3. Report the real `function_id`.
+            """.trimIndent(),
+            triggerReason = "function_management tool profile"
+        )
 }

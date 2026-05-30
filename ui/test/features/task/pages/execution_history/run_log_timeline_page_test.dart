@@ -425,6 +425,73 @@ void main() {
   });
 
   testWidgets(
+    'RunLog restores saved reusable command binding from timeline payload',
+    (tester) async {
+      final methodCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(assistCoreChannel, (call) async {
+            methodCalls.add(call);
+            if (call.method == 'getInternalRunLogTimeline') {
+              return <String, dynamic>{
+                ..._runLogTimelinePayload(runId: 'run-vlm'),
+                'registered_as_function': true,
+                'is_registered_function': true,
+                'registered_function_count': 1,
+                'registered_function_ids': <String>['fn_from_runlog'],
+                'registered_function_id': 'fn_from_runlog',
+                'registered_function_summary': <String, dynamic>{
+                  'function_id': 'fn_from_runlog',
+                  'name': '已有 Settings 指令',
+                  'description': '已经保存过的 Android 设置轨迹',
+                },
+                'registered_function_spec': _runLogReusableFunctionSpec(
+                  name: '已有 Settings 指令',
+                  description: '已经保存过的 Android 设置轨迹',
+                ),
+              };
+            }
+            if (call.method == 'getOobReusableFunction') {
+              return null;
+            }
+            if (call.method == 'convertInternalRunLogToOobFunction') {
+              throw Exception('saved runlog should not convert again');
+            }
+            return null;
+          });
+
+      await tester.pumpWidget(
+        _buildLocalizedApp(
+          locale: const Locale('zh'),
+          child: const RunLogTimelinePage(runId: 'run-vlm', title: ''),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey('run-log-function-status-strip')),
+      );
+      expect(find.text('已保存为复用指令'), findsOneWidget);
+      expect(
+        methodCalls.where(
+          (call) => call.method == 'convertInternalRunLogToOobFunction',
+        ),
+        isEmpty,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('run-log-action-save-function')),
+      );
+      await tester.pumpAndSettle();
+      await _pumpUntilFound(
+        tester,
+        find.text('已有 Settings 指令', skipOffstage: false),
+      );
+      expect(find.text('已经保存过的 Android 设置轨迹'), findsWidgets);
+    },
+  );
+
+  testWidgets(
     'RunLog local execution registers the run and executes the generated reusable command',
     (tester) async {
       final methodCalls = <MethodCall>[];
@@ -518,7 +585,7 @@ void main() {
       final runArgs = Map<String, dynamic>.from(runCall.arguments as Map);
       expect(runArgs['functionId'], 'fn_from_runlog');
       expect(runArgs['arguments'], isA<Map>());
-      expect(find.text('RunLog 重放结果'), findsNothing);
+      expect(find.text('RunLog 重放结果'), findsOneWidget);
     },
   );
 
@@ -959,7 +1026,15 @@ void main() {
           if (call.method == 'postLLMChat') {
             final prompt = (call.arguments as Map)['text'].toString();
             if (prompt.contains('每个 step')) {
-              return '{}';
+              return '''
+{
+  "steps": [
+    {
+      "index": 0
+    }
+  ]
+}
+''';
             }
             if (prompt.contains('运行时参数')) {
               return '{"parameters": []}';
@@ -967,12 +1042,7 @@ void main() {
             if (prompt.contains('agent_reuse')) {
               return '{"agent_reuse": {}}';
             }
-            return '''
-{
-  "name": "打开 Settings",
-  "description": "打开 Android 设置"
-}
-''';
+            return '{}';
           }
           if (call.method == 'registerOobReusableFunction') {
             final args = Map<String, dynamic>.from(call.arguments as Map);

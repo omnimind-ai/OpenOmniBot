@@ -1,10 +1,13 @@
 package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.i18n.PromptLocale
+import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,20 +70,21 @@ class AgentToolDefinitionsMusicTest {
         assertTrue(toolNames.contains("workbench_project_deactivate"))
         assertTrue(toolNames.contains("workbench_project_ingest_oss"))
         assertTrue(toolNames.contains("workbench_project_progress_get"))
-        assertTrue(toolNames.contains("oob_command_save"))
-        assertTrue(toolNames.contains("oob_command_list"))
-        assertTrue(toolNames.contains("oob_command_delete"))
-        assertTrue(toolNames.contains("oob_command_clear"))
-        assertTrue(toolNames.contains("oob_function_list"))
-        assertTrue(toolNames.contains("oob_function_get"))
-        assertTrue(toolNames.contains("oob_function_register"))
-        assertTrue(toolNames.contains("oob_function_guard_check"))
-        assertTrue(toolNames.contains("oob_function_run"))
-        assertTrue(toolNames.contains("oob_function_delete"))
-        assertTrue(toolNames.contains("oob_function_clear"))
-        assertTrue(toolNames.contains("oob_run_log_list"))
-        assertTrue(toolNames.contains("oob_run_log_get"))
-        assertTrue(toolNames.contains("oob_run_log_convert"))
+        assertFalse(toolNames.contains("oob_command_save"))
+        assertFalse(toolNames.contains("oob_command_list"))
+        assertFalse(toolNames.contains("oob_command_delete"))
+        assertFalse(toolNames.contains("oob_command_clear"))
+        assertFalse(toolNames.contains("oob_function_list"))
+        assertFalse(toolNames.contains("oob_function_get"))
+        assertFalse(toolNames.contains("oob_function_register"))
+        assertFalse(toolNames.contains("update_function"))
+        assertFalse(toolNames.contains("oob_function_guard_check"))
+        assertFalse(toolNames.contains("oob_function_run"))
+        assertFalse(toolNames.contains("oob_function_delete"))
+        assertFalse(toolNames.contains("oob_function_clear"))
+        assertFalse(toolNames.contains("oob_run_log_list"))
+        assertFalse(toolNames.contains("oob_run_log_get"))
+        assertFalse(toolNames.contains("oob_run_log_convert"))
     }
 
     @Test
@@ -124,7 +128,7 @@ class AgentToolDefinitionsMusicTest {
 
     @Test
     fun `oob function register exposes simple conversation schema`() {
-        val registerTool = AgentToolDefinitions.staticTools()
+        val registerTool = OobFunctionSkillProfile.staticToolDefinitions(PromptLocale.ZH_CN)
             .first { definition ->
                 ((definition["function"] as? JsonObject)
                     ?.get("name")
@@ -141,6 +145,28 @@ class AgentToolDefinitionsMusicTest {
         assertTrue(properties.containsKey("steps"))
         assertTrue(properties.containsKey("sourcePage"))
         assertTrue(properties.containsKey("functionSpec"))
+    }
+
+    @Test
+    fun `oob function run requires function id not run id`() {
+        val runTool = OobFunctionSkillProfile.staticToolDefinitions(PromptLocale.ZH_CN)
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "oob_function_run"
+            }
+        val function = runTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+        val required = (parameters["required"] as JsonArray)
+            .mapNotNull { it.jsonPrimitive.contentOrNull }
+
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("function_id"))
+        assertFalse(properties.containsKey("run_id"))
+        assertTrue(required.contains("functionId"))
+        assertFalse(required.contains("run_id"))
     }
 
     @Test

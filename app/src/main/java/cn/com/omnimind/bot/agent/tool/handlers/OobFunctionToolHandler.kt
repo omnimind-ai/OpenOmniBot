@@ -56,6 +56,14 @@ class OobFunctionToolHandler(
             )
 
         val argsMap = helper.jsonObjectToMap(args)
+        val missing = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+            .missingRequiredArguments(spec, argsMap)
+        if (missing.isNotEmpty()) {
+            return cn.com.omnimind.bot.agent.ToolExecutionResult.Error(
+                toolName,
+                "Missing required arguments: ${missing.joinToString(", ")}"
+            )
+        }
         val materializedSpec = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore.materialize(spec, argsMap)
 
         val runPayload = runMaterializedFunction(
@@ -196,6 +204,7 @@ class OobFunctionToolHandler(
         callStack: List<String> = emptyList(),
     ): Map<String, Any?> {
         val runStartedAtMs = System.currentTimeMillis()
+        val timing = FunctionRunnerTiming(runStartedAtMs)
         val normalizedFunctionId = functionId.trim()
         val auditRunId = nextRunId(runStartedAtMs)
         if (normalizedFunctionId.isNotEmpty() && normalizedFunctionId in callStack) {
@@ -224,19 +233,26 @@ class OobFunctionToolHandler(
         } else {
             callStack
         }
-        val steps = materializedSteps(materializedSpec)
-        accessibilityPreflightFailure(
-            functionId = functionId,
-            spec = spec,
-            auditRunId = auditRunId,
-            startedAtMs = runStartedAtMs,
-            steps = steps,
-        )?.let { return it }
+        val steps = timing.measure("materialized_steps_ms") { materializedSteps(materializedSpec) }
+        val preflightFailure = timing.measure("accessibility_preflight_ms") {
+            accessibilityPreflightFailure(
+                functionId = functionId,
+                spec = spec,
+                auditRunId = auditRunId,
+                startedAtMs = runStartedAtMs,
+                steps = steps,
+            )
+        }
+        preflightFailure?.let {
+            return withRunnerTiming(it, timing.finish())
+        }
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
         var modelRequired = false
         var failureReason: String? = null
 
+        val stepLoopStartedAt = System.nanoTime()
+        timing.recordSinceStart("pre_step_loop_ms", stepLoopStartedAt)
         for ((index, step) in steps.withIndex()) {
             val stepStartedAtMs = System.currentTimeMillis()
             toolHandle?.throwIfStopRequested()
@@ -484,12 +500,13 @@ class OobFunctionToolHandler(
                 break
             }
         }
+        timing.recordElapsed("step_loop_ms", stepLoopStartedAt)
 
-        val runFinishedAtMs = System.currentTimeMillis()
+        val resultBuildStartedAt = System.nanoTime()
         val successCount = stepResults.count { it["success"] != false }
         val allSuccess = stepResults.size == steps.size && stepResults.none { it["success"] == false }
         val description = spec["description"]?.toString().orEmpty()
-        return linkedMapOf<String, Any?>(
+        val resultPayload = linkedMapOf<String, Any?>(
             "success" to allSuccess,
             "run_id" to auditRunId,
             "audit_run_id" to auditRunId,
@@ -512,14 +529,12 @@ class OobFunctionToolHandler(
             "error_code" to stepResults.firstOrNull { it["success"] == false }
                 ?.get("error_code"),
             "error_message" to failureReason,
-            "timing" to linkedMapOf(
-                "source" to "oob_function_runner",
-                "started_at_ms" to runStartedAtMs,
-                "finished_at_ms" to runFinishedAtMs,
-                "runner_duration_ms" to (runFinishedAtMs - runStartedAtMs).coerceAtLeast(0)
-            ),
             "step_results" to stepResults
         )
+        timing.recordElapsed("result_build_ms", resultBuildStartedAt)
+        val runFinishedAtMs = System.currentTimeMillis()
+        resultPayload["timing"] = timing.finish(runFinishedAtMs)
+        return resultPayload
     }
 
     private fun agentFallbackPrompt(
@@ -1533,12 +1548,85 @@ class OobFunctionToolHandler(
                 "source" to "oob_function_runner",
                 "started_at_ms" to startedAtMs,
                 "finished_at_ms" to finishedAtMs,
+                "duration_ms" to (finishedAtMs - startedAtMs).coerceAtLeast(0),
                 "runner_duration_ms" to (finishedAtMs - startedAtMs).coerceAtLeast(0)
             ),
             "step_results" to emptyList<Map<String, Any?>>()
         ).apply {
             putAll(extras)
         }
+    }
+
+    private fun withRunnerTiming(
+        payload: Map<String, Any?>,
+        timing: Map<String, Any?>,
+    ): Map<String, Any?> {
+        val existingTiming = stringMap(payload["timing"])
+        val mergedTiming = linkedMapOf<String, Any?>().apply {
+            putAll(existingTiming)
+            putAll(timing)
+            val phaseMs = linkedMapOf<String, Any?>().apply {
+                putAll(stringMap(existingTiming["phase_ms"]))
+                putAll(stringMap(timing["phase_ms"]))
+            }
+            if (phaseMs.isNotEmpty()) put("phase_ms", phaseMs)
+        }
+        return linkedMapOf<String, Any?>().apply {
+            putAll(payload)
+            put("timing", mergedTiming)
+        }
+    }
+
+    private class FunctionRunnerTiming(
+        private val startedAtMs: Long,
+    ) {
+        private val startedAtNanos = System.nanoTime()
+        private val phases = linkedMapOf<String, Long>()
+
+        fun <T> measure(phaseName: String, block: () -> T): T {
+            val phaseStartedAtNanos = System.nanoTime()
+            return try {
+                block()
+            } finally {
+                recordElapsed(phaseName, phaseStartedAtNanos)
+            }
+        }
+
+        fun recordElapsed(phaseName: String, phaseStartedAtNanos: Long) {
+            phases[phaseName] = elapsedMs(phaseStartedAtNanos)
+        }
+
+        fun recordSinceStart(phaseName: String, endedAtNanos: Long = System.nanoTime()) {
+            phases[phaseName] = ((endedAtNanos - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
+        }
+
+        fun finish(finishedAtMs: Long = System.currentTimeMillis()): Map<String, Any?> {
+            val completedPhases = linkedMapOf<String, Long>()
+            listOf(
+                "materialized_steps_ms",
+                "accessibility_preflight_ms",
+                "pre_step_loop_ms",
+                "step_loop_ms",
+                "result_build_ms",
+            ).forEach { phaseName ->
+                completedPhases[phaseName] = phases[phaseName] ?: 0L
+            }
+            phases.forEach { (phaseName, durationMs) ->
+                completedPhases.putIfAbsent(phaseName, durationMs)
+            }
+            val durationMs = (finishedAtMs - startedAtMs).coerceAtLeast(0)
+            return linkedMapOf(
+                "source" to "oob_function_runner",
+                "started_at_ms" to startedAtMs,
+                "finished_at_ms" to finishedAtMs,
+                "duration_ms" to durationMs,
+                "runner_duration_ms" to durationMs,
+                "phase_ms" to completedPhases,
+            )
+        }
+
+        private fun elapsedMs(startedAtNanos: Long): Long =
+            ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
     }
 
     private fun firstNonBlank(vararg values: Any?): String {

@@ -33,7 +33,8 @@ object ManualTouchRecordLoader {
     private const val TAG = "ManualTouchRecordLoader"
     private const val MIN_SWIPE_DISTANCE_DP = 24f
     private const val OVERLAY_UNLOCK_REPLAY_DELAY_MS = 32L
-    private const val IME_VISIBILITY_GRACE_MS = 180L
+    private const val IME_VISIBILITY_GRACE_MS = 450L
+    private const val IME_RELOCK_INITIAL_DELAY_MS = 400L
     private const val IME_RELOCK_POLL_MS = 300L
 
     private val recordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -102,7 +103,7 @@ object ManualTouchRecordLoader {
     ): Boolean {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = buildTouchView(context)
-        val params = buildParams(context, accessibilityOverlay, touchable = true)
+        val params = buildParams(context, touchable = true)
         return runCatching {
             manager.addView(view, params)
             windowManager = manager
@@ -142,7 +143,6 @@ object ManualTouchRecordLoader {
 
     private fun buildParams(
         context: Context,
-        accessibilityOverlay: Boolean,
         touchable: Boolean
     ): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
@@ -235,18 +235,23 @@ object ManualTouchRecordLoader {
 
     private fun dispatchGesture(gesture: ManualOverlayTouchGesture) {
         isProcessing = true
-        showGestureFeedback(gesture)
         synchronized(this) {
             unlockTouchLocked()
         }
         recordScope.launch {
+            val mayOpenIme = gesture.actionName == "click"
+            var executed = false
             runCatching {
                 delay(OVERLAY_UNLOCK_REPLAY_DELAY_MS)
-                HumanTrajectoryLearningSession.recordOverlayGesture(gesture)
+                val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture)
+                executed = replayResult.executed
             }.onFailure { error ->
                 OmniLog.w(TAG, "record overlay gesture failed: ${error.message}")
             }
-            if (gesture.actionName == "click") {
+            if (executed) {
+                withContext(Dispatchers.Main) { showGestureFeedback(gesture) }
+            }
+            if (mayOpenIme) {
                 delay(IME_VISIBILITY_GRACE_MS)
             }
             withContext(Dispatchers.Main) {
@@ -306,6 +311,7 @@ object ManualTouchRecordLoader {
     private fun scheduleImeRelockLocked() {
         if (imeBypassJob?.isActive == true) return
         imeBypassJob = recordScope.launch {
+            delay(IME_RELOCK_INITIAL_DELAY_MS)
             while (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
                 val imeVisible = withContext(Dispatchers.Main) {
                     synchronized(this@ManualTouchRecordLoader) {
@@ -351,7 +357,7 @@ object ManualTouchRecordLoader {
         val manager = windowManager ?: return
         val context = view.context ?: return
         if (!view.isAttachedToWindow) return
-        val params = buildParams(context, accessibilityOverlay = false, touchable)
+        val params = buildParams(context, touchable)
         overlayParams = params
         runCatching { manager.updateViewLayout(view, params) }
             .onFailure { OmniLog.w(TAG, "update touchable=$touchable failed: ${it.message}") }

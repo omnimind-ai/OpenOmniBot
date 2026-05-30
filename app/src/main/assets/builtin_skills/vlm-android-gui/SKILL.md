@@ -472,16 +472,15 @@ external clients can call the same names through MCP:
   replay a Function after user/agent selection.
 
 When validating direct Function replay, inspect `step_results`, not only the
-top-level `success`. A successful `open_app` replay should include an
-`open_app_package` postcondition with `package_matched=true` and a nonblank
-`current_package`. If the visible foreground activity is correct but
-`current_package` is blank, treat that as a native replay/package-observation
-bug, not a VLM reasoning failure.
+top-level `success`. Replay no longer runs post-action page/package validation:
+a deterministic step reports success when the native action backend accepts the
+operation. If the visible foreground activity is wrong after replay, treat that
+as replay/action-transfer behavior to debug from `step_results` and current
+page evidence.
 
-`oob_command_save/list/delete/clear` are user-friendly aliases for saving and
-maintaining RunLog-derived reusable instructions. Prefer `oob_function_*` when
-the agent is doing explicit Function registration, inspection, guard checks, or
-execution.
+Use `oob_run_log_convert` with `register=true` to save a RunLog-derived
+Function, and use `oob_function_*` for Function registration, inspection,
+updates, guard checks, execution, deletion, and clearing.
 
 Registration, model-tool exposure, recall, and direct replay policy are defined
 by the Runtime Flow section. This section only names the management tools and
@@ -859,11 +858,10 @@ preserving manual takeover cards (`compile_kind=manual_recording` or
 `transient_startup_bridge_dropped_count` in the converted Function source when
 debugging replay, but do not show that internal field in user-facing UI.
 
-If direct replay fails an `open_app` postcondition with
-`current_package=""`, verify the live foreground activity and UIAutomator XML
-before blaming the Function. A foreground target app plus blank replay package
-means the native runner did not obtain a valid Accessibility snapshot in its
-postcondition read; rerun on the latest APK and inspect `step_results`.
+If direct replay appears to open the wrong app or stay on the wrong page, verify
+the live foreground activity and UIAutomator XML before blaming the Function.
+Debug from the native `step_results`, action arguments, and current page
+evidence.
 
 ## Output Requirements
 

@@ -1,8 +1,10 @@
 # OOB RunLog
 
 OmniFlow is the pipeline from RunLog to reusable command matching, execution,
-and agent fallback. There is no separate OmniFlow skill runtime layer in this
-contract.
+and agent fallback. Product-facing behavior is exposed through skills; this
+contract only defines the storage, conversion, and replay primitives those
+skills call. There is no separate OmniFlow runtime or controller outside the
+skill system.
 
 RunLog is a runtime contract, not just a UI feature. Keep these boundaries aligned:
 

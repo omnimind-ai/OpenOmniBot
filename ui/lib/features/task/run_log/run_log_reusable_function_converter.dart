@@ -35,9 +35,15 @@ const String kOmniFlowFunctionEnhancerContractAsset =
 const String kOmniFlowFunctionEnhancerContract = '''
 OmniFlow Function Enhancer skill contract:
 - This is the saved Function enhancement pass; RunLog is provenance only.
+- Save changes only by calling `update_function`; do not hand-register rewritten Function JSON.
 - Improve reuse clarity without silently changing execution.
 - Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
+- Explicit user corrections such as `应该点「外卖」而不是点「美食」` must use `update_function` with mode=repair and a replace_target op.
+- Repair mode may update the selected step's target_description, selector hints, and coordinates/bounds when the desired node is found in XML.
+- Insert/delete executable actions only when the user explicitly asks for it; call `update_function` with mode=repair, allowStructuralChange=true, and an insert_step/delete_step op.
+- If the target step is ambiguous, return/ask for confirmation instead of guessing.
 - Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
+- Header enhancement must write a compact but detailed reusable description that helps the Agent decide when to call the Function later. Include the user-visible operation sequence, required app/page conditions, runtime inputs, and success signal when known; avoid coordinates and internal implementation details.
 - Per-step enhancement must mark each step with useful/merge/drop/noise metadata when applicable, but this metadata must not change executable replay by itself.
 - If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
 - The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.
@@ -822,13 +828,13 @@ class RunLogReusableFunctionConverter {
         );
       }
       final enhancedCore = _applyLabelEnhancement(aiJson, fallbackJson);
-      final changed = !_valuesEquivalent(enhancedCore, fallbackJson);
       final hasSectionFailure = sectionReports.any(_sectionReportFailed);
       final diffReport = _buildLabelEnhancementDiffReport(
         original: fallbackJson,
         enhanced: enhancedCore,
         mergedPatch: aiJson,
       );
+      final changed = diffReport['changed'] == true;
       final status = changed
           ? hasSectionFailure
                 ? RunLogReusableFunctionEnhancementStatus.partial
@@ -1220,7 +1226,7 @@ Work one section at a time:
 Return exactly one JSON object. Use this example shape:
 {
   "name": "short reusable command name",
-  "description": "one sentence describing when and why to use it",
+  "description": "On the contact edit page, fill the contact name and phone fields with runtime values and submit the form. Reuse when the same contact editor is visible; success is confirmed when the saved contact details appear.",
   "parameters": [
     {
       "name": "contact_name",
@@ -1267,6 +1273,7 @@ Rules:
 - Prefer reusable slots for user-entered text, contact names, phone numbers, search terms, message text, dates, URLs, and target object names.
 - Use agent_reuse only as non-executable metadata for key actions, reuse conditions, avoid conditions, success signal, and contiguous segment candidates.
 - Segment candidates must use inclusive contiguous step indexes from the existing execution.steps. Do not claim a segment is already registered as a new command.
+- Write a compact but detailed description that helps the Agent decide when to call this Function later. Cover what user-visible operations it performs, required app/page conditions, runtime inputs, and success signal when known.
 - Keep titles concise and action-oriented.
 - Include every input step index from execution.steps.
 - cleanup_action must be one of keep, merge_candidate, drop_candidate, or noise.
@@ -1290,7 +1297,7 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 只返回一个 JSON object。使用这个样例结构：
 {
   "name": "简短的复用指令名称",
-  "description": "一句话说明它什么时候、为什么可复用",
+  "description": "在联系人编辑页填写联系人姓名和手机号，并提交保存表单。当前页面是同类联系人编辑表单时可复用；保存后联系人详情页展示刚写入的信息即为成功。",
   "parameters": [
     {
       "name": "contact_name",
@@ -1337,6 +1344,7 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 - 优先抽象用户输入文本、联系人姓名、手机号、搜索词、消息正文、日期、URL 和目标对象名。
 - agent_reuse 只作为非执行元数据，用来记录 key action、复用条件、避免条件、成功信号和连续 segment 候选。
 - segment 候选必须使用现有 execution.steps 的闭区间连续 step index。不要声称 segment 已经注册成新的复用指令。
+- 简介要紧凑但更详细，方便 Agent 下次判断是否调用。说明它执行了哪些可见操作、需要处于哪个 app/页面、依赖哪些运行时输入，以及已知的成功信号。
 - 标题要短，像动作说明。
 - execution.steps 里的每个 step index 都要覆盖。
 - cleanup_action 只能是 keep、merge_candidate、drop_candidate 或 noise。
@@ -1372,13 +1380,14 @@ You are editing only the name and description of an OOB reusable command.
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'header')}
 
 Return exactly one JSON object:
-{"name":"short reusable command name","description":"one sentence describing when and why to use it"}
+{"name":"short reusable command name","description":"On the contact edit page, fill the contact name and phone fields with runtime values and submit the form. Reuse when the same contact editor is visible; success is confirmed when the saved contact details appear."}
 
 Rules:
 - Return raw JSON only. Do not use Markdown or explanations.
 - Do not include steps, parameters, execution, tools, or agent_reuse.
 - Keep the name concise and action-oriented.
-- The description must say when the Function is reusable, not describe implementation internals.
+- The description must be compact but detailed enough for future Agent selection: state the user-visible operation sequence, required app/page conditions, runtime inputs, and success signal when known.
+- Do not describe low-level coordinates, raw selectors, or internal implementation details.
 
 Input digest:
 $input
@@ -1390,13 +1399,14 @@ $input
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'header')}
 
 只返回一个 JSON object：
-{"name":"简短复用指令名称","description":"一句话说明它什么时候、为什么可复用"}
+{"name":"简短复用指令名称","description":"在联系人编辑页填写联系人姓名和手机号，并提交保存表单。当前页面是同类联系人编辑表单时可复用；保存后联系人详情页展示刚写入的信息即为成功。"}
 
 规则：
 - 只返回原始 JSON。不要 Markdown，不要解释。
 - 不要包含 steps、parameters、execution、tools 或 agent_reuse。
 - 名称要短，像可执行指令。
-- 简介要说明这个 Function 什么时候可复用，不要描述内部实现。
+- 简介要紧凑但足够详细，方便 Agent 后续选择：说明可见操作顺序、需要处于哪个 app/页面、依赖哪些运行时输入，以及已知成功信号。
+- 不要描述底层坐标、原始 selector 或内部实现细节。
 
 输入摘要：
 $input
@@ -4466,6 +4476,7 @@ bool _looksLikePlaceholderJsonText(String value) {
   return const {
     'short reusable command name',
     'one sentence',
+    'one sentence describing when and why to use it',
     'runtime_slot',
     'runtime value',
     'recorded value',
@@ -4474,6 +4485,7 @@ bool _looksLikePlaceholderJsonText(String value) {
     '简短复用指令名称',
     '简短的复用指令名称',
     '一句话简介',
+    '一句话说明它什么时候、为什么可复用',
     '运行时值',
     '记录值',
     '简短动作标题',
