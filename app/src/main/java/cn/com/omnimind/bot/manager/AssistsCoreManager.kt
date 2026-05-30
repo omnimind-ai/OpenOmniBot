@@ -3168,7 +3168,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun getInternalRunLogs(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val limit = call.argument<Number>("limit")?.toInt() ?: 50
-            val payload = InternalRunLogStore.listRuns(context, limit)
+            val offset = call.argument<Number>("offset")?.toInt() ?: 0
+            val payload = withContext(Dispatchers.IO) {
+                InternalRunLogStore.listRuns(context, limit, offset)
+            }
             withContext(Dispatchers.Main) {
                 result.success(payload)
             }
@@ -3178,7 +3181,9 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun getInternalRunLogTimeline(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val runId = call.argument<String>("runId")?.trim().orEmpty()
-            val payload = InternalRunLogStore.timelinePayload(context, runId)
+            val payload = withContext(Dispatchers.IO) {
+                InternalRunLogStore.timelinePayload(context, runId)
+            }
             withContext(Dispatchers.Main) {
                 result.success(payload)
             }
@@ -3883,10 +3888,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     fun listOobReusableFunctions(call: MethodCall, result: MethodChannel.Result) {
         mainJob.launch {
             val limit = call.argument<Number>("limit")?.toInt() ?: 100
-            val service = OobRunLogReplayService(context)
-            runCatching { service.autoRegisterRecentRunLogs(limit = 50) }
-                .onFailure { OmniLog.w(TAG, "list OOB functions auto-register failed: ${it.message}") }
-            val payload = service.listFunctions(limit)
+            val offset = call.argument<Number>("offset")?.toInt() ?: 0
+            val autoRegister = call.argument<Boolean>("autoRegister") ?: true
+            val payload = withContext(Dispatchers.IO) {
+                val service = OobRunLogReplayService(context)
+                if (autoRegister) {
+                    runCatching { service.autoRegisterRecentRunLogs(limit = 50) }
+                        .onFailure { OmniLog.w(TAG, "list OOB functions auto-register failed: ${it.message}") }
+                }
+                service.listFunctions(limit = limit, offset = offset)
+            }
             withContext(Dispatchers.Main) {
                 result.success(payload)
             }

@@ -209,8 +209,10 @@ class CacheChannel {
                 "getTaskExecutionInfos" -> {
                     mainJob.launch {
                         try {
+                            val limit = call.argument<Number>("limit")?.toInt() ?: 50
+                            val offset = call.argument<Number>("offset")?.toInt() ?: 0
                             val infos = withContext(Dispatchers.IO) {
-                                DatabaseHelper.getTaskExecutionInfos()
+                                DatabaseHelper.getTaskExecutionInfos(limit, offset)
                             }
                             result.success(infos.map {
                                 mapOf(
@@ -576,8 +578,15 @@ class CacheChannel {
                                 ?: return@launch result.error("ARG_ERROR", "nodeId 不能为空", null)
                             val suggestionId = call.argument<String>("suggestionId")
                                 ?: return@launch result.error("ARG_ERROR", "suggestionId 不能为空", null)
+                            val limit = call.argument<Number>("limit")?.toInt() ?: 50
+                            val offset = call.argument<Number>("offset")?.toInt() ?: 0
                             val records = withContext(Dispatchers.IO) {
-                                DatabaseHelper.getExecutionRecordsByNodeAndSuggestionId(nodeId, suggestionId)
+                                DatabaseHelper.getExecutionRecordsByNodeAndSuggestionId(
+                                    nodeId,
+                                    suggestionId,
+                                    limit,
+                                    offset
+                                )
                             }
                             result.success(records.map {
                                 mapOf(

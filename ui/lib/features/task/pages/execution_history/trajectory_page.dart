@@ -39,6 +39,8 @@ class TrajectoryPage extends StatefulWidget {
 
 class _TrajectoryPageState extends State<TrajectoryPage>
     with WidgetsBindingObserver, PageLifecycleMixin<TrajectoryPage> {
+  static const int _executionInfoPageSize = 40;
+
   List<AppTag> executionTags = [];
 
   List<TaskExecutionInfo> taskExecutionInfos = [];
@@ -52,6 +54,9 @@ class _TrajectoryPageState extends State<TrajectoryPage>
   // 选择模式状态
   bool _isSelectionMode = false;
   Set<String> _selectedRecordKeys = {}; // 使用 title+packageName 作为唯一标识
+  bool _isLoadingMoreExecutionInfos = false;
+  bool _hasMoreExecutionInfos = false;
+  int _nextExecutionInfoOffset = 0;
 
   // Suggestion 缓存，key 为 nodeId|suggestionId（用于执行任务）
   Map<String, Map<String, dynamic>> _suggestionMap = {};
@@ -144,15 +149,41 @@ class _TrajectoryPageState extends State<TrajectoryPage>
   }
 
   // 加载执行记录信息
-  Future<void> _loadTaskExecutionInfos() async {
+  Future<void> _loadTaskExecutionInfos({bool reset = true}) async {
     try {
-      final records = await CacheUtil.getTaskExecutionInfos();
+      final offset = reset ? 0 : _nextExecutionInfoOffset;
+      final records = await CacheUtil.getTaskExecutionInfos(
+        limit: _executionInfoPageSize,
+        offset: offset,
+      );
 
       setState(() {
-        taskExecutionInfos = records;
+        taskExecutionInfos = reset
+            ? records
+            : [...taskExecutionInfos, ...records];
+        _hasMoreExecutionInfos = records.length >= _executionInfoPageSize;
+        _nextExecutionInfoOffset = offset + records.length;
       });
     } catch (e) {
       print('Error loading execution records: $e');
+    }
+  }
+
+  Future<void> _loadMoreExecutionInfos() async {
+    if (_isLoading ||
+        _isLoadingMoreExecutionInfos ||
+        !_hasMoreExecutionInfos ||
+        _isSelectionMode) {
+      return;
+    }
+    setState(() => _isLoadingMoreExecutionInfos = true);
+    try {
+      await _loadTaskExecutionInfos(reset: false);
+      await _loadExecutionTags();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMoreExecutionInfos = false);
+      }
     }
   }
 
@@ -771,23 +802,24 @@ class _TrajectoryPageState extends State<TrajectoryPage>
             Expanded(
               child: _isLoading
                   ? _buildLoadingIndicator()
-                  : SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          // 选择模式下模糊顶部区域
-                          ImageFiltered(
+                  : CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: ImageFiltered(
                             imageFilter: _isSelectionMode
                                 ? ImageFilter.blur(sigmaX: 10, sigmaY: 10)
                                 : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-                            child: Column(
+                            child: const Column(
                               children: [
                                 SizedBox(height: 14),
-                                const ActivityDashboardCard(),
+                                ActivityDashboardCard(),
                                 SizedBox(height: 12),
                               ],
                             ),
                           ),
-                          Padding(
+                        ),
+                        SliverToBoxAdapter(
+                          child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Align(
                               alignment: Alignment.centerLeft,
@@ -801,8 +833,10 @@ class _TrajectoryPageState extends State<TrajectoryPage>
                               ),
                             ),
                           ),
-                          SizedBox(height: 10),
-                          Padding(
+                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                        SliverToBoxAdapter(
+                          child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: TagSection(
                               items: executionTags,
@@ -811,25 +845,32 @@ class _TrajectoryPageState extends State<TrajectoryPage>
                               maxCollapsedRows: 1,
                             ),
                           ),
-                          if (allRecords.isNotEmpty) ...[
-                            SizedBox(height: 8),
-                            ExecutionRecordList(
-                              records: filterRecords,
-                              onDelete: _deleteExecutionRecord,
-                              onMore: _showContextMenu,
-                              onLongPress: (vm) => _enterSelectionMode(vm),
-                              onTap: (vm) => _navigateToDetail(vm),
-                              isSelectionMode: _isSelectionMode,
-                              selectedKeys: _selectedRecordKeys,
-                              onToggleSelection: _toggleRecordSelection,
-                              getRecordKey: _getRecordKey,
-                              onSchedulePressed: _onSchedulePressed,
-                              scheduledTaskKeys: _scheduledTaskKeys,
+                        ),
+                        if (allRecords.isNotEmpty) ...[
+                          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                          ExecutionRecordList(
+                            records: filterRecords,
+                            onDelete: _deleteExecutionRecord,
+                            onMore: _showContextMenu,
+                            onLongPress: (vm) => _enterSelectionMode(vm),
+                            onTap: (vm) => _navigateToDetail(vm),
+                            isSelectionMode: _isSelectionMode,
+                            selectedKeys: _selectedRecordKeys,
+                            onToggleSelection: _toggleRecordSelection,
+                            getRecordKey: _getRecordKey,
+                            onSchedulePressed: _onSchedulePressed,
+                            scheduledTaskKeys: _scheduledTaskKeys,
+                          ),
+                          if (_hasMoreExecutionInfos)
+                            SliverToBoxAdapter(
+                              child: _ExecutionHistoryFooter(
+                                isLoading: _isLoadingMoreExecutionInfos,
+                                onVisible: _loadMoreExecutionInfos,
+                              ),
                             ),
-                          ] else
-                            _buildEmptyRecordsHint(),
-                        ],
-                      ),
+                        ] else
+                          SliverToBoxAdapter(child: _buildEmptyRecordsHint()),
+                      ],
                     ),
             ),
             // 选择模式下的底部删除按钮栏
@@ -992,6 +1033,33 @@ class _TrajectoryPageState extends State<TrajectoryPage>
           height: 32,
           child: CircularProgressIndicator(strokeWidth: 2.5),
         ),
+      ),
+    );
+  }
+}
+
+class _ExecutionHistoryFooter extends StatelessWidget {
+  const _ExecutionHistoryFooter({
+    required this.isLoading,
+    required this.onVisible,
+  });
+
+  final bool isLoading;
+  final VoidCallback onVisible;
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => onVisible());
+    return SizedBox(
+      height: 56,
+      child: Center(
+        child: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }

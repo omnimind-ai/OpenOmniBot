@@ -1181,6 +1181,11 @@ String _userVisibleExecutionText(String value) {
 class UtgRunLogsSnapshot {
   final bool success;
   final int count;
+  final int totalCount;
+  final int limit;
+  final int offset;
+  final int nextOffset;
+  final bool hasMore;
   final List<UtgRunLogSummary> runs;
   final String runIndexPath;
   final String runStorageDir;
@@ -1189,6 +1194,11 @@ class UtgRunLogsSnapshot {
   const UtgRunLogsSnapshot({
     required this.success,
     required this.count,
+    required this.totalCount,
+    required this.limit,
+    required this.offset,
+    required this.nextOffset,
+    required this.hasMore,
     required this.runs,
     required this.runIndexPath,
     required this.runStorageDir,
@@ -1201,6 +1211,22 @@ class UtgRunLogsSnapshot {
       count: map['count'] is num
           ? (map['count'] as num).toInt()
           : int.tryParse((map['count'] ?? '0').toString()) ?? 0,
+      totalCount: map['total_count'] is num
+          ? (map['total_count'] as num).toInt()
+          : int.tryParse(
+                  (map['total_count'] ?? map['count'] ?? '0').toString(),
+                ) ??
+                0,
+      limit: map['limit'] is num
+          ? (map['limit'] as num).toInt()
+          : int.tryParse((map['limit'] ?? '0').toString()) ?? 0,
+      offset: map['offset'] is num
+          ? (map['offset'] as num).toInt()
+          : int.tryParse((map['offset'] ?? '0').toString()) ?? 0,
+      nextOffset: map['next_offset'] is num
+          ? (map['next_offset'] as num).toInt()
+          : int.tryParse((map['next_offset'] ?? '0').toString()) ?? 0,
+      hasMore: map['has_more'] == true || map['hasMore'] == true,
       runs:
           (map['runs'] as List<dynamic>?)
               ?.map((e) => UtgRunLogSummary.fromMap(e as Map?))
@@ -2247,9 +2273,13 @@ class AssistsMessageService {
     return UtgRunLogsSnapshot.fromMap(decoded);
   }
 
-  static Future<UtgRunLogsSnapshot> getInternalRunLogs({int limit = 50}) async {
+  static Future<UtgRunLogsSnapshot> getInternalRunLogs({
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final result = await assistCore.invokeMethod('getInternalRunLogs', {
       'limit': limit,
+      'offset': offset,
     });
     if (result is! Map) {
       throw Exception('内部 RunLog 响应格式错误');
@@ -2743,9 +2773,13 @@ class AssistsMessageService {
 
   static Future<Map<String, dynamic>> listOobReusableFunctions({
     int limit = 100,
+    int offset = 0,
+    bool autoRegister = true,
   }) async {
     final result = await assistCore.invokeMethod('listOobReusableFunctions', {
       'limit': limit,
+      'offset': offset,
+      'autoRegister': autoRegister,
     });
     return _jsonSafeDynamicMap(result);
   }

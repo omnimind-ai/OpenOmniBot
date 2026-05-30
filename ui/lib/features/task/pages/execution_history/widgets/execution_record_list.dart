@@ -40,75 +40,56 @@ class ExecutionRecordList extends StatelessWidget {
       grouped.putIfAbsent(section, () => []).add(record);
     }
 
+    final visibleRecords = <ExecutionRecordListItemData>[
+      for (final entry in grouped.entries) ...entry.value,
+    ];
+
     return SlidableAutoCloseBehavior(
       closeWhenTapped: true,
-      child: Padding(
+      child: SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          children: [
-            ...grouped.entries.map((entry) {
-              final section = entry.key;
-              final sectionCards = entry.value;
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final record = visibleRecords[index];
+            final recordKey =
+                getRecordKey?.call(record) ??
+                '${record.nodeId}|${record.suggestionId}';
+            final isSelected = selectedKeys.contains(recordKey);
+            final hasScheduledTask = scheduledTaskKeys.contains(recordKey);
 
-              return Column(
-                children: [
-                  // 分组标题
-                  // _buildSectionHeader(section),
-
-                  // 分组内容
-                  ...List.generate(sectionCards.length, (index) {
-                    final record = sectionCards[index];
-                    final showSeparator = index < sectionCards.length - 1;
-                    final recordKey =
-                        getRecordKey?.call(record) ??
-                        '${record.nodeId}|${record.suggestionId}';
-                    final isSelected = selectedKeys.contains(recordKey);
-                    final hasScheduledTask = scheduledTaskKeys.contains(
-                      recordKey,
-                    );
-
-                    return Column(
-                      children: [
-                        GestureDetector(
-                          onTap: isSelectionMode
-                              ? () => onToggleSelection?.call(record)
-                              : () => onTap?.call(record),
-                          child: ExecutionRecordListItem(
-                            recordModel: record,
-                            isSelectionMode: isSelectionMode,
-                            isSelected: isSelected,
-                            hasScheduledTask: hasScheduledTask,
-                            onSchedulePressed: isSelectionMode
-                                ? null
-                                : () => onSchedulePressed?.call(record),
-                            onMorePressed: isSelectionMode
-                                ? null
-                                : (context, position) {
-                                    onMore(record, context, position);
-                                  },
-                            onDelete: isSelectionMode
-                                ? null
-                                : () {
-                                    onDelete(record.id);
-                                  },
-                            onLongPress: isSelectionMode
-                                ? null
-                                : () {
-                                    onLongPress?.call(record);
-                                  },
-                          ),
-                        ),
-                        // if (showSeparator)
-                        const SizedBox(height: 8),
-                      ],
-                    );
-                  }),
-
-                  // const SizedBox(height: 16),
-                ],
-              );
-            }).toList(),
-          ],
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GestureDetector(
+                onTap: isSelectionMode
+                    ? () => onToggleSelection?.call(record)
+                    : () => onTap?.call(record),
+                child: ExecutionRecordListItem(
+                  recordModel: record,
+                  isSelectionMode: isSelectionMode,
+                  isSelected: isSelected,
+                  hasScheduledTask: hasScheduledTask,
+                  onSchedulePressed: isSelectionMode
+                      ? null
+                      : () => onSchedulePressed?.call(record),
+                  onMorePressed: isSelectionMode
+                      ? null
+                      : (context, position) {
+                          onMore(record, context, position);
+                        },
+                  onDelete: isSelectionMode
+                      ? null
+                      : () {
+                          onDelete(record.id);
+                        },
+                  onLongPress: isSelectionMode
+                      ? null
+                      : () {
+                          onLongPress?.call(record);
+                        },
+                ),
+              ),
+            );
+          }, childCount: visibleRecords.length),
         ),
       ),
     );

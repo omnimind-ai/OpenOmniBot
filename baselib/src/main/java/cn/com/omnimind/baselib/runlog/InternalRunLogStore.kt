@@ -270,15 +270,23 @@ object InternalRunLogStore {
     }
 
     @Synchronized
-    fun listRuns(context: Context, limit: Int = 50): Map<String, Any?> {
+    fun listRuns(context: Context, limit: Int = 50, offset: Int = 0): Map<String, Any?> {
         val safeLimit = limit.coerceIn(1, MAX_RUN_COUNT)
-        val runs = readAllRunsLocked(context)
+        val safeOffset = offset.coerceAtLeast(0)
+        val allRuns = readAllRunsLocked(context)
             .sortedByDescending { it.startedAtMs }
+        val runs = allRuns
+            .drop(safeOffset)
             .take(safeLimit)
         val dir = storageDir(context)
         return linkedMapOf(
             "success" to true,
             "count" to runs.size,
+            "total_count" to allRuns.size,
+            "limit" to safeLimit,
+            "offset" to safeOffset,
+            "next_offset" to (safeOffset + runs.size),
+            "has_more" to (safeOffset + runs.size < allRuns.size),
             "provider" to PROVIDER,
             "run_index_path" to File(dir, "index.json").absolutePath,
             "run_storage_dir" to dir.absolutePath,
@@ -290,10 +298,16 @@ object InternalRunLogStore {
     }
 
     @Synchronized
-    fun listRunRecords(context: Context, limit: Int = 50): List<InternalRunLogRecord> {
+    fun listRunRecords(
+        context: Context,
+        limit: Int = 50,
+        offset: Int = 0
+    ): List<InternalRunLogRecord> {
         val safeLimit = limit.coerceIn(1, MAX_RUN_COUNT)
+        val safeOffset = offset.coerceAtLeast(0)
         return readAllRunsLocked(context)
             .sortedByDescending { it.startedAtMs }
+            .drop(safeOffset)
             .take(safeLimit)
     }
 

@@ -182,12 +182,16 @@ class OobRunLogReplayService(
         )
     }
 
-    fun listFunctions(limit: Int = 100): Map<String, Any?> {
-        val specs = listFunctionSpecs(limit)
+    fun listFunctions(limit: Int = 100, offset: Int = 0): Map<String, Any?> {
+        val page = listFunctionSpecsPage(limit = limit, offset = offset)
         return linkedMapOf(
             "success" to true,
-            "count" to specs.size,
-            "functions" to specs.map(::summaryMap),
+            "count" to page.specs.size,
+            "limit" to page.limit,
+            "offset" to page.offset,
+            "next_offset" to (page.offset + page.specs.size),
+            "has_more" to page.hasMore,
+            "functions" to page.specs.map(::summaryMap),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
             "source" to "oob_run_log_replay_service"
@@ -195,10 +199,19 @@ class OobRunLogReplayService(
     }
 
     fun listFunctionSpecs(limit: Int = 100): List<Map<String, Any?>> {
+        return listFunctionSpecsPage(limit = limit, offset = 0).specs
+    }
+
+    private fun listFunctionSpecsPage(
+        limit: Int = 100,
+        offset: Int = 0
+    ): FunctionSpecPage {
         val safeLimit = limit.coerceIn(1, 500)
-        syncWorkspaceFunctionsToSharedPrefs(limit = safeLimit)
+        val safeOffset = offset.coerceAtLeast(0)
+        val scanLimit = (safeOffset + safeLimit + 1).coerceIn(1, 500)
+        syncWorkspaceFunctionsToSharedPrefs(limit = scanLimit)
         val byId = linkedMapOf<String, Map<String, Any?>>()
-        workspaceFunctionStore.list(safeLimit).forEach { spec ->
+        workspaceFunctionStore.list(scanLimit).forEach { spec ->
             val functionId = functionIdFromSpec(spec)
             if (functionId.isNotEmpty()) {
                 val merged = linkedMapOf<String, Any?>().apply {
@@ -212,7 +225,7 @@ class OobRunLogReplayService(
                 byId[functionId] = sanitizeMap(merged)
             }
         }
-        val summaries = (OobReusableFunctionStore.list(context, safeLimit)["functions"] as? List<*>)
+        val summaries = (OobReusableFunctionStore.list(context, scanLimit)["functions"] as? List<*>)
             ?: emptyList<Any?>()
         summaries.forEach { rawSummary ->
             val summary = rawSummary as? Map<*, *> ?: return@forEach
@@ -222,8 +235,21 @@ class OobRunLogReplayService(
                 byId[functionId] = sanitizeMap(spec)
             }
         }
-        return byId.values.take(safeLimit)
+        val window = byId.values.drop(safeOffset).take(safeLimit + 1).toList()
+        return FunctionSpecPage(
+            specs = window.take(safeLimit),
+            limit = safeLimit,
+            offset = safeOffset,
+            hasMore = window.size > safeLimit
+        )
     }
+
+    private data class FunctionSpecPage(
+        val specs: List<Map<String, Any?>>,
+        val limit: Int,
+        val offset: Int,
+        val hasMore: Boolean
+    )
 
     fun getFunctionSpec(functionId: String): Map<String, Any?>? {
         val normalized = functionId.trim()

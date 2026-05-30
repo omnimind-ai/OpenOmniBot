@@ -18,10 +18,13 @@ class RunLogListPage extends StatefulWidget {
 }
 
 class _RunLogListPageState extends State<RunLogListPage> {
-  static const int _limit = 50;
+  static const int _pageSize = 20;
 
-  UtgRunLogsSnapshot? _snapshot;
+  List<UtgRunLogSummary> _runs = const [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = false;
+  int _nextOffset = 0;
   String? _error;
 
   @override
@@ -33,15 +36,21 @@ class _RunLogListPageState extends State<RunLogListPage> {
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
+      _isLoadingMore = false;
       _error = null;
     });
     try {
       final snapshot = await AssistsMessageService.getInternalRunLogs(
-        limit: _limit,
+        limit: _pageSize,
+        offset: 0,
       );
       if (!mounted) return;
       setState(() {
-        _snapshot = snapshot;
+        _runs = snapshot.runs;
+        _hasMore = snapshot.hasMore;
+        _nextOffset = snapshot.nextOffset > 0
+            ? snapshot.nextOffset
+            : snapshot.runs.length;
         _isLoading = false;
       });
     } catch (e) {
@@ -50,6 +59,35 @@ class _RunLogListPageState extends State<RunLogListPage> {
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    setState(() {
+      _isLoadingMore = true;
+      _error = null;
+    });
+    try {
+      final snapshot = await AssistsMessageService.getInternalRunLogs(
+        limit: _pageSize,
+        offset: _nextOffset,
+      );
+      if (!mounted) return;
+      setState(() {
+        _runs = [..._runs, ...snapshot.runs];
+        _hasMore = snapshot.hasMore;
+        _nextOffset = snapshot.nextOffset > 0
+            ? snapshot.nextOffset
+            : _runs.length;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+      });
+      showToast(e.toString(), type: ToastType.error);
     }
   }
 
@@ -95,7 +133,7 @@ class _RunLogListPageState extends State<RunLogListPage> {
       );
     }
 
-    final runs = _snapshot?.runs ?? const <UtgRunLogSummary>[];
+    final runs = _runs;
     if (runs.isEmpty) {
       return _RunLogEmptyState(
         icon: Icons.route_outlined,
@@ -114,12 +152,18 @@ class _RunLogListPageState extends State<RunLogListPage> {
       onRefresh: _load,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        itemCount: runs.length,
+        itemCount: runs.length + (_hasMore || _isLoadingMore ? 1 : 0),
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _RunLogListItem(
-          run: runs[index],
-          onTap: () => _openRunLog(runs[index]),
-        ),
+        itemBuilder: (context, index) {
+          if (index >= runs.length) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+            return const _RunLogListFooter();
+          }
+          return _RunLogListItem(
+            run: runs[index],
+            onTap: () => _openRunLog(runs[index]),
+          );
+        },
       ),
     );
   }
@@ -140,6 +184,24 @@ class _RunLogListPageState extends State<RunLogListPage> {
         if (widget.baseUrl != null && widget.baseUrl!.trim().isNotEmpty)
           'baseUrl': widget.baseUrl!.trim(),
       },
+    );
+  }
+}
+
+class _RunLogListFooter extends StatelessWidget {
+  const _RunLogListFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 52,
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
     );
   }
 }

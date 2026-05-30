@@ -38,8 +38,8 @@ interface ExecutionRecordDao {
     suspend fun getByTitle(title: String): List<ExecutionRecord>
 
     // Updated query to group by nodeId and suggestionId, excluding running records
-    @Query("SELECT MAX(id) as id, title, appName, packageName, nodeId, suggestionId, iconUrl, type, content, COUNT(*) as count, MAX(createdAt) as lastExecutionTime FROM execution_records WHERE status != 'running' GROUP BY nodeId, suggestionId ORDER BY lastExecutionTime DESC")
-    suspend fun getTaskExecutionInfos(): List<TaskExecutionInfoDTO>
+    @Query("SELECT MAX(id) as id, title, appName, packageName, nodeId, suggestionId, iconUrl, type, content, COUNT(*) as count, MAX(createdAt) as lastExecutionTime FROM execution_records WHERE status != 'running' GROUP BY nodeId, suggestionId ORDER BY lastExecutionTime DESC LIMIT :limit OFFSET :offset")
+    suspend fun getTaskExecutionInfos(limit: Int, offset: Int): List<TaskExecutionInfoDTO>
 
     @Query("DELETE FROM execution_records WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -49,8 +49,13 @@ interface ExecutionRecordDao {
     suspend fun deleteByNodeAndSuggestionId(nodeId: String, suggestionId: String)
 
     // 按 nodeId 和 suggestionId 获取执行记录列表，排除执行中的记录
-    @Query("SELECT * FROM execution_records WHERE nodeId = :nodeId AND suggestionId = :suggestionId AND status != 'running' ORDER BY createdAt DESC")
-    suspend fun getByNodeAndSuggestionId(nodeId: String, suggestionId: String): List<ExecutionRecord>
+    @Query("SELECT * FROM execution_records WHERE nodeId = :nodeId AND suggestionId = :suggestionId AND status != 'running' ORDER BY createdAt DESC LIMIT :limit OFFSET :offset")
+    suspend fun getByNodeAndSuggestionId(
+        nodeId: String,
+        suggestionId: String,
+        limit: Int,
+        offset: Int
+    ): List<ExecutionRecord>
 
     data class ExecutionRecordCount(val appName: String, val packageName: String, val count: Int)
     data class ExecutionRecordTitleCount(val title: String, val count: Int)

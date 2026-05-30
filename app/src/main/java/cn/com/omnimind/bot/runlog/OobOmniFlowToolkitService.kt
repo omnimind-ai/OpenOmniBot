@@ -511,7 +511,10 @@ class OobOmniFlowToolkitService(
     }
 
     fun listFunctions(args: Map<String, Any?>?): Map<String, Any?> =
-        replayService.listFunctions(limit = intArg(args?.get("limit"), defaultValue = 100))
+        replayService.listFunctions(
+            limit = intArg(args?.get("limit"), defaultValue = 100),
+            offset = intArg(args?.get("offset"), defaultValue = 0)
+        )
 
     fun getFunction(args: Map<String, Any?>?): Map<String, Any?> {
         val functionId = firstNonBlank(args?.get("functionId"), args?.get("function_id"))
@@ -2265,7 +2268,8 @@ class OobOmniFlowToolkitService(
 
     fun listRunLogs(args: Map<String, Any?>?): Map<String, Any?> {
         val limit = intArg(args?.get("limit"), defaultValue = 50).coerceIn(1, 200)
-        return InternalRunLogStore.listRuns(context, limit = limit)
+        val offset = intArg(args?.get("offset"), defaultValue = 0).coerceAtLeast(0)
+        return InternalRunLogStore.listRuns(context, limit = limit, offset = offset)
     }
 
     fun getRunLog(args: Map<String, Any?>?): Map<String, Any?> {

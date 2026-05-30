@@ -387,12 +387,28 @@ object DatabaseHelper {
         getDatabase().executionRecordDao().deleteByNodeAndSuggestionId(nodeId, suggestionId)
     }
 
-    suspend fun getExecutionRecordsByNodeAndSuggestionId(nodeId: String, suggestionId: String): List<ExecutionRecord> {
-        return getDatabase().executionRecordDao().getByNodeAndSuggestionId(nodeId, suggestionId)
+    suspend fun getExecutionRecordsByNodeAndSuggestionId(
+        nodeId: String,
+        suggestionId: String,
+        limit: Int = 50,
+        offset: Int = 0
+    ): List<ExecutionRecord> {
+        return getDatabase().executionRecordDao().getByNodeAndSuggestionId(
+            nodeId = nodeId,
+            suggestionId = suggestionId,
+            limit = limit.coerceIn(1, 500),
+            offset = offset.coerceAtLeast(0)
+        )
     }
 
-    suspend fun getTaskExecutionInfos(): List<ExecutionRecordDao.TaskExecutionInfoDTO> {
-        return getDatabase().executionRecordDao().getTaskExecutionInfos()
+    suspend fun getTaskExecutionInfos(
+        limit: Int = 50,
+        offset: Int = 0
+    ): List<ExecutionRecordDao.TaskExecutionInfoDTO> {
+        return getDatabase().executionRecordDao().getTaskExecutionInfos(
+            limit = limit.coerceIn(1, 500),
+            offset = offset.coerceAtLeast(0)
+        )
     }
 
     // Message相关方法

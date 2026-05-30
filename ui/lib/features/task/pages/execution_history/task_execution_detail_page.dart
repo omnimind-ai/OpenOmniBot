@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
+import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/models/execution_record.dart';
 import 'package:ui/theme/app_colors.dart';
@@ -84,7 +85,11 @@ class TaskExecutionDetailPage extends StatefulWidget {
 }
 
 class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
+  static const int _executionRecordPageSize = 50;
+
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreRecords = false;
   List<ExecutionRecord> _executionRecords = [];
   ImageProvider? _appIconProvider;
   bool get _isSummaryType =>
@@ -107,6 +112,8 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
       final records = await CacheUtil.getExecutionRecordsByNodeAndSuggestionId(
         widget.params.nodeId,
         widget.params.suggestionId,
+        limit: _executionRecordPageSize,
+        offset: 0,
       );
 
       // 加载应用图标
@@ -120,6 +127,7 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
       if (mounted) {
         setState(() {
           _executionRecords = records;
+          _hasMoreRecords = records.length >= _executionRecordPageSize;
           _isLoading = false;
         });
       }
@@ -129,6 +137,30 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
         setState(() {
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _loadMoreRecords() async {
+    if (_isLoadingMore || !_hasMoreRecords) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final records = await CacheUtil.getExecutionRecordsByNodeAndSuggestionId(
+        widget.params.nodeId,
+        widget.params.suggestionId,
+        limit: _executionRecordPageSize,
+        offset: _executionRecords.length,
+      );
+      if (!mounted) return;
+      setState(() {
+        _executionRecords = [..._executionRecords, ...records];
+        _hasMoreRecords = records.length >= _executionRecordPageSize;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      print('加载更多执行记录失败: $e');
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
       }
     }
   }
@@ -488,12 +520,31 @@ class _TaskExecutionDetailPageState extends State<TaskExecutionDetailPage> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
-        children: _executionRecords.asMap().entries.map((entry) {
-          final index = entry.key;
-          final record = entry.value;
-          final isLast = index == _executionRecords.length - 1;
-          return _buildExecutionItem(record, isLast);
-        }).toList(),
+        children: [
+          ..._executionRecords.asMap().entries.map((entry) {
+            final index = entry.key;
+            final record = entry.value;
+            final isLast = index == _executionRecords.length - 1;
+            return _buildExecutionItem(record, isLast);
+          }),
+          if (_hasMoreRecords)
+            TextButton(
+              onPressed: _isLoadingMore ? null : _loadMoreRecords,
+              child: _isLoadingMore
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      AppTextLocalizer.choose(
+                        zh: '加载更多',
+                        en: 'Load more',
+                        locale: Localizations.localeOf(context),
+                      ),
+                    ),
+            ),
+        ],
       ),
     );
   }

@@ -197,6 +197,7 @@ class RunLogTimelinePage extends StatefulWidget {
 class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
   Map<String, dynamic> _payload = const {};
   List<Map<String, dynamic>> _cards = [];
+  List<_RunLogCardGroup> _cardGroups = const [];
   bool _isLoading = true;
   bool _isConvertingFunction = false;
   bool _isReplayingRunLog = false;
@@ -231,11 +232,14 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
       final payload = await AssistsMessageService.getInternalRunLogTimeline(
         runId: widget.runId,
       );
+      final cards = _extractTimelineCards(payload);
+      final cardGroups = _groupTimelineCards(cards);
       final restoredBinding = await _restoreRegisteredFunctionBinding(payload);
       if (!mounted) return;
       setState(() {
         _payload = payload;
-        _cards = _extractTimelineCards(payload);
+        _cards = cards;
+        _cardGroups = cardGroups;
         final error = _runLogPayloadError(context, payload);
         _error = error;
         _savedFunctionSpec = restoredBinding?.spec;
@@ -448,29 +452,44 @@ class _RunLogTimelinePageState extends State<RunLogTimelinePage> {
         ],
       );
     }
-    final cardGroups = _groupTimelineCards(_cards);
+    final cardGroups = _cardGroups;
     final functionStatusStrip = _buildFunctionStatusStrip(context);
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      children: [
-        _RunLogOverviewCard(payload: _payload, stepCount: _cards.length),
-        if (functionStatusStrip != null) ...[
-          const SizedBox(height: 10),
-          functionStatusStrip,
-        ],
-        const SizedBox(height: 12),
-        for (var index = 0; index < cardGroups.length; index++)
-          _StepCard(
-            card: cardGroups[index].card,
-            fallbackIndex: cardGroups[index].fallbackIndex,
-            isLast: index == cardGroups.length - 1,
-            nestedCards: cardGroups[index].nestedCards,
-            onTap: () => _showStepDetail(
-              cardGroups[index].card,
-              cardGroups[index].fallbackIndex,
-              nestedCards: cardGroups[index].nestedCards,
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          sliver: SliverToBoxAdapter(
+            child: _RunLogOverviewCard(
+              payload: _payload,
+              stepCount: _cards.length,
             ),
           ),
+        ),
+        if (functionStatusStrip != null)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            sliver: SliverToBoxAdapter(child: functionStatusStrip),
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final group = cardGroups[index];
+              return _StepCard(
+                card: group.card,
+                fallbackIndex: group.fallbackIndex,
+                isLast: index == cardGroups.length - 1,
+                nestedCards: group.nestedCards,
+                onTap: () => _showStepDetail(
+                  group.card,
+                  group.fallbackIndex,
+                  nestedCards: group.nestedCards,
+                ),
+              );
+            }, childCount: cardGroups.length),
+          ),
+        ),
       ],
     );
   }

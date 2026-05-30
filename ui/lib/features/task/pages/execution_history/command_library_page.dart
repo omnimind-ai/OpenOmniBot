@@ -21,8 +21,14 @@ class CommandLibraryPage extends StatefulWidget {
 }
 
 class _CommandLibraryPageState extends State<CommandLibraryPage> {
+  static const int _pageSize = 30;
+
+  List<_FunctionSummary> _functionSummaries = const [];
   List<_FunctionGroup> _functions = const [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = false;
+  int _nextOffset = 0;
   String? _error;
   final Set<String> _deletingIds = {};
   final Set<String> _runningIds = {};
@@ -41,24 +47,21 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
     });
     try {
       final result = await AssistsMessageService.listOobReusableFunctions(
-        limit: 200,
+        limit: _pageSize,
+        offset: 0,
+        autoRegister: false,
       );
       if (!mounted) return;
-      final raw = result['functions'];
-      final list = raw is List
-          ? raw
-                .whereType<Map>()
-                .map(
-                  (item) => _FunctionSummary.fromMap(
-                    Map<String, dynamic>.from(
-                      item.map((k, v) => MapEntry(k.toString(), v)),
-                    ),
-                  ),
-                )
-                .toList(growable: false)
-          : const <_FunctionSummary>[];
+      final list = _functionSummariesFromResult(result);
       setState(() {
+        _functionSummaries = list;
         _functions = _groupFunctions(list);
+        _hasMore = _boolFromResult(result, 'has_more', 'hasMore');
+        _nextOffset = _intFromResult(
+          result,
+          'next_offset',
+          'nextOffset',
+        ).takeIfPositive(list.length);
         _isLoading = false;
       });
     } catch (e) {
@@ -67,6 +70,36 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final result = await AssistsMessageService.listOobReusableFunctions(
+        limit: _pageSize,
+        offset: _nextOffset,
+        autoRegister: false,
+      );
+      if (!mounted) return;
+      final nextItems = _functionSummariesFromResult(result);
+      final merged = [..._functionSummaries, ...nextItems];
+      setState(() {
+        _functionSummaries = merged;
+        _functions = _groupFunctions(merged);
+        _hasMore = _boolFromResult(result, 'has_more', 'hasMore');
+        _nextOffset = _intFromResult(
+          result,
+          'next_offset',
+          'nextOffset',
+        ).takeIfPositive(merged.length);
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      showToast(e.toString(), type: ToastType.error);
     }
   }
 
@@ -122,6 +155,10 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
       if (!mounted) return;
       if (allDeleted && deletedCount == group.items.length) {
         setState(() {
+          final deletedIds = group.items.map((item) => item.functionId).toSet();
+          _functionSummaries = _functionSummaries
+              .where((item) => !deletedIds.contains(item.functionId))
+              .toList(growable: false);
           _functions = _functions
               .where((c) => c.signature != group.signature)
               .toList(growable: false);
@@ -286,16 +323,23 @@ class _CommandLibraryPageState extends State<CommandLibraryPage> {
       onRefresh: _load,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        itemCount: _functions.length,
+        itemCount: _functions.length + (_hasMore || _isLoadingMore ? 1 : 0),
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _FunctionCard(
-          group: _functions[index],
-          isDeleting: _deletingIds.contains(_functions[index].signature),
-          isRunning: _runningIds.contains(_functions[index].signature),
-          onRun: () => _run(_functions[index]),
-          onDelete: () => _delete(_functions[index]),
-          onOpenDetails: () => _openDetails(_functions[index]),
-        ),
+        itemBuilder: (context, index) {
+          if (index >= _functions.length) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+            return const _CommandLibraryFooter();
+          }
+          final group = _functions[index];
+          return _FunctionCard(
+            group: group,
+            isDeleting: _deletingIds.contains(group.signature),
+            isRunning: _runningIds.contains(group.signature),
+            onRun: () => _run(group),
+            onDelete: () => _delete(group),
+            onOpenDetails: () => _openDetails(group),
+          );
+        },
       ),
     );
   }
@@ -311,8 +355,14 @@ class CommandLibraryEmbed extends StatefulWidget {
 
 class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     with AutomaticKeepAliveClientMixin {
+  static const int _pageSize = 30;
+
+  List<_FunctionSummary> _functionSummaries = const [];
   List<_FunctionGroup> _functions = const [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = false;
+  int _nextOffset = 0;
   String? _error;
   final Set<String> _deletingIds = {};
   final Set<String> _runningIds = {};
@@ -334,24 +384,21 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
     });
     try {
       final result = await AssistsMessageService.listOobReusableFunctions(
-        limit: 200,
+        limit: _pageSize,
+        offset: 0,
+        autoRegister: false,
       );
       if (!mounted) return;
-      final raw = result['functions'];
-      final list = raw is List
-          ? raw
-                .whereType<Map>()
-                .map(
-                  (item) => _FunctionSummary.fromMap(
-                    Map<String, dynamic>.from(
-                      item.map((k, v) => MapEntry(k.toString(), v)),
-                    ),
-                  ),
-                )
-                .toList(growable: false)
-          : const <_FunctionSummary>[];
+      final list = _functionSummariesFromResult(result);
       setState(() {
+        _functionSummaries = list;
         _functions = _groupFunctions(list);
+        _hasMore = _boolFromResult(result, 'has_more', 'hasMore');
+        _nextOffset = _intFromResult(
+          result,
+          'next_offset',
+          'nextOffset',
+        ).takeIfPositive(list.length);
         _isLoading = false;
       });
     } catch (e) {
@@ -360,6 +407,36 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final result = await AssistsMessageService.listOobReusableFunctions(
+        limit: _pageSize,
+        offset: _nextOffset,
+        autoRegister: false,
+      );
+      if (!mounted) return;
+      final nextItems = _functionSummariesFromResult(result);
+      final merged = [..._functionSummaries, ...nextItems];
+      setState(() {
+        _functionSummaries = merged;
+        _functions = _groupFunctions(merged);
+        _hasMore = _boolFromResult(result, 'has_more', 'hasMore');
+        _nextOffset = _intFromResult(
+          result,
+          'next_offset',
+          'nextOffset',
+        ).takeIfPositive(merged.length);
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      showToast(e.toString(), type: ToastType.error);
     }
   }
 
@@ -415,6 +492,10 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
       if (!mounted) return;
       if (allDeleted && deletedCount == group.items.length) {
         setState(() {
+          final deletedIds = group.items.map((item) => item.functionId).toSet();
+          _functionSummaries = _functionSummaries
+              .where((item) => !deletedIds.contains(item.functionId))
+              .toList(growable: false);
           _functions = _functions
               .where((c) => c.signature != group.signature)
               .toList(growable: false);
@@ -544,16 +625,23 @@ class _CommandLibraryEmbedState extends State<CommandLibraryEmbed>
       onRefresh: _load,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        itemCount: _functions.length,
+        itemCount: _functions.length + (_hasMore || _isLoadingMore ? 1 : 0),
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _FunctionCard(
-          group: _functions[index],
-          isDeleting: _deletingIds.contains(_functions[index].signature),
-          isRunning: _runningIds.contains(_functions[index].signature),
-          onRun: () => _run(_functions[index]),
-          onDelete: () => _delete(_functions[index]),
-          onOpenDetails: () => _openDetails(_functions[index]),
-        ),
+        itemBuilder: (context, index) {
+          if (index >= _functions.length) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+            return const _CommandLibraryFooter();
+          }
+          final group = _functions[index];
+          return _FunctionCard(
+            group: group,
+            isDeleting: _deletingIds.contains(group.signature),
+            isRunning: _runningIds.contains(group.signature),
+            onRun: () => _run(group),
+            onDelete: () => _delete(group),
+            onOpenDetails: () => _openDetails(group),
+          );
+        },
       ),
     );
   }
@@ -618,6 +706,63 @@ class _FunctionCard extends StatelessWidget {
       ],
     );
   }
+}
+
+class _CommandLibraryFooter extends StatelessWidget {
+  const _CommandLibraryFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 52,
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+List<_FunctionSummary> _functionSummariesFromResult(
+  Map<String, dynamic> result,
+) {
+  final raw = result['functions'];
+  if (raw is! List) return const <_FunctionSummary>[];
+  return raw
+      .whereType<Map>()
+      .map(
+        (item) => _FunctionSummary.fromMap(
+          Map<String, dynamic>.from(
+            item.map((k, v) => MapEntry(k.toString(), v)),
+          ),
+        ),
+      )
+      .toList(growable: false);
+}
+
+bool _boolFromResult(
+  Map<String, dynamic> result,
+  String snakeKey,
+  String camelKey,
+) {
+  return result[snakeKey] == true || result[camelKey] == true;
+}
+
+int _intFromResult(
+  Map<String, dynamic> result,
+  String snakeKey,
+  String camelKey,
+) {
+  final raw = result[snakeKey] ?? result[camelKey];
+  if (raw is num) return raw.toInt();
+  return int.tryParse((raw ?? '').toString()) ?? 0;
+}
+
+extension _PositiveOffsetFallback on int {
+  int takeIfPositive(int fallback) => this > 0 ? this : fallback;
 }
 
 class _CommandFunctionDetailSheet extends StatefulWidget {

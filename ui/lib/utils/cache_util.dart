@@ -317,9 +317,13 @@ class CacheUtil {
         .toList();
   }
 
-  static Future<List<TaskExecutionInfo>> getTaskExecutionInfos() async {
+  static Future<List<TaskExecutionInfo>> getTaskExecutionInfos({
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final List<dynamic> result = await cacheEvent.invokeMethod(
       "getTaskExecutionInfos",
+      {"limit": limit, "offset": offset},
     );
     return result
         .map((item) => TaskExecutionInfo.fromMap(item as Map<dynamic, dynamic>))
@@ -346,11 +350,18 @@ class CacheUtil {
   /// 使用 nodeId 和 suggestionId 获取执行记录列表, 不包括 running 状态的记录
   static Future<List<ExecutionRecord>> getExecutionRecordsByNodeAndSuggestionId(
     String nodeId,
-    String suggestionId,
-  ) async {
+    String suggestionId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final List<dynamic> result = await cacheEvent.invokeMethod(
       "getExecutionRecordsByNodeAndSuggestionId",
-      {"nodeId": nodeId, "suggestionId": suggestionId},
+      {
+        "nodeId": nodeId,
+        "suggestionId": suggestionId,
+        "limit": limit,
+        "offset": offset,
+      },
     );
     return result
         .map((item) => ExecutionRecord.fromMap(item as Map<dynamic, dynamic>))
@@ -445,5 +456,4 @@ class CacheUtil {
     );
     return result;
   }
-
 }
