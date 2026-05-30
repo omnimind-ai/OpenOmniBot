@@ -843,6 +843,7 @@ class _WebChatHomeState extends State<_WebChatHome> {
         break;
       case AgentStreamEventKind.thinkingStarted:
       case AgentStreamEventKind.thinkingSnapshot:
+      case AgentStreamEventKind.retrying:
       case AgentStreamEventKind.textSnapshot:
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:

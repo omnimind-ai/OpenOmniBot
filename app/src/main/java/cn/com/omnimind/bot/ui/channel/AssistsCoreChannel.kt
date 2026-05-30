@@ -207,6 +207,9 @@ class AssistsCoreChannel {
                 "stopAgentToolCall" -> {
                     assistsCoreManager!!.stopAgentToolCall(call, result)
                 }
+                "retryAgentTask" -> {
+                    assistsCoreManager!!.retryAgentTask(call, result)
+                }
                 "isCompanionTaskRunning" -> {
                     assistsCoreManager!!.isCompanionTaskRunning( call, result)
                 }

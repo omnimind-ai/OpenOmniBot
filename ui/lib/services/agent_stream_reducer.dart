@@ -134,6 +134,13 @@ class AgentStreamReducer {
           thinkingRounds[activeThinkingEntryId] = roundIndex;
         }
         break;
+      case AgentStreamEventKind.retrying:
+        phase = AgentStreamPhase.retrying;
+        thinkingStage = event.stage <= 0 ? 1 : event.stage;
+        isDeepThinking = false;
+        clearActiveThinkingEntryId = true;
+        activeThinkingEntryId = null;
+        break;
       case AgentStreamEventKind.textSnapshot:
         phase = AgentStreamPhase.output;
         thinkingStage = 4;

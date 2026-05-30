@@ -260,4 +260,49 @@ class HttpAgentLlmClientTest {
         protocolType = protocolType,
         requiresReasoningEcho = requiresReasoningEcho
     )
+    @Test
+    fun `qwen openai compatible route reclassifies leading content before closing think tag`() = runBlocking {
+        val scope = CoroutineScope(Job() + Dispatchers.Default)
+        try {
+            val client = HttpAgentLlmClient(
+                scope = scope,
+                modelOverride = testOverride(),
+                resolveRouteInfoOp = { model, _, _, _, protocolType ->
+                    routeInfo(
+                        requestedModel = model,
+                        resolvedModel = "qwen3.6-plus",
+                        protocolType = protocolType ?: "openai_compatible",
+                        requiresReasoningEcho = false
+                    )
+                },
+                streamRequestOp = { _, _, listener, _, _, _, _, _ ->
+                    val source = dummyEventSource()
+                    listener.onOpen(source, okResponse())
+                    listener.onEvent(
+                        source,
+                        null,
+                        "message",
+                        """{"choices":[{"delta":{"content":"first reasoning</th"}}]}"""
+                    )
+                    listener.onEvent(
+                        source,
+                        null,
+                        "message",
+                        """{"choices":[{"delta":{"content":"ink>final answer"}}]}"""
+                    )
+                    listener.onEvent(source, null, "message", "[DONE]")
+                    source
+                },
+                streamIdleWatchdogMs = 5_000L,
+                json = json
+            )
+
+            val turn = client.streamTurn(request = simpleRequest())
+
+            assertEquals("first reasoning", turn.reasoning)
+            assertEquals("final answer", turn.message.contentText())
+        } finally {
+            scope.cancel()
+        }
+    }
 }

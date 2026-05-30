@@ -1181,6 +1181,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
       if (markdownRenderedLength != null) {
         content['markdownRenderedLength'] = markdownRenderedLength;
       }
+      _clearAgentRetryPresentation(content);
       runtime.messages.insert(
         0,
         ChatMessageModel(
@@ -1212,6 +1213,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     if (isFinal && decodeTokensPerSecond != null) {
       content['decodeTokensPerSecond'] = decodeTokensPerSecond;
     }
+    _clearAgentRetryPresentation(content);
     runtime.messages[index] = existing.copyWith(
       content: content,
       isError: isError,
@@ -1593,6 +1595,14 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
           completedThinkingCardId: thinkingCardToFinalize,
         );
         return;
+      case AgentStreamEventKind.retrying:
+        _applyAgentRetryingStreamEvent(
+          runtime,
+          binding,
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
       case AgentStreamEventKind.textSnapshot:
         _applyAgentTextStreamEvent(
           runtime,
@@ -1867,6 +1877,76 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
     );
   }
 
+  void _applyAgentRetryingStreamEvent(
+    ChatConversationRuntimeState runtime,
+    _TaskBinding binding,
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final entryId = (event.entryId ?? '').trim();
+    final retryText = _buildAgentRetryingText(event);
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: entryId.isEmpty ? null : entryId,
+      isFinal: false,
+    );
+    final isThinkingCardTarget =
+        entryId.isNotEmpty &&
+        runtime.messages.any((message) => message.id == entryId && message.type == 2);
+    if (!isThinkingCardTarget) {
+      _finalizeThinkingCard(
+        runtime,
+        event.taskId,
+        cardId: completedThinkingCardId,
+      );
+    }
+    if (isThinkingCardTarget) {
+      _updateThinkingCard(
+        runtime,
+        event.taskId,
+        cardId: entryId,
+        thinkingContent: retryText,
+        isLoading: true,
+        stage: 1,
+        streamMeta: streamMeta,
+        lockCompleted: false,
+      );
+    } else {
+      final messageId = entryId.isNotEmpty ? entryId : _nextAgentTextMessageId(runtime, event.taskId);
+      final index = runtime.messages.indexWhere((message) => message.id == messageId);
+      if (index == -1) {
+        final content = <String, dynamic>{'text': '', 'id': messageId};
+        _applyAgentRetryPresentation(content, event, retryText);
+        runtime.messages.insert(
+          0,
+          ChatMessageModel(
+            id: messageId,
+            type: 1,
+            user: 2,
+            content: content,
+            streamMeta: streamMeta,
+          ),
+        );
+      } else {
+        final existing = runtime.messages[index];
+        final content = Map<String, dynamic>.from(existing.content ?? const {});
+        content['id'] = messageId;
+        _applyAgentRetryPresentation(content, event, retryText);
+        runtime.messages[index] = existing.copyWith(
+          content: content,
+          streamMeta: streamMeta ?? existing.streamMeta,
+          isError: false,
+        );
+      }
+    }
+    runtime.isAiResponding = true;
+    notifyListeners();
+    schedulePersistRuntimeConversation(
+      conversationId: binding.conversationId,
+      mode: binding.mode,
+    );
+  }
+
   void _applyAgentClarifyStreamEvent(
     ChatConversationRuntimeState runtime,
     _TaskBinding binding,
@@ -1956,13 +2036,23 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
   }) {
     final entryId = (event.entryId ?? '').trim();
     final shouldMarkError = event.raw['persistAsError'] == true;
-    if (entryId.isNotEmpty && shouldMarkError) {
+    final errorText = (event.raw['errorText'] ?? event.errorMessage).toString().trim();
+    if (entryId.isNotEmpty) {
       final index = runtime.messages.indexWhere(
         (message) => message.id == entryId,
       );
       if (index != -1) {
+        final existing = runtime.messages[index];
+        final content = Map<String, dynamic>.from(existing.content ?? const {});
+        _applyAgentErrorPresentation(content, event, errorText);
         runtime.messages[index] = runtime.messages[index].copyWith(
-          isError: true,
+          content: content,
+          isError: shouldMarkError,
+          streamMeta: ensureAgentStreamMessageMeta(
+            _streamMetaFromEvent(event),
+            entryId: entryId,
+            isFinal: true,
+          ),
         );
       }
     }
@@ -2076,6 +2166,60 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
 
   Map<String, dynamic> _streamMetaFromEvent(AgentStreamEvent event) {
     return buildAgentStreamMetaFromEvent(event);
+  }
+
+  String _buildAgentRetryingText(AgentStreamEvent event) {
+    if (event.text.trim().isNotEmpty) {
+      return event.text.trim();
+    }
+    final retryCount = event.retryCount <= 0 ? 1 : event.retryCount;
+    final maxRetries = event.maxRetries <= 0 ? 3 : event.maxRetries;
+    return LegacyTextLocalizer.isEnglish
+        ? 'Connection interrupted. Retrying $retryCount/$maxRetries...'
+        : '连接中断，正在重试 $retryCount/$maxRetries…';
+  }
+
+  void _applyAgentRetryPresentation(
+    Map<String, dynamic> content,
+    AgentStreamEvent event,
+    String retryText,
+  ) {
+    content['agentTaskId'] = event.taskId;
+    content['agentRetrying'] = true;
+    content['agentRetryStatusText'] = retryText;
+    content['agentRetryCount'] = event.retryCount;
+    content['agentMaxRetries'] = event.maxRetries;
+    content['agentRetryDelayMs'] = event.retryDelayMs;
+    content['agentRetryReason'] = event.retryReason;
+    content.remove('agentErrorText');
+    content.remove('agentRetryable');
+  }
+
+  void _applyAgentErrorPresentation(
+    Map<String, dynamic> content,
+    AgentStreamEvent event,
+    String errorText,
+  ) {
+    content['agentTaskId'] = event.taskId;
+    content['agentRetrying'] = false;
+    content['agentRetryStatusText'] = '';
+    content['agentRetryCount'] = event.retryCount;
+    content['agentMaxRetries'] = event.maxRetries;
+    content['agentRetryDelayMs'] = 0;
+    content['agentRetryReason'] = event.retryReason;
+    content['agentRetryable'] = event.retryable;
+    content['agentErrorText'] = errorText;
+  }
+
+  void _clearAgentRetryPresentation(Map<String, dynamic> content) {
+    content.remove('agentRetrying');
+    content.remove('agentRetryStatusText');
+    content.remove('agentRetryCount');
+    content.remove('agentMaxRetries');
+    content.remove('agentRetryDelayMs');
+    content.remove('agentRetryReason');
+    content.remove('agentRetryable');
+    content.remove('agentErrorText');
   }
 
   void _upsertPureChatThinking(
@@ -2908,6 +3052,7 @@ class ChatConversationRuntimeCoordinator extends ChangeNotifier {
             ? reduceResult.previousThinkingEntryId
             : null;
       case AgentStreamEventKind.textSnapshot:
+      case AgentStreamEventKind.retrying:
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:
       case AgentStreamEventKind.toolCompleted:

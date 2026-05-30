@@ -16,6 +16,7 @@ class AgentRunGroupMessage extends StatefulWidget {
     required this.onToggleExpanded,
     required this.onBeforeTaskExecute,
     this.onCancelTask,
+    this.onRetryAgentMessage,
     this.parentScrollController,
     this.onParentScrollHandoff,
     this.onRequestAuthorize,
@@ -29,6 +30,7 @@ class AgentRunGroupMessage extends StatefulWidget {
   final VoidCallback onToggleExpanded;
   final OnBeforeTaskExecute onBeforeTaskExecute;
   final void Function(String taskId)? onCancelTask;
+  final ValueChanged<ChatMessageModel>? onRetryAgentMessage;
   final ScrollController? parentScrollController;
   final VoidCallback? onParentScrollHandoff;
   final OnRequestAuthorize? onRequestAuthorize;
@@ -147,6 +149,7 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
             message: message,
             onBeforeTaskExecute: widget.onBeforeTaskExecute,
             onCancelTask: widget.onCancelTask,
+            onRetryAgentMessage: () => widget.onRetryAgentMessage?.call(message),
             enableThinkingCollapse: false,
             parentScrollController: widget.parentScrollController,
             onParentScrollHandoff: widget.onParentScrollHandoff,
@@ -190,6 +193,8 @@ class _AgentRunGroupMessageState extends State<AgentRunGroupMessage>
                 message: message,
                 onBeforeTaskExecute: widget.onBeforeTaskExecute,
                 onCancelTask: widget.onCancelTask,
+                onRetryAgentMessage:
+                    () => widget.onRetryAgentMessage?.call(message),
                 enableThinkingCollapse: true,
                 thinkingAutoCollapseOnComplete: true,
                 showThinkingAvatarOverride: hideAvatar ? false : null,

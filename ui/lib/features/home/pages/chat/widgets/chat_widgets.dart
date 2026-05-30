@@ -1390,6 +1390,7 @@ class ChatMessageList extends StatefulWidget {
   final ScrollController scrollController;
   final Future<void> Function() onBeforeTaskExecute;
   final void Function(String taskId)? onCancelTask;
+  final ValueChanged<ChatMessageModel>? onRetryAgentMessage;
   final void Function(List<String> requiredPermissionIds)? onRequestAuthorize;
   final double bottomOverlayInset;
   final void Function(ChatMessageModel message, LongPressStartDetails details)?
@@ -1419,6 +1420,7 @@ class ChatMessageList extends StatefulWidget {
     required this.scrollController,
     required this.onBeforeTaskExecute,
     this.onCancelTask,
+    this.onRetryAgentMessage,
     this.onRequestAuthorize,
     this.bottomOverlayInset = 0,
     this.onUserMessageLongPressStart,
@@ -1952,6 +1954,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
         padding: padding,
         onBeforeTaskExecute: widget.onBeforeTaskExecute,
         onCancelTask: widget.onCancelTask,
+        onRetryAgentMessage: widget.onRetryAgentMessage,
         parentScrollController: widget.scrollController,
         onParentScrollHandoff: _handleParentScrollHandoff,
         editingUserMessageRevealKey: _editingRevealKeyForMessage(
@@ -2128,6 +2131,7 @@ class _ChatTimelineListRow extends StatelessWidget {
     this.onUserMessageEditCancelled,
     this.onUserMessageEditSaved,
     this.onCancelTask,
+    this.onRetryAgentMessage,
     this.parentScrollController,
     this.onParentScrollHandoff,
     this.editingUserMessageRevealKey,
@@ -2149,6 +2153,7 @@ class _ChatTimelineListRow extends StatelessWidget {
   final VoidCallback? onUserMessageEditCancelled;
   final ValueChanged<ChatMessageModel>? onUserMessageEditSaved;
   final void Function(String taskId)? onCancelTask;
+  final ValueChanged<ChatMessageModel>? onRetryAgentMessage;
   final ScrollController? parentScrollController;
   final VoidCallback? onParentScrollHandoff;
   final GlobalKey? editingUserMessageRevealKey;
@@ -2175,6 +2180,7 @@ class _ChatTimelineListRow extends StatelessWidget {
         onToggleExpanded: () => onToggleAgentRunGroup(group.taskId),
         onBeforeTaskExecute: onBeforeTaskExecute,
         onCancelTask: onCancelTask,
+        onRetryAgentMessage: onRetryAgentMessage,
         parentScrollController: parentScrollController,
         onParentScrollHandoff: onParentScrollHandoff,
         onRequestAuthorize: onRequestAuthorize,
@@ -2199,6 +2205,7 @@ class _ChatTimelineListRow extends StatelessWidget {
       ),
       onBeforeTaskExecute: onBeforeTaskExecute,
       onCancelTask: onCancelTask,
+      onRetryAgentMessage: () => onRetryAgentMessage?.call(currentMessage),
       enableThinkingCollapse: true,
       parentScrollController: parentScrollController,
       onParentScrollHandoff: onParentScrollHandoff,

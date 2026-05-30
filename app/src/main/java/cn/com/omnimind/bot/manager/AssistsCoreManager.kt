@@ -531,6 +531,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         var promptTokenThreshold: Int? = null
     )
 
+    private data class FailedAgentRetryContext(
+        val arguments: Map<String, Any?>
+    )
+
     private class ActiveAgentRunContext(
         val taskId: String,
         val job: Job,
@@ -690,6 +694,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private val activeAgentLock = Any()
 
     private val activeAgentRuns: MutableMap<String, ActiveAgentRunContext> = mutableMapOf()
+    private val failedAgentRetryContexts: MutableMap<String, FailedAgentRetryContext> = mutableMapOf()
     private val chatTaskPersistenceStates: MutableMap<String, ChatTaskPersistenceState> =
         mutableMapOf()
     private val conversationDomainService by lazy { ConversationDomainService(context) }
@@ -707,6 +712,24 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     private fun registerChatTaskPersistenceState(taskId: String, state: ChatTaskPersistenceState) {
         synchronized(activeAgentLock) {
             chatTaskPersistenceStates[taskId] = state
+        }
+    }
+
+    private fun registerFailedAgentRetryContext(taskId: String, context: FailedAgentRetryContext) {
+        synchronized(activeAgentLock) {
+            failedAgentRetryContexts[taskId] = context
+        }
+    }
+
+    private fun getFailedAgentRetryContext(taskId: String): FailedAgentRetryContext? {
+        return synchronized(activeAgentLock) {
+            failedAgentRetryContexts[taskId]
+        }
+    }
+
+    private fun removeFailedAgentRetryContext(taskId: String): FailedAgentRetryContext? {
+        return synchronized(activeAgentLock) {
+            failedAgentRetryContexts.remove(taskId)
         }
     }
 
@@ -1456,6 +1479,43 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             OmniLog.e(TAG, "通知总结Sheet准备就绪失败: ${e.message}")
             mainJob.launch(Dispatchers.Main) {
                 result.error("NOTIFY_SUMMARY_SHEET_READY_ERROR", e.message, null)
+            }
+        }
+    }
+
+    fun retryAgentTask(
+        call: MethodCall,
+        result: MethodChannel.Result
+    ) {
+        mainJob.launch {
+            try {
+                val taskId = call.argument<String>("taskId")?.trim().orEmpty()
+                if (taskId.isBlank()) {
+                    withContext(Dispatchers.Main) {
+                        result.error("INVALID_ARGUMENTS", "taskId is required", null)
+                    }
+                    return@launch
+                }
+                val retryContext = getFailedAgentRetryContext(taskId)
+                if (retryContext == null) {
+                    withContext(Dispatchers.Main) {
+                        result.error(
+                            "NO_RETRY_CONTEXT",
+                            "No retryable agent context found for taskId=$taskId",
+                            null
+                        )
+                    }
+                    return@launch
+                }
+                createAgentTask(
+                    MethodCall("createAgentTask", retryContext.arguments),
+                    result
+                )
+            } catch (e: Exception) {
+                OmniLog.e(TAG, "retryAgentTask error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    result.error("RETRY_AGENT_TASK_ERROR", e.message, null)
+                }
             }
         }
     }
@@ -3917,6 +3977,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
     }
 
     fun createAgentTask(call: MethodCall, result: MethodChannel.Result) {
+        val rawCallArguments = (call.arguments as? Map<*, *>)
+            ?.entries
+            ?.filter { it.key != null }
+            ?.associate { it.key.toString() to it.value }
+            ?: emptyMap()
         val taskId = (call.argument<String>("taskId") ?: "").trim()
         val userMessage = AgentTextSanitizer.sanitizeUtf16(
             (call.argument<String>("userMessage") ?: "").toString()
@@ -3958,12 +4023,25 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             result.error("INVALID_ARGUMENTS", "taskId is empty", null)
             return
         }
+        removeFailedAgentRetryContext(taskId)
         if (legacyConversationHistory.isNotEmpty()) {
             OmniLog.d(
                 TAG,
                 "Ignoring legacy conversationHistory for createAgentTask taskId=$taskId size=${legacyConversationHistory.size}"
             )
         }
+        val retryArguments = sanitizeInteropMap(
+            rawCallArguments + mapOf(
+                "taskId" to taskId,
+                "userMessage" to userMessage,
+                "attachments" to rawAttachments,
+                "userMessageCreatedAt" to userMessageCreatedAt,
+                "conversationId" to conversationId,
+                "conversationMode" to resolvedConversationMode,
+                "reasoningEffort" to reasoningEffort,
+                "terminalEnvironment" to terminalEnvironment
+            )
+        )
         val agentRunJob = SupervisorJob()
         val agentRunScope = CoroutineScope(agentRunJob + Dispatchers.Default)
         val agentRunContext = ActiveAgentRunContext(
@@ -4794,6 +4872,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     }
 
                     override suspend fun onComplete(result: AgentResult) {
+                        removeFailedAgentRetryContext(taskId)
                         val isSuccess = result is AgentResult.Success
                         val outputKind = (result as? AgentResult.Success)?.outputKind ?: "none"
                         val hasUserVisibleOutput =
@@ -4892,7 +4971,49 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                         )
                     }
 
+                    override suspend fun onRetrying(
+                        retryCount: Int,
+                        maxRetries: Int,
+                        retryDelayMs: Long,
+                        message: String,
+                        retryReason: String?
+                    ) {
+                        val retryEntryId = activeAssistantEntryId ?: activeThinkingEntryId
+                        val retryRoundIndex = if (activeAssistantEntryId != null) {
+                            assistantRound.coerceAtLeast(1)
+                        } else {
+                            thinkingRound.coerceAtLeast(1)
+                        }
+                        sendStreamEvent(
+                            kind = "retrying",
+                            entryId = retryEntryId,
+                            roundIndex = retryRoundIndex,
+                            text = AgentTextSanitizer.sanitizeUtf16(message).trim(),
+                            stage = 1,
+                            extras = mapOf(
+                                "willRetry" to true,
+                                "retryable" to true,
+                                "retryCount" to retryCount,
+                                "maxRetries" to maxRetries,
+                                "retryDelayMs" to retryDelayMs,
+                                "retryReason" to retryReason
+                            )
+                        )
+                    }
+
                     override suspend fun onError(error: String) {
+                        onError(error, retryable = false)
+                    }
+
+                    override suspend fun onError(error: String, retryable: Boolean) {
+                        if (retryable) {
+                            registerFailedAgentRetryContext(
+                                taskId,
+                                FailedAgentRetryContext(arguments = retryArguments)
+                            )
+                        } else {
+                            removeFailedAgentRetryContext(taskId)
+                        }
                         val resolution = resolveAgentFinalErrorResolution(
                             streamed = scheduledAssistantBuffer.toString().ifBlank {
                                 latestAssistantVisibleText
@@ -4903,6 +5024,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                                 "I can't generate a reply right now. Please try again."
                             )
                         )
+                        val errorText = AgentTextSanitizer.sanitizeUtf16(error).trim().ifEmpty {
+                            t(
+                                "暂时无法生成回复，请重试。",
+                                "I can't generate a reply right now. Please try again."
+                            )
+                        }
                         val finalText = resolution.text
                         finalizeThinkingCardIfNeeded(publish = finalText.isBlank())
                         var errorEntryId: String? = activeAssistantEntryId
@@ -4951,7 +5078,14 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             entryId = errorEntryId,
                             roundIndex = errorRoundIndex,
                             error = error,
-                            extras = mapOf("persistAsError" to resolution.persistAsError)
+                            extras = mapOf(
+                                "persistAsError" to resolution.persistAsError,
+                                "willRetry" to false,
+                                "retryable" to retryable,
+                                "retryCount" to if (retryable) 3 else 0,
+                                "maxRetries" to 3,
+                                "errorText" to errorText
+                            )
                         )
                     }
 
@@ -5101,6 +5235,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             } catch (e: CancellationException) {
                 OmniLog.i(TAG, "createAgentTask cancelled: ${e.message}")
             } catch (e: Exception) {
+                removeFailedAgentRetryContext(taskId)
                 OmniLog.e(TAG, "createAgentTask error: ${e.message}")
                 val errorMessage = e.message?.trim()?.takeIf { it.isNotEmpty() }?.let {
                     "Agent execution failed: $it"

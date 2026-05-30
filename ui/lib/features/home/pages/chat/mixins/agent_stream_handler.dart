@@ -152,6 +152,12 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
           completedThinkingCardId: thinkingCardToFinalize,
         );
         return;
+      case AgentStreamEventKind.retrying:
+        _applyAgentRetryingStreamEvent(
+          event,
+          completedThinkingCardId: thinkingCardToFinalize,
+        );
+        return;
       case AgentStreamEventKind.textSnapshot:
         _applyAgentTextStreamEvent(
           event,
@@ -249,20 +255,22 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
       final index = messages.indexWhere((msg) => msg.id == messageId);
       if (index == -1) {
+        final content = <String, dynamic>{
+          'text': text,
+          'id': messageId,
+          if (event.isFinal && event.prefillTokensPerSecond != null)
+            'prefillTokensPerSecond': event.prefillTokensPerSecond,
+          if (event.isFinal && event.decodeTokensPerSecond != null)
+            'decodeTokensPerSecond': event.decodeTokensPerSecond,
+        };
+        _clearAgentRetryPresentation(content);
         messages.insert(
           0,
           ChatMessageModel(
             id: messageId,
             type: 1,
             user: 2,
-            content: {
-              'text': text,
-              'id': messageId,
-              if (event.isFinal && event.prefillTokensPerSecond != null)
-                'prefillTokensPerSecond': event.prefillTokensPerSecond,
-              if (event.isFinal && event.decodeTokensPerSecond != null)
-                'decodeTokensPerSecond': event.decodeTokensPerSecond,
-            },
+            content: content,
             streamMeta: streamMeta,
             reasoningContent: reasoningContent,
           ),
@@ -277,6 +285,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         if (event.isFinal && event.decodeTokensPerSecond != null) {
           content['decodeTokensPerSecond'] = event.decodeTokensPerSecond;
         }
+        _clearAgentRetryPresentation(content);
         messages[index] = existing.copyWith(
           content: content,
           streamMeta: streamMeta,
@@ -293,6 +302,68 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
         isFinal: event.isFinal,
       ),
     );
+    _persistAgentConversationSafely();
+  }
+
+  void _applyAgentRetryingStreamEvent(
+    AgentStreamEvent event, {
+    String? completedThinkingCardId,
+  }) {
+    final entryId = (event.entryId ?? '').trim();
+    final retryText = _buildAgentRetryingText(event);
+    final streamMeta = ensureAgentStreamMessageMeta(
+      _streamMetaFromEvent(event),
+      entryId: entryId.isEmpty ? null : entryId,
+      isFinal: false,
+    );
+
+    setState(() {
+      final isThinkingCardTarget =
+          entryId.isNotEmpty &&
+          messages.any((msg) => msg.id == entryId && msg.type == 2);
+      if (!isThinkingCardTarget) {
+        _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
+      }
+      if (isThinkingCardTarget) {
+        updateThinkingCardForAgent(
+          event.taskId,
+          cardId: entryId,
+          thinkingContent: retryText,
+          isLoading: true,
+          stage: ThinkingStage.thinking.value,
+          streamMeta: streamMeta,
+          lockCompleted: false,
+        );
+      } else {
+        final messageId = entryId.isNotEmpty ? entryId : _nextAgentTextMessageId(event.taskId);
+        final index = messages.indexWhere((msg) => msg.id == messageId);
+        if (index == -1) {
+          final content = <String, dynamic>{'text': '', 'id': messageId};
+          _applyAgentRetryPresentation(content, event, retryText);
+          messages.insert(
+            0,
+            ChatMessageModel(
+              id: messageId,
+              type: 1,
+              user: 2,
+              content: content,
+              streamMeta: streamMeta,
+            ),
+          );
+        } else {
+          final existing = messages[index];
+          final content = Map<String, dynamic>.from(existing.content ?? {});
+          content['id'] = messageId;
+          _applyAgentRetryPresentation(content, event, retryText);
+          messages[index] = existing.copyWith(
+            content: content,
+            streamMeta: streamMeta ?? existing.streamMeta,
+            isError: false,
+          );
+        }
+      }
+      isAiResponding = true;
+    });
     _persistAgentConversationSafely();
   }
 
@@ -402,14 +473,26 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
   }) {
     final entryId = (event.entryId ?? '').trim();
     final shouldMarkError = event.raw['persistAsError'] == true;
+    final errorText = (event.raw['errorText'] ?? event.errorMessage).toString().trim();
     setState(() {
       currentThinkingStage = ThinkingStage.complete.value;
       isDeepThinking = false;
       _finalizeThinkingCardInMessages(event.taskId, completedThinkingCardId);
-      if (shouldMarkError && entryId.isNotEmpty) {
+      if (entryId.isNotEmpty) {
         final index = messages.indexWhere((msg) => msg.id == entryId);
         if (index != -1) {
-          messages[index] = messages[index].copyWith(isError: true);
+          final existing = messages[index];
+          final content = Map<String, dynamic>.from(existing.content ?? {});
+          _applyAgentErrorPresentation(content, event, errorText);
+          messages[index] = existing.copyWith(
+            content: content,
+            isError: shouldMarkError,
+            streamMeta: ensureAgentStreamMessageMeta(
+              _streamMetaFromEvent(event),
+              entryId: entryId,
+              isFinal: true,
+            ),
+          );
         }
       }
       isAiResponding = false;
@@ -514,6 +597,60 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
     return buildAgentStreamMetaFromEvent(event);
   }
 
+  String _buildAgentRetryingText(AgentStreamEvent event) {
+    if (event.text.trim().isNotEmpty) {
+      return event.text.trim();
+    }
+    final retryCount = event.retryCount <= 0 ? 1 : event.retryCount;
+    final maxRetries = event.maxRetries <= 0 ? 3 : event.maxRetries;
+    return LegacyTextLocalizer.isEnglish
+        ? 'Connection interrupted. Retrying $retryCount/$maxRetries...'
+        : '连接中断，正在重试 $retryCount/$maxRetries…';
+  }
+
+  void _applyAgentRetryPresentation(
+    Map<String, dynamic> content,
+    AgentStreamEvent event,
+    String retryText,
+  ) {
+    content['agentTaskId'] = event.taskId;
+    content['agentRetrying'] = true;
+    content['agentRetryStatusText'] = retryText;
+    content['agentRetryCount'] = event.retryCount;
+    content['agentMaxRetries'] = event.maxRetries;
+    content['agentRetryDelayMs'] = event.retryDelayMs;
+    content['agentRetryReason'] = event.retryReason;
+    content.remove('agentErrorText');
+    content.remove('agentRetryable');
+  }
+
+  void _applyAgentErrorPresentation(
+    Map<String, dynamic> content,
+    AgentStreamEvent event,
+    String errorText,
+  ) {
+    content['agentTaskId'] = event.taskId;
+    content['agentRetrying'] = false;
+    content['agentRetryStatusText'] = '';
+    content['agentRetryCount'] = event.retryCount;
+    content['agentMaxRetries'] = event.maxRetries;
+    content['agentRetryDelayMs'] = 0;
+    content['agentRetryReason'] = event.retryReason;
+    content['agentRetryable'] = event.retryable;
+    content['agentErrorText'] = errorText;
+  }
+
+  void _clearAgentRetryPresentation(Map<String, dynamic> content) {
+    content.remove('agentRetrying');
+    content.remove('agentRetryStatusText');
+    content.remove('agentRetryCount');
+    content.remove('agentMaxRetries');
+    content.remove('agentRetryDelayMs');
+    content.remove('agentRetryReason');
+    content.remove('agentRetryable');
+    content.remove('agentErrorText');
+  }
+
   void handleAgentError(String error) {
     final taskId = currentDispatchTaskId ?? _lastAgentTaskId;
     if (taskId == null) return;
@@ -614,6 +751,7 @@ mixin AgentStreamHandler<T extends StatefulWidget> on State<T> {
             ? reduceResult.previousThinkingEntryId
             : null;
       case AgentStreamEventKind.textSnapshot:
+      case AgentStreamEventKind.retrying:
       case AgentStreamEventKind.toolStarted:
       case AgentStreamEventKind.toolProgress:
       case AgentStreamEventKind.toolCompleted:

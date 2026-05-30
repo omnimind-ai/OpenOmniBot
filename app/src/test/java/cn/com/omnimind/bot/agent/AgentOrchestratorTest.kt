@@ -6,18 +6,33 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 class AgentOrchestratorTest {
+    private lateinit var originalLocale: Locale
     private val eventJson = Json {
         ignoreUnknownKeys = true
         isLenient = true
         encodeDefaults = true
         prettyPrint = true
+    }
+
+    @Before
+    fun setUpLocale() {
+        originalLocale = Locale.getDefault()
+        Locale.setDefault(Locale.SIMPLIFIED_CHINESE)
+    }
+
+    @After
+    fun tearDownLocale() {
+        Locale.setDefault(originalLocale)
     }
 
     @Test
@@ -145,6 +160,239 @@ class AgentOrchestratorTest {
         assertEquals(1, llmClient.requests.size)
         assertTrue(callback.errors.isEmpty())
         assertTrue(callback.chatMessages.any { it.first.contains("<tool_call>") })
+    }
+
+    @Test
+    fun actionIntentWithoutToolCallsTriggersSingleRecoveryRound() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "我先查一下相关资料，再继续处理。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(toolCalls = listOf(toolCall("file_search"))),
+                assistantTurn(content = "已查到相关资料并继续处理完成。")
+            )
+        )
+        val toolExecutor = FakeToolExecutor(
+            results = mapOf(
+                "file_search" to listOf(
+                    ToolExecutionResult.ContextResult(
+                        toolName = "file_search",
+                        summaryText = "已找到匹配资料",
+                        previewJson = "{}",
+                        rawResultJson = "{}",
+                        success = true
+                    )
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, toolExecutor).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续查资料"),
+                executionEnv = FakeExecutionEnvironment("继续查资料")
+            )
+        )
+
+        assertEquals(listOf("file_search"), toolExecutor.executeCalls)
+        assertEquals(3, llmClient.requests.size)
+        assertEquals("user", llmClient.requests[1].messages.last().role)
+        assertTrue(
+            llmClient.requests[1].messages.last().contentText().contains("没有真正发起 tool_call")
+        )
+        assertTrue(callback.finalChatMessages().last().contains("继续处理完成"))
+        assertTrue(result is AgentResult.Success)
+    }
+
+    @Test
+    fun actionIntentWithoutToolCallsCanRecoverIntoCompleteFinalAnswer() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "让我检查一下现有信息。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(
+                    content = "综合现有信息，建议直接按灰蓝配色和 800 预算筛选低帮款。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, FakeToolExecutor()).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("给我一个选购建议"),
+                executionEnv = FakeExecutionEnvironment("给我一个选购建议")
+            )
+        )
+
+        assertEquals(2, llmClient.requests.size)
+        assertEquals("user", llmClient.requests[1].messages.last().role)
+        assertTrue(callback.finalChatMessages().last().contains("综合现有信息"))
+        assertTrue(result is AgentResult.Success)
+    }
+
+    @Test
+    fun traceStyleDeferredSearchSentenceTriggersRecoveryRound() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "根据您的需求（男性、预算800元、喜欢浅蓝色和灰色），我来为您筛选最适合的AJ运动板鞋。让我在耐克官网搜索符合这些条件的具体款式。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(toolCalls = listOf(toolCall("browser_use"))),
+                assistantTurn(
+                    content = "我已经在耐克官网打开 AJ 列表页，可以继续按浅蓝色、灰色和 800 元预算筛选男款。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val toolExecutor = FakeToolExecutor(
+            results = mapOf(
+                "browser_use" to listOf(
+                    ToolExecutionResult.ContextResult(
+                        toolName = "browser_use",
+                        summaryText = "已打开耐克官网并进入 AJ 列表页",
+                        previewJson = "{}",
+                        rawResultJson = "{}",
+                        success = true
+                    )
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, toolExecutor).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("帮我找适合的 AJ 男鞋"),
+                executionEnv = FakeExecutionEnvironment("帮我找适合的 AJ 男鞋")
+            )
+        )
+
+        assertEquals(listOf("browser_use"), toolExecutor.executeCalls)
+        assertEquals(3, llmClient.requests.size)
+        assertEquals("user", llmClient.requests[1].messages.last().role)
+        assertTrue(
+            llmClient.requests[1].messages.last().contentText().contains("完整最终答案")
+        )
+        assertTrue(callback.finalChatMessages().last().contains("打开 AJ 列表页"))
+        assertTrue(result is AgentResult.Success)
+    }
+
+    @Test
+    fun intermediateTextAfterToolChainAlsoTriggersRecoveryRound() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "让我先查找 AJ1 页面上的产品列表，寻找浅蓝色和灰色的男款 AJ1。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(toolCalls = listOf(toolCall("browser_use"))),
+                assistantTurn(
+                    content = "我已经定位到 AJ1 列表页，接下来可以继续筛选。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(
+                    content = "已按你的条件定位到 AJ1 列表页，建议继续筛选浅蓝色和灰色男款。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val toolExecutor = FakeToolExecutor(
+            results = mapOf(
+                "browser_use" to listOf(
+                    ToolExecutionResult.ContextResult(
+                        toolName = "browser_use",
+                        summaryText = "已定位到 AJ1 列表页",
+                        previewJson = "{}",
+                        rawResultJson = "{}",
+                        success = true
+                    )
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, toolExecutor).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续在 AJ1 页面筛选"),
+                executionEnv = FakeExecutionEnvironment("继续在 AJ1 页面筛选")
+            )
+        )
+
+        assertEquals(listOf("browser_use"), toolExecutor.executeCalls)
+        assertEquals(4, llmClient.requests.size)
+        assertEquals("user", llmClient.requests[3].messages.last().role)
+        assertTrue(
+            llmClient.requests[3].messages.last().contentText().contains("完整最终答案")
+        )
+        assertTrue(callback.finalChatMessages().last().contains("建议继续筛选"))
+        assertTrue(result is AgentResult.Success)
+    }
+
+    @Test
+    fun actionIntentRecoveryStopsAfterSingleGuardRound() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "我先搜索一下合适的结果。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(
+                    content = "让我再检查一下更多信息。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, FakeToolExecutor()).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续执行"),
+                executionEnv = FakeExecutionEnvironment("继续执行")
+            )
+        )
+
+        assertEquals(2, llmClient.requests.size)
+        assertEquals("让我再检查一下更多信息。", callback.finalChatMessages().last())
+        assertTrue(result is AgentResult.Success)
+    }
+
+    @Test
+    fun traceStyleRetryIntentStillStopsAfterSingleGuardRound() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(
+                assistantTurn(
+                    content = "让我再尝试一次返回首页。",
+                    finishReason = "stop"
+                ),
+                assistantTurn(
+                    content = "让我最后一次尝试返回首页。",
+                    finishReason = "stop"
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(llmClient, FakeToolExecutor()).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续尝试返回首页"),
+                executionEnv = FakeExecutionEnvironment("继续尝试返回首页")
+            )
+        )
+
+        assertEquals(2, llmClient.requests.size)
+        assertEquals("让我最后一次尝试返回首页。", callback.finalChatMessages().last())
+        assertTrue(result is AgentResult.Success)
     }
 
     @Test
@@ -587,6 +835,73 @@ class AgentOrchestratorTest {
         assertFalse(toolMessage.content.toString().contains("\"image_url\""))
     }
 
+    @Test
+    fun `retries transient stream failures before succeeding`() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = listOf(assistantTurn(content = "已在重连后成功完成。")),
+            failures = listOf(
+                AgentStreamRequestException(
+                    statusCode = 503,
+                    reason = "upstream temporarily unavailable",
+                    responseBody = null
+                )
+            )
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(
+            llmClient = llmClient,
+            toolExecutor = FakeToolExecutor()
+        ).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续执行网页查询"),
+                executionEnv = FakeExecutionEnvironment("继续执行网页查询")
+            )
+        )
+
+        assertTrue(result is AgentResult.Success)
+        assertEquals(1, callback.retryingEvents.size)
+        assertEquals("已在重连后成功完成。", callback.finalChatMessages().last())
+        assertTrue(callback.errors.isEmpty())
+        assertFalse(callback.lastErrorRetryable)
+    }
+
+    @Test
+    fun `surfaces retryable terminal error after exhausting transient retries`() = runBlocking {
+        val llmClient = FakeLlmClient(
+            turns = emptyList(),
+            failures = List(4) {
+                AgentStreamRequestException(
+                    statusCode = 503,
+                    reason = "upstream temporarily unavailable",
+                    responseBody = null
+                )
+            }
+        )
+        val callback = RecordingCallback()
+
+        val result = createOrchestrator(
+            llmClient = llmClient,
+            toolExecutor = FakeToolExecutor()
+        ).run(
+            AgentOrchestrator.Input(
+                callback = callback,
+                initialMessages = initialMessages("继续执行网页查询"),
+                executionEnv = FakeExecutionEnvironment("继续执行网页查询")
+            )
+        )
+
+        assertTrue(result is AgentResult.Error)
+        assertEquals(3, callback.retryingEvents.size)
+        assertEquals(
+            "HTTP 503: upstream temporarily unavailable",
+            callback.errors.single()
+        )
+        assertTrue(callback.lastErrorRetryable)
+        assertTrue(callback.finalChatMessages().isEmpty())
+    }
+
     private fun createOrchestrator(
         llmClient: FakeLlmClient,
         toolExecutor: FakeToolExecutor,
@@ -660,12 +975,14 @@ class AgentOrchestratorTest {
 
     private class FakeLlmClient(
         turns: List<ChatCompletionTurn>,
-        reasoningUpdates: List<List<String>> = emptyList()
+        reasoningUpdates: List<List<String>> = emptyList(),
+        failures: List<Throwable> = emptyList()
     ) : AgentLlmClient {
         private val queuedTurns = ArrayDeque(turns)
         private val queuedReasoningUpdates = ArrayDeque(
             reasoningUpdates.map { updates -> ArrayDeque(updates) }
         )
+        private val queuedFailures = ArrayDeque(failures)
         val requests = mutableListOf<ChatCompletionRequest>()
 
         override suspend fun streamTurn(
@@ -674,6 +991,9 @@ class AgentOrchestratorTest {
             onContentUpdate: (suspend (String) -> Unit)?
         ): ChatCompletionTurn {
             requests += request
+            if (queuedFailures.isNotEmpty()) {
+                throw queuedFailures.removeFirst()
+            }
             val reasoningQueue = if (queuedReasoningUpdates.isEmpty()) {
                 null
             } else {
@@ -738,9 +1058,11 @@ class AgentOrchestratorTest {
         val chatMessages = mutableListOf<Pair<String, Boolean>>()
         val promptTokenUpdates = mutableListOf<Int>()
         val errors = mutableListOf<String>()
+        val retryingEvents = mutableListOf<Triple<Int, Int, Long>>()
         var completedResult: AgentResult? = null
         var lastPrefillTokensPerSecond: Double? = null
         var lastDecodeTokensPerSecond: Double? = null
+        var lastErrorRetryable: Boolean = false
 
         override suspend fun onThinkingStart() = Unit
 
@@ -785,6 +1107,16 @@ class AgentOrchestratorTest {
             promptTokenUpdates += latestPromptTokens
         }
 
+        override suspend fun onRetrying(
+            retryCount: Int,
+            maxRetries: Int,
+            retryDelayMs: Long,
+            message: String,
+            retryReason: String?
+        ) {
+            retryingEvents += Triple(retryCount, maxRetries, retryDelayMs)
+        }
+
         override suspend fun onClarifyRequired(
             question: String,
             missingFields: List<String>?
@@ -796,6 +1128,11 @@ class AgentOrchestratorTest {
 
         override suspend fun onError(error: String) {
             errors += error
+        }
+
+        override suspend fun onError(error: String, retryable: Boolean) {
+            lastErrorRetryable = retryable
+            onError(error)
         }
 
         override suspend fun onPermissionRequired(missing: List<String>) = Unit

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/omnibot_artifact_preview_page.dart';
 import 'package:ui/l10n/l10n.dart';
+import 'package:ui/l10n/legacy_text_localizer.dart';
 import 'package:ui/models/chat_link_preview.dart';
 import 'package:ui/services/omnibot_resource_service.dart';
 import 'package:ui/widgets/image_preview_overlay.dart';
@@ -59,6 +60,7 @@ class MessageBubble extends StatelessWidget {
   final OnRequestAuthorize? onRequestAuthorize;
   final void Function(ChatMessageModel message, LongPressStartDetails details)?
   onUserMessageLongPressStart;
+  final VoidCallback? onRetryAgentMessage;
   final bool isUserMessageEditing;
   final TextEditingController? userMessageEditController;
   final VoidCallback? onCancelUserEdit;
@@ -79,6 +81,7 @@ class MessageBubble extends StatelessWidget {
     this.onParentScrollHandoff,
     this.onRequestAuthorize,
     this.onUserMessageLongPressStart,
+    this.onRetryAgentMessage,
     this.isUserMessageEditing = false,
     this.userMessageEditController,
     this.onCancelUserEdit,
@@ -1126,11 +1129,14 @@ class MessageBubble extends StatelessWidget {
       text,
       trailing: showVoiceButton ? _buildVoiceAction(context, text) : null,
     );
+    final retryingStatus = _buildAgentRetryingStatus(context);
+    final errorFooter = _buildAgentErrorFooter(context, text);
+    final showPrimaryText = text.isNotEmpty || message.isLoading || message.isSummarizing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        aiText,
+        if (showPrimaryText) aiText,
         if (speed != null) ...[
           const SizedBox(height: 4),
           Text(
@@ -1144,6 +1150,100 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
         ],
+        if (retryingStatus != null) ...[
+          if (showPrimaryText || speed != null) const SizedBox(height: 8),
+          retryingStatus,
+        ],
+        if (errorFooter != null) ...[
+          if (showPrimaryText || speed != null || retryingStatus != null)
+            const SizedBox(height: 8),
+          errorFooter,
+        ],
+      ],
+    );
+  }
+
+  Widget? _buildAgentRetryingStatus(BuildContext context) {
+    if (message.content?['agentRetrying'] != true) {
+      return null;
+    }
+    final statusText =
+        (message.content?['agentRetryStatusText'] ?? '').toString().trim();
+    if (statusText.isEmpty) {
+      return null;
+    }
+    final secondaryColor = _resolvedAiSecondaryTextColor(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.8,
+            valueColor: AlwaysStoppedAnimation<Color>(secondaryColor),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 12 * _chatTextScale,
+              color: secondaryColor,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildAgentErrorFooter(BuildContext context, String text) {
+    final errorText =
+        (message.content?['agentErrorText'] ?? '').toString().trim();
+    final retryable = message.content?['agentRetryable'] == true;
+    final showRetryButton = retryable && onRetryAgentMessage != null;
+    final showErrorText = errorText.isNotEmpty && errorText != text.trim();
+    if (!showErrorText && !showRetryButton) {
+      return null;
+    }
+    final warningColor = Theme.of(context).colorScheme.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showErrorText)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: warningColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              errorText,
+              style: TextStyle(
+                fontSize: 12 * _chatTextScale,
+                color: warningColor,
+                height: 1.4,
+              ),
+            ),
+          ),
+        if (showRetryButton)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onRetryAgentMessage,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(
+                LegacyTextLocalizer.isEnglish ? 'Retry' : '重试本轮',
+              ),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                foregroundColor: warningColor,
+              ),
+            ),
+          ),
       ],
     );
   }

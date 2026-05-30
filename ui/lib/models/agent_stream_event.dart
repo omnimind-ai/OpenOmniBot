@@ -3,6 +3,7 @@ import 'package:ui/features/home/pages/chat/chat_page_models.dart';
 enum AgentStreamEventKind {
   thinkingStarted('thinking_started'),
   thinkingSnapshot('thinking_snapshot'),
+  retrying('retrying'),
   textSnapshot('text_snapshot'),
   toolStarted('tool_started'),
   toolProgress('tool_progress'),
@@ -32,6 +33,7 @@ enum AgentStreamPhase {
   thinking,
   tool,
   output,
+  retrying,
   completed,
   error,
   clarify,
@@ -58,6 +60,12 @@ class AgentStreamEvent {
     this.latestPromptTokens,
     this.promptTokenThreshold,
     this.errorMessage = '',
+    this.willRetry = false,
+    this.retryable = false,
+    this.retryCount = 0,
+    this.maxRetries = 0,
+    this.retryDelayMs = 0,
+    this.retryReason = '',
     this.question = '',
     this.missingFields = const <String>[],
     this.missingPermissions = const <String>[],
@@ -83,6 +91,12 @@ class AgentStreamEvent {
   final int? latestPromptTokens;
   final int? promptTokenThreshold;
   final String errorMessage;
+  final bool willRetry;
+  final bool retryable;
+  final int retryCount;
+  final int maxRetries;
+  final int retryDelayMs;
+  final String retryReason;
   final String question;
   final List<String> missingFields;
   final List<String> missingPermissions;
@@ -138,6 +152,12 @@ class AgentStreamEvent {
       latestPromptTokens: _asInt(raw['latestPromptTokens']),
       promptTokenThreshold: _asInt(raw['promptTokenThreshold']),
       errorMessage: (raw['error'] ?? '').toString(),
+      willRetry: raw['willRetry'] == true,
+      retryable: raw['retryable'] == true,
+      retryCount: _asInt(raw['retryCount']) ?? 0,
+      maxRetries: _asInt(raw['maxRetries']) ?? 0,
+      retryDelayMs: _asInt(raw['retryDelayMs']) ?? 0,
+      retryReason: (raw['retryReason'] ?? '').toString(),
       question: (raw['question'] ?? '').toString(),
       missingFields:
           (raw['missingFields'] as List<dynamic>?)

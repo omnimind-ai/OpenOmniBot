@@ -683,6 +683,19 @@ class AssistsMessageService {
     }
   }
 
+  static Future<bool> retryAgentTask({required String taskId}) async {
+    try {
+      final result = await assistCore.invokeMethod(
+        'retryAgentTask',
+        <String, String>{'taskId': taskId},
+      );
+      return result == "SUCCESS";
+    } on PlatformException catch (e) {
+      print('retryAgentTask failed: ${e.message}');
+      return false;
+    }
+  }
+
   /// 取消陪伴任务的回到桌面操作
   /// 当用户在开启陪伴后离开主页时调用
   static Future<bool> cancelCompanionGoHome() async {
