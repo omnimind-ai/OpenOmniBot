@@ -212,6 +212,14 @@ belong in UI documentation.
 - extract replayable agent tools from recorded agent fallback steps
 - keep these routing predicates out of the main replay loop
 
+`OobFunctionToolDelegationExecutor` owns live tool delegation inside replay:
+
+- remap a materialized Function step into delegated tool arguments
+- build the synthetic `AssistantToolCall` used by `AgentToolExecutor`
+- build the runtime descriptor for delegated replay steps
+- map delegated tool results back into a stable per-step payload
+- never decide replay order, fallback policy, or whether a step should delegate
+
 `OobFunctionRunResultBuilder` owns replay result payloads:
 
 - build stable per-step failure records for guard, delegation, and replay errors
@@ -265,6 +273,7 @@ Agent/MCP tool surface
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
               -> OobFunctionCallRequestResolver # replay/call_tool args
               -> OobFunctionStepClassifier # replay step-shape routing
+              -> OobFunctionToolDelegationExecutor # live tool delegation bridge
               -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
@@ -327,6 +336,8 @@ Keep these pieces separate:
 - `OobFunctionStepClassifier`: legacy skip detection, OmniFlow execution-tool
   resolution, local graph/function/call_tool classification, and replayable
   agent-tool extraction
+- `OobFunctionToolDelegationExecutor`: mechanical bridge from replay steps to
+  live `AgentToolExecutor` calls and back to per-step result payloads
 - `OobFunctionRunResultBuilder`: stable run payload schema, failure step
   records, and runner timing/phase accounting
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,

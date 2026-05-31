@@ -27,6 +27,8 @@ class OobFunctionToolHandler(
         OobFunctionCallRequestResolver(),
     private val stepClassifier: OobFunctionStepClassifier =
         OobFunctionStepClassifier(callRequestResolver),
+    private val toolDelegationExecutor: OobFunctionToolDelegationExecutor =
+        OobFunctionToolDelegationExecutor(helper),
     private val runResultBuilder: OobFunctionRunResultBuilder =
         OobFunctionRunResultBuilder(),
 ) : ToolHandler {
@@ -478,8 +480,10 @@ class OobFunctionToolHandler(
 
                 executor == "tool" && callableTool.isNotEmpty() && router != null &&
                     env != null -> {
+                    val routerRef = router
+                        ?: error("router became unavailable during tool delegation")
                     delegatedToolUsed = true
-                    executeToolStep(
+                    toolDelegationExecutor.execute(
                         step = step,
                         stepId = stepId,
                         stepTitle = stepTitle,
@@ -488,7 +492,8 @@ class OobFunctionToolHandler(
                         callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
                         toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
                             .beginToolExecution(callableTool, "${parentToolCallId ?: toolName}_$stepId"),
-                        syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
+                        syntheticCallId = "${parentToolCallId ?: toolName}_$stepId",
+                        router = routerRef,
                     )
                 }
 
@@ -514,8 +519,10 @@ class OobFunctionToolHandler(
                     if (!stepClassifier.requiresAgentPlanning(step) &&
                         agentTool.isNotEmpty() && router != null && env != null
                     ) {
+                        val routerRef = router
+                            ?: error("router became unavailable during agent tool delegation")
                         delegatedToolUsed = true
-                        executeToolStep(
+                        toolDelegationExecutor.execute(
                             step = step,
                             stepId = stepId,
                             stepTitle = stepTitle,
@@ -524,7 +531,8 @@ class OobFunctionToolHandler(
                             callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
                             toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
                                 .beginToolExecution(agentTool, "${parentToolCallId ?: toolName}_$stepId"),
-                            syntheticCallId = "${parentToolCallId ?: toolName}_$stepId"
+                            syntheticCallId = "${parentToolCallId ?: toolName}_$stepId",
+                            router = routerRef,
                         ).also { result ->
                             (result as? LinkedHashMap<String, Any?>)
                                 ?.put("executor", "agent_tool")
@@ -619,65 +627,6 @@ class OobFunctionToolHandler(
         }
     }
 
-    private suspend fun executeToolStep(
-        step: Map<String, Any?>,
-        stepId: String,
-        stepTitle: String,
-        callableTool: String,
-        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment,
-        callback: cn.com.omnimind.bot.agent.AgentCallback,
-        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle,
-        syntheticCallId: String,
-    ): Map<String, Any?> {
-        val remapResult = OmniflowStepExecutor.remapStepArgs(step)
-        val stepArgsMap = remapResult.args
-        val stepArgs = when (stepArgsMap) {
-            is Map<*, *> -> helper.mapToJsonElement(
-                stepArgsMap.entries.associate { (k, v) -> k.toString() to v }
-            ) as? JsonObject ?: JsonObject(emptyMap())
-            else -> JsonObject(emptyMap())
-        }
-        val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
-            id = syntheticCallId,
-            type = "function",
-            function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
-                name = callableTool,
-                arguments = stepArgs.toString()
-            )
-        )
-        val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
-            name = callableTool,
-            displayName = stepTitle,
-            toolType = "oob_function_step"
-        )
-        return try {
-            val subResult = router!!.execute(
-                syntheticCall, stepArgs, subDescriptor, env, callback, toolHandle
-            )
-            linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to callableTool,
-                "executor" to "tool",
-                "success" to (subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error),
-                "summary" to when (subResult) {
-                    is cn.com.omnimind.bot.agent.ToolExecutionResult.ContextResult -> subResult.summaryText
-                    is cn.com.omnimind.bot.agent.ToolExecutionResult.Error -> subResult.message
-                    else -> stepTitle
-                }
-            )
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to callableTool,
-                "executor" to "tool",
-                "success" to false,
-                "summary" to (e.message ?: "step failed")
-            )
-        }
-    }
-
     private suspend fun executeOmniflowToolCallStep(
         step: Map<String, Any?>,
         stepId: String,
@@ -741,6 +690,8 @@ class OobFunctionToolHandler(
             )
         }
         if (router != null && env != null) {
+            val routerRef = router
+                ?: error("router became unavailable during call_tool delegation")
             val delegatedStep = LinkedHashMap<String, Any?>().apply {
                 putAll(step)
                 put("tool", targetTool)
@@ -749,7 +700,7 @@ class OobFunctionToolHandler(
             }
             return LinkedHashMap<String, Any?>().apply {
                 putAll(
-                    executeToolStep(
+                    toolDelegationExecutor.execute(
                         step = delegatedStep,
                         stepId = stepId,
                         stepTitle = stepTitle,
@@ -759,6 +710,7 @@ class OobFunctionToolHandler(
                         toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
                             .beginToolExecution(targetTool, "${parentToolCallId ?: toolName}_$stepId"),
                         syntheticCallId = "${parentToolCallId ?: toolName}_$stepId",
+                        router = routerRef,
                     )
                 )
                 put("delegated_from", callableTool.ifEmpty { "call_tool" })
