@@ -119,6 +119,13 @@ belong in UI documentation.
 - run the optional `vlm_task` fallback for remappable UI-action failures
 - keep agent recovery text and VLM tool-call shaping outside the replay loop
 
+`OobFunctionNestedCallCardPresenter` owns nested Function tool-card payloads:
+
+- create stable card ids for nested Function calls
+- format running/completed summaries for reusable Function cards
+- shape UI-facing args/result preview payloads for nested replay
+- keep card text and JSON presentation out of nested Function execution
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -149,6 +156,7 @@ Agent/MCP tool surface
               -> OobFunctionFrontendSessionController # replay overlay/session
               -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
+              -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -184,6 +192,8 @@ Keep these pieces separate:
   policy, replay skip results, and alignment-miss failure payloads
 - `OobFunctionAgentFallbackController`: failed-step recovery snapshots,
   fallback prompts, and optional VLM fallback calls
+- `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,
+  summaries, args payloads, and result preview payloads
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
