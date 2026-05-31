@@ -48,6 +48,7 @@ record. Do not read only the snapshot when correctness matters.
 - Replay step runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
 - Replay frontend session controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionFrontendSessionController.kt`
 - Replay source alignment controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionSourceAlignmentController.kt`
+- Replay agent fallback controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionAgentFallbackController.kt`
 - Pre-replay entry package guard: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionEntryPackageGuard.kt`
 - Graph/UTG replay path runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionGraphStepRunner.kt`
 - Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`

@@ -19,6 +19,8 @@ class OobFunctionToolHandler(
         OobFunctionFrontendSessionController(helper),
     private val sourceAlignmentController: OobFunctionSourceAlignmentController =
         OobFunctionSourceAlignmentController(),
+    private val agentFallbackController: OobFunctionAgentFallbackController =
+        OobFunctionAgentFallbackController(helper),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -410,14 +412,15 @@ class OobFunctionToolHandler(
                     } catch (e: Exception) {
                         val executionError = e as? OmniflowStepExecutor.ExecutionException
                         val failReason = e.message ?: "omniflow step failed"
-                        val recovery = refetchCurrentPageForFailedStep(failReason)
+                        val recovery = agentFallbackController.refetchCurrentPageForFailedStep(failReason)
                         val fallbackResult = if (allowAgentFallback) {
-                            tryOmniflowVlmFallback(
+                            agentFallbackController.tryVlmFallback(
                                 step = step,
                                 stepId = stepId,
                                 stepTitle = stepTitle,
                                 failReason = failReason,
                                 recovery = recovery,
+                                router = router,
                                 env = env,
                                 callback = callback,
                                 toolHandle = toolHandle,
@@ -440,7 +443,7 @@ class OobFunctionToolHandler(
                                 "success" to false,
                                 "needs_agent" to true,
                                 "fallback_available" to true,
-                                "prompt" to agentFallbackPrompt(step, stepTitle, recovery),
+                                "prompt" to agentFallbackController.prompt(step, stepTitle, recovery),
                                 "omniflow_fail_reason" to failReason,
                                 "error_code" to executionError?.errorCode,
                                 "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
@@ -483,7 +486,7 @@ class OobFunctionToolHandler(
 
                 executor == "tool" && callableTool.isNotEmpty() &&
                     !allowToolDelegationWithoutRouter -> {
-                    val agentPrompt = agentFallbackPrompt(step, stepTitle)
+                    val agentPrompt = agentFallbackController.prompt(step, stepTitle)
                     modelRequired = true
                     linkedMapOf(
                         "step_id" to stepId,
@@ -519,7 +522,7 @@ class OobFunctionToolHandler(
                                 ?.put("executor", "agent_tool")
                         }
                     } else if (allowAgentFallback) {
-                        val agentPrompt = agentFallbackPrompt(step, stepTitle)
+                        val agentPrompt = agentFallbackController.prompt(step, stepTitle)
                         modelRequired = true
                         linkedMapOf(
                             "step_id" to stepId,
@@ -555,7 +558,7 @@ class OobFunctionToolHandler(
             stepResults += timedStepResult
             if (timedStepResult["success"] == false) {
                 if (!timedStepResult.containsKey("recovery")) {
-                    timedStepResult["recovery"] = refetchCurrentPageForFailedStep(
+                    timedStepResult["recovery"] = agentFallbackController.refetchCurrentPageForFailedStep(
                         timedStepResult["summary"]?.toString() ?: "step failed"
                     )
                 }
@@ -630,123 +633,11 @@ class OobFunctionToolHandler(
         }
     }
 
-    private fun agentFallbackPrompt(
-        step: Map<String, Any?>,
-        stepTitle: String,
-        recovery: Map<String, Any?> = emptyMap(),
-    ): String {
-        val prompt = (step["agent_call"] as? Map<*, *>)
-            ?.get("args")?.let { (it as? Map<*, *>)?.get("prompt")?.toString() }
-            ?: (step["fallback"] as? Map<*, *>)?.get("prompt")?.toString()
-            ?: stepTitle
-        val args = OmniflowStepExecutor.normalizeArgsMap(step["args"])
-        val argsText = if (args.isNotEmpty()) {
-            "\n\n当前已物化参数：${helper.mapToJsonElement(args)}"
-        } else {
-            ""
-        }
-        val recoveryText = recoveryPromptSuffix(recovery)
-        return "$prompt$argsText$recoveryText"
-    }
-
-    private suspend fun refetchCurrentPageForFailedStep(reason: String): Map<String, Any?> =
-        runCatching {
-            OmniflowStepExecutor.currentPageSnapshotForRecovery(reason)
-        }.getOrElse { error ->
-            linkedMapOf(
-                "refetched_current_page" to false,
-                "reason" to reason,
-                "error_message" to error.message.orEmpty(),
-            )
-        }
-
-    private fun recoveryPromptSuffix(recovery: Map<String, Any?>): String {
-        if (recovery.isEmpty()) return ""
-        val packageName = firstNonBlank(recovery["effective_package"], recovery["package_name"])
-        val activityName = firstNonBlank(recovery["activity_name"])
-        val xml = recovery["observation_xml"]?.toString()?.take(MAX_RECOVERY_PROMPT_XML_CHARS).orEmpty()
-        return buildString {
-            append("\n\n上一次复用步骤执行失败后，系统已重新获取当前页面。")
-            if (packageName.isNotBlank()) append("\n当前包名：$packageName")
-            if (activityName.isNotBlank()) append("\n当前 Activity：$activityName")
-            if (xml.isNotBlank()) append("\n当前页面 XML（截断）：\n").append(xml)
-            append("\n请基于这个最新页面继续，不要沿用失败步骤里的旧坐标或旧页面。")
-        }
-    }
-
     private fun requiresAgentPlanning(step: Map<String, Any?>): Boolean {
         val reason = (step["agent_call"] as? Map<*, *>)?.get("reason")?.toString()
             ?: step["reason"]?.toString()
             ?: ""
         return RunLogReplayPolicy.requiresAgentPlanningReason(reason)
-    }
-
-    /**
-     * When omniflow coordinate remapping fails, fall back to vlm_task using
-     * target_description from the step args. Returns null if fallback is not
-     * possible (no router, no target_description, or vlm_task itself fails).
-     */
-    private suspend fun tryOmniflowVlmFallback(
-        step: Map<String, Any?>,
-        stepId: String,
-        stepTitle: String,
-        failReason: String,
-        recovery: Map<String, Any?>,
-        env: cn.com.omnimind.bot.agent.AgentExecutionEnvironment?,
-        callback: cn.com.omnimind.bot.agent.AgentCallback?,
-        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle?,
-        parentToolCallId: String,
-    ): Map<String, Any?>? {
-        if (router == null || env == null || callback == null || toolHandle == null) return null
-        val args = OmniflowStepExecutor.normalizeArgsMap(step["args"])
-        val targetDesc = OmniflowStepExecutor.stringArg(
-            args,
-            "target_description",
-            "targetDescription"
-        ).orEmpty()
-        if (targetDesc.isEmpty()) return null
-        val action = OmniflowStepExecutor.actionNameForStep(step)
-        val goal = when (action) {
-            "click", "long_press" -> "找到并点击「$targetDesc」"
-            "scroll" -> "在「$targetDesc」区域滚动"
-            else -> "执行 $action 操作：$targetDesc"
-        } + recoveryPromptSuffix(recovery)
-        val vlmArgs = helper.mapToJsonElement(
-            mapOf("goal" to goal, "startFromCurrent" to true)
-        ) as? kotlinx.serialization.json.JsonObject
-            ?: return null
-        val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
-            id = "${parentToolCallId}_${stepId}_fallback",
-            type = "function",
-            function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
-                name = "vlm_task",
-                arguments = vlmArgs.toString()
-            )
-        )
-        val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
-            name = "vlm_task",
-            displayName = stepTitle,
-            toolType = "omniflow_fallback"
-        )
-        return try {
-            val subResult = router!!.execute(
-                syntheticCall, vlmArgs, subDescriptor, env, callback, toolHandle
-            )
-            val succeeded = subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error
-            linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to "vlm_task",
-                "executor" to "omniflow_vlm_fallback",
-                "success" to succeeded,
-                "omniflow_fail_reason" to failReason,
-                "recovery" to recovery,
-                "summary" to "omniflow remap failed → vlm fallback: $goal"
-            )
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
     }
 
     private fun replayableAgentTool(step: Map<String, Any?>, callableTool: String): String {
@@ -916,7 +807,7 @@ class OobFunctionToolHandler(
                 "tool" to targetTool,
                 "executor" to "agent",
                 "blocked_executor" to "tool",
-                "prompt" to agentFallbackPrompt(
+                "prompt" to agentFallbackController.prompt(
                     LinkedHashMap<String, Any?>().apply {
                         putAll(step)
                         put("tool", targetTool)
@@ -1623,7 +1514,6 @@ class OobFunctionToolHandler(
     private companion object {
         const val TAG = "OobFunctionToolHandler"
         const val MAX_OMNIFLOW_CALL_DEPTH = 8
-        const val MAX_RECOVERY_PROMPT_XML_CHARS = 6000
         val RUN_SEQUENCE = AtomicLong(0)
     }
 

@@ -111,6 +111,14 @@ belong in UI documentation.
 - produce the alignment-miss failure payload when replay is on the wrong page
 - keep vector matching and skip/fail policy outside the main step loop
 
+`OobFunctionAgentFallbackController` owns agent-facing fallback context:
+
+- build fallback prompts from the failed step, materialized args, and recovery
+  snapshot
+- refetch the current page after deterministic replay failures
+- run the optional `vlm_task` fallback for remappable UI-action failures
+- keep agent recovery text and VLM tool-call shaping outside the replay loop
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -140,6 +148,7 @@ Agent/MCP tool surface
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
               -> OobFunctionFrontendSessionController # replay overlay/session
               -> OobFunctionSourceAlignmentController # page-vector skip/fail
+              -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -173,6 +182,8 @@ Keep these pieces separate:
   and stop signal handling
 - `OobFunctionSourceAlignmentController`: current-page/source-page alignment
   policy, replay skip results, and alignment-miss failure payloads
+- `OobFunctionAgentFallbackController`: failed-step recovery snapshots,
+  fallback prompts, and optional VLM fallback calls
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
