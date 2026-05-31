@@ -4048,8 +4048,8 @@ class _ReusableFunctionSpecSheetState
       final taskId = result.taskId;
       return _localeValue(
         context,
-        zh: taskId.isEmpty ? '已交给 VLM 继续执行' : '已交给 VLM 继续执行：$taskId',
-        en: taskId.isEmpty ? 'Handed off to VLM' : 'Handed off to VLM: $taskId',
+        zh: taskId.isEmpty ? '已交给 Agent 继续执行' : '已交给 Agent 继续执行：$taskId',
+        en: taskId.isEmpty ? 'Handed off to Agent' : 'Handed off to Agent: $taskId',
       );
     }
     if (result.completedLocal) {
@@ -4958,8 +4958,8 @@ class _FunctionApiStatusBox extends StatelessWidget {
     if (result.startedAgentFallback) {
       return _text(
         context,
-        '执行：已交给 VLM 继续执行$stepText',
-        'Run: handed off to VLM$stepText',
+        '执行：已交给 Agent 继续执行$stepText',
+        'Run: handed off to Agent$stepText',
       );
     }
     if (result.completedLocal) {

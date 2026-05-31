@@ -29,6 +29,7 @@ data class ManualOverlayTouchGesture(
 
 data class ManualOverlayGestureReplayResult(
     val executed: Boolean,
+    val recorded: Boolean = executed,
     val mayOpenIme: Boolean = false,
     val ignoredControl: Boolean = false
 )

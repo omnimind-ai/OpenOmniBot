@@ -1948,8 +1948,8 @@ class OobUdegNodeStore(
         private const val ARTIFACT_INDEX_FILE = "index.json"
         const val UDEG_DECISION_PATH =
             "page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"
-        const val MIN_PAGE_MATCH_SCORE = 0.30f
-        const val STRONG_PAGE_MATCH_SCORE = 0.87f
+        const val MIN_PAGE_MATCH_SCORE = 0.25f
+        const val STRONG_PAGE_MATCH_SCORE = 0.84f
         private const val PACKAGE_MISMATCH_MULTIPLIER = 0.82f
         private const val MAX_NODE_SCAN = 1_000
         private const val MAX_ANALYSIS_TEXTS = 16

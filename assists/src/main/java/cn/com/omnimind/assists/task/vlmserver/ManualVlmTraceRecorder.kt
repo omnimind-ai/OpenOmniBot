@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import cn.com.omnimind.accessibility.action.OmniGestureDispatchTimeoutException
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
 import cn.com.omnimind.assists.ManualOverlayGestureReplayResult
@@ -12,18 +13,13 @@ import cn.com.omnimind.assists.ManualOverlayTouchGesture
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.min
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ManualVlmTraceResult(
     val actions: List<ManualVlmRecordedAction>,
@@ -104,14 +100,15 @@ internal data class ManualVlmTraceSnapshot(
 
 internal object ManualRecordingDiagnostics {
     const val COMPLETE_OVERLAY_TOUCH = "complete_overlay_touch"
+    const val INCOMPLETE_OVERLAY_TOUCH = "incomplete_overlay_touch"
     const val COMPLETE_RAW_TOUCH = "complete_raw_touch"
     const val MISSING_RAW_TOUCH = "missing_raw_touch"
     const val RAW_TOUCH_INTERRUPTED = "raw_touch_interrupted"
 
-    @Deprecated("Manual recording is A11-first; use MISSING_RAW_TOUCH.")
+    @Deprecated("Manual recording requires concrete touch capture; use MISSING_RAW_TOUCH.")
     const val PARTIAL_SEMANTIC_ONLY = MISSING_RAW_TOUCH
 
-    @Deprecated("Manual recording is A11-first; use RAW_TOUCH_INTERRUPTED.")
+    @Deprecated("Manual recording requires concrete touch capture; use RAW_TOUCH_INTERRUPTED.")
     const val PARTIAL_RAW_TOUCH_INTERRUPTED = RAW_TOUCH_INTERRUPTED
 
     fun completeness(rawTouchAvailable: Boolean, rawTouchActiveAtStop: Boolean?): String {
@@ -128,9 +125,10 @@ internal object ManualRecordingDiagnostics {
 
     fun warningMessage(completeness: String): String? = when (completeness) {
         COMPLETE_OVERLAY_TOUCH -> null
+        INCOMPLETE_OVERLAY_TOUCH -> "overlay touch 录制未全部落盘，本次轨迹可能遗漏点击/滑动"
         COMPLETE_RAW_TOUCH -> null
         RAW_TOUCH_INTERRUPTED -> "raw touch 录制中断，本次轨迹可能遗漏点击/滑动"
-        else -> "raw touch 不可用，本次使用 A11Event 录制，可能遗漏部分点击/滑动"
+        else -> "raw touch 不可用，且没有真实触摸动作锚点，本次轨迹可能遗漏点击/滑动"
     }
 
     fun guaranteesNoMissingClicks(diagnostics: Map<String, Any?>): Boolean {
@@ -144,466 +142,13 @@ internal object ManualRecordingDiagnostics {
     }
 }
 
-internal data class ManualScrollSnapshot(
-    val scrollX: Int,
-    val scrollY: Int,
-    val scrollDeltaX: Int,
-    val scrollDeltaY: Int,
-    val fromIndex: Int,
-    val toIndex: Int,
-    val itemCount: Int
-) {
-    fun hasViewportSignal(): Boolean =
-        abs(scrollDeltaX) >= ManualScrollEventPolicy.MIN_SCROLL_DELTA ||
-            abs(scrollDeltaY) >= ManualScrollEventPolicy.MIN_SCROLL_DELTA ||
-            scrollX != 0 ||
-            scrollY != 0 ||
-            fromIndex >= 0 ||
-            toIndex >= 0 ||
-            itemCount > 0
-}
-
-internal enum class ManualScrollDirection {
-    UP,
-    DOWN,
-    LEFT,
-    RIGHT
-}
-
-internal object ManualScrollEventPolicy {
-    const val MIN_SCROLL_DELTA = 4
-
-    fun inferDirection(
-        previous: ManualScrollSnapshot?,
-        current: ManualScrollSnapshot
-    ): ManualScrollDirection? {
-        if (abs(current.scrollDeltaY) >= MIN_SCROLL_DELTA) {
-            return if (current.scrollDeltaY > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-        }
-        if (abs(current.scrollDeltaX) >= MIN_SCROLL_DELTA) {
-            return if (current.scrollDeltaX > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
-        }
-        if (previous != null) {
-            val dy = current.scrollY - previous.scrollY
-            if (abs(dy) >= MIN_SCROLL_DELTA) {
-                return if (dy > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-            }
-            val dx = current.scrollX - previous.scrollX
-            if (abs(dx) >= MIN_SCROLL_DELTA) {
-                return if (dx > 0) ManualScrollDirection.LEFT else ManualScrollDirection.RIGHT
-            }
-            val indexDelta = current.fromIndex - previous.fromIndex
-            if (indexDelta != 0) {
-                return if (indexDelta > 0) ManualScrollDirection.UP else ManualScrollDirection.DOWN
-            }
-        }
-        return null
-    }
-}
-
-internal object ManualClickGrounding {
-    fun inferClickTarget(
-        beforeXml: String?,
-        afterXml: String?,
-        packageName: String?,
-        eventLabel: String,
-        eventClassName: String?,
-        ignoredPackageName: String,
-        ignoredTextHints: List<String>
-    ): Result {
-        val candidates = parseXmlNodeCandidates(beforeXml)
-            .filter { !it.bounds.isEmpty }
-            .filterNot { shouldIgnoreTarget(it, packageName, ignoredPackageName, ignoredTextHints) }
-        if (candidates.isEmpty()) {
-            return emptyResult("no_xml_candidates", eventLabel, eventClassName, pageChanged = false)
-        }
-
-        val eventTokens = meaningfulTokens(eventLabel)
-        val afterPage = PageSummary.from(afterXml)
-        val pageChanged = pageFingerprint(beforeXml) != pageFingerprint(afterXml)
-        val scored = candidates.mapNotNull { candidate ->
-            val base = candidate.matchScore(
-                packageName = packageName,
-                labelTokens = eventTokens,
-                eventClassName = eventClassName
-            )
-            val transition = candidate.transitionScore(afterPage, pageChanged)
-            if (base <= 0 && transition <= 0) return@mapNotNull null
-            CandidateScore(
-                candidate = candidate,
-                baseScore = base,
-                transitionScore = transition,
-                eventTextMatched = eventTokens.isNotEmpty() &&
-                    eventTokens.any { candidate.searchText.contains(it) }
-            )
-        }.sortedWith(
-            compareByDescending<CandidateScore> { it.totalScore }
-                .thenByDescending { it.transitionScore }
-                .thenByDescending { it.baseScore }
-                .thenBy { it.candidate.bounds.area }
-        )
-
-        if (scored.isEmpty()) {
-            return emptyResult("no_scored_candidates", eventLabel, eventClassName, pageChanged)
-        }
-
-        val top = scored.first()
-        val second = scored.getOrNull(1)
-        val finalMargin = top.totalScore - (second?.totalScore ?: 0)
-        val baseMargin = top.baseScore - (second?.baseScore ?: 0)
-        val hasEventText = eventTokens.isNotEmpty()
-        val strongTextMatch = hasEventText &&
-            top.eventTextMatched &&
-            top.baseScore >= MIN_STRONG_TEXT_SCORE &&
-            baseMargin >= MIN_SELECTION_MARGIN
-        val strongTransition = top.transitionScore >= MIN_STRONG_TRANSITION_SCORE &&
-            finalMargin >= MIN_SELECTION_MARGIN
-        val singleCandidate = scored.size == 1 &&
-            (top.baseScore >= MIN_SINGLE_CANDIDATE_SCORE || top.transitionScore >= MIN_STRONG_TRANSITION_SCORE)
-
-        val reason = when {
-            strongTextMatch -> "event_text_xml_match"
-            strongTransition -> "after_page_transition_match"
-            singleCandidate -> "single_xml_candidate"
-            hasEventText && !top.eventTextMatched -> "ambiguous_event_text_not_matched"
-            !pageChanged -> "ambiguous_no_page_change"
-            else -> "ambiguous_low_margin"
-        }
-        val confidence = when {
-            strongTextMatch -> 0.92
-            strongTransition -> 0.84
-            singleCandidate -> 0.72
-            else -> 0.0
-        }
-        val inference = inferenceMap(
-            reason = reason,
-            confidence = confidence,
-            eventLabel = eventLabel,
-            eventClassName = eventClassName,
-            pageChanged = pageChanged,
-            selected = top,
-            candidates = scored
-        )
-        if (!strongTextMatch && !strongTransition && !singleCandidate) {
-            return Result(
-                target = null,
-                resolution = "xml_fallback_ambiguous",
-                inference = inference
-            )
-        }
-        val resolution = when {
-            strongTextMatch -> "xml_fallback_text_inferred"
-            strongTransition -> "xml_fallback_transition_inferred"
-            else -> "xml_fallback_single_candidate"
-        }
-        return Result(
-            target = top.candidate.toTarget(),
-            resolution = resolution,
-            inference = inference
-        )
-    }
-
-    data class Result(
-        val target: Target?,
-        val resolution: String,
-        val inference: Map<String, Any?>
-    )
-
-    data class Target(
-        val label: String,
-        val bounds: Bounds,
-        val packageName: String?,
-        val className: String?,
-        val resourceId: String?,
-        val text: String?,
-        val contentDescription: String?
-    )
-
-    data class Bounds(
-        val left: Int,
-        val top: Int,
-        val right: Int,
-        val bottom: Int
-    ) {
-        val width: Int get() = right - left
-        val height: Int get() = bottom - top
-        val area: Int get() = width.coerceAtLeast(0) * height.coerceAtLeast(0)
-        val isEmpty: Boolean get() = width <= 0 || height <= 0
-        val centerX: Float get() = (left + right) / 2f
-        val centerY: Float get() = (top + bottom) / 2f
-        fun asString(): String = "[$left,$top][$right,$bottom]"
-    }
-
-    private data class CandidateScore(
-        val candidate: XmlCandidate,
-        val baseScore: Int,
-        val transitionScore: Int,
-        val eventTextMatched: Boolean
-    ) {
-        val totalScore: Int get() = baseScore + transitionScore
-    }
-
-    private data class PageSummary(
-        val labels: List<String>,
-        val topLabels: List<String>,
-        val editableCount: Int
-    ) {
-        val labelText: String = labels.joinToString(" ").lowercase()
-        val topLabelText: String = topLabels.joinToString(" ").lowercase()
-
-        companion object {
-            fun from(xml: String?): PageSummary {
-                val candidates = parseXmlNodeCandidates(xml)
-                return PageSummary(
-                    labels = candidates.map { it.bestLabel }.filter { it.isNotBlank() },
-                    topLabels = candidates
-                        .filter { it.bounds.top <= TOP_REGION_PX }
-                        .map { it.bestLabel }
-                        .filter { it.isNotBlank() },
-                    editableCount = candidates.count { it.isEditableLike }
-                )
-            }
-        }
-    }
-
-    private data class XmlCandidate(
-        val bounds: Bounds,
-        val packageName: String?,
-        val className: String?,
-        val text: String?,
-        val contentDescription: String?,
-        val hintText: String?,
-        val resourceId: String?,
-        val clickable: Boolean,
-        val enabled: Boolean,
-        val visible: Boolean,
-        val editable: Boolean,
-        val focusable: Boolean
-    ) {
-        val bestLabel: String
-            get() = firstNonBlank(
-                contentDescription,
-                text,
-                hintText,
-                resourceId?.substringAfterLast('/'),
-                className
-            )
-        val searchText: String
-            get() = listOfNotNull(text, contentDescription, hintText, resourceId, className, bestLabel)
-                .joinToString(" ")
-                .lowercase()
-        val isEditableLike: Boolean
-            get() = editable ||
-                className.orEmpty().contains("EditText", ignoreCase = true) ||
-                className.orEmpty().contains("TextInput", ignoreCase = true)
-
-        fun matchScore(
-            packageName: String?,
-            labelTokens: List<String>,
-            eventClassName: String?
-        ): Int {
-            var score = 0
-            if (visible) score += 2
-            if (enabled) score += 2
-            if (!packageName.isNullOrBlank() && packageName == this.packageName) score += 8
-            if (clickable || focusable || isEditableLike) score += 12
-            if (!eventClassName.isNullOrBlank() && eventClassName == className) score += 8
-            for (token in labelTokens) {
-                if (searchText == token) score += 35
-                if (searchText.contains(token)) score += 25
-            }
-            return score
-        }
-
-        fun transitionScore(afterPage: PageSummary, pageChanged: Boolean): Int {
-            if (!pageChanged) return 0
-            var score = 0
-            val label = bestLabel.lowercase()
-            if (label.isNotBlank() && afterPage.labelText.contains(label)) score += 70
-            if (label.isNotBlank() && afterPage.topLabelText.contains(label)) score += 35
-            if (isCreateAffordance(label) && afterPage.editableCount >= 2) score += 90
-            if (isCreateAffordance(label) && afterPage.editableCount == 1) score += 45
-            return score
-        }
-
-        fun toTarget(): Target = Target(
-            label = bestLabel,
-            bounds = bounds,
-            packageName = packageName,
-            className = className,
-            resourceId = resourceId,
-            text = text,
-            contentDescription = contentDescription
-        )
-    }
-
-    private fun emptyResult(
-        reason: String,
-        eventLabel: String,
-        eventClassName: String?,
-        pageChanged: Boolean
-    ): Result = Result(
-        target = null,
-        resolution = "xml_fallback_ambiguous",
-        inference = linkedMapOf<String, Any?>(
-            "source" to "xml_fallback",
-            "reason" to reason,
-            "confidence" to 0.0,
-            "event_label" to eventLabel.takeIf { it.isNotBlank() },
-            "event_class" to eventClassName,
-            "page_changed" to pageChanged,
-            "candidate_count" to 0
-        ).filterValues { it != null }
-    )
-
-    private fun inferenceMap(
-        reason: String,
-        confidence: Double,
-        eventLabel: String,
-        eventClassName: String?,
-        pageChanged: Boolean,
-        selected: CandidateScore,
-        candidates: List<CandidateScore>
-    ): Map<String, Any?> = linkedMapOf<String, Any?>(
-        "source" to "xml_fallback",
-        "reason" to reason,
-        "confidence" to confidence,
-        "event_label" to eventLabel.takeIf { it.isNotBlank() },
-        "event_class" to eventClassName,
-        "page_changed" to pageChanged,
-        "candidate_count" to candidates.size,
-        "selected" to selected.summaryMap(),
-        "candidates" to candidates.take(MAX_INFERENCE_CANDIDATES).map { it.summaryMap() }
-    ).filterValues { it != null }
-
-    private fun CandidateScore.summaryMap(): Map<String, Any?> = linkedMapOf<String, Any?>(
-        "label" to candidate.bestLabel,
-        "class" to candidate.className,
-        "resource_id" to candidate.resourceId,
-        "bounds" to candidate.bounds.asString(),
-        "base_score" to baseScore,
-        "transition_score" to transitionScore,
-        "total_score" to totalScore,
-        "event_text_matched" to eventTextMatched
-    ).filterValues { it != null }
-
-    private fun shouldIgnoreTarget(
-        candidate: XmlCandidate,
-        fallbackPackageName: String?,
-        ignoredPackageName: String,
-        ignoredTextHints: List<String>
-    ): Boolean {
-        val candidatePackage = candidate.packageName ?: fallbackPackageName
-        if (candidatePackage.isNullOrBlank() || candidatePackage == ignoredPackageName) return true
-        val text = listOf(candidate.bestLabel, candidate.resourceId.orEmpty()).joinToString(" ").lowercase()
-        return ignoredTextHints.any { text.contains(it) }
-    }
-
-    private fun parseXmlNodeCandidates(xml: String?): List<XmlCandidate> {
-        if (xml.isNullOrBlank()) return emptyList()
-        return NODE_TAG_REGEX.findAll(xml).mapNotNull { match ->
-            val attrs = parseXmlAttributes(match.groupValues.getOrNull(1).orEmpty())
-            val bounds = parseBounds(attrs["bounds"]) ?: return@mapNotNull null
-            XmlCandidate(
-                bounds = bounds,
-                packageName = attrs["package"],
-                className = attrs["class"],
-                text = decodeXmlAttr(attrs["text"]),
-                contentDescription = decodeXmlAttr(attrs["content-desc"] ?: attrs["contentDescription"]),
-                hintText = decodeXmlAttr(attrs["hint-text"] ?: attrs["hintText"]),
-                resourceId = attrs["resource-id"] ?: attrs["resourceId"],
-                clickable = attrs["clickable"] == "true",
-                enabled = attrs["enabled"] != "false",
-                visible = attrs["visible-to-user"] != "false",
-                editable = attrs["editable"] == "true",
-                focusable = attrs["focusable"] == "true"
-            )
-        }.toList()
-    }
-
-    private fun pageFingerprint(xml: String?): String {
-        if (xml.isNullOrBlank()) return ""
-        return parseXmlNodeCandidates(xml)
-            .map { listOf(it.bestLabel, it.className.orEmpty(), it.resourceId.orEmpty()).joinToString("|") }
-            .joinToString("\n")
-    }
-
-    private fun parseXmlAttributes(raw: String): Map<String, String> =
-        ATTR_REGEX.findAll(raw).associate { match ->
-            match.groupValues[1] to match.groupValues[2]
-        }
-
-    private fun parseBounds(value: String?): Bounds? {
-        if (value.isNullOrBlank()) return null
-        val match = BOUNDS_REGEX.find(value) ?: return null
-        val left = match.groupValues[1].toIntOrNull() ?: return null
-        val top = match.groupValues[2].toIntOrNull() ?: return null
-        val right = match.groupValues[3].toIntOrNull() ?: return null
-        val bottom = match.groupValues[4].toIntOrNull() ?: return null
-        return Bounds(left, top, right, bottom)
-    }
-
-    private fun meaningfulTokens(value: String): List<String> {
-        val normalized = value.replace(Regex("\\s+"), " ").trim().lowercase()
-        if (normalized.isBlank()) return emptyList()
-        val asciiTokens = normalized
-            .split(Regex("[^a-z0-9]+"))
-            .map { it.trim() }
-            .filter { it.length >= 2 }
-        return if (asciiTokens.isNotEmpty()) asciiTokens else listOf(normalized)
-    }
-
-    private fun decodeXmlAttr(value: String?): String? {
-        val raw = value ?: return null
-        return raw
-            .replace("&quot;", "\"")
-            .replace("&apos;", "'")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&amp;", "&")
-    }
-
-    private fun firstNonBlank(vararg values: String?): String {
-        for (value in values) {
-            val normalized = value?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
-            if (normalized.isNotEmpty()) return normalized
-        }
-        return ""
-    }
-
-    private fun isCreateAffordance(label: String): Boolean {
-        if (label.isBlank()) return false
-        return CREATE_AFFORDANCE_TERMS.any { label.contains(it) }
-    }
-
-    private const val TOP_REGION_PX = 420
-    private const val MAX_INFERENCE_CANDIDATES = 5
-    private const val MIN_STRONG_TEXT_SCORE = 45
-    private const val MIN_SINGLE_CANDIDATE_SCORE = 25
-    private const val MIN_STRONG_TRANSITION_SCORE = 70
-    private const val MIN_SELECTION_MARGIN = 20
-    private val NODE_TAG_REGEX = Regex("<node\\b([^>]*)>")
-    private val ATTR_REGEX = Regex("([A-Za-z0-9_:-]+)=\"([^\"]*)\"")
-    private val BOUNDS_REGEX = Regex("\\[(-?\\d+),(-?\\d+)]\\[(-?\\d+),(-?\\d+)]")
-    private val CREATE_AFFORDANCE_TERMS = listOf(
-        "new",
-        "create",
-        "add",
-        "insert",
-        "新增",
-        "新建",
-        "创建",
-        "添加",
-        "加入"
-    )
-}
-
 /**
- * Records user actions during VLM takeover using Accessibility semantic events.
+ * Records user actions during VLM takeover from concrete touch streams.
  *
- * Raw touch capture is opt-in enrichment. It is disabled by default because
- * most devices cannot read `/dev/input/event*` from an app UID without
- * root/Shizuku; the default recorder path is A11Event-only.
+ * Accessibility is evidence only: it provides XML/window observations and text
+ * content for an input that was anchored by a real overlay/raw touch. A11-only
+ * click, long-click, focus, and scroll events are intentionally not replayable
+ * actions because they can be incomplete.
  */
 class ManualVlmTraceRecorder(
     private val context: Context,
@@ -611,15 +156,12 @@ class ManualVlmTraceRecorder(
     private val enableRawTouch: Boolean = false
 ) {
     private val ownPackageName = context.packageName
-    private val recordingLock = Any()
+    private val recordingLock = java.lang.Object()
     private val recordedActions = mutableListOf<ManualVlmRecordedAction>()
-    private val overlayRecordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val overlayRecordJobs = mutableSetOf<Job>()
-    private val nodeScrollState = mutableMapOf<String, ManualScrollSnapshot>()
     private val rawGestureBeforeXml = mutableMapOf<Long, String?>()
     private val rawGestureBeforeScreenshot = mutableMapOf<Long, ManualVlmScreenshotRef?>()
+    private var textInputAnchor: TextInputAnchor? = null
     private var pendingText: PendingTextAction? = null
-    private var pendingScroll: PendingScrollAction? = null
     private var rawTouchRecorder: ManualRawTouchRecorder? = null
     private var rawTouchStatus: ManualRawTouchStatus? = null
     private var lastDiscreteSignature: String = ""
@@ -650,11 +192,7 @@ class ManualVlmTraceRecorder(
     private var overlayPostRecordTimeoutCount: Int = 0
     private var suppressedSemanticActionEventCount: Int = 0
     private var suppressedNonRawActionCount: Int = 0
-    private var suppressedOverlayDuplicateActionCount: Int = 0
     private var windowTransitionEventCount: Int = 0
-    private var unattributedWindowTransitionCount: Int = 0
-    private var lastUnattributedWindowTransitionSignature: String = ""
-    private val unattributedWindowTransitionSamples = mutableListOf<Map<String, Any?>>()
     private var isStarted = false
     private var isPaused = false
 
@@ -685,7 +223,7 @@ class ManualVlmTraceRecorder(
                 available = false,
                 backend = RAW_TOUCH_BACKEND,
                 errorCode = "raw_touch_disabled",
-                errorMessage = "Raw getevent recording is disabled; using Accessibility events"
+                errorMessage = "Raw getevent recording is disabled; using overlay touch actions with Accessibility evidence"
             )
         }
         AssistsService.addListener(listener)
@@ -701,11 +239,10 @@ class ManualVlmTraceRecorder(
     fun pause(): Boolean {
         if (!isStarted) return false
         if (isPaused) return true
-        awaitOverlayRecordJobs()
+        awaitOverlayRecordJobs("pause")
         val currentXml = captureCurrentXml()
         val currentScreenshot = captureCurrentScreenshotRef("pause")
         flushPendingText(currentXml)
-        flushPendingScroll(currentXml)
         lastXmlSnapshot = currentXml
         lastScreenshotSnapshot = currentScreenshot
         isPaused = true
@@ -733,7 +270,7 @@ class ManualVlmTraceRecorder(
     }
 
     fun stop(): ManualVlmTraceResult {
-        awaitOverlayRecordJobs()
+        awaitOverlayRecordJobs("stop")
         if (isStarted) {
             AssistsService.removeListener(listener)
             isStarted = false
@@ -741,7 +278,6 @@ class ManualVlmTraceRecorder(
         stopRawTouchRecorder()
         isPaused = false
         flushPendingText(lastXmlSnapshot)
-        flushPendingScroll(lastXmlSnapshot)
         val summary = buildSummary(recordedActions)
         OmniLog.d(TAG, "manual trace recorder stopped: $sessionLabel actions=${recordedActions.size}")
         return ManualVlmTraceResult(
@@ -754,7 +290,6 @@ class ManualVlmTraceRecorder(
     internal fun snapshot(): ManualVlmTraceSnapshot = synchronized(recordingLock) {
         val pendingSummary = when {
             pendingText != null -> "正在输入：${pendingText?.label.orEmpty()}"
-            pendingScroll != null -> "正在滑动：${pendingScroll?.label.orEmpty()}"
             else -> null
         }
         ManualVlmTraceSnapshot(
@@ -771,12 +306,22 @@ class ManualVlmTraceRecorder(
         )
     }
 
-    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): ManualOverlayGestureReplayResult {
-        synchronized(recordingLock) {
+    suspend fun recordOverlayGesture(
+        gesture: ManualOverlayTouchGesture,
+        onGestureDispatched: suspend (mayOpenIme: Boolean) -> Unit = {}
+    ): ManualOverlayGestureReplayResult {
+        val operationId = synchronized(recordingLock) {
             if (!isStarted || isPaused) return ManualOverlayGestureReplayResult(executed = false)
             overlayGestureStartedCount += 1
+            overlayOperationId(gesture, overlayGestureStartedCount)
         }
-        val beforeXml = captureCurrentXml() ?: synchronized(recordingLock) { lastXmlSnapshot }
+        // captureCurrentXml() is a blocking binder call (service.windows + window.root).
+        // It has no internal timeout and can hang indefinitely during UI transitions.
+        // Run on a separate IO thread so the timeout can free the processing coroutine
+        // even if the underlying binder call is still waiting.
+        val beforeXml = withTimeoutOrNull(BEFORE_XML_CAPTURE_TIMEOUT_MS) {
+            withContext(Dispatchers.IO) { captureCurrentXml() }
+        }?.takeIf { it.isNotBlank() }
         val beforeScreenshot = synchronized(recordingLock) { lastScreenshotSnapshot }
         val mayOpenIme = gesture.actionName == "click" &&
             overlayClickMayOpenIme(beforeXml, gesture.startX, gesture.startY)
@@ -805,100 +350,179 @@ class ManualVlmTraceRecorder(
         synchronized(recordingLock) {
             overlayGestureActiveCount += 1
         }
-        val executed = runCatching {
-            performOverlayGesture(gesture)
-            true
-        }.getOrElse { error ->
-            synchronized(recordingLock) {
-                overlayGestureFailedCount += 1
-            }
-            OmniLog.w(TAG, "manual overlay touch execution failed: ${error.message}")
-            false
-        }
-        launchOverlayPostRecord(gesture, beforeXml, beforeScreenshot)
-        return ManualOverlayGestureReplayResult(
-            executed = executed,
-            mayOpenIme = mayOpenIme
-        )
-    }
-
-    private fun launchOverlayPostRecord(
-        gesture: ManualOverlayTouchGesture,
-        beforeXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?
-    ) {
-        val job = overlayRecordScope.launch {
-            settleAndRecordOverlayGesture(gesture, beforeXml, beforeScreenshot)
-        }
-        synchronized(recordingLock) {
-            overlayRecordJobs.add(job)
-        }
-        job.invokeOnCompletion {
-            synchronized(recordingLock) {
-                overlayRecordJobs.remove(job)
+        val dispatchOutcome = try {
+            runCatching { performOverlayGesture(gesture) }
+                .fold(
+                    onSuccess = { OverlayDispatchOutcome.completed() },
+                    onFailure = { error ->
+                        synchronized(recordingLock) { overlayGestureFailedCount += 1 }
+                        val outcome = OverlayDispatchOutcome.fromError(error)
+                        OmniLog.w(
+                            TAG,
+                            "manual overlay touch dispatch ${outcome.status}: ${outcome.errorMessage}"
+                        )
+                        outcome
+                    }
+                )
+        } finally {
+            // Normal gestures are before-only. Re-lock as soon as dispatch completes
+            // or times out. UIKit probes IME visibility asynchronously after clicks
+            // so XML-missing screens do not block typing.
+            try {
+                onGestureDispatched(mayOpenIme)
+            } catch (error: Exception) {
+                OmniLog.w(TAG, "manual overlay dispatch callback failed: ${error.message}")
             }
         }
-    }
 
-    private fun settleAndRecordOverlayGesture(
-        gesture: ManualOverlayTouchGesture,
-        beforeXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?
-    ) {
-        try {
-            Thread.sleep(OVERLAY_TOUCH_SETTLE_MS)
-            val afterXml = captureCurrentXml()
-            val afterScreenshot = captureCurrentScreenshotRef("overlay_after")
-            synchronized(recordingLock) {
-                if (!isStarted) return
-                flushPendingText(beforeXml)
-                flushPendingScroll(beforeXml)
+        val recorded = synchronized(recordingLock) {
+            try {
+                if (!isStarted || isPaused) return@synchronized false
+                val currentTextAnchorId = if (gesture.actionName == "click") {
+                    overlayTextAnchorId(gesture)
+                } else {
+                    null
+                }
+                if (gesture.actionName == "click") {
+                    rememberTextInputAnchorFromRealTouch(
+                        beforeXml = beforeXml,
+                        beforeScreenshot = beforeScreenshot,
+                        x = gesture.startX,
+                        y = gesture.startY,
+                        backend = OVERLAY_TOUCH_BACKEND,
+                        anchorId = currentTextAnchorId.orEmpty(),
+                        startedAtMs = gesture.startedAtMs,
+                        finishedAtMs = gesture.finishedAtMs
+                    )
+                } else {
+                    clearTextInputAnchor()
+                }
+                flushPendingTextUnlessAnchoredTo(currentTextAnchorId, beforeXml)
                 when (gesture.actionName) {
                     "click", "long_press" -> appendOverlayClickGesture(
                         gesture = gesture,
                         beforeXml = beforeXml,
-                        afterXml = afterXml,
                         beforeScreenshot = beforeScreenshot,
-                        afterScreenshot = afterScreenshot
+                        operationId = operationId,
+                        dispatchOutcome = dispatchOutcome
                     )
                     "swipe" -> appendOverlaySwipeGesture(
                         gesture = gesture,
                         beforeXml = beforeXml,
-                        afterXml = afterXml,
                         beforeScreenshot = beforeScreenshot,
-                        afterScreenshot = afterScreenshot
+                        operationId = operationId,
+                        dispatchOutcome = dispatchOutcome
                     )
                     else -> {
                         overlayGestureFailedCount += 1
                         OmniLog.w(TAG, "manual overlay touch ignored unknown action=${gesture.actionName}")
-                        return
+                        return@synchronized false
                     }
                 }
                 overlayGestureRecordedCount += 1
-                lastXmlSnapshot = afterXml ?: beforeXml
-                lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
+                lastXmlSnapshot = beforeXml
+                lastScreenshotSnapshot = beforeScreenshot ?: lastScreenshotSnapshot
+                true
+            } finally {
+                decrementOverlayGestureActiveLocked()
             }
-        } finally {
-            synchronized(recordingLock) {
-                overlayGestureActiveCount = (overlayGestureActiveCount - 1).coerceAtLeast(0)
+        }
+        return ManualOverlayGestureReplayResult(
+            executed = dispatchOutcome.executed,
+            recorded = recorded,
+            mayOpenIme = mayOpenIme
+        )
+    }
+
+    private fun overlayOperationId(
+        gesture: ManualOverlayTouchGesture,
+        sequence: Int
+    ): String = "overlay_${gesture.startedAtMs}_$sequence"
+
+    private data class OverlayDispatchOutcome(
+        val status: String,
+        val executed: Boolean,
+        val errorCode: String? = null,
+        val errorMessage: String? = null
+    ) {
+        companion object {
+            fun completed(): OverlayDispatchOutcome = OverlayDispatchOutcome(
+                status = DISPATCH_STATUS_COMPLETED,
+                executed = true
+            )
+
+            fun fromError(error: Throwable): OverlayDispatchOutcome {
+                val timeout = error is TimeoutCancellationException ||
+                    error is OmniGestureDispatchTimeoutException ||
+                    error.message.orEmpty().contains("dispatch_timeout", ignoreCase = true) ||
+                    error.message.orEmpty().contains("Timed out", ignoreCase = true)
+                val cancelled = error.message.orEmpty().contains("cancel", ignoreCase = true)
+                val status = when {
+                    timeout -> DISPATCH_STATUS_TIMEOUT
+                    cancelled -> DISPATCH_STATUS_CANCELLED
+                    else -> DISPATCH_STATUS_FAILED
+                }
+                val code = when (status) {
+                    DISPATCH_STATUS_TIMEOUT -> "dispatch_timeout"
+                    DISPATCH_STATUS_CANCELLED -> "dispatch_cancelled"
+                    else -> "dispatch_failed"
+                }
+                return OverlayDispatchOutcome(
+                    status = status,
+                    executed = false,
+                    errorCode = code,
+                    errorMessage = error.message?.take(MAX_ERROR_MESSAGE_LENGTH)
+                        ?: error::class.java.simpleName
+                )
             }
         }
     }
 
-    private fun awaitOverlayRecordJobs() {
-        val jobs = synchronized(recordingLock) { overlayRecordJobs.toList() }
-        if (jobs.isEmpty()) return
-        val completed = runBlocking {
-            withTimeoutOrNull(OVERLAY_POST_RECORD_STOP_TIMEOUT_MS) {
-                jobs.joinAll()
-                true
+    private fun overlayDispatchDiagnostics(
+        operationId: String,
+        beforeXml: String?,
+        dispatchOutcome: OverlayDispatchOutcome
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "operation_id" to operationId,
+        "dispatch_status" to dispatchOutcome.status,
+        "before_xml_present" to !beforeXml.isNullOrBlank(),
+        "error_code" to dispatchOutcome.errorCode,
+        "error_message" to dispatchOutcome.errorMessage
+    ).filterValues { it != null }
+
+    private fun awaitOverlayRecordJobs(reason: String = "manual_recording") {
+        val deadlineMs = SystemClock.uptimeMillis() + OVERLAY_RECORD_DRAIN_TIMEOUT_MS
+        synchronized(recordingLock) {
+            while (overlayGestureActiveCount > 0) {
+                val remainingMs = deadlineMs - SystemClock.uptimeMillis()
+                if (remainingMs <= 0L) {
+                    overlayPostRecordTimeoutCount += 1
+                    OmniLog.w(
+                        TAG,
+                        "manual overlay drain timeout reason=$reason active=$overlayGestureActiveCount"
+                    )
+                    overlayGestureActiveCount = 0
+                    recordingLock.notifyAll()
+                    return
+                }
+                try {
+                    recordingLock.wait(min(OVERLAY_RECORD_DRAIN_POLL_MS, remainingMs))
+                } catch (error: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    overlayPostRecordTimeoutCount += 1
+                    OmniLog.w(TAG, "manual overlay drain interrupted reason=$reason")
+                    overlayGestureActiveCount = 0
+                    recordingLock.notifyAll()
+                    return
+                }
             }
-        } == true
-        if (!completed) {
-            synchronized(recordingLock) {
-                overlayPostRecordTimeoutCount += 1
-            }
-            OmniLog.w(TAG, "manual overlay post record wait timed out pending=${jobs.size}")
+        }
+    }
+
+    private fun decrementOverlayGestureActiveLocked() {
+        overlayGestureActiveCount = (overlayGestureActiveCount - 1).coerceAtLeast(0)
+        if (overlayGestureActiveCount == 0) {
+            recordingLock.notifyAll()
         }
     }
 
@@ -918,92 +542,29 @@ class ManualVlmTraceRecorder(
             accessibilityIgnoredPackageCount += 1
             return
         }
-        if (isOverlayTouchActive() && isReplayableAccessibilityAction(event.eventType)) {
-            suppressOverlayDuplicateAction(event)
-            return
-        }
-
-        val beforeXml = lastXmlSnapshot ?: captureCurrentXml()
-        val beforeScreenshot = lastScreenshotSnapshot ?: captureCurrentScreenshotRef("event_before")
         when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                recordTextChanged(event, packageName, lastXmlSnapshot, lastScreenshotSnapshot)
+            }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                val afterXml = captureCurrentXml()
-                recordWindowTransitionObservation(event, beforeXml, afterXml)
-                lastXmlSnapshot = afterXml
-                lastScreenshotSnapshot = captureCurrentScreenshotRef("window_transition_after")
+                windowTransitionEventCount += 1
             }
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> recordTextChanged(event, packageName, beforeXml, beforeScreenshot)
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> recordScrolled(event, packageName, beforeXml, beforeScreenshot)
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> recordClick(event, packageName, "click", beforeXml, beforeScreenshot)
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> recordFocusedTextTarget(event, packageName, beforeXml, beforeScreenshot)
-            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> recordClick(
-                event,
-                packageName,
-                "long_press",
-                beforeXml,
-                beforeScreenshot
-            )
+            AccessibilityEvent.TYPE_VIEW_SCROLLED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> suppressA11OnlyActionEvent(event)
             else -> Unit
         }
     }
 
     private fun suppressSemanticActionEvent(event: AccessibilityEvent) {
         suppressedSemanticActionEventCount += 1
-        OmniLog.d(TAG, "manual trace semantic action suppressed: ${eventTypeName(event.eventType)}")
     }
 
-    private fun suppressOverlayDuplicateAction(event: AccessibilityEvent) {
-        suppressedOverlayDuplicateActionCount += 1
+    private fun suppressA11OnlyActionEvent(event: AccessibilityEvent) {
+        suppressedNonRawActionCount += 1
         suppressSemanticActionEvent(event)
-        OmniLog.d(TAG, "manual trace overlay duplicate suppressed: ${eventTypeName(event.eventType)}")
-    }
-
-    private fun isReplayableAccessibilityAction(eventType: Int): Boolean {
-        return eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
-            eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED ||
-            eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
-    }
-
-    private fun recordWindowTransitionObservation(
-        event: AccessibilityEvent,
-        beforeXml: String?,
-        afterXml: String?
-    ) {
-        windowTransitionEventCount += 1
-        if (isRawTouchActive() || isOverlayTouchActive()) return
-        val beforeFingerprint = pageStableFingerprint(beforeXml)
-        val afterFingerprint = pageStableFingerprint(afterXml)
-        if (beforeFingerprint.isBlank() || afterFingerprint.isBlank()) return
-        if (beforeFingerprint == afterFingerprint) return
-
-        val signature = listOf(
-            eventTypeName(event.eventType),
-            fingerprintHash(beforeFingerprint),
-            fingerprintHash(afterFingerprint)
-        ).joinToString("|")
-        if (signature == lastUnattributedWindowTransitionSignature) return
-        lastUnattributedWindowTransitionSignature = signature
-        unattributedWindowTransitionCount += 1
-
-        if (unattributedWindowTransitionSamples.size >= MAX_WINDOW_TRANSITION_SAMPLES) return
-        val sourceNode = runCatching { event.source }.getOrNull()
-        unattributedWindowTransitionSamples += linkedMapOf<String, Any?>(
-            "observation_kind" to "unattributed_window_transition",
-            "replayable" to false,
-            "reason" to "window changed without raw touch gesture",
-            "event_type" to eventTypeName(event.eventType),
-            "event_package" to event.packageName?.toString(),
-            "event_class" to event.className?.toString(),
-            "event_time_ms" to event.eventTime,
-            "event_has_source" to (sourceNode != null),
-            "source_class" to sourceNode?.className?.toString(),
-            "source_view_id" to sourceNode?.viewIdResourceName,
-            "before_fingerprint" to fingerprintHash(beforeFingerprint),
-            "after_fingerprint" to fingerprintHash(afterFingerprint),
-            "before_page" to pageSummary(beforeXml),
-            "after_page" to pageSummary(afterXml)
-        ).filterValues { it != null }
     }
 
     private fun startRawTouchRecorder(): Boolean {
@@ -1040,17 +601,25 @@ class ManualVlmTraceRecorder(
         rawGestureBeforeScreenshot.clear()
     }
 
-    private fun isRawTouchActive(): Boolean = rawTouchRecorder?.isActive() == true
-
-    private fun isOverlayTouchActive(): Boolean = overlayGestureActiveCount > 0
-
     private fun rememberRawGestureStart(start: ManualRawTouchStart) {
         synchronized(recordingLock) {
             if (!isStarted || isPaused) return
             rawGestureStartedCount += 1
-            rawGestureBeforeXml[start.gestureId] = lastXmlSnapshot ?: captureCurrentXml()
-            rawGestureBeforeScreenshot[start.gestureId] = lastScreenshotSnapshot
+            val beforeXml = lastXmlSnapshot ?: captureCurrentXml()
+            val beforeScreenshot = lastScreenshotSnapshot
                 ?: captureCurrentScreenshotRef("raw_${start.gestureId}_before")
+            rawGestureBeforeXml[start.gestureId] = beforeXml
+            rawGestureBeforeScreenshot[start.gestureId] = beforeScreenshot
+            rememberTextInputAnchorFromRealTouch(
+                beforeXml = beforeXml,
+                beforeScreenshot = beforeScreenshot,
+                x = start.x,
+                y = start.y,
+                backend = RAW_TOUCH_BACKEND,
+                anchorId = rawTextAnchorId(start.gestureId),
+                startedAtMs = start.startedAtMs,
+                finishedAtMs = start.startedAtMs
+            )
         }
     }
 
@@ -1088,29 +657,31 @@ class ManualVlmTraceRecorder(
             OmniLog.d(TAG, "manual raw touch ignored OOB/control gesture")
             return
         }
-        Thread.sleep(RAW_TOUCH_SETTLE_MS)
-        val afterXml = captureCurrentXml()
-        val afterScreenshot = captureCurrentScreenshotRef("raw_${gesture.gestureId}_after")
         synchronized(recordingLock) {
             if (!isStarted || isPaused) return
-            flushPendingText(beforeXml)
-            flushPendingScroll(beforeXml)
+            val currentTextAnchorId = if (gesture.actionName == "click") {
+                rawTextAnchorId(gesture.gestureId)
+            } else {
+                null
+            }
+            if (gesture.actionName != "click") {
+                clearTextInputAnchor()
+            }
+            flushPendingTextUnlessAnchoredTo(currentTextAnchorId, beforeXml)
             when (gesture.actionName) {
-                "click", "long_press" -> appendRawClickGesture(gesture, beforeXml, afterXml, beforeScreenshot, afterScreenshot)
-                "swipe" -> appendRawSwipeGesture(gesture, beforeXml, afterXml, beforeScreenshot, afterScreenshot)
+                "click", "long_press" -> appendRawClickGesture(gesture, beforeXml, beforeScreenshot)
+                "swipe" -> appendRawSwipeGesture(gesture, beforeXml, beforeScreenshot)
             }
             rawGestureRecordedCount += 1
-            lastXmlSnapshot = afterXml ?: beforeXml
-            lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
+            lastXmlSnapshot = beforeXml ?: lastXmlSnapshot
+            lastScreenshotSnapshot = beforeScreenshot ?: lastScreenshotSnapshot
         }
     }
 
     private fun appendRawClickGesture(
         gesture: ManualRawTouchGesture,
         beforeXml: String?,
-        afterXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?,
-        afterScreenshot: ManualVlmScreenshotRef?
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         val x = ((gesture.startX + gesture.endX) / 2f)
         val y = ((gesture.startY + gesture.endY) / 2f)
@@ -1152,9 +723,9 @@ class ManualVlmTraceRecorder(
                 params = params,
                 packageName = target.packageName,
                 beforeXml = beforeXml,
-                afterXml = afterXml,
+                afterXml = null,
                 beforeScreenshot = beforeScreenshot,
-                afterScreenshot = afterScreenshot,
+                afterScreenshot = null,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
@@ -1166,9 +737,7 @@ class ManualVlmTraceRecorder(
     private fun appendRawSwipeGesture(
         gesture: ManualRawTouchGesture,
         beforeXml: String?,
-        afterXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?,
-        afterScreenshot: ManualVlmScreenshotRef?
+        beforeScreenshot: ManualVlmScreenshotRef?
     ) {
         val midX = (gesture.startX + gesture.endX) / 2f
         val midY = (gesture.startY + gesture.endY) / 2f
@@ -1209,9 +778,9 @@ class ManualVlmTraceRecorder(
                 params = params,
                 packageName = target.packageName,
                 beforeXml = beforeXml,
-                afterXml = afterXml,
+                afterXml = null,
                 beforeScreenshot = beforeScreenshot,
-                afterScreenshot = afterScreenshot,
+                afterScreenshot = null,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
@@ -1257,38 +826,20 @@ class ManualVlmTraceRecorder(
             return
         }
 
-        val coordinateError = coordinateResult.exceptionOrNull()
         synchronized(recordingLock) {
             overlayCoordinateReplayFailedCount += 1
         }
+        val coordinateError = coordinateResult.exceptionOrNull()
         OmniLog.w(TAG, "overlay click coordinate replay failed: ${coordinateError?.message}")
-
-        val nodeResult = runCatching {
-            AccessibilityController.clickNodeAtCoordinate(gesture.startX, gesture.startY)
-        }
-        if (nodeResult.isSuccess) {
-            synchronized(recordingLock) {
-                overlayNodeReplayFallbackCount += 1
-            }
-            return
-        }
-
-        val nodeError = nodeResult.exceptionOrNull()
-        synchronized(recordingLock) {
-            overlayNodeReplayFallbackFailedCount += 1
-        }
-        throw IllegalStateException(
-            "Overlay click replay failed: coordinate=${coordinateError?.message}; node=${nodeError?.message}",
-            nodeError ?: coordinateError
-        )
+        throw coordinateError ?: IllegalStateException("Overlay click replay failed")
     }
 
     private fun appendOverlayClickGesture(
         gesture: ManualOverlayTouchGesture,
         beforeXml: String?,
-        afterXml: String?,
         beforeScreenshot: ManualVlmScreenshotRef?,
-        afterScreenshot: ManualVlmScreenshotRef?
+        operationId: String,
+        dispatchOutcome: OverlayDispatchOutcome
     ) {
         val x = gesture.startX
         val y = gesture.startY
@@ -1305,7 +856,7 @@ class ManualVlmTraceRecorder(
             "long_press" -> "人工长按 $label"
             else -> "人工点击 $label"
         }
-        val params = linkedMapOf<String, Any?>(
+        val params = (linkedMapOf<String, Any?>(
             "target_description" to label,
             "x" to x,
             "y" to y,
@@ -1323,7 +874,7 @@ class ManualVlmTraceRecorder(
             "target_resolution" to target.resolution,
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
-        ).filterValues { it != null }
+        ) + overlayDispatchDiagnostics(operationId, beforeXml, dispatchOutcome)).filterValues { it != null }
         // Package name from XML is null for SurfaceView/WebView apps (no accessible nodes).
         // Fall back to the accessibility service's current window package so that the
         // compiled Function step carries a valid src_ctx.package_name for the checker.
@@ -1336,13 +887,13 @@ class ManualVlmTraceRecorder(
                 params = params,
                 packageName = resolvedPackageName,
                 beforeXml = beforeXml,
-                afterXml = afterXml,
+                afterXml = null,
                 beforeScreenshot = beforeScreenshot,
-                afterScreenshot = afterScreenshot,
+                afterScreenshot = null,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
-                eventContext = overlayEventContextFor(gesture, target)
+                eventContext = overlayEventContextFor(gesture, target, operationId, dispatchOutcome, beforeXml)
             )
         )
     }
@@ -1350,9 +901,9 @@ class ManualVlmTraceRecorder(
     private fun appendOverlaySwipeGesture(
         gesture: ManualOverlayTouchGesture,
         beforeXml: String?,
-        afterXml: String?,
         beforeScreenshot: ManualVlmScreenshotRef?,
-        afterScreenshot: ManualVlmScreenshotRef?
+        operationId: String,
+        dispatchOutcome: OverlayDispatchOutcome
     ) {
         val midX = (gesture.startX + gesture.endX) / 2f
         val midY = (gesture.startY + gesture.endY) / 2f
@@ -1366,13 +917,14 @@ class ManualVlmTraceRecorder(
         val direction = overlaySwipeDirectionName(gesture)
         val label = target.label.ifBlank { "当前页面" }
         val title = "人工滑动 $label"
-        val params = linkedMapOf<String, Any?>(
+        val params = (linkedMapOf<String, Any?>(
             "target_description" to label,
             "x1" to gesture.startX,
             "y1" to gesture.startY,
             "x2" to gesture.endX,
             "y2" to gesture.endY,
             "duration_ms" to gesture.durationMs.coerceAtLeast(OVERLAY_SWIPE_MIN_DURATION_MS),
+            "gesture_duration_ms" to gesture.durationMs,
             "gesture_distance_px" to gesture.distancePx,
             "direction" to direction,
             "bounds" to boundsString(target.bounds),
@@ -1384,7 +936,7 @@ class ManualVlmTraceRecorder(
             "target_resolution" to target.resolution,
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
-        ).filterValues { it != null }
+        ) + overlayDispatchDiagnostics(operationId, beforeXml, dispatchOutcome)).filterValues { it != null }
         val resolvedPackageName = target.packageName
             ?: AccessibilityController.getPackageName()
         appendRecordedAction(
@@ -1394,168 +946,15 @@ class ManualVlmTraceRecorder(
                 params = params,
                 packageName = resolvedPackageName,
                 beforeXml = beforeXml,
-                afterXml = afterXml,
+                afterXml = null,
                 beforeScreenshot = beforeScreenshot,
-                afterScreenshot = afterScreenshot,
+                afterScreenshot = null,
                 startedAtMs = gesture.startedAtMs,
                 finishedAtMs = gesture.finishedAtMs,
                 summary = title,
-                eventContext = overlayEventContextFor(gesture, target)
+                eventContext = overlayEventContextFor(gesture, target, operationId, dispatchOutcome, beforeXml)
             )
         )
-    }
-
-    private fun recordClick(
-        event: AccessibilityEvent,
-        packageName: String?,
-        actionName: String,
-        beforeXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?
-    ) {
-        val sourceNode = runCatching { event.source }.getOrNull()
-        flushPendingText(lastXmlSnapshot)
-        flushPendingScroll(lastXmlSnapshot)
-        val eventLabel = event.text.joinToString(" ").trim()
-        val beforePageXml = beforeXml ?: captureCurrentXml()
-        var afterXmlForAction: String? = null
-        val clickGrounding = sourceNode
-            ?.let { source ->
-                targetFromSourceNode(source, packageName)?.let {
-                    ClickGroundingDecision(target = it, inference = emptyMap())
-                }
-            }
-            ?: run {
-                val afterXml = captureCurrentXml()
-                afterXmlForAction = afterXml
-                targetFromXmlClick(
-                    beforeXml = beforePageXml,
-                    afterXml = afterXml,
-                    packageName = packageName,
-                    eventLabel = eventLabel,
-                    eventClassName = event.className?.toString()
-                )
-            }
-            ?: run {
-                lastXmlSnapshot = afterXmlForAction ?: beforePageXml
-                OmniLog.d(TAG, "manual trace ignored ungrounded $actionName event")
-                return
-            }
-        val target = clickGrounding.target
-        val bounds = target.bounds
-        if (bounds.isEmpty) return
-
-        val label = target.label.ifBlank { eventLabel }
-        val targetPackage = target.packageName ?: packageName
-        val recordedActionName = navigationActionFor(targetPackage, label) ?: actionName
-        val now = System.currentTimeMillis()
-
-        val title = when (recordedActionName) {
-            "press_back" -> "人工返回"
-            "press_home" -> "人工回到主页"
-            "long_press" -> if (label.isNotBlank()) "人工长按 $label" else "人工长按"
-            else -> if (label.isNotBlank()) "人工点击 $label" else "人工点击"
-        }
-        val params: LinkedHashMap<String, Any?> = if (
-            recordedActionName == "press_back" ||
-            recordedActionName == "press_home"
-        ) {
-            linkedMapOf<String, Any?>(
-                "target_description" to label.ifBlank { recordedActionName },
-                "key" to if (recordedActionName == "press_back") "BACK" else "HOME"
-            )
-        } else {
-            linkedMapOf<String, Any?>(
-                "target_description" to label.ifBlank { target.className.orEmpty() },
-                "x" to bounds.centerX().toFloat(),
-                "y" to bounds.centerY().toFloat(),
-                "bounds" to boundsString(bounds),
-                "node_class" to target.className,
-                "node_resource_id" to target.resourceId,
-                "node_text" to target.text,
-                "node_content_description" to target.contentDescription,
-                "recording_backend" to "accessibility_event",
-                "target_resolution" to target.resolution,
-                "click_inference_reason" to clickGrounding.inference["reason"],
-                "click_inference_confidence" to clickGrounding.inference["confidence"]
-            )
-        }
-        if (recordedActionName == "long_press") {
-            params["duration_ms"] = 1000L
-        }
-        val afterXml = afterXmlForAction ?: captureCurrentXml()
-        val afterScreenshot = captureCurrentScreenshotRef("click_after")
-        lastXmlSnapshot = afterXml
-        lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
-        appendRecordedAction(ManualVlmRecordedAction(
-            actionName = recordedActionName,
-            title = title,
-            params = params,
-            packageName = targetPackage,
-            beforeXml = beforeXml,
-            afterXml = afterXml,
-            beforeScreenshot = beforeScreenshot,
-            afterScreenshot = afterScreenshot,
-            startedAtMs = eventWallTime(event.eventTime, now),
-            finishedAtMs = now,
-            summary = title,
-            eventContext = eventContextFor(event, target, sourceNode, clickGrounding.inference)
-        ))
-    }
-
-    private fun recordFocusedTextTarget(
-        event: AccessibilityEvent,
-        packageName: String?,
-        beforeXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?
-    ) {
-        flushPendingText(lastXmlSnapshot)
-        flushPendingScroll(lastXmlSnapshot)
-        val sourceNode = event.source ?: return
-        if (!isTextInputNode(sourceNode)) return
-        val target = targetFromTextSourceNode(sourceNode, packageName) ?: return
-        val bounds = target.bounds
-        if (bounds.isEmpty) return
-
-        val now = System.currentTimeMillis()
-        val targetPackage = target.packageName ?: packageName
-        val signature = "click|$targetPackage|${target.stableKey}"
-        if (signature == lastDiscreteSignature && now - lastDiscreteAtMs < DUPLICATE_EVENT_WINDOW_MS) {
-            return
-        }
-        lastDiscreteSignature = signature
-        lastDiscreteAtMs = now
-
-        val label = target.label.ifBlank { "输入框" }
-        val title = "人工点击 $label"
-        val afterXml = captureCurrentXml()
-        val afterScreenshot = captureCurrentScreenshotRef("focus_after")
-        lastXmlSnapshot = afterXml
-        lastScreenshotSnapshot = afterScreenshot ?: beforeScreenshot
-        appendRecordedAction(ManualVlmRecordedAction(
-            actionName = "click",
-            title = title,
-            params = linkedMapOf<String, Any?>(
-                "target_description" to label,
-                "x" to bounds.centerX().toFloat(),
-                "y" to bounds.centerY().toFloat(),
-                "bounds" to boundsString(bounds),
-                "node_class" to target.className,
-                "node_resource_id" to target.resourceId,
-                "node_text" to target.text,
-                "node_content_description" to target.contentDescription,
-                "recording_backend" to "accessibility_event",
-                "target_resolution" to target.resolution
-            ).filterValues { it != null },
-            packageName = targetPackage,
-            beforeXml = beforeXml,
-            afterXml = afterXml,
-            beforeScreenshot = beforeScreenshot,
-            afterScreenshot = afterScreenshot,
-            startedAtMs = eventWallTime(event.eventTime, now),
-            finishedAtMs = now,
-            summary = title,
-            eventContext = eventContextFor(event, target, sourceNode)
-        ))
     }
 
     private fun recordTextChanged(
@@ -1564,16 +963,28 @@ class ManualVlmTraceRecorder(
         beforeXml: String?,
         beforeScreenshot: ManualVlmScreenshotRef?
     ) {
-        val node = event.source ?: return
+        val anchor = textInputAnchor
+        if (anchor == null) {
+            suppressA11OnlyActionEvent(event)
+            return
+        }
+        val node = runCatching { event.source }.getOrNull()
         val now = System.currentTimeMillis()
-        val text = event.text.joinToString("").ifBlank { node.text?.toString().orEmpty() }
-        val safeText = if (node.isPassword) REDACTED_TEXT else text
+        val text = event.text.joinToString("").ifBlank { node?.text?.toString().orEmpty() }
+        val safeText = if (node?.isPassword == true) REDACTED_TEXT else text
         if (safeText.isBlank()) return
-        val sourceTarget = targetFromTextSourceNode(node, packageName) ?: return
-        val target = textReplayTargetFromBeforeXml(
+        val sourceTarget = node?.let { targetFromTextSourceNode(it, packageName) }
+        if (anchor.isCoordinateOnlyTextAnchor() &&
+            (sourceTarget == null ||
+                (!sourceTarget.bounds.containsPoint(anchor.x, anchor.y) &&
+                    !isTextInputClass(sourceTarget.className)))
+        ) {
+            suppressA11OnlyActionEvent(event)
+            return
+        }
+        val target = textReplayTargetFromAnchor(
+            anchor = anchor,
             sourceTarget = sourceTarget,
-            beforeXml = beforeXml,
-            fallbackPackageName = packageName,
             inputText = safeText
         )
         val bounds = target.bounds
@@ -1588,6 +999,7 @@ class ManualVlmTraceRecorder(
 
         pendingText = PendingTextAction(
             nodeKey = key,
+            anchorId = anchor.id,
             packageName = target.packageName ?: packageName,
             label = target.label.ifBlank { "输入框" },
             text = safeText,
@@ -1595,45 +1007,45 @@ class ManualVlmTraceRecorder(
             className = target.className,
             resourceId = target.resourceId,
             resolution = target.resolution,
-            beforeXml = pendingBeforeXml,
-            beforeScreenshot = pendingBeforeScreenshot,
-            startedAtMs = sameNodePending?.startedAtMs ?: eventWallTime(event.eventTime, now),
+            recordingBackend = textInputBackendFor(anchor.backend),
+            beforeXml = sameNodePending?.beforeXml ?: anchor.beforeXml ?: pendingBeforeXml,
+            beforeScreenshot = sameNodePending?.beforeScreenshot ?: anchor.beforeScreenshot ?: pendingBeforeScreenshot,
+            startedAtMs = sameNodePending?.startedAtMs ?: anchor.startedAtMs,
             updatedAtMs = now,
-            eventContext = eventContextFor(event, target, node)
+            eventContext = textInputEventContextFor(event, target, node, anchor)
         )
-        lastXmlSnapshot = captureCurrentXml()
-        lastScreenshotSnapshot = captureCurrentScreenshotRef("text_changed_after")
+        lastXmlSnapshot = beforeXml ?: lastXmlSnapshot
+        lastScreenshotSnapshot = beforeScreenshot ?: lastScreenshotSnapshot
     }
 
-    private fun textReplayTargetFromBeforeXml(
-        sourceTarget: ManualEventTarget,
-        beforeXml: String?,
-        fallbackPackageName: String?,
+    private fun textReplayTargetFromAnchor(
+        anchor: TextInputAnchor,
+        sourceTarget: ManualEventTarget?,
         inputText: String
     ): ManualEventTarget {
-        val beforeTarget = targetAtCoordinateFromXml(
-            xml = beforeXml,
-            x = sourceTarget.bounds.centerX().toFloat(),
-            y = sourceTarget.bounds.centerY().toFloat(),
-            fallbackPackageName = fallbackPackageName,
-            preferScrollable = false
-        ) ?: return sourceTarget
-        if (!isTextInputClass(beforeTarget.className)) return sourceTarget
-        val beforeLabel = beforeTarget.label.trim()
+        val anchorTarget = anchor.target
+        val beforeLabel = anchorTarget.label.trim()
         val stableLabel = beforeLabel.takeIf {
             it.isNotBlank() && it != inputText && it != REDACTED_TEXT
-        } ?: sourceTarget.label
-        return sourceTarget.copy(
+        } ?: sourceTarget?.label ?: anchorTarget.label
+        return anchorTarget.copy(
             label = stableLabel,
-            resourceId = sourceTarget.resourceId ?: beforeTarget.resourceId,
-            text = beforeTarget.text ?: sourceTarget.text,
-            contentDescription = beforeTarget.contentDescription ?: sourceTarget.contentDescription,
-            stableKey = sourceTarget.stableKey.ifBlank { beforeTarget.stableKey },
-            resolution = "${sourceTarget.resolution}+before_xml_text_target"
+            packageName = anchorTarget.packageName ?: sourceTarget?.packageName,
+            resourceId = anchorTarget.resourceId ?: sourceTarget?.resourceId,
+            text = anchorTarget.text ?: sourceTarget?.text,
+            contentDescription = anchorTarget.contentDescription ?: sourceTarget?.contentDescription,
+            stableKey = anchorTarget.stableKey.ifBlank { sourceTarget?.stableKey.orEmpty() },
+            resolution = "${anchorTarget.resolution}+real_touch_text_anchor"
         )
     }
 
-    private fun flushPendingText(afterXmlOverride: String? = lastXmlSnapshot) {
+    private fun flushPendingTextUnlessAnchoredTo(anchorId: String?, xmlOverride: String? = lastXmlSnapshot) {
+        val pending = pendingText ?: return
+        if (anchorId != null && pending.anchorId == anchorId) return
+        flushPendingText(xmlOverride)
+    }
+
+    private fun flushPendingText(xmlOverride: String? = lastXmlSnapshot) {
         val pending = pendingText ?: return
         pendingText = null
         val title = if (pending.text == REDACTED_TEXT) {
@@ -1641,10 +1053,8 @@ class ManualVlmTraceRecorder(
         } else {
             "人工输入文本"
         }
-        val afterXml = afterXmlOverride ?: captureCurrentXml()
-        val afterScreenshot = captureCurrentScreenshotRef("text_after")
-        lastXmlSnapshot = afterXml
-        lastScreenshotSnapshot = afterScreenshot ?: pending.beforeScreenshot
+        lastXmlSnapshot = xmlOverride ?: lastXmlSnapshot
+        lastScreenshotSnapshot = pending.beforeScreenshot ?: lastScreenshotSnapshot
         val params = linkedMapOf<String, Any?>(
             "target_description" to pending.label,
             "content" to pending.text,
@@ -1654,7 +1064,7 @@ class ManualVlmTraceRecorder(
             "bounds" to boundsString(pending.bounds),
             "node_class" to pending.className,
             "node_resource_id" to pending.resourceId,
-            "recording_backend" to "accessibility_event",
+            "recording_backend" to pending.recordingBackend,
             "target_resolution" to pending.resolution
         ).filterValues { it != null }
         appendRecordedAction(ManualVlmRecordedAction(
@@ -1663,138 +1073,14 @@ class ManualVlmTraceRecorder(
             params = params,
             packageName = pending.packageName,
             beforeXml = pending.beforeXml,
-            afterXml = afterXml,
+            afterXml = null,
             beforeScreenshot = pending.beforeScreenshot,
-            afterScreenshot = afterScreenshot,
+            afterScreenshot = null,
             startedAtMs = pending.startedAtMs,
             finishedAtMs = pending.updatedAtMs,
             summary = if (pending.text == REDACTED_TEXT) title else "$title：${pending.text.take(MAX_SUMMARY_TEXT)}",
             eventContext = pending.eventContext
         ))
-    }
-
-    private fun recordScrolled(
-        event: AccessibilityEvent,
-        packageName: String?,
-        beforeXml: String?,
-        beforeScreenshot: ManualVlmScreenshotRef?
-    ) {
-        flushPendingText(lastXmlSnapshot)
-        val sourceNode = event.source
-        val current = ManualScrollSnapshot(
-            scrollX = event.scrollX,
-            scrollY = event.scrollY,
-            scrollDeltaX = event.scrollDeltaX,
-            scrollDeltaY = event.scrollDeltaY,
-            fromIndex = event.fromIndex,
-            toIndex = event.toIndex,
-            itemCount = event.itemCount
-        )
-        if (!current.hasViewportSignal()) {
-            OmniLog.d(TAG, "manual trace ignored scroll without movement signal")
-            return
-        }
-        val eventLabel = event.text.joinToString(" ").trim()
-        val target = sourceNode
-            ?.let { source -> targetFromSourceNode(source, packageName) }
-            ?: targetFromXml(
-                xml = beforeXml ?: captureCurrentXml(),
-                packageName = packageName,
-                eventLabel = eventLabel,
-                eventClassName = event.className?.toString(),
-                preferScrollable = true
-            )
-            ?: return
-        val bounds = target.bounds
-        if (bounds.isEmpty) return
-
-        val key = target.stableKey
-        val previous = nodeScrollState[key]
-        nodeScrollState[key] = current
-
-        val inferredDirection = ManualScrollEventPolicy.inferDirection(previous, current)
-        if (inferredDirection == null) {
-            OmniLog.d(TAG, "manual trace ignored scroll viewport baseline without direction signal")
-            return
-        }
-        val direction = inferredDirection
-        val now = System.currentTimeMillis()
-        val pendingBeforeXml = pendingScroll?.takeIf { it.nodeKey == key }?.beforeXml ?: beforeXml
-        val pendingBeforeScreenshot = pendingScroll?.takeIf { it.nodeKey == key }?.beforeScreenshot
-            ?: beforeScreenshot
-        pendingScroll = PendingScrollAction(
-            nodeKey = key,
-            packageName = target.packageName ?: packageName,
-            label = target.label.ifBlank { "列表" },
-            bounds = bounds,
-            direction = direction,
-            className = target.className,
-            resourceId = target.resourceId,
-            resolution = target.resolution,
-            beforeXml = pendingBeforeXml,
-            beforeScreenshot = pendingBeforeScreenshot,
-            startedAtMs = pendingScroll?.takeIf { it.nodeKey == key }?.startedAtMs
-                ?: eventWallTime(event.eventTime, now),
-            updatedAtMs = now,
-            eventContext = eventContextFor(event, target, sourceNode)
-        )
-        lastXmlSnapshot = captureCurrentXml()
-        lastScreenshotSnapshot = captureCurrentScreenshotRef("scroll_after")
-    }
-
-    private fun flushPendingScroll(afterXmlOverride: String? = lastXmlSnapshot) {
-        val pending = pendingScroll ?: return
-        pendingScroll = null
-        val swipe = swipeFromBounds(pending.bounds, pending.direction)
-        val title = "人工滑动 ${pending.label}"
-        val afterXml = afterXmlOverride ?: captureCurrentXml()
-        val afterScreenshot = captureCurrentScreenshotRef("scroll_flush_after")
-        lastXmlSnapshot = afterXml
-        lastScreenshotSnapshot = afterScreenshot ?: pending.beforeScreenshot
-        appendRecordedAction(ManualVlmRecordedAction(
-            actionName = "swipe",
-            title = title,
-            params = linkedMapOf(
-                "target_description" to pending.label,
-                "x1" to swipe.x1,
-                "y1" to swipe.y1,
-                "x2" to swipe.x2,
-                "y2" to swipe.y2,
-                "duration_ms" to 500L,
-                "direction" to pending.direction.name.lowercase(),
-                "bounds" to boundsString(pending.bounds),
-                "node_class" to pending.className,
-                "node_resource_id" to pending.resourceId,
-                "recording_backend" to "accessibility_event",
-                "target_resolution" to pending.resolution
-            ),
-            packageName = pending.packageName,
-            beforeXml = pending.beforeXml,
-            afterXml = afterXml,
-            beforeScreenshot = pending.beforeScreenshot,
-            afterScreenshot = afterScreenshot,
-            startedAtMs = pending.startedAtMs,
-            finishedAtMs = pending.updatedAtMs,
-            summary = title,
-            eventContext = pending.eventContext
-        ))
-    }
-
-    private fun swipeFromBounds(bounds: Rect, direction: ManualScrollDirection): SwipeParams {
-        val horizontalInset = max(24, bounds.width() / 5)
-        val verticalInset = max(24, bounds.height() / 5)
-        val cx = bounds.centerX().toFloat()
-        val cy = bounds.centerY().toFloat()
-        val left = (bounds.left + horizontalInset).toFloat()
-        val right = (bounds.right - horizontalInset).toFloat()
-        val top = (bounds.top + verticalInset).toFloat()
-        val bottom = (bounds.bottom - verticalInset).toFloat()
-        return when (direction) {
-            ManualScrollDirection.UP -> SwipeParams(cx, bottom, cx, top)
-            ManualScrollDirection.DOWN -> SwipeParams(cx, top, cx, bottom)
-            ManualScrollDirection.LEFT -> SwipeParams(right, cy, left, cy)
-            ManualScrollDirection.RIGHT -> SwipeParams(left, cy, right, cy)
-        }
     }
 
     private fun shouldIgnorePackage(packageName: String?): Boolean {
@@ -1927,83 +1213,10 @@ class ManualVlmTraceRecorder(
         return null
     }
 
-    private fun isTextInputNode(node: AccessibilityNodeInfo): Boolean {
-        val className = node.className?.toString().orEmpty()
-        return node.isEditable ||
-            isTextInputClass(className)
-    }
-
     private fun isTextInputClass(className: String?): Boolean {
         val normalized = className.orEmpty()
         return normalized.contains("EditText", ignoreCase = true) ||
             normalized.contains("TextInput", ignoreCase = true)
-    }
-
-    private fun targetFromXml(
-        xml: String?,
-        packageName: String?,
-        eventLabel: String,
-        eventClassName: String?,
-        preferScrollable: Boolean
-    ): ManualEventTarget? {
-        val nodes = parseXmlNodeCandidates(xml)
-            .filter { candidate ->
-                !candidate.bounds.isEmpty &&
-                    !shouldIgnoreTarget(
-                        packageName = candidate.packageName ?: packageName,
-                        label = candidate.bestLabel,
-                        resourceId = candidate.resourceId
-                    )
-            }
-        if (nodes.isEmpty()) return rootTargetFromXml(xml, packageName, preferScrollable)
-        val labelTokens = meaningfulTokens(eventLabel)
-        if (!preferScrollable && labelTokens.isEmpty() && eventClassName.isNullOrBlank()) {
-            return null
-        }
-        val best = nodes
-            .mapNotNull { candidate ->
-                val score = candidate.matchScore(
-                    packageName = packageName,
-                    labelTokens = labelTokens,
-                    eventClassName = eventClassName,
-                    preferScrollable = preferScrollable
-                )
-                if (score <= 0 && !preferScrollable) null else score to candidate
-            }
-            .maxWithOrNull(
-                compareBy<Pair<Int, XmlNodeCandidate>> { it.first }
-                    .thenBy { it.second.bounds.width() * it.second.bounds.height() }
-            )
-            ?.second
-            ?: return rootTargetFromXml(xml, packageName, preferScrollable)
-        return best.toManualTarget(packageName, "xml_fallback")
-    }
-
-    private fun targetFromXmlClick(
-        beforeXml: String?,
-        afterXml: String?,
-        packageName: String?,
-        eventLabel: String,
-        eventClassName: String?
-    ): ClickGroundingDecision? {
-        val result = ManualClickGrounding.inferClickTarget(
-            beforeXml = beforeXml,
-            afterXml = afterXml,
-            packageName = packageName,
-            eventLabel = eventLabel,
-            eventClassName = eventClassName,
-            ignoredPackageName = ownPackageName,
-            ignoredTextHints = OOB_CONTROL_HINTS
-        )
-        if (result.target == null) {
-            OmniLog.d(TAG, "manual trace source-less click not replayable: ${result.inference}")
-            return null
-        }
-        val target = result.target.toManualTarget(packageName, result.resolution)
-        return ClickGroundingDecision(
-            target = target,
-            inference = result.inference
-        )
     }
 
     private fun targetAtCoordinateFromXml(
@@ -2058,6 +1271,125 @@ class ManualVlmTraceRecorder(
         )
     }
 
+    private fun rememberTextInputAnchorFromRealTouch(
+        beforeXml: String?,
+        beforeScreenshot: ManualVlmScreenshotRef?,
+        x: Float,
+        y: Float,
+        backend: String,
+        anchorId: String,
+        startedAtMs: Long,
+        finishedAtMs: Long
+    ) {
+        val fallbackPackageName = packageNameFromXml(beforeXml)
+        val target = textInputTargetAtCoordinateFromXml(
+            xml = beforeXml,
+            x = x,
+            y = y,
+            fallbackPackageName = fallbackPackageName,
+            backend = backend
+        )
+        val anchorTarget = target ?: coordinateTextAnchorTarget(
+            beforeXml = beforeXml,
+            x = x,
+            y = y,
+            backend = backend
+        )
+        val anchor = anchorTarget.let {
+            TextInputAnchor(
+                id = anchorId,
+                backend = backend,
+                beforeXml = beforeXml,
+                beforeScreenshot = beforeScreenshot,
+                target = it,
+                x = x,
+                y = y,
+                startedAtMs = startedAtMs,
+                finishedAtMs = finishedAtMs
+            )
+        }
+        synchronized(recordingLock) {
+            textInputAnchor = anchor
+        }
+    }
+
+    private fun clearTextInputAnchor() {
+        synchronized(recordingLock) {
+            textInputAnchor = null
+        }
+    }
+
+    private fun textInputTargetAtCoordinateFromXml(
+        xml: String?,
+        x: Float,
+        y: Float,
+        fallbackPackageName: String?,
+        backend: String
+    ): ManualEventTarget? {
+        val packageName = packageNameFromXml(xml) ?: fallbackPackageName
+        val rootArea = parseRootBounds(xml)?.area() ?: Int.MAX_VALUE
+        val candidates = parseXmlNodeCandidates(xml)
+            .filter { candidate ->
+                candidate.visible &&
+                    candidate.enabled &&
+                    candidate.bounds.containsPoint(x, y) &&
+                    candidate.isEditableLike() &&
+                    !(
+                        shouldIgnoreTarget(
+                            packageName = candidate.packageName ?: packageName,
+                            label = candidate.bestLabel,
+                            resourceId = candidate.resourceId
+                        ) && candidate.isExplicitIgnoredControl(rootArea)
+                    )
+            }
+        val best = candidates.maxWithOrNull(
+            compareBy<XmlNodeCandidate> { it.coordinateScore(preferScrollable = false) }
+                .thenByDescending { it.bounds.width() * it.bounds.height() }
+        ) ?: return null
+        val resolution = when (backend) {
+            OVERLAY_TOUCH_BACKEND -> "overlay_touch_before_xml_text_target"
+            RAW_TOUCH_BACKEND -> "raw_touch_before_xml_text_target"
+            else -> "real_touch_before_xml_text_target"
+        }
+        return best.toManualTarget(packageName, resolution)
+    }
+
+    private fun textInputBackendFor(backend: String): String {
+        return when (backend) {
+            OVERLAY_TOUCH_BACKEND -> OVERLAY_TOUCH_TEXT_INPUT_BACKEND
+            RAW_TOUCH_BACKEND -> RAW_TOUCH_TEXT_INPUT_BACKEND
+            else -> REAL_TOUCH_TEXT_INPUT_BACKEND
+        }
+    }
+
+    private fun coordinateTextAnchorTarget(
+        beforeXml: String?,
+        x: Float,
+        y: Float,
+        backend: String
+    ): ManualEventTarget {
+        val resolution = when (backend) {
+            OVERLAY_TOUCH_BACKEND -> "overlay_touch_coordinate_text_anchor_unresolved"
+            RAW_TOUCH_BACKEND -> "raw_touch_coordinate_text_anchor_unresolved"
+            else -> "real_touch_coordinate_text_anchor_unresolved"
+        }
+        return coordinateOnlyTarget(beforeXml, x, y, resolution).copy(
+            packageName = packageNameFromXml(beforeXml)
+        )
+    }
+
+    private fun overlayTextAnchorId(gesture: ManualOverlayTouchGesture): String {
+        return listOf(
+            OVERLAY_TOUCH_BACKEND,
+            gesture.startedAtMs,
+            gesture.finishedAtMs,
+            gesture.startX.toInt(),
+            gesture.startY.toInt()
+        ).joinToString("|")
+    }
+
+    private fun rawTextAnchorId(gestureId: Long): String = "$RAW_TOUCH_BACKEND|$gestureId"
+
     private fun coordinateHitsIgnoredTarget(xml: String?, x: Float, y: Float): Boolean {
         val packageName = packageNameFromXml(xml)
         val rootArea = parseRootBounds(xml)?.area() ?: Int.MAX_VALUE
@@ -2073,7 +1405,7 @@ class ManualVlmTraceRecorder(
     }
 
     private fun overlayClickMayOpenIme(xml: String?, x: Float, y: Float): Boolean {
-        if (xml.isNullOrBlank()) return true
+        if (xml.isNullOrBlank()) return false
         val packageName = packageNameFromXml(xml)
         val rootArea = parseRootBounds(xml)?.area() ?: Int.MAX_VALUE
         val candidates = parseXmlNodeCandidates(xml)
@@ -2089,7 +1421,7 @@ class ManualVlmTraceRecorder(
                         ) && candidate.isExplicitIgnoredControl(rootArea)
                     )
             }
-        if (candidates.isEmpty()) return true
+        if (candidates.isEmpty()) return false
         return candidates.any { it.isEditableLike() }
     }
 
@@ -2191,45 +1523,6 @@ class ManualVlmTraceRecorder(
         return score
     }
 
-    private fun ManualClickGrounding.Target.toManualTarget(
-        fallbackPackageName: String?,
-        resolution: String
-    ): ManualEventTarget {
-        val rect = Rect(bounds.left, bounds.top, bounds.right, bounds.bottom)
-        return ManualEventTarget(
-            label = label,
-            bounds = rect,
-            packageName = packageName ?: fallbackPackageName,
-            className = className,
-            resourceId = resourceId,
-            text = text,
-            contentDescription = contentDescription,
-            stableKey = firstNonBlank(resourceId, className) + "|" + boundsString(rect),
-            resolution = resolution
-        )
-    }
-
-    private fun rootTargetFromXml(
-        xml: String?,
-        packageName: String?,
-        allow: Boolean
-    ): ManualEventTarget? {
-        if (!allow) return null
-        val bounds = parseRootBounds(xml) ?: return null
-        if (bounds.isEmpty) return null
-        return ManualEventTarget(
-            label = "当前页面",
-            bounds = bounds,
-            packageName = packageName,
-            className = "hierarchy",
-            resourceId = null,
-            text = null,
-            contentDescription = null,
-            stableKey = "hierarchy|${boundsString(bounds)}",
-            resolution = "xml_root_fallback"
-        )
-    }
-
     private fun parseXmlNodeCandidates(xml: String?): List<XmlNodeCandidate> {
         if (xml.isNullOrBlank()) return emptyList()
         return NODE_TAG_REGEX.findAll(xml).mapNotNull { match ->
@@ -2275,16 +1568,6 @@ class ManualVlmTraceRecorder(
         return Rect(left, top, right, bottom)
     }
 
-    private fun meaningfulTokens(value: String): List<String> {
-        val normalized = value.replace(Regex("\\s+"), " ").trim().lowercase()
-        if (normalized.isBlank()) return emptyList()
-        val asciiTokens = normalized
-            .split(Regex("[^a-z0-9]+"))
-            .map { it.trim() }
-            .filter { it.length >= 2 }
-        return if (asciiTokens.isNotEmpty()) asciiTokens else listOf(normalized)
-    }
-
     private fun decodeXmlAttr(value: String?): String? {
         val raw = value ?: return null
         return raw
@@ -2299,12 +1582,11 @@ class ManualVlmTraceRecorder(
         return try {
             AccessibilityController.initController()
             // withOld=false: live accessibility-tree query, not event-driven cache.
-            // Apps that render via SurfaceView/WebView never fire AccessibilityEvents,
-            // so the cache is always stale. The live query still returns the container
-            // tree (nav bar, toolbar, tab bar) which is enough for anchor-based transfer.
+            // When the current surface has no accessibility tree (Launcher/Desktop,
+            // WebView/SurfaceView, games), source XML is optional. Do not fall back
+            // to an older cached tree because that pollutes coordinate-only RunLog.
             AccessibilityController.getCaptureScreenShotXml(false)
                 ?.takeIf { it.isNotBlank() }
-                ?: AccessibilityController.getCaptureScreenShotXml(true)
         } catch (e: Exception) {
             OmniLog.w(TAG, "manual trace xml capture failed: ${e.message}")
             null
@@ -2330,8 +1612,8 @@ class ManualVlmTraceRecorder(
         return when {
             overlayGestureRecordedCount > 0 -> OVERLAY_TOUCH_BACKEND
             rawTouchStatus?.available == true && enableRawTouch -> "mixed"
-            enableRawTouch -> "accessibility_event_with_raw_unavailable"
-            else -> "accessibility_event"
+            enableRawTouch -> "overlay_touch_with_raw_unavailable"
+            else -> OVERLAY_TOUCH_BACKEND
         }
     }
 
@@ -2405,8 +1687,11 @@ class ManualVlmTraceRecorder(
 
     private fun overlayEventContextFor(
         gesture: ManualOverlayTouchGesture,
-        target: ManualEventTarget
-    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        target: ManualEventTarget,
+        operationId: String,
+        dispatchOutcome: OverlayDispatchOutcome,
+        beforeXml: String?
+    ): Map<String, Any?> = (linkedMapOf<String, Any?>(
         "event_type" to "OVERLAY_TOUCH_${gesture.actionName.uppercase()}",
         "event_has_source" to false,
         "recording_backend" to OVERLAY_TOUCH_BACKEND,
@@ -2426,7 +1711,18 @@ class ManualVlmTraceRecorder(
         "target_resource_id" to target.resourceId,
         "target_class" to target.className,
         "target_bounds" to boundsString(target.bounds)
-    ).filterValues { it != null }
+    ) + overlayDispatchDiagnostics(operationId, beforeXml, dispatchOutcome)).filterValues { it != null }
+
+    private fun textInputEventContextFor(
+        event: AccessibilityEvent,
+        target: ManualEventTarget,
+        sourceNode: AccessibilityNodeInfo?,
+        anchor: TextInputAnchor
+    ): Map<String, Any?> {
+        return eventContextFor(event, target, sourceNode) + linkedMapOf(
+            "input_anchor" to anchor.asMap()
+        )
+    }
 
     private fun rawSwipeDirection(gesture: ManualRawTouchGesture): String {
         val dx = gesture.endX - gesture.startX
@@ -2467,30 +1763,38 @@ class ManualVlmTraceRecorder(
 
     private fun buildDiagnostics(): Map<String, Any?> {
         val rawActions = recordedActions.count {
-            it.params["recording_backend"]?.toString() == "device_getevent"
+            val backend = it.params["recording_backend"]?.toString()
+            backend == RAW_TOUCH_BACKEND || backend == RAW_TOUCH_TEXT_INPUT_BACKEND
         }
         val overlayActions = recordedActions.count {
-            it.params["recording_backend"]?.toString() == OVERLAY_TOUCH_BACKEND
+            val backend = it.params["recording_backend"]?.toString()
+            backend == OVERLAY_TOUCH_BACKEND || backend == OVERLAY_TOUCH_TEXT_INPUT_BACKEND
         }
-        val semanticActions = recordedActions.size - rawActions - overlayActions
+        val semanticActions = 0
         val rawTouchAvailable = rawTouchStatus?.available == true
         val overlayTouchAvailable = overlayGestureStartedCount > 0 || overlayGestureRecordedCount > 0
+        val expectedOverlayRecordCount = (overlayGestureStartedCount - overlayGestureIgnoredControlCount)
+            .coerceAtLeast(0)
+        val overlayTouchComplete = overlayTouchAvailable &&
+            overlayGestureFailedCount == 0 &&
+            overlayGestureRecordedCount >= expectedOverlayRecordCount
         val completeness = when {
-            overlayTouchAvailable -> ManualRecordingDiagnostics.COMPLETE_OVERLAY_TOUCH
+            overlayTouchComplete -> ManualRecordingDiagnostics.COMPLETE_OVERLAY_TOUCH
+            overlayTouchAvailable -> ManualRecordingDiagnostics.INCOMPLETE_OVERLAY_TOUCH
             else -> ManualRecordingDiagnostics.completeness(
                 rawTouchAvailable = rawTouchAvailable,
                 rawTouchActiveAtStop = rawTouchActiveAtStop
             )
         }
-        val guaranteesNoMissingClicks = overlayTouchAvailable ||
+        val guaranteesNoMissingClicks = overlayTouchComplete ||
             ManualRecordingDiagnostics.guaranteesNoMissingClicks(
                 rawTouchAvailable = rawTouchAvailable,
                 rawTouchActiveAtStop = rawTouchActiveAtStop
             )
-        val warningMessage = if (enableRawTouch) {
-            ManualRecordingDiagnostics.warningMessage(completeness)
-        } else {
-            null
+        val warningMessage = when {
+            overlayTouchAvailable && !overlayTouchComplete -> ManualRecordingDiagnostics.warningMessage(completeness)
+            enableRawTouch -> ManualRecordingDiagnostics.warningMessage(completeness)
+            else -> null
         }
         return linkedMapOf<String, Any?>(
             "raw_touch" to rawTouchStatus?.asMap()?.plus(
@@ -2507,7 +1811,7 @@ class ManualVlmTraceRecorder(
             "screenshots" to linkedMapOf(
                 "schema_version" to "oob.runlog.screenshot_refs.v1",
                 "enabled" to false,
-                "disabled_reason" to "manual_recording_uses_xml_and_accessibility_events_only",
+                "disabled_reason" to "manual_recording_uses_real_touch_and_before_xml",
                 "storage" to "app_private_files",
                 "reference_style" to "path_only",
                 "stored_count" to 0,
@@ -2520,10 +1824,9 @@ class ManualVlmTraceRecorder(
                 "ignored_package_event_count" to accessibilityIgnoredPackageCount,
                 "event_type_counts" to accessibilityEventTypeCounts.toMap(),
                 "suppressed_semantic_action_event_count" to suppressedSemanticActionEventCount,
-                "suppressed_overlay_duplicate_action_count" to suppressedOverlayDuplicateActionCount,
                 "suppressed_non_raw_action_count" to suppressedNonRawActionCount,
-                "records_replayable_actions" to !overlayTouchAvailable,
-                "records_text_input_when_overlay_active" to overlayTouchAvailable,
+                "records_replayable_actions" to false,
+                "records_text_input_when_touch_anchored" to true,
                 "recorded_action_count" to semanticActions
             ),
             "overlay_touch" to linkedMapOf(
@@ -2534,46 +1837,45 @@ class ManualVlmTraceRecorder(
                 "recorded_gesture_count" to overlayGestureRecordedCount,
                 "ignored_control_gesture_count" to overlayGestureIgnoredControlCount,
                 "failed_gesture_count" to overlayGestureFailedCount,
+                "expected_recorded_gesture_count" to expectedOverlayRecordCount,
                 "coordinate_replay_count" to overlayCoordinateReplayCount,
                 "coordinate_replay_failed_count" to overlayCoordinateReplayFailedCount,
                 "node_replay_fallback_count" to overlayNodeReplayFallbackCount,
                 "node_replay_fallback_failed_count" to overlayNodeReplayFallbackFailedCount,
-                "pending_post_record_count" to synchronized(recordingLock) { overlayRecordJobs.size },
+                "pending_post_record_count" to 0,
                 "post_record_timeout_count" to overlayPostRecordTimeoutCount,
                 "recorded_action_count" to overlayActions
             ),
             "unattributed_window_transitions" to linkedMapOf(
                 "event_count" to windowTransitionEventCount,
-                "count" to unattributedWindowTransitionCount,
-                "samples" to unattributedWindowTransitionSamples.takeIf { it.isNotEmpty() },
+                "count" to 0,
                 "replayable" to false,
-                "reason" to "window/content changes are evidence only unless a concrete A11 or raw action identifies the gesture"
+                "reason" to "window/content changes are ignored; manual RunLog only records concrete touch and text-input actions"
             ),
             "manual_recording" to linkedMapOf(
                 "action_source" to when {
-                    overlayActions > 0 && semanticActions > 0 -> "overlay_touch_with_a11_text"
+                    overlayActions > 0 && rawActions > 0 -> "mixed_real_touch"
                     overlayActions > 0 -> "overlay_touch"
-                    rawActions > 0 && semanticActions > 0 -> "mixed"
                     rawActions > 0 -> "raw_touch"
-                    else -> "accessibility_event"
+                    else -> "none"
                 },
                 "overlay_touch_available" to overlayTouchAvailable,
                 "execution_mode" to if (overlayTouchAvailable) SYNTHETIC_REPLAY_EXECUTION_MODE else null,
                 "raw_touch_enabled" to enableRawTouch,
                 "raw_touch_required" to false,
-                "a11_replay_actions_enabled" to !overlayTouchAvailable,
+                "a11_replay_actions_enabled" to false,
                 "a11_text_input_enabled" to true,
+                "a11_text_input_requires_real_touch_anchor" to true,
                 "action_count" to recordedActions.size,
                 "overlay_action_count" to overlayActions,
                 "raw_action_count" to rawActions,
                 "semantic_action_count" to semanticActions,
                 "suppressed_non_raw_action_count" to suppressedNonRawActionCount,
-                "suppressed_overlay_duplicate_action_count" to suppressedOverlayDuplicateActionCount,
                 "completeness" to completeness,
                 "missing_raw_touch" to (enableRawTouch && !rawTouchAvailable),
                 "raw_touch_active_at_stop" to rawTouchActiveAtStop,
                 "guarantees_no_missing_clicks" to guaranteesNoMissingClicks,
-                "unattributed_window_transition_count" to unattributedWindowTransitionCount,
+                "unattributed_window_transition_count" to 0,
                 "warning_message" to warningMessage
             )
         ).filterValues { it != null }
@@ -2624,6 +1926,7 @@ class ManualVlmTraceRecorder(
 
     private data class PendingTextAction(
         val nodeKey: String,
+        val anchorId: String,
         val packageName: String?,
         val label: String,
         val text: String,
@@ -2631,6 +1934,7 @@ class ManualVlmTraceRecorder(
         val className: String?,
         val resourceId: String?,
         val resolution: String,
+        val recordingBackend: String,
         val beforeXml: String?,
         val beforeScreenshot: ManualVlmScreenshotRef?,
         val startedAtMs: Long,
@@ -2638,28 +1942,37 @@ class ManualVlmTraceRecorder(
         val eventContext: Map<String, Any?>
     )
 
-    private data class PendingScrollAction(
-        val nodeKey: String,
-        val packageName: String?,
-        val label: String,
-        val bounds: Rect,
-        val direction: ManualScrollDirection,
-        val className: String?,
-        val resourceId: String?,
-        val resolution: String,
+    private data class TextInputAnchor(
+        val id: String,
+        val backend: String,
         val beforeXml: String?,
         val beforeScreenshot: ManualVlmScreenshotRef?,
+        val target: ManualEventTarget,
+        val x: Float,
+        val y: Float,
         val startedAtMs: Long,
-        val updatedAtMs: Long,
-        val eventContext: Map<String, Any?>
-    )
+        val finishedAtMs: Long
+    ) {
+        fun asMap(): Map<String, Any?> = linkedMapOf<String, Any?>(
+            "id" to id,
+            "backend" to backend,
+            "x" to x,
+            "y" to y,
+            "started_at_ms" to startedAtMs,
+            "finished_at_ms" to finishedAtMs,
+            "target_description" to target.label,
+            "target_bounds" to "[${target.bounds.left},${target.bounds.top}][${target.bounds.right},${target.bounds.bottom}]",
+            "target_package" to target.packageName,
+            "target_resource_id" to target.resourceId,
+            "target_class" to target.className,
+            "target_resolution" to target.resolution,
+            "has_before_xml" to !beforeXml.isNullOrBlank(),
+            "has_before_screenshot" to (beforeScreenshot != null)
+        ).filterValues { it != null }
 
-    private data class SwipeParams(
-        val x1: Float,
-        val y1: Float,
-        val x2: Float,
-        val y2: Float
-    )
+        fun isCoordinateOnlyTextAnchor(): Boolean =
+            target.resolution.contains("coordinate_text_anchor")
+    }
 
     private data class ManualEventTarget(
         val label: String,
@@ -2671,11 +1984,6 @@ class ManualVlmTraceRecorder(
         val contentDescription: String?,
         val stableKey: String,
         val resolution: String
-    )
-
-    private data class ClickGroundingDecision(
-        val target: ManualEventTarget,
-        val inference: Map<String, Any?>
     )
 
     private data class XmlNodeCandidate(
@@ -2702,29 +2010,6 @@ class ManualVlmTraceRecorder(
                 className
             )
 
-        fun matchScore(
-            packageName: String?,
-            labelTokens: List<String>,
-            eventClassName: String?,
-            preferScrollable: Boolean
-        ): Int {
-            var score = 0
-            if (visible) score += 2
-            if (enabled) score += 2
-            if (!packageName.isNullOrBlank() && packageName == this.packageName) score += 8
-            if (preferScrollable && scrollable) score += 40
-            if (!preferScrollable && clickable) score += 12
-            if (!eventClassName.isNullOrBlank() && eventClassName == className) score += 8
-            val haystack = listOfNotNull(text, contentDescription, hintText, resourceId, className)
-                .joinToString(" ")
-                .lowercase()
-            for (token in labelTokens) {
-                if (haystack == token) score += 35
-                if (haystack.contains(token)) score += 25
-            }
-            return score
-        }
-
         fun toManualTarget(
             fallbackPackageName: String?,
             resolution: String
@@ -2747,16 +2032,23 @@ class ManualVlmTraceRecorder(
         private const val TAG = "ManualVlmTraceRecorder"
         private const val DUPLICATE_EVENT_WINDOW_MS = 400L
         private const val OVERLAY_TOUCH_BACKEND = "overlay_touch"
+        private const val OVERLAY_TOUCH_TEXT_INPUT_BACKEND = "overlay_touch_text_input"
         private const val SCREEN_ABSOLUTE_COORDINATE_SPACE = "screen_absolute_px"
         private const val SYNTHETIC_REPLAY_EXECUTION_MODE = "synthetic_replay"
-        private const val OVERLAY_TOUCH_SETTLE_MS = 350L
-        private const val OVERLAY_POST_RECORD_STOP_TIMEOUT_MS = 1200L
+        private const val OVERLAY_RECORD_DRAIN_POLL_MS = 100L
+        private const val OVERLAY_RECORD_DRAIN_TIMEOUT_MS = 600L
+        private const val BEFORE_XML_CAPTURE_TIMEOUT_MS = 300L
         private const val OVERLAY_LONG_PRESS_MIN_DURATION_MS = 600L
         private const val OVERLAY_SWIPE_MIN_DURATION_MS = 120L
         private const val OVERLAY_SWIPE_MIN_DISTANCE_PX = 16f
-        private const val OVERLAY_CLICK_REPLAY_TIMEOUT_MS = 650L
+        private const val OVERLAY_CLICK_REPLAY_TIMEOUT_MS = 500L
+        private const val DISPATCH_STATUS_COMPLETED = "dispatch_completed"
+        private const val DISPATCH_STATUS_TIMEOUT = "dispatch_timeout"
+        private const val DISPATCH_STATUS_CANCELLED = "dispatch_cancelled"
+        private const val DISPATCH_STATUS_FAILED = "dispatch_failed"
         private const val RAW_TOUCH_BACKEND = "device_getevent"
-        private const val RAW_TOUCH_SETTLE_MS = 350L
+        private const val RAW_TOUCH_TEXT_INPUT_BACKEND = "device_getevent_text_input"
+        private const val REAL_TOUCH_TEXT_INPUT_BACKEND = "real_touch_text_input"
         private const val MAX_LABEL_LENGTH = 80
         private const val MAX_SUMMARY_TEXT = 40
         private const val MAX_SUMMARY_ACTIONS = 8
@@ -2768,6 +2060,7 @@ class ManualVlmTraceRecorder(
         private const val MAX_PAGE_FINGERPRINT_NODES = 220
         private const val MAX_PAGE_SUMMARY_LABELS = 8
         private const val MAX_PAGE_LABEL_LENGTH = 48
+        private const val MAX_ERROR_MESSAGE_LENGTH = 240
         private const val REDACTED_TEXT = "[REDACTED]"
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
         private val NODE_TAG_REGEX = Regex("<node\\b([^>]*)>")

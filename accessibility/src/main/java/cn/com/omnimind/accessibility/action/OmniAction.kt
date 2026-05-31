@@ -12,6 +12,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.Bundle
 import android.util.DisplayMetrics
@@ -27,6 +28,9 @@ import cn.com.omnimind.baselib.util.exception.PrivacyBlockedException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+
+class OmniGestureDispatchTimeoutException(message: String) : RuntimeException(message)
 
 class OmniAction(
     private val service: AssistsService,
@@ -34,9 +38,16 @@ class OmniAction(
     companion object {
         private const val TAG = "OmniGestureController"
         private const val CLICK_DURATION = 50L
+        private const val CLICK_TIMEOUT_MS = 900L
         private const val LONG_CLICK_DURATION = 1000L
         private const val SCROLL_DISTANCE = 300f
         private const val SCROLL_DURATION = 500L
+        private const val GESTURE_TIMEOUT_GRACE_MS = 700L
+        private const val GESTURE_CALLBACK_THREAD_NAME = "OmniGestureCallback"
+
+        private val gestureCallbackThread: HandlerThread by lazy {
+            HandlerThread(GESTURE_CALLBACK_THREAD_NAME).apply { start() }
+        }
     }
 
     private val windowBounds: Rect by lazy {
@@ -50,7 +61,8 @@ class OmniAction(
     }
     private val screenWidth: Float by lazy { windowBounds.width().toFloat() }
     private val screenHeight: Float by lazy { windowBounds.height().toFloat() }
-    private val gestureCallbackHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+    private val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+    private val gestureCallbackHandler: Handler by lazy { Handler(gestureCallbackThread.looper) }
 
     /**
      * accessibility click action
@@ -210,7 +222,7 @@ class OmniAction(
     ): CompletableFuture<Unit> {
         OmniLog.v(TAG, "fun clickCoordinate")
 
-        return clickCoordinateImpl(x, y, CLICK_DURATION)
+        return clickCoordinateImpl(x, y, CLICK_DURATION, CLICK_TIMEOUT_MS)
     }
 
     fun longClickCoordinate(
@@ -220,13 +232,14 @@ class OmniAction(
     ): CompletableFuture<Unit> {
         OmniLog.v(TAG, "fun longClickCoordinate")
 
-        return clickCoordinateImpl(x, y, duration)
+        return clickCoordinateImpl(x, y, duration, duration + GESTURE_TIMEOUT_GRACE_MS)
     }
 
     private fun clickCoordinateImpl(
         x: Float,
         y: Float,
         duration: Long,
+        timeoutMs: Long,
     ): CompletableFuture<Unit> {
         val safeX = x.coerceIn(0f, (screenWidth - 1f).coerceAtLeast(0f))
         val safeY = y.coerceIn(0f, (screenHeight - 1f).coerceAtLeast(0f))
@@ -246,39 +259,11 @@ class OmniAction(
                     ),
                 )
 
-        val future = CompletableFuture<Unit>()
-
-        val callback =
-            object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    future.complete(Unit)
-                }
-
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    future.completeExceptionally(RuntimeException("Gesture was cancelled"))
-                }
-            }
-
-        val dispatchGesture = Runnable {
-            val dispatchResult =
-                service.dispatchGesture(
-                    gestureBuilder.build(),
-                    callback,
-                    gestureCallbackHandler,
-                )
-
-            if (!dispatchResult) {
-                future.completeExceptionally(RuntimeException("Failed to dispatch gesture"))
-            }
-        }
-
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            dispatchGesture.run()
-        } else if (!gestureCallbackHandler.post(dispatchGesture)) {
-            future.completeExceptionally(RuntimeException("Failed to post gesture dispatch"))
-        }
-
-        return future
+        return dispatchGestureWithTimeout(
+            gestureDescription = gestureBuilder.build(),
+            timeoutMs = timeoutMs,
+            timeoutLabel = "coordinate_click"
+        )
     }
 
     /**
@@ -319,32 +304,96 @@ class OmniAction(
                     ),
                 )
 
-        val future = CompletableFuture<Unit>()
+        return dispatchGestureWithTimeout(
+            gestureDescription = gestureBuilder.build(),
+            timeoutMs = duration + GESTURE_TIMEOUT_GRACE_MS,
+            timeoutLabel = "coordinate_scroll"
+        )
+    }
 
+    private fun dispatchGestureWithTimeout(
+        gestureDescription: GestureDescription,
+        timeoutMs: Long,
+        timeoutLabel: String,
+    ): CompletableFuture<Unit> {
+        val future = CompletableFuture<Unit>()
+        val completed = AtomicBoolean(false)
+        val boundedTimeoutMs = timeoutMs.coerceAtLeast(1L)
+        val timeoutRunnable = Runnable {
+            if (completed.compareAndSet(false, true)) {
+                future.completeExceptionally(
+                    OmniGestureDispatchTimeoutException(
+                        "dispatch_timeout:$timeoutLabel after ${boundedTimeoutMs}ms"
+                    )
+                )
+            }
+        }
         val callback =
             object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    future.complete(Unit)
+                    completeGestureFuture(completed, timeoutRunnable, future, null)
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    future.completeExceptionally(RuntimeException("Scroll gesture cancelled"))
+                    completeGestureFuture(
+                        completed,
+                        timeoutRunnable,
+                        future,
+                        RuntimeException("Gesture was cancelled")
+                    )
                 }
             }
 
         val dispatchGesture = Runnable {
-            if (!service.dispatchGesture(gestureBuilder.build(), callback, gestureCallbackHandler)) {
-                future.completeExceptionally(RuntimeException("Failed to dispatch scroll gesture"))
+            if (completed.get()) return@Runnable
+            val dispatchResult =
+                service.dispatchGesture(
+                    gestureDescription,
+                    callback,
+                    gestureCallbackHandler,
+                )
+
+            if (!dispatchResult) {
+                completeGestureFuture(
+                    completed,
+                    timeoutRunnable,
+                    future,
+                    RuntimeException("Failed to dispatch gesture")
+                )
             }
         }
 
+        if (!gestureCallbackHandler.postDelayed(timeoutRunnable, boundedTimeoutMs)) {
+            future.completeExceptionally(RuntimeException("Failed to post gesture timeout"))
+            return future
+        }
         if (Looper.myLooper() == Looper.getMainLooper()) {
             dispatchGesture.run()
-        } else if (!gestureCallbackHandler.post(dispatchGesture)) {
-            future.completeExceptionally(RuntimeException("Failed to post scroll gesture dispatch"))
+        } else if (!mainHandler.post(dispatchGesture)) {
+            completeGestureFuture(
+                completed,
+                timeoutRunnable,
+                future,
+                RuntimeException("Failed to post gesture dispatch")
+            )
         }
 
         return future
+    }
+
+    private fun completeGestureFuture(
+        completed: AtomicBoolean,
+        timeoutRunnable: Runnable,
+        future: CompletableFuture<Unit>,
+        error: Throwable?,
+    ) {
+        if (!completed.compareAndSet(false, true)) return
+        gestureCallbackHandler.removeCallbacks(timeoutRunnable)
+        if (error == null) {
+            future.complete(Unit)
+        } else {
+            future.completeExceptionally(error)
+        }
     }
 
     private fun performGlobalActionImpl(action: Int) {

@@ -90,7 +90,7 @@ Do not proceed until the user explicitly says yes, continue, OK, or equivalent.
 
 ### Phase 1.8: ProjectContract
 
-The ProjectContract is the single source of truth for data, tools, and display. Generate API and HTML from it; do not invent separate field names later.
+The ProjectContract is the single source of truth for data, tools, and display. Generate API and a lightweight display from it; the current default display renderer is static HTML, but HTML is not the product core. Do not invent separate field names later.
 
 Before designing agent actions:
 
@@ -207,7 +207,7 @@ python3 {skillDir}/scripts/build_project_from_contract.py \
 Then in Android OOB:
 
 1. Read builder stdout JSON.
-2. Call `workbench_project_create` with `projectId`, `name`, `entityName`, `apis`, and `htmlFiles`.
+2. Call `workbench_project_create` with `projectId`, `name`, `entityName`, `apis`, and the display files (`htmlFiles` by default).
 3. Write `PROJECT_SOUL.md` and `PROJECT_CONTEXT.md` from builder docs when present.
 4. Call `workbench_project_activate(projectId)`.
 5. Call `workbench_project_open(projectId)`.

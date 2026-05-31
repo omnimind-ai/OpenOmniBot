@@ -65,7 +65,6 @@ import 'package:ui/features/home/pages/chat/utils/keyboard_inset_motion_tracker.
 import 'package:ui/features/home/pages/codex/codex_remote_directory_picker.dart';
 import 'package:ui/features/home/pages/codex/codex_remote_workspace_browser.dart';
 import 'package:ui/features/task/pages/execution_history/run_log_timeline_page.dart';
-import 'package:ui/features/workbench/services/workbench_project_service.dart';
 import 'package:ui/widgets/chat_drawer_gesture_guard.dart';
 
 // 导入 Mixins
@@ -374,8 +373,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
   final GlobalKey<OmnibotWorkspaceBrowserState> _workspaceBrowserKey =
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _workspaceBrowserCanGoUp = false;
-  bool _workspaceProjectModeEnabled = false;
-  bool _workspaceProjectModeRequestInFlight = false;
+  bool _workspaceProjectModeEnabled = true;
   Future<OmnibotWorkspacePaths>? _workspacePathsLoadFuture;
   bool _hasAppliedInitialSurfaceMode = false;
   bool _hasInitializedHalfScreen = false;

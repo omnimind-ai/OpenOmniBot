@@ -306,10 +306,10 @@ class AccessibilityController() {
         suspend fun clickCoordinate(
             x: Float,
             y: Float,
-            timeoutMs: Long = 2000L
+            timeoutMs: Long = 900L
         ) {
             checkAccessibilityPermissions()
-            withTimeout(timeoutMs) {
+            withTimeout(timeoutMs + 100L) {
                 val controller = actionController
                     ?: throw IllegalStateException("Accessibility action controller is not ready")
                 controller.clickCoordinate(x, y).await()
@@ -357,7 +357,7 @@ class AccessibilityController() {
             x: Float, y: Float, duration: Long = 1000L
         ) {
             checkAccessibilityPermissions()
-            withTimeout(2000 + duration) {
+            withTimeout(duration + 800L) {
                 val controller = actionController
                     ?: throw IllegalStateException("Accessibility action controller is not ready")
                 controller.longClickCoordinate(x, y, duration).await()
@@ -407,7 +407,8 @@ class AccessibilityController() {
         suspend fun scrollCoordinate(
             x: Float, y: Float, direction: ScrollDirection, distance: Float, duration: Long = 500L
         ) {
-            var mDirection = when (direction) {
+            checkAccessibilityPermissions()
+            val mDirection = when (direction) {
                 ScrollDirection.UP -> {
                     AccessibilityScrollDirection.UP
                 }
@@ -424,7 +425,11 @@ class AccessibilityController() {
                     AccessibilityScrollDirection.RIGHT
                 }
             }
-            actionController?.scrollCoordinate(x, y, mDirection, distance, duration)?.await()
+            withTimeout(duration + 800L) {
+                val controller = actionController
+                    ?: throw IllegalStateException("Accessibility action controller is not ready")
+                controller.scrollCoordinate(x, y, mDirection, distance, duration).await()
+            }
         }
 
         suspend fun setSliderProgressFromGesture(

@@ -200,7 +200,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
-    fun `call_function source alignment skips non-key prefix frames`() = runBlocking {
+    fun `call_function source alignment is disabled by default`() = runBlocking {
         val context = TempFilesContext()
         val pageA = pageXml("A", "com.example.a")
         val pageB = pageXml("B", "com.example.b")
@@ -234,13 +234,14 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 assertEquals(true, run["success"])
                 val results = stepResults(run)
                 assertEquals(5, results.size)
-                assertEquals(listOf("step_a", "step_b", "step_c"), results.take(3).map { it["step_id"] })
-                assertTrue(results.take(3).all { it["skipped_by_source_alignment"] == true })
-                assertEquals("step_d", results[3]["step_id"])
-                assertEquals("step_key", results[4]["step_id"])
+                assertEquals(
+                    listOf("step_a", "step_b", "step_c", "step_d", "step_key"),
+                    results.map { it["step_id"] }
+                )
+                assertFalse(results.any { it["skipped_by_source_alignment"] == true })
                 val stack = run["pending_action_stack"] as Map<*, *>
-                assertEquals(true, stack["source_alignment_enabled"])
-                assertEquals(3, (stack["skipped_by_source_alignment_count"] as Number).toInt())
+                assertEquals(false, stack["source_alignment_enabled"])
+                assertEquals(0, (stack["skipped_by_source_alignment_count"] as Number).toInt())
             }
         } finally {
             context.root.deleteRecursively()
@@ -248,7 +249,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
-    fun `call_function source alignment does not cross key action boundary`() = runBlocking {
+    fun `call_function source alignment disabled does not block on key boundary miss`() = runBlocking {
         val context = TempFilesContext()
         val pageA = pageXml("A", "com.example.a")
         val pageB = pageXml("B", "com.example.b")
@@ -276,12 +277,12 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                     allowAgentFallback = false,
                 )
 
-                assertEquals(false, run["success"])
-                assertEquals("OOB_SOURCE_ALIGNMENT_MISS", run["error_code"])
+                assertEquals(true, run["success"])
                 val results = stepResults(run)
-                assertEquals(1, results.size)
-                assertEquals("step_a", results.single()["step_id"])
-                assertEquals("OOB_SOURCE_ALIGNMENT_MISS", results.single()["error_code"])
+                assertEquals(listOf("step_a", "step_key", "step_after_key"), results.map { it["step_id"] })
+                assertFalse(results.any { it["error_code"] == "OOB_SOURCE_ALIGNMENT_MISS" })
+                val stack = run["pending_action_stack"] as Map<*, *>
+                assertEquals(false, stack["source_alignment_enabled"])
             }
         } finally {
             context.root.deleteRecursively()

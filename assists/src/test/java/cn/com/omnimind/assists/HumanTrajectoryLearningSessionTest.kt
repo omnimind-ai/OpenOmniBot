@@ -20,7 +20,7 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(false, payload["recording_active"])
         assertEquals(false, payload["recording_paused"])
         assertEquals(0, payload["action_count"])
-        assertEquals("accessibility_event", payload["recording_backend"])
+        assertEquals("overlay_touch", payload["recording_backend"])
     }
 
     @Test
@@ -62,8 +62,8 @@ class HumanTrajectoryLearningSessionTest {
                 "x" to 42f,
                 "y" to 84f,
                 "bounds" to "[0,0][100,100]",
-                "recording_backend" to "accessibility_event",
-                "target_resolution" to "event_source",
+                "recording_backend" to "overlay_touch",
+                "target_resolution" to "overlay_touch_coordinate_xml_grounded",
             ),
             packageName = "com.android.settings",
             beforeXml = beforeXml,
@@ -74,10 +74,10 @@ class HumanTrajectoryLearningSessionTest {
             finishedAtMs = 1250L,
             summary = "人工点击 Bluetooth",
             eventContext = linkedMapOf(
-                "event_type" to "TYPE_VIEW_CLICKED",
-                "event_has_source" to true,
-                "recording_backend" to "accessibility_event",
-                "target_resolution" to "event_source",
+                "event_type" to "OVERLAY_TOUCH_CLICK",
+                "event_has_source" to false,
+                "recording_backend" to "overlay_touch",
+                "target_resolution" to "overlay_touch_coordinate_xml_grounded",
             ),
         )
 
@@ -113,8 +113,8 @@ class HumanTrajectoryLearningSessionTest {
         assertEquals(42f, sourceAction["x"])
         assertEquals(84f, sourceAction["y"])
         assertEquals("manual_operation_recording", meta["mode"])
-        assertEquals("accessibility_event", meta["recording_backend"])
-        assertEquals("accessibility_event", meta["action_source"])
+        assertEquals("overlay_touch", meta["recording_backend"])
+        assertEquals("overlay_touch", meta["action_source"])
         assertEquals(action.eventContext, card["event_context"])
         assertEquals(action.eventContext, meta["event_context"])
         assertNotNull(card["tool_call"])

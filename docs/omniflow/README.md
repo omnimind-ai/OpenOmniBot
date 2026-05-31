@@ -22,6 +22,7 @@ Ship this directory as the external OmniFlow kit:
 - `update-function.md`: `update_function` patch contract and repair/enhance flow.
 - `checkers.md`: runtime checker rule cookbook and whitelist.
 - `cleanup-rules.md`: deterministic RunLog cleanup and merge rules.
+- `manual-runlog-recording.md`: loss-intolerant manual RunLog recording policy.
 - `oob-function-architecture.md`: RunLog/OOB Function/UDEG runtime ownership map.
 - `GUI_AGENT_PLAYBOOK.md`: step-by-step execution playbook and fallback paths.
 - `ACCEPTANCE.md`: verification checklist for a host app or external agent.

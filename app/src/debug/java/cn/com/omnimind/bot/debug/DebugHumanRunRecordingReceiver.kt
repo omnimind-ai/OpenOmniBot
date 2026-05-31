@@ -188,8 +188,19 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture)
         delay(700L)
         val status = HumanTrajectoryLearningSession.status().asMap()
+        val success = replayResult.executed && replayResult.recorded
+        val errorCode = when {
+            !replayResult.executed -> "GESTURE_NOT_EXECUTED"
+            !replayResult.recorded -> "GESTURE_NOT_RECORDED"
+            else -> null
+        }
+        val errorMessage = when {
+            !replayResult.executed -> "Overlay gesture was not executed"
+            !replayResult.recorded -> "Overlay gesture executed but was not recorded"
+            else -> null
+        }
         return linkedMapOf(
-            "success" to replayResult.executed,
+            "success" to success,
             "phase" to "gesture_recorded",
             "gesture" to linkedMapOf(
                 "action_name" to actionName,
@@ -204,11 +215,13 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
             "recording_paused" to status["recording_paused"],
             "action_count" to status["action_count"],
             "latest_action_summary" to status["latest_action_summary"],
+            "executed" to replayResult.executed,
+            "recorded" to replayResult.recorded,
             "may_open_ime" to replayResult.mayOpenIme,
             "ignored_control" to replayResult.ignoredControl,
             "status" to status,
-            "error_code" to if (replayResult.executed) null else "GESTURE_NOT_EXECUTED",
-            "error_message" to if (replayResult.executed) null else "Overlay gesture was not executed",
+            "error_code" to errorCode,
+            "error_message" to errorMessage,
             "source" to "oob_debug_human_run_recording"
         ).filterValues { it != null }
     }

@@ -1,6 +1,5 @@
 package cn.com.omnimind.uikit.loader
 
-import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.view.accessibility.AccessibilityWindowInfo
 import android.graphics.Color
@@ -27,7 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import java.util.ArrayDeque
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -36,18 +35,20 @@ object ManualTouchRecordLoader {
     private const val TAG = "ManualTouchRecordLoader"
     private const val MIN_SWIPE_DISTANCE_DP = 24f
     private const val OVERLAY_UNLOCK_REPLAY_DELAY_MS = 32L
-    private const val IME_VISIBILITY_GRACE_MS = 450L
-    private const val IME_VISIBILITY_INITIAL_CHECK_MS = 80L
+    private const val IME_VISIBILITY_PROBE_DELAY_MS = 120L
+    private const val IME_VISIBILITY_PROBE_TIMEOUT_MS = 700L
+    private const val IME_VISIBILITY_PROBE_POLL_MS = 70L
     private const val IME_RELOCK_INITIAL_DELAY_MS = 400L
     private const val IME_RELOCK_POLL_MS = 300L
-    private const val PROCESSING_RESET_TIMEOUT_MS = 2000L
-    private const val IME_WAIT_TIMEOUT_MS = 600L
-    private const val IME_POLL_MS = 50L
 
     private val recordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    private var currentTouchable: Boolean? = null
+    private var displayWidth: Int = 0
+    private var displayHeight: Int = 0
+    private var imeVisibilityProbeJob: Job? = null
     private var imeBypassJob: Job? = null
     private var startX = 0f
     private var startY = 0f
@@ -55,43 +56,30 @@ object ManualTouchRecordLoader {
     private var endY = 0f
     private var downAtMs = 0L
     private var isTracking = false
-    private var isSwipe = false
     private var isProcessing = false
+    private val pendingGestures = ArrayDeque<ManualOverlayTouchGesture>()
 
     fun show(context: Context? = UIKit.appContext): Boolean {
         val appContext = context?.applicationContext ?: UIKit.appContext
-        val accessibilityContext = AssistsService.instance
-        val safeContext = appContext ?: accessibilityContext ?: return false
-        val shown = synchronized(this) {
+        if (appContext == null) return false
+        return synchronized(this) {
             if (overlayView?.isAttachedToWindow == true) {
                 lockTouchLocked()
                 return@synchronized true
             }
-            // Prefer AccessibilityService context: TYPE_ACCESSIBILITY_OVERLAY needs no
-            // SYSTEM_ALERT_WINDOW permission and is available whenever the service is running.
-            val candidates = buildList {
-                accessibilityContext?.let { add(it) }
-                appContext?.let { add(it) }
-            }.distinctBy { it }
-            for (candidateContext in candidates) {
-                if (tryShowLocked(candidateContext)) {
-                    return@synchronized true
-                }
-            }
+            if (tryShowLocked(appContext)) return@synchronized true
             OmniLog.w(TAG, "manual touch recording overlay unavailable")
             false
         }
-        if (shown) {
-            ManualRecordingControlOverlay.ensureOnTop()
-        }
-        return shown
     }
 
     fun hide() {
         synchronized(this) {
             isTracking = false
-            isSwipe = false
             isProcessing = false
+            pendingGestures.clear()
+            imeVisibilityProbeJob?.cancel()
+            imeVisibilityProbeJob = null
             imeBypassJob?.cancel()
             imeBypassJob = null
             val view = overlayView
@@ -99,6 +87,9 @@ object ManualTouchRecordLoader {
             overlayView = null
             overlayParams = null
             windowManager = null
+            currentTouchable = null
+            displayWidth = 0
+            displayHeight = 0
             if (view != null && manager != null && view.isAttachedToWindow) {
                 runCatching { manager.removeView(view) }
                     .onFailure { OmniLog.w(TAG, "hide failed: ${it.message}") }
@@ -109,17 +100,20 @@ object ManualTouchRecordLoader {
     private fun tryShowLocked(context: Context): Boolean {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = buildTouchView(context)
+        val displaySize = realDisplaySize(context)
         val params = buildParams(context, touchable = true)
-        val overlayType = if (context is AccessibilityService) "accessibility" else "application"
         return runCatching {
             manager.addView(view, params)
             windowManager = manager
             overlayView = view
             overlayParams = params
-            OmniLog.d(TAG, "manual touch recording overlay shown type=$overlayType")
+            currentTouchable = true
+            displayWidth = displaySize.x
+            displayHeight = displaySize.y
+            OmniLog.d(TAG, "manual touch recording overlay shown type=application")
             true
         }.getOrElse { error ->
-            OmniLog.e(TAG, "show failed type=$overlayType: ${error.message}", error)
+            OmniLog.e(TAG, "show failed type=application: ${error.message}", error)
             false
         }
     }
@@ -146,8 +140,6 @@ object ManualTouchRecordLoader {
     ): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
             type = when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && context is AccessibilityService ->
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else -> {
@@ -177,7 +169,6 @@ object ManualTouchRecordLoader {
         touchSlop: Float,
         longPressTimeout: Long
     ) {
-        if (isProcessing) return
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val point = clampRawPoint(event)
@@ -187,16 +178,12 @@ object ManualTouchRecordLoader {
                 endY = point.y
                 downAtMs = System.currentTimeMillis()
                 isTracking = true
-                isSwipe = false
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!isTracking) return
                 val point = clampRawPoint(event)
                 endX = point.x
                 endY = point.y
-                if (distance(startX, startY, endX, endY) >= touchSlop) {
-                    isSwipe = true
-                }
             }
             MotionEvent.ACTION_UP -> {
                 if (!isTracking) return
@@ -206,102 +193,163 @@ object ManualTouchRecordLoader {
                 val finishedAtMs = System.currentTimeMillis()
                 val durationMs = finishedAtMs - downAtMs
                 val distancePx = distance(startX, startY, endX, endY)
+                // Use net displacement (start→end), not peak displacement during move.
+                // Peak-based detection misclassifies taps where the finger briefly drifts.
                 val actionName = when {
-                    isSwipe || distancePx >= touchSlop -> "swipe"
+                    distancePx >= touchSlop -> "swipe"
                     durationMs >= longPressTimeout -> "long_press"
                     else -> "click"
                 }
                 isTracking = false
-                dispatchGesture(
-                    ManualOverlayTouchGesture(
-                        actionName = actionName,
-                        startX = startX,
-                        startY = startY,
-                        endX = endX,
-                        endY = endY,
-                        durationMs = durationMs,
-                        distancePx = distancePx,
-                        direction = directionName(startX, startY, endX, endY).takeIf { actionName == "swipe" },
-                        startedAtMs = downAtMs,
-                        finishedAtMs = finishedAtMs,
-                        displayWidth = realDisplaySize(overlayView?.context ?: UIKit.appContext).x,
-                        displayHeight = realDisplaySize(overlayView?.context ?: UIKit.appContext).y
-                    )
+                val gesture = ManualOverlayTouchGesture(
+                    actionName = actionName,
+                    startX = startX,
+                    startY = startY,
+                    endX = endX,
+                    endY = endY,
+                    durationMs = durationMs,
+                    distancePx = distancePx,
+                    direction = directionName(startX, startY, endX, endY).takeIf { actionName == "swipe" },
+                    startedAtMs = downAtMs,
+                    finishedAtMs = finishedAtMs,
+                    displayWidth = currentDisplaySize().x,
+                    displayHeight = currentDisplaySize().y
                 )
+                enqueueGesture(gesture)
             }
             MotionEvent.ACTION_CANCEL -> {
                 isTracking = false
-                isSwipe = false
             }
         }
     }
 
-    private fun dispatchGesture(gesture: ManualOverlayTouchGesture) {
-        isProcessing = true
-        synchronized(this) {
-            unlockTouchLocked()
+    private fun enqueueGesture(gesture: ManualOverlayTouchGesture) {
+        val shouldStartWorker = synchronized(this) {
+            pendingGestures.addLast(gesture)
+            if (isProcessing) {
+                false
+            } else {
+                isProcessing = true
+                true
+            }
         }
+        if (shouldStartWorker) {
+            processGestureQueue()
+        }
+    }
+
+    private fun processGestureQueue() {
         recordScope.launch {
-            val mayOpenIme = gesture.actionName == "click"
-            var executed = false
-            runCatching {
-                delay(OVERLAY_UNLOCK_REPLAY_DELAY_MS)
-                val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture)
-                executed = replayResult.executed
-            }.onFailure { error ->
-                OmniLog.w(TAG, "record overlay gesture failed: ${error.message}")
-            }
-            if (executed) {
-                withContext(Dispatchers.Main) { showGestureFeedback(gesture) }
-            }
-            if (mayOpenIme) {
-                // Poll until the keyboard appears or we give up. A single 80 ms check
-                // is too short — the IME can take 200-400 ms to show. Re-locking the
-                // overlay before the keyboard is visible lets the next tap hit the overlay
-                // instead of the keyboard, causing GestureDescription to replay into the
-                // IME window which crashes the accessibility service.
-                val appeared = awaitImeVisible()
-                if (!appeared) {
-                    delay(IME_VISIBILITY_GRACE_MS)
+            while (true) {
+                val gesture = synchronized(this@ManualTouchRecordLoader) {
+                    pendingGestures.pollFirst()
+                }
+                if (gesture == null) {
+                    val shouldContinue = withContext(Dispatchers.Main) {
+                        var continueProcessing = false
+                        var shouldStayUnlockedForIme = false
+                        var shouldShowInputStatus = false
+                        synchronized(this@ManualTouchRecordLoader) {
+                            if (pendingGestures.isNotEmpty()) {
+                                continueProcessing = true
+                            } else {
+                                isProcessing = false
+                                if (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
+                                    if (isImeVisibleLocked()) {
+                                        unlockTouchLocked()
+                                        shouldStayUnlockedForIme = true
+                                        shouldShowInputStatus = true
+                                        scheduleImeRelockLocked()
+                                    } else {
+                                        lockTouchLocked()
+                                    }
+                                } else {
+                                    hide()
+                                }
+                            }
+                        }
+                        if (shouldStayUnlockedForIme && shouldShowInputStatus) {
+                            ManualRecordingControlOverlay.showTransientStatus("输入中", 1400L)
+                        }
+                        continueProcessing
+                    }
+                    if (shouldContinue) {
+                        continue
+                    }
+                    return@launch
+                }
+                val keepRecording = processQueuedGesture(gesture)
+                if (!keepRecording) {
+                    withContext(Dispatchers.Main) {
+                        synchronized(this@ManualTouchRecordLoader) {
+                            pendingGestures.clear()
+                            isProcessing = false
+                            hide()
+                        }
+                    }
+                    return@launch
                 }
             }
-            // WindowManager.updateViewLayout() must run on the main thread — never call
-            // lockTouchLocked/unlockTouchLocked/hide() from IO thread.
-            // Give the main thread up to PROCESSING_RESET_TIMEOUT_MS to execute; if it
-            // is stalled, fall back to resetting the flag only (no WindowManager call)
-            // so subsequent touches are not silently lost.
-            val mainDispatchSucceeded = withTimeoutOrNull(PROCESSING_RESET_TIMEOUT_MS) {
-                withContext(Dispatchers.Main) { true }
-            } != null
-            if (!mainDispatchSucceeded) {
-                synchronized(this@ManualTouchRecordLoader) { isProcessing = false }
-                return@launch
+        }
+    }
+
+    private suspend fun processQueuedGesture(gesture: ManualOverlayTouchGesture): Boolean {
+        var sessionStillActive = withContext(Dispatchers.Main) {
+            synchronized(this@ManualTouchRecordLoader) {
+                val active = HumanTrajectoryLearningSession.isActive() &&
+                    !HumanTrajectoryLearningSession.isPaused()
+                if (active) {
+                    unlockTouchLocked()
+                }
+                active
             }
-            withContext(Dispatchers.Main) {
-                var shouldKeepRecording = false
-                var shouldStayUnlockedForIme = false
-                synchronized(this@ManualTouchRecordLoader) {
-                    isProcessing = false
-                    if (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
-                        if (isImeVisibleLocked()) {
-                            shouldStayUnlockedForIme = true
-                            scheduleImeRelockLocked()
-                        } else {
+        }
+        if (!sessionStillActive) return false
+
+        var executed = false
+        var recorded = false
+        runCatching {
+            delay(OVERLAY_UNLOCK_REPLAY_DELAY_MS)
+            val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture) {
+                withContext(Dispatchers.Main) {
+                    synchronized(this@ManualTouchRecordLoader) {
+                        if (overlayView?.isAttachedToWindow == true &&
+                            HumanTrajectoryLearningSession.isActive() &&
+                            !HumanTrajectoryLearningSession.isPaused()) {
                             lockTouchLocked()
                         }
-                        shouldKeepRecording = true
-                    } else {
-                        hide()
-                    }
-                }
-                if (shouldKeepRecording) {
-                    ManualRecordingControlOverlay.ensureOnTop()
-                    if (shouldStayUnlockedForIme) {
-                        ManualRecordingControlOverlay.showTransientStatus("输入中", 1400L)
                     }
                 }
             }
+            executed = replayResult.executed
+            recorded = replayResult.recorded
+        }.onFailure { error ->
+            OmniLog.w(TAG, "record overlay gesture failed: ${error.message}")
         }
+
+        if (executed && recorded) {
+            withContext(Dispatchers.Main) { showGestureFeedback(gesture) }
+        } else if (executed && !recorded) {
+            withContext(Dispatchers.Main) {
+                ManualRecordingControlOverlay.showTransientStatus("录制失败", 1000L)
+            }
+        }
+
+        sessionStillActive = withContext(Dispatchers.Main) {
+            synchronized(this@ManualTouchRecordLoader) {
+                val active = HumanTrajectoryLearningSession.isActive() &&
+                    !HumanTrajectoryLearningSession.isPaused()
+                if (active) {
+                    lockTouchLocked()
+                    if (gesture.actionName == "click" && executed) {
+                        scheduleImeVisibilityProbeLocked()
+                    }
+                }
+                active
+            }
+        }
+        if (!sessionStillActive) return false
+        return true
     }
 
     private fun showGestureFeedback(gesture: ManualOverlayTouchGesture) {
@@ -331,6 +379,46 @@ object ManualTouchRecordLoader {
         }
     }
 
+    private fun scheduleImeVisibilityProbeLocked() {
+        if (imeBypassJob?.isActive == true || imeVisibilityProbeJob?.isActive == true) return
+        imeVisibilityProbeJob = recordScope.launch {
+            delay(IME_VISIBILITY_PROBE_DELAY_MS)
+            val deadline = System.currentTimeMillis() + IME_VISIBILITY_PROBE_TIMEOUT_MS
+            var appeared = false
+            while (System.currentTimeMillis() <= deadline &&
+                HumanTrajectoryLearningSession.isActive() &&
+                !HumanTrajectoryLearningSession.isPaused()
+            ) {
+                appeared = withContext(Dispatchers.Main) {
+                    synchronized(this@ManualTouchRecordLoader) {
+                        isImeVisibleLocked()
+                    }
+                }
+                if (appeared) break
+                delay(IME_VISIBILITY_PROBE_POLL_MS)
+            }
+
+            var shouldShowInputStatus = false
+            withContext(Dispatchers.Main) {
+                synchronized(this@ManualTouchRecordLoader) {
+                    imeVisibilityProbeJob = null
+                    if (appeared &&
+                        HumanTrajectoryLearningSession.isActive() &&
+                        !HumanTrajectoryLearningSession.isPaused()) {
+                        unlockTouchLocked()
+                        shouldShowInputStatus = true
+                        scheduleImeRelockLocked()
+                    }
+                }
+            }
+            if (shouldShowInputStatus) {
+                withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.showTransientStatus("输入中", 1400L)
+                }
+            }
+        }
+    }
+
     private fun scheduleImeRelockLocked() {
         if (imeBypassJob?.isActive == true) return
         imeBypassJob = recordScope.launch {
@@ -354,25 +442,10 @@ object ManualTouchRecordLoader {
                     }
                 }
                 if (relocked) {
-                    ManualRecordingControlOverlay.ensureOnTop()
                     ManualRecordingControlOverlay.showTransientStatus("继续录制", 700L)
                 }
             }
         }
-    }
-
-    /** Polls until the soft keyboard is visible or [IME_WAIT_TIMEOUT_MS] elapses.
-     *  Returns true if the keyboard appeared, false if timed out. */
-    private suspend fun awaitImeVisible(): Boolean {
-        val deadline = System.currentTimeMillis() + IME_WAIT_TIMEOUT_MS
-        while (System.currentTimeMillis() < deadline) {
-            val visible = withContext(Dispatchers.Main) {
-                synchronized(this@ManualTouchRecordLoader) { isImeVisibleLocked() }
-            }
-            if (visible) return true
-            delay(IME_POLL_MS)
-        }
-        return false
     }
 
     private fun isImeVisibleLocked(): Boolean {
@@ -382,8 +455,7 @@ object ManualTouchRecordLoader {
                 return true
             }
         }
-        // Fallback: scan accessibility windows — works for TYPE_ACCESSIBILITY_OVERLAY
-        // which does not receive IME inset updates from the WindowManager.
+        // Fallback: scan accessibility windows when overlay insets are unavailable.
         return AssistsService.instance?.windows?.any { window ->
             window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
         } == true
@@ -398,6 +470,7 @@ object ManualTouchRecordLoader {
     }
 
     private fun updateTouchableLocked(touchable: Boolean) {
+        if (currentTouchable == touchable) return
         val view = overlayView ?: return
         val manager = windowManager ?: return
         val context = view.context ?: return
@@ -405,17 +478,25 @@ object ManualTouchRecordLoader {
         val params = buildParams(context, touchable)
         overlayParams = params
         runCatching { manager.updateViewLayout(view, params) }
+            .onSuccess { currentTouchable = touchable }
             .onFailure { OmniLog.w(TAG, "update touchable=$touchable failed: ${it.message}") }
     }
 
     private fun clampRawPoint(event: MotionEvent): PointF {
-        val displaySize = realDisplaySize(overlayView?.context ?: UIKit.appContext)
+        val displaySize = currentDisplaySize()
         val maxX = (displaySize.x - 1).coerceAtLeast(0).toFloat()
         val maxY = (displaySize.y - 1).coerceAtLeast(0).toFloat()
         return PointF(
             event.rawX.coerceIn(0f, maxX),
             event.rawY.coerceIn(0f, maxY)
         )
+    }
+
+    private fun currentDisplaySize(): Point {
+        val width = displayWidth
+        val height = displayHeight
+        if (width > 0 && height > 0) return Point(width, height)
+        return realDisplaySize(overlayView?.context ?: UIKit.appContext)
     }
 
     private fun realDisplaySize(context: Context?): Point {

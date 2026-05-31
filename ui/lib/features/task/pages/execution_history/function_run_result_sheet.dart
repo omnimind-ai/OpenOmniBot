@@ -119,8 +119,8 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
     _result = widget.initialResult;
   }
 
-  Future<void> _continueWithVlm() async {
-    if (_continuing || !_result.canContinueWithVlm) return;
+  Future<void> _continueWithAgent() async {
+    if (_continuing || !_result.canContinueWithAgent) return;
     final functionId = _result.functionId.trim();
     if (functionId.isEmpty) return;
     setState(() => _continuing = true);
@@ -128,7 +128,6 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
       final next = await AssistsMessageService.runOobReusableFunction(
         functionId: functionId,
         arguments: widget.arguments,
-        allowVlmFallback: true,
         localReplayResult: _result.rawJson,
       );
       if (!mounted) return;
@@ -138,10 +137,10 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
       });
       showToast(
         next.success
-            ? _text(context, '已交给 VLM 继续执行', 'Continuing with VLM')
+            ? _text(context, '已交给 Agent 继续执行', 'Continuing with Agent')
             : (_resultErrorText(next).isNotEmpty
                   ? _resultErrorText(next)
-                  : _text(context, 'VLM 继续执行失败', 'VLM continuation failed')),
+                  : _text(context, 'Agent 继续执行失败', 'Agent continuation failed')),
         type: next.success ? ToastType.success : ToastType.error,
       );
     } catch (error) {
@@ -282,12 +281,12 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
                       16,
                       14,
                       16,
-                      result.canContinueWithVlm ? 96 : 24,
+                      result.canContinueWithAgent ? 96 : 24,
                     ),
                     child: FunctionRunResultInlinePanel(result: result),
                   ),
                 ),
-                if (result.canContinueWithVlm)
+                if (result.canContinueWithAgent)
                   SafeArea(
                     top: false,
                     child: Container(
@@ -300,7 +299,7 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
                         ),
                       ),
                       child: FilledButton.icon(
-                        onPressed: _continuing ? null : _continueWithVlm,
+                        onPressed: _continuing ? null : _continueWithAgent,
                         icon: _continuing
                             ? const SizedBox(
                                 width: 16,
@@ -313,7 +312,7 @@ class _FunctionRunResultSheetState extends State<_FunctionRunResultSheet> {
                         label: Text(
                           _continuing
                               ? _text(context, '正在继续执行', 'Continuing')
-                              : _text(context, '用 VLM 继续', 'Continue with VLM'),
+                              : _text(context, '用 Agent 继续', 'Continue with Agent'),
                         ),
                       ),
                     ),
@@ -846,7 +845,7 @@ String _runStateText(
     return _text(context, 'VLM 执行完成', 'Completed by VLM');
   }
   if (result.startedAgentFallback) {
-    return _text(context, '已交给 VLM 继续执行', 'Handed off to VLM');
+    return _text(context, '已交给 Agent 继续执行', 'Handed off to Agent');
   }
   if (result.completedLocal) {
     return _text(context, '本地执行完成', 'Completed locally');

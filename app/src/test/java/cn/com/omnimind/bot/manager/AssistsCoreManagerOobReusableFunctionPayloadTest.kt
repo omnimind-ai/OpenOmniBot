@@ -67,6 +67,7 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
         val payload = buildOobReusableFunctionAgentFallbackPayload(
             functionId = "open_settings_then_vlm",
             taskId = "agent-task-1",
+            conversationId = 42L,
             started = true,
             startErrorCode = null,
             startErrorMessage = null,
@@ -89,6 +90,8 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
         )
         val terminalState = payload["terminal_state"] as Map<*, *>
         assertEquals("agent-task-1", terminalState["agent_task_id"])
+        assertEquals(42L, terminalState["conversationId"])
+        assertEquals(42L, terminalState["conversation_id"])
         assertEquals(true, terminalState["agent_task_started"])
         assertEquals(1, terminalState["local_steps_completed"])
         assertEquals(1, terminalState["agent_steps_pending"])
@@ -98,6 +101,8 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
         assertEquals(timing, terminalState["timing"])
         val context = payload["context"] as Map<*, *>
         assertEquals("agent-task-1", context["agent_task_id"])
+        assertEquals(42L, context["conversationId"])
+        assertEquals(42L, context["conversation_id"])
         assertEquals(1, context["local_steps_completed"])
         assertEquals(1, context["agent_steps_pending"])
         assertEquals(2, context["step_count"])

@@ -28,15 +28,16 @@ Starts OOB's native Kotlin human recorder. Press Ctrl-C to finish recording.
 The script only sends adb broadcasts; recording and RunLog generation happen
 inside the Android app through ManualVlmTraceRecorder + InternalRunLogStore.
 
-The recorder uses Accessibility events as the default action source. Raw
-getevent is disabled by default; pass --enable-raw-touch or
---require-raw-touch to opt into app/su/Shizuku raw collection. It requires the
-OOB debug APK and OOB Accessibility service to be enabled.
+The recorder records replayable actions only from concrete touch capture:
+the product overlay path, debug overlay gestures, or optional raw getevent.
+Accessibility events are retained as evidence only and must not become action
+backends. OOB debug APK and OOB Accessibility service are required.
 
 For deterministic device validation, pass --debug-overlay-gestures. That uses
 the debug receiver to send synthetic overlay gestures through the same
 HumanTrajectoryLearningSession.recordOverlayGesture backend used by the product
-manual recording overlay, then finishes automatically.
+manual recording overlay, then verifies overlay_touch actions with before XML
+and finishes automatically.
 EOF
 }
 
@@ -129,11 +130,13 @@ RECEIVER="$PACKAGE_NAME/$RECEIVER_CLASS"
 START_FILE="files/debug-human-run-recording-start.json"
 RESULT_FILE="files/debug-human-run-recording-result.json"
 STATUS_FILE="files/debug-human-run-recording-status.json"
+GESTURE_FILE="files/debug-human-run-recording-gesture.json"
 START_TMP="$(mktemp -t oob-human-start.XXXXXX.json)"
 RESULT_TMP="$(mktemp -t oob-human-result.XXXXXX.json)"
+GESTURE_TMP="$(mktemp -t oob-human-gesture.XXXXXX.json)"
 FINISHED=0
 cleanup() {
-  rm -f "$START_TMP" "$RESULT_TMP"
+  rm -f "$START_TMP" "$RESULT_TMP" "$GESTURE_TMP"
 }
 trap cleanup EXIT
 
@@ -197,6 +200,25 @@ send_recording_op() {
     "$@" >/dev/null
 }
 
+send_overlay_gesture_and_wait() {
+  "${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$GESTURE_FILE" >/dev/null 2>&1 || true
+  send_recording_op gesture "$@"
+  wait_for_file "$GESTURE_FILE" "$GESTURE_TMP"
+  python3 - "$GESTURE_TMP" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if (
+    data.get("success") is not True
+    or data.get("executed") is not True
+    or data.get("recorded") is not True
+):
+    print(json.dumps(data, ensure_ascii=False, indent=2), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 run_debug_overlay_gestures() {
   local size width height tap_x tap_y swipe_x swipe_y1 swipe_y2
   size="$("${ADB[@]}" shell wm size | tr -d '\r' | awk -F': ' '/Physical size/ {print $2; exit}')"
@@ -215,7 +237,7 @@ run_debug_overlay_gestures() {
   sleep 1
   send_recording_op resume
   sleep 1
-  send_recording_op gesture \
+  send_overlay_gesture_and_wait \
     --es actionName click \
     --es x "$tap_x" \
     --es y "$tap_y" \
@@ -223,7 +245,7 @@ run_debug_overlay_gestures() {
     --es displayWidth "$width" \
     --es displayHeight "$height"
   sleep 1
-  send_recording_op gesture \
+  send_overlay_gesture_and_wait \
     --es actionName swipe \
     --es x1 "$swipe_x" \
     --es y1 "$swipe_y1" \
@@ -251,7 +273,7 @@ finish_and_exit() {
   fi
   local summary_status
   set +e
-  python3 - "$RESULT_TMP" "$OUTPUT_PATH" "$DEVICE_SERIAL" "$PACKAGE_NAME" "$REQUIRE_RAW_TOUCH" "$EXPECTED_CLICKS" "$EXPECTED_SWIPES" "$RAW_EVENT_OUTPUT" "$ARTIFACT_DIR" <<'PY'
+  python3 - "$RESULT_TMP" "$OUTPUT_PATH" "$DEVICE_SERIAL" "$PACKAGE_NAME" "$REQUIRE_RAW_TOUCH" "$EXPECTED_CLICKS" "$EXPECTED_SWIPES" "$RAW_EVENT_OUTPUT" "$ARTIFACT_DIR" "$DEBUG_OVERLAY_GESTURES" <<'PY'
 import json
 import re
 import shutil
@@ -266,6 +288,7 @@ expected_clicks = int(sys.argv[6]) if sys.argv[6].strip() else None
 expected_swipes = int(sys.argv[7]) if sys.argv[7].strip() else None
 raw_event_output = sys.argv[8].strip()
 artifact_dir_arg = sys.argv[9].strip()
+debug_overlay = sys.argv[10] == "1"
 data = json.load(open(result_path, encoding="utf-8"))
 run_log = data.get("run_log") or {}
 if not isinstance(run_log, dict) or not run_log:
@@ -291,6 +314,13 @@ raw_touch = diagnostics.get("raw_touch") or {}
 raw_event_stream = raw_touch.get("event_stream") or {}
 manual_recording = diagnostics.get("manual_recording") or {}
 window_transitions = diagnostics.get("unattributed_window_transitions") or {}
+allowed_backends = {
+    "overlay_touch",
+    "overlay_touch_text_input",
+    "device_getevent",
+    "device_getevent_text_input",
+}
+debug_overlay_backends = {"overlay_touch", "overlay_touch_text_input"}
 actions = data.get("actions") or []
 if not actions:
     actions = [
@@ -385,6 +415,7 @@ for fallback_index, card in enumerate(cards, start=1):
     source_context = as_map(card.get("source_context"))
     before_xml = observation_xml(card, "before")
     after_xml = observation_xml(card, "after")
+    recording_backend = as_map(card.get("params")).get("recording_backend")
 
     for side, xml in (("before", before_xml), ("after", after_xml)):
         if not xml:
@@ -458,7 +489,7 @@ for fallback_index, card in enumerate(cards, start=1):
         "duration_ms": card.get("duration_ms"),
         "source": card.get("source"),
         "compile_kind": card.get("compile_kind"),
-        "recording_backend": as_map(card.get("params")).get("recording_backend"),
+        "recording_backend": recording_backend,
         "has_before_xml": bool(before_xml),
         "has_after_xml": bool(after_xml),
         "has_before_screenshot": bool(screenshot_ref(card, "before")),
@@ -490,12 +521,29 @@ missing_after_xml = [row["step_index"] for row in action_rows if not row["has_af
 missing_before_screenshot = [row["step_index"] for row in action_rows if not row["has_before_screenshot"]]
 missing_after_screenshot = [row["step_index"] for row in action_rows if not row["has_after_screenshot"]]
 missing_source_context = [row["step_index"] for row in action_rows if not row["has_source_context"]]
+backend_counts = {}
+for row in action_rows:
+    backend = row.get("recording_backend")
+    key = str(backend) if backend is not None else "<missing>"
+    backend_counts[key] = backend_counts.get(key, 0) + 1
+unexpected_backend_steps = [
+    row["step_index"] for row in action_rows
+    if row.get("recording_backend") not in allowed_backends
+]
+a11_backend_steps = [
+    row["step_index"] for row in action_rows
+    if row.get("recording_backend") == "accessibility_event"
+]
+non_overlay_backend_steps = [
+    row["step_index"] for row in action_rows
+    if row.get("recording_backend") not in debug_overlay_backends
+]
 source_null_steps = [
     row["step_index"] for row in action_rows
     if row.get("event_type") and row.get("event_has_source") is False
 ]
 audit = {
-    "schema_version": "oob.manual_recording_audit.v1",
+    "schema_version": "oob.manual_recording_audit.v2",
     "success": data.get("success") is True,
     "run_id": data.get("run_id") or run_log.get("run_id"),
     "action_count": len(action_rows),
@@ -507,6 +555,8 @@ audit = {
     "a11_event_count": len(a11_events),
     "raw_getevent_line_count": raw_event_stream.get("line_count") or len(raw_events),
     "raw_getevent_retained_line_count": len(raw_events),
+    "recording_backend_counts": backend_counts,
+    "a11_replay_actions_enabled": manual_recording.get("a11_replay_actions_enabled"),
     "coverage": {
         "before_xml_steps": len(action_rows) - len(missing_before_xml),
         "after_xml_steps": len(action_rows) - len(missing_after_xml),
@@ -520,11 +570,15 @@ audit = {
         "before_screenshot_steps": missing_before_screenshot,
         "after_screenshot_steps": missing_after_screenshot,
         "source_context_steps": missing_source_context,
+        "unexpected_backend_steps": unexpected_backend_steps,
+        "a11_backend_steps": a11_backend_steps,
+        "non_overlay_backend_steps": non_overlay_backend_steps if debug_overlay else [],
     },
     "diagnostics": {
         "recording_completeness": manual_recording.get("completeness"),
         "recording_action_source": manual_recording.get("action_source"),
         "guarantees_no_missing_clicks": manual_recording.get("guarantees_no_missing_clicks"),
+        "a11_replay_actions_enabled": manual_recording.get("a11_replay_actions_enabled"),
         "source_null_event_steps": source_null_steps,
         "warnings": warnings,
     },
@@ -606,6 +660,10 @@ summary = {
     "screenshot_local_copy_count": audit["screenshot_local_copy_count"],
     "missing_before_xml_steps": missing_before_xml,
     "missing_after_xml_steps": missing_after_xml,
+    "unexpected_backend_steps": unexpected_backend_steps,
+    "a11_backend_steps": a11_backend_steps,
+    "non_overlay_backend_steps": non_overlay_backend_steps if debug_overlay else [],
+    "recording_backend_counts": backend_counts,
     "missing_before_screenshot_steps": missing_before_screenshot,
     "missing_after_screenshot_steps": missing_after_screenshot,
     "recording_completeness": manual_recording.get("completeness"),
@@ -639,6 +697,27 @@ if require_raw and manual_recording.get("guarantees_no_missing_clicks") is not T
 if require_raw and (raw_touch.get("recorded_gesture_count") or 0) < click_count + swipe_count:
     print("raw touch diagnostics do not cover recorded click/swipe actions", file=sys.stderr)
     sys.exit(1)
+if manual_recording.get("a11_replay_actions_enabled") is not False:
+    print("A11 replay actions must stay disabled", file=sys.stderr)
+    sys.exit(1)
+if a11_backend_steps:
+    print(f"A11-only action backend recorded at steps {a11_backend_steps}", file=sys.stderr)
+    sys.exit(1)
+if unexpected_backend_steps:
+    print(f"unexpected action backend at steps {unexpected_backend_steps}", file=sys.stderr)
+    sys.exit(1)
+if missing_before_xml:
+    print(f"missing before XML at steps {missing_before_xml}", file=sys.stderr)
+    sys.exit(1)
+if debug_overlay and non_overlay_backend_steps:
+    print(f"debug overlay validation expected overlay_touch backends, got other backends at steps {non_overlay_backend_steps}", file=sys.stderr)
+    sys.exit(1)
+if debug_overlay and manual_recording.get("action_source") not in ("overlay_touch", "mixed_real_touch"):
+    print(f"debug overlay validation expected overlay_touch action source, got {manual_recording.get('action_source')}", file=sys.stderr)
+    sys.exit(1)
+if debug_overlay and manual_recording.get("guarantees_no_missing_clicks") is not True:
+    print("debug overlay validation did not report no-missing-click guarantee", file=sys.stderr)
+    sys.exit(1)
 if expected_clicks is not None and click_count < expected_clicks:
     print(f"expected at least {expected_clicks} clicks, got {click_count}", file=sys.stderr)
     sys.exit(1)
@@ -654,7 +733,7 @@ PY
 
 "${ADB[@]}" get-state >/dev/null
 require_unlocked_device
-"${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$START_FILE" "$RESULT_FILE" "$STATUS_FILE" >/dev/null 2>&1 || true
+"${ADB[@]}" shell run-as "$PACKAGE_NAME" rm -f "$START_FILE" "$RESULT_FILE" "$STATUS_FILE" "$GESTURE_FILE" >/dev/null 2>&1 || true
 
 "${ADB[@]}" shell am broadcast \
   -a "$ACTION" \

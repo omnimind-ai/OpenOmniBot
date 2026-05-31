@@ -726,20 +726,21 @@ Manual takeover is integrated with pause/resume:
 6. Recorder summary is appended as external memory so VLM continues from the
    current screen.
 
-`ManualVlmTraceRecorder` uses Accessibility events as the default replayable
-action source. Raw `getevent` capture is opt-in enrichment and is not activated
-by default; when explicitly enabled and available it adds raw click/swipe
-evidence and retained event lines. Raw access failure must not make a non-empty
-A11 recording fail.
+`ManualVlmTraceRecorder` is loss-intolerant. Replayable actions must come from
+concrete input backends: `overlay_touch`, `overlay_touch_text_input`,
+`device_getevent`, or `device_getevent_text_input`. Accessibility events are
+evidence only: they may update XML/page state, focus/text diagnostics,
+screenshots, and audit counters, but they must not create replayable
+`click`, `long_press`, `swipe`, or `input_text` steps by themselves. A text
+input step also requires a real touch/input anchor; Accessibility text changes
+alone are diagnostics.
 
-- `TYPE_VIEW_CLICKED` -> `click`
-- `TYPE_VIEW_LONG_CLICKED` -> `long_press`
-- `TYPE_VIEW_TEXT_CHANGED` -> pending `input_text`
-- `TYPE_VIEW_SCROLLED` -> pending `swipe` only when scroll deltas, scroll
-  offsets, or list index changes identify direction; viewport-only scroll
-  baselines are evidence but not replay actions
-- `TYPE_WINDOW_CONTENT_CHANGED` and `TYPE_WINDOW_STATE_CHANGED` update XML
-  snapshots
+Every manual action must have a before XML snapshot captured before that action.
+If before XML is missing, the concrete gesture cannot be executed, or execution
+succeeds but the action append fails, the recorder reports failure instead of
+writing a partial or A11-derived RunLog step.
+
+See `docs/omniflow/manual-runlog-recording.md` for the canonical policy.
 
 It ignores OOB's own package and labels such as takeover/resume/OOB overlay
 controls. It redacts password fields as `[REDACTED]`. It coalesces duplicate
@@ -760,9 +761,11 @@ Manual RunLog cards use:
   `source_context.dst_ctx.screenshot`; it does not embed screenshot base64.
 
 The debug CLI `scripts/oob-record-human-run.sh` finishes a native Kotlin
-recording and exports an artifact bundle. It defaults to A11Event-only
-recording; `--enable-raw-touch` opts into raw collection, and
-`--require-raw-touch` opts in plus fails validation if raw is unavailable.
+recording and exports an artifact bundle. Its audit rejects A11-only replay
+actions, rejects actions without before XML, and requires every backend to be
+one of the concrete manual recording backends. `--enable-raw-touch` keeps raw
+device input capture available where supported, and `--require-raw-touch` opts
+in plus fails validation if raw input is unavailable.
 
 The shared status source is `HumanTrajectoryLearningSession.status()`. UI
 overlay controls, Flutter MethodChannel status, and debug broadcast `status`
@@ -772,7 +775,7 @@ read the same schema:
 active / paused / run_id / name / description / started_at_ms
 action_count / latest_action_summary / pending_action_summary
 accessibility_event_count / raw_touch_enabled / raw_touch_available
-recording_backend
+recording_backend / a11_replay_actions_enabled
 ```
 
 The UI path may show `ManualRecordingControlOverlay` with start/pause/resume,
@@ -793,8 +796,9 @@ paths stay headless and never show that overlay unless a future explicit
 
 `manifest.json` uses `schema_version =
 "oob.manual_recording_artifact.v1"`. The audit records action counts,
-click/swipe counts, XML/screenshot coverage, A11 event count, retained raw
-getevent line count, source-null event steps, and warnings such as failed
+click/swipe counts, backend counts, XML/screenshot coverage, A11 event count,
+retained raw getevent line count, A11-backend violations, missing-before-XML
+violations, unexpected backend violations, and warnings such as failed
 screenshot copy. Screenshot files are copied from app-private storage with
 `adb shell run-as <package> cat <path>` when possible; copy failure is a
 diagnostic warning, not a recording failure.
@@ -1491,5 +1495,7 @@ For a complete local validation pass:
   app-state success. Always validate final device state for task claims.
 - Coordinate replay depends on source/current XML quality. Anchor projection
   can fail if the target page is structurally different or inaccessible.
-- Manual recording uses semantic Accessibility events, so it records click,
-  long press, text, and simple scroll. It is not raw gesture trajectory capture.
+- Manual recording no longer accepts semantic Accessibility events as
+  replayable actions. If the overlay/raw concrete input path cannot capture an
+  action with before XML, the correct failure mode is a recording failure, not
+  an A11-derived click, long press, text, or scroll step.

@@ -41,7 +41,7 @@ class OmnibotWorkspacePage extends StatefulWidget {
     required this.workspacePath,
     this.workspaceId,
     this.workspaceShellPath,
-    this.startInProjectMode = false,
+    this.startInProjectMode = true,
   });
 
   @override
@@ -53,15 +53,13 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
       GlobalKey<OmnibotWorkspaceBrowserState>();
   bool _browserCanGoUp = false;
   late _OmnibotWorkspaceMode _mode;
-  bool _projectModeToggleInFlight = false;
 
   @override
   void initState() {
     super.initState();
-    _mode = _OmnibotWorkspaceMode.work;
-    if (widget.startInProjectMode) {
-      unawaited(_setWorkspaceMode(_OmnibotWorkspaceMode.project));
-    }
+    _mode = widget.startInProjectMode
+        ? _OmnibotWorkspaceMode.project
+        : _OmnibotWorkspaceMode.work;
   }
 
   String? _cachedWorkspaceDirectory(String rootPath) {
@@ -88,27 +86,6 @@ class _OmnibotWorkspacePageState extends State<OmnibotWorkspacePage> {
 
   Future<void> _setWorkspaceMode(_OmnibotWorkspaceMode mode) async {
     if (_mode == mode) return;
-    if (mode == _OmnibotWorkspaceMode.project) {
-      if (_projectModeToggleInFlight) return;
-      _projectModeToggleInFlight = true;
-      try {
-        final activeProject = await NativeWorkbenchProjectBackend()
-            .getActiveProject();
-        if (!mounted) return;
-        if (activeProject == null) {
-          showToast(
-            AppTextLocalizer.choose(
-              zh: '请先在 Project 中激活一个项目',
-              en: 'Activate a Project first',
-            ),
-            type: ToastType.warning,
-          );
-          return;
-        }
-      } finally {
-        _projectModeToggleInFlight = false;
-      }
-    }
     setState(() => _mode = mode);
   }
 

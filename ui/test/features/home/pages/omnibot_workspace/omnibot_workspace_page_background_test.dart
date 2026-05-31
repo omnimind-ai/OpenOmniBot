@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ui/features/home/pages/omnibot_workspace/omnibot_workspace_page.dart';
 import 'package:ui/services/app_background_service.dart';
+import 'package:ui/services/storage_service.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
 
 class _SvgTestAssetBundle extends CachingAssetBundle {
@@ -38,6 +40,8 @@ void main() {
   testWidgets(
     'workspace page renders shared background layer and translucent bar',
     (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService.init();
       final workspacePath = Directory.systemTemp.path;
 
       AppBackgroundService.notifier.value = const AppBackgroundConfig(

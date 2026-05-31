@@ -131,7 +131,7 @@ void main() {
   );
 
   testWidgets(
-    'Reusable command result separates local completion from VLM fallback',
+    'Reusable command result separates local completion from Agent fallback',
     (tester) async {
       final result = UtgManualRunResult.fromMap(<String, dynamic>{
         'success': true,
@@ -141,7 +141,7 @@ void main() {
         'terminal_state': <String, dynamic>{
           'status': 'started_agent_fallback',
           'execution_status': 'started_agent_fallback',
-          'taskId': 'task-vlm-1',
+          'taskId': 'task-agent-1',
           'model_required': true,
           'runner': 'oob_mixed_runner',
           'local_steps_completed': 1,
@@ -184,7 +184,7 @@ void main() {
 
       expect(result.startedAgentFallback, isTrue);
       expect(result.completedLocal, isFalse);
-      expect(_richTextContaining('状态  已交给 VLM 继续执行'), findsOneWidget);
+      expect(_richTextContaining('状态  已交给 Agent 继续执行'), findsOneWidget);
       expect(_richTextContaining('步骤  1/3'), findsOneWidget);
       expect(find.text('started_agent_fallback'), findsNothing);
       expect(find.text('Runner'), findsNothing);
@@ -244,7 +244,7 @@ void main() {
     expect(find.text('OOB_ACCESSIBILITY_REQUIRED'), findsNothing);
   });
 
-  testWidgets('Failed local replay offers explicit VLM continuation', (
+  testWidgets('Failed local replay offers explicit Agent continuation', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -254,12 +254,14 @@ void main() {
           return <String, dynamic>{
             'success': true,
             'function_id': 'search_settings',
-            'execution_status': 'completed_vlm_fallback',
+            'execution_status': 'started_agent_fallback',
             'terminal_state': <String, dynamic>{
-              'status': 'completed_vlm_fallback',
-              'execution_status': 'completed_vlm_fallback',
+              'status': 'started_agent_fallback',
+              'execution_status': 'started_agent_fallback',
+              'taskId': 'task-agent-2',
+              'model_required': true,
               'step_count': 2,
-              'success_step_count': 2,
+              'success_step_count': 1,
             },
           };
         });
@@ -322,14 +324,14 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('用 VLM 继续'), findsOneWidget);
-    await tester.tap(find.text('用 VLM 继续'));
+    expect(find.text('用 Agent 继续'), findsOneWidget);
+    await tester.tap(find.text('用 Agent 继续'));
     await tester.pumpAndSettle();
 
     expect(calls, hasLength(1));
     final args = Map<String, dynamic>.from(calls.single.arguments as Map);
     expect(args['functionId'], 'search_settings');
-    expect(args['allowVlmFallback'], isTrue);
+    expect(args.containsKey('allowVlmFallback'), isFalse);
     expect(
       Map<String, dynamic>.from(args['arguments'] as Map)['query'],
       'bluetooth',

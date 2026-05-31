@@ -183,27 +183,27 @@ class AgentToolRegistryOobFunctionTest {
     }
 
     @Test
-    fun `registered oob function is hidden as model tool by default`() {
+    fun `registered oob function is exposed as model tool by default`() {
         val context = TempFilesContext()
         try {
             val functionId = "oob_registered_text_input"
             val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
             assertEquals(true, register["success"])
-            assertEquals(false, register["oob_function_as_tool_enabled"])
+            assertEquals(true, register["oob_function_as_tool_enabled"])
 
             val registry = AgentToolRegistry(
                 context = context,
                 discoveredServers = emptyList(),
             )
 
-            assertFalse(registry.toolsForModel.any { it.function.name == functionId })
+            assertTrue(registry.toolsForModel.any { it.function.name == functionId })
         } finally {
             context.root.deleteRecursively()
         }
     }
 
     @Test
-    fun `legacy bare enabled oob function preference is ignored until user explicitly enables`() {
+    fun `legacy bare enabled oob function preference does not disable default exposure`() {
         val context = TempFilesContext()
         try {
             context.getSharedPreferences("agent_tool_features", Context.MODE_PRIVATE)
@@ -213,14 +213,14 @@ class AgentToolRegistryOobFunctionTest {
             val functionId = "oob_legacy_bare_disabled"
             val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
             assertEquals(true, register["success"])
-            assertEquals(false, register["oob_function_as_tool_enabled"])
+            assertEquals(true, register["oob_function_as_tool_enabled"])
 
             val registry = AgentToolRegistry(
                 context = context,
                 discoveredServers = emptyList(),
             )
 
-            assertFalse(registry.toolsForModel.any { it.function.name == functionId })
+            assertTrue(registry.toolsForModel.any { it.function.name == functionId })
         } finally {
             context.root.deleteRecursively()
         }

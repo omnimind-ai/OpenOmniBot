@@ -1,6 +1,5 @@
 package cn.com.omnimind.uikit.loader
 
-import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -12,7 +11,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
-import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.assists.HumanTrajectoryLearningSession
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.dpToPx
@@ -42,9 +40,9 @@ object ManualRecordingControlOverlay {
     private var dragStartX = 0
     private var dragStartY = 0
     private var dragging = false
-    private var dragPausedRecording = false
     private var transientStatusToken = 0
     private var captureStateCallback: (suspend () -> Map<String, Any?>)? = null
+    private var topEnsuredForCurrentAttachment: Boolean = false
 
     enum class State {
         PREPARING,
@@ -60,8 +58,7 @@ object ManualRecordingControlOverlay {
     ): Boolean {
         this.state = state
         val appContext = context?.applicationContext ?: UIKit.appContext
-        val accessibilityContext = AssistsService.instance
-        val safeContext = appContext ?: accessibilityContext ?: return false
+        val safeContext = appContext ?: return false
         return synchronized(this) {
             if (overlayView?.isAttachedToWindow == true) {
                 captureStateCallback = onCaptureState
@@ -70,16 +67,7 @@ object ManualRecordingControlOverlay {
             }
             dismissLocked()
             captureStateCallback = onCaptureState
-            val candidates = buildList {
-                accessibilityContext?.let { add(it to true) }
-                appContext?.let { add(it to false) }
-            }.distinctBy { it.first }
-            for ((candidateContext, useAccessibilityOverlay) in candidates) {
-                if (tryShow(candidateContext, useAccessibilityOverlay, state)) {
-                    return@synchronized true
-                }
-            }
-            false
+            tryShow(safeContext, state)
         }
     }
 
@@ -92,7 +80,18 @@ object ManualRecordingControlOverlay {
             bindState(overlayView, State.RECORDING)
             overlayView?.context
         }
-        ManualTouchRecordLoader.show(context ?: UIKit.appContext)
+        val shown = ManualTouchRecordLoader.show(context ?: UIKit.appContext)
+        if (shown) {
+            keepControlsAboveTouchRecorderOnce()
+        } else {
+            recordingControlScope.launch {
+                HumanTrajectoryLearningSession.pauseActive()
+                withContext(Dispatchers.Main) {
+                    markPaused()
+                    showTransientStatus("开启悬浮窗权限", 1400L)
+                }
+            }
+        }
     }
 
     /**
@@ -131,6 +130,12 @@ object ManualRecordingControlOverlay {
         }
     }
 
+    private fun hideTemporarily() {
+        synchronized(this) {
+            dismissLocked()
+        }
+    }
+
     private fun dismissLocked() {
         ManualTouchRecordLoader.hide()
         val view = overlayView
@@ -144,24 +149,10 @@ object ManualRecordingControlOverlay {
         windowManager = null
         overlayParams = null
         captureStateCallback = null
+        topEnsuredForCurrentAttachment = false
         if (view != null && manager != null && view.isAttachedToWindow) {
             runCatching { manager.removeView(view) }
                 .onFailure { OmniLog.w(TAG, "dismiss failed: ${it.message}") }
-        }
-    }
-
-    fun ensureOnTop() {
-        synchronized(this) {
-            val view = overlayView ?: return
-            val manager = windowManager ?: return
-            val params = overlayParams ?: return
-            if (!view.isAttachedToWindow) return
-            runCatching {
-                manager.removeView(view)
-                manager.addView(view, params)
-            }.onFailure { error ->
-                OmniLog.w(TAG, "ensure on top failed: ${error.message}")
-            }
         }
     }
 
@@ -187,7 +178,6 @@ object ManualRecordingControlOverlay {
 
     private fun tryShow(
         context: Context,
-        useAccessibilityOverlay: Boolean,
         state: State
     ): Boolean {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -196,11 +186,7 @@ object ManualRecordingControlOverlay {
         val screenWidth = context.resources.displayMetrics.widthPixels
         val params = WindowManager.LayoutParams().apply {
             type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (useAccessibilityOverlay && context is AccessibilityService) {
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                } else {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                }
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
@@ -221,18 +207,36 @@ object ManualRecordingControlOverlay {
             windowManager = manager
             overlayView = view
             overlayParams = params
+            topEnsuredForCurrentAttachment = false
             OmniLog.d(
                 TAG,
-                "manual recording control overlay shown type=${if (useAccessibilityOverlay) "accessibility" else "application"} state=$state"
+                "manual recording control overlay shown type=application state=$state"
             )
             true
         }.getOrElse { error ->
             OmniLog.e(
                 TAG,
-                "show failed type=${if (useAccessibilityOverlay) "accessibility" else "application"}: ${error.message}",
+                "show failed type=application: ${error.message}",
                 error
             )
             false
+        }
+    }
+
+    private fun keepControlsAboveTouchRecorderOnce() {
+        synchronized(this) {
+            if (topEnsuredForCurrentAttachment) return
+            val view = overlayView ?: return
+            val manager = windowManager ?: return
+            val params = overlayParams ?: return
+            if (!view.isAttachedToWindow) return
+            runCatching {
+                manager.removeView(view)
+                manager.addView(view, params)
+                topEnsuredForCurrentAttachment = true
+            }.onFailure { error ->
+                OmniLog.w(TAG, "keep controls above touch recorder failed: ${error.message}")
+            }
         }
     }
 
@@ -341,7 +345,7 @@ object ManualRecordingControlOverlay {
                 // Complete/cancel BEFORE dismiss so that dismiss() sees isActive()=false
                 // and does not trigger a redundant cancelActive().
                 recordingControlScope.launch {
-                    val updated = if (finishingState == State.READY || finishingState == State.PREPARING) {
+                    val updated = if (finishingState == State.PREPARING) {
                         HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
                     } else {
                         HumanTrajectoryLearningSession.completeActive()
@@ -394,15 +398,18 @@ object ManualRecordingControlOverlay {
         val callback = synchronized(this) { captureStateCallback } ?: return
         val previousState = synchronized(this) { state }
         val context = overlayView?.context ?: UIKit.appContext ?: return
-        val wasPaused = HumanTrajectoryLearningSession.isPaused()
-        val shouldResume = HumanTrajectoryLearningSession.isActive() &&
-            !wasPaused &&
-            HumanTrajectoryLearningSession.pauseActive()
-        if (shouldResume) {
-            markPaused()
-        }
-        dismiss()
+        // pauseActive() calls awaitOverlayRecordJobs() which blocks the calling thread.
+        // Must run on the IO thread — calling it on the main thread deadlocks against
+        // the IO coroutine's onGestureDispatched withContext(Main) callback.
         recordingControlScope.launch {
+            val wasPaused = HumanTrajectoryLearningSession.isPaused()
+            val shouldResume = HumanTrajectoryLearningSession.isActive() &&
+                !wasPaused &&
+                HumanTrajectoryLearningSession.pauseActive()
+            withContext(Dispatchers.Main) {
+                if (shouldResume) markPaused()
+                hideTemporarily()
+            }
             val result = runCatching { callback() }
                 .getOrElse { error ->
                     OmniLog.e(TAG, "manual recording state capture failed: ${error.message}", error)
@@ -467,7 +474,6 @@ object ManualRecordingControlOverlay {
                 dragStartX = params.x
                 dragStartY = params.y
                 dragging = false
-                dragPausedRecording = false
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -507,23 +513,11 @@ object ManualRecordingControlOverlay {
     }
 
     private fun beginDragRecordingSuppression() {
-        if (
-            HumanTrajectoryLearningSession.isActive() &&
-            !HumanTrajectoryLearningSession.isPaused() &&
-            HumanTrajectoryLearningSession.pauseActive()
-        ) {
-            dragPausedRecording = true
-            markPaused()
-        }
+        // Keep drag handling UI-only. Session state changes can wait for replay/XML
+        // work, and doing that inside ACTION_MOVE can trigger an overlay Input ANR.
     }
 
     private fun endDragRecordingSuppression() {
-        if (dragPausedRecording) {
-            if (HumanTrajectoryLearningSession.resumeActive()) {
-                markRecording()
-            }
-            dragPausedRecording = false
-        }
     }
 
     private fun bindState(view: View?, state: State) {
@@ -570,13 +564,13 @@ object ManualRecordingControlOverlay {
             isEnabled = true
             text = when (state) {
                 State.PREPARING -> "取消"
-                State.READY -> "取消"
+                State.READY -> "完成"
                 State.RECORDING -> "完成"
                 State.PAUSED -> "完成"
             }
             contentDescription = when (state) {
                 State.PREPARING -> "取消手动录制"
-                State.READY -> "取消手动录制"
+                State.READY -> "结束手动录制"
                 State.RECORDING -> "结束手动录制"
                 State.PAUSED -> "结束手动录制"
             }

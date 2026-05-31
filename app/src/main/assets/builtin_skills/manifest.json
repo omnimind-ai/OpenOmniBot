@@ -41,9 +41,19 @@
       "hasEvals": false
     },
     {
+      "id": "omniflow",
+      "name": "omniflow",
+      "description": "OmniFlow reusable Android GUI workflow skill. Use when the user wants to reuse, run, register, repair, enhance, analyze, or debug OOB RunLogs and saved Functions, including update_function, oob_function_run, RunLog evidence, replay fallback, checker design, action cleanup, \"应该点 A 而不是 B\", \"保存为复用指令\", \"增强 function\", \"从第 N 步继续\", and ad/popup optional checkers.",
+      "assetPath": "builtin_skills/omniflow",
+      "hasScripts": false,
+      "hasReferences": true,
+      "hasAssets": false,
+      "hasEvals": false
+    },
+    {
       "id": "omniflow-function-enhancer",
       "name": "omniflow-function-enhancer",
-      "description": "Enhance an existing OmniFlow reusable Function created from a RunLog. Use for 增强, RunLog 转 Function 增强, execution-structure enhancement planning, runtime parameters, agent_reuse metadata, background enhancement status, and explicit enhanced unchanged partial failed reporting.",
+      "description": "Enhance or repair an existing OmniFlow reusable Function created from a RunLog. Use for 增强, update_function, Function 纠错, \"应该点 A 而不是点 B\", runtime parameters, agent_reuse metadata, cleanup/noise annotations, background enhancement status, and explicit enhanced unchanged partial failed reporting.",
       "assetPath": "builtin_skills/omniflow-function-enhancer",
       "hasScripts": false,
       "hasReferences": true,
@@ -53,7 +63,7 @@
     {
       "id": "oob-function-management",
       "name": "oob-function-management",
-      "description": "Manage OOB reusable commands from chat. Use for RunLog registration, \"把上一条 runlog 注册了\", \"保存为复用指令\", \"转换轨迹\", \"执行复用指令\", update_function, list/get/delete reusable functions, and variable-parameter replay.",
+      "description": "Compatibility entry for OmniFlow Function management. Use for RunLog registration, \"把上一条 runlog 注册了\", \"保存为复用指令\", \"转换轨迹\", \"执行复用指令\", update_function, list/get/delete reusable functions, variable-parameter replay, and function_management profile prompts.",
       "assetPath": "builtin_skills/oob-function-management",
       "hasScripts": false,
       "hasReferences": false,
@@ -63,7 +73,7 @@
     {
       "id": "oob-project",
       "name": "oob-project",
-      "description": "OOB Workbench Project 完整生命周期总入口：新建 Project、更新、蒸馏、审查、HTML Display、Project Tool/API 设计、热更新、导出、PROJECT_SOUL/PROJECT_CONTEXT 维护。Use when the user says \"帮我做一个\", \"我想创建一个\", \"新建 Project\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", \"project review\", \"审查 project\", \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", \"产品分析\", \"GitHub 仓库分析\", or any intent to create, distill, modify, review, export, or maintain a persistent personal tool.",
+      "description": "OOB Workbench Project 完整生命周期总入口：新建 Project、更新、蒸馏、审查、结构化数据、Project Tool/API、Agent action、轻量 Display、热更新、导出、PROJECT_SOUL/PROJECT_CONTEXT 维护。Use when the user says \"帮我做一个\", \"我想创建一个\", \"新建 Project\", \"build me a\", \"make a [X] tracker/tool/app\", \"改一下界面\", \"加个字段\", \"新增功能\", \"修复\", \"project review\", \"审查 project\", \"总结成我们的 project\", \"蒸馏能力\", \"提取核心设计\", \"生成 soul\", \"把这个 app/项目变成 OOB Project\", \"产品分析\", \"GitHub 仓库分析\", or any intent to create, distill, modify, review, export, or maintain a persistent personal workflow or tool.",
       "assetPath": "builtin_skills/oob-project",
       "hasScripts": true,
       "hasReferences": true,

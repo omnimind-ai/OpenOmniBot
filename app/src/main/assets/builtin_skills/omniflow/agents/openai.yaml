@@ -1,0 +1,4 @@
+interface:
+  display_name: "OmniFlow"
+  short_description: "Reuse, repair, and analyze Android GUI Functions"
+  default_prompt: "Use $omniflow to register RunLogs as reusable Functions, run saved Functions, repair or enhance a Function through update_function, analyze RunLog evidence, design optional checkers, and resume replay from a failed step."

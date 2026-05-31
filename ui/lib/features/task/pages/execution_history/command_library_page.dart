@@ -3249,8 +3249,8 @@ String _runSuccessMessage(BuildContext context, UtgManualRunResult result) {
     final taskId = result.taskId;
     return _text(
       context,
-      taskId.isEmpty ? '已交给 VLM 继续执行' : '已交给 VLM 继续执行：$taskId',
-      taskId.isEmpty ? 'Handed off to VLM' : 'Handed off to VLM: $taskId',
+      taskId.isEmpty ? '已交给 Agent 继续执行' : '已交给 Agent 继续执行：$taskId',
+      taskId.isEmpty ? 'Handed off to Agent' : 'Handed off to Agent: $taskId',
     );
   }
   if (result.completedLocal) {

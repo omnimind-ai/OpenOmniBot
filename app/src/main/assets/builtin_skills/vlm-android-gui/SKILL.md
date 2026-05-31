@@ -7,11 +7,16 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 
 ## Step Guidance Essentials
 
+- Quick policy phrases for injected guidance: Pass `packageName` when known; OOB indexed page evidence chooses visible labels/roles; Focused editable input uses `type`; Slider/seekbar uses drag; use 0-1000 normalized coordinates with examples `x2=990` and `x1=990,y1=110,x2=10,y2=110`; x1 must be greater than x2 for leftward drag; Display brightness is a drag, do not click; Numeric keypad targets use visible digit clicks; Validate after at least two visible UI states; choose the simplest action.
 - First-step policy lives here; choose the simplest action that changes one variable, then verify.
+- AndroidWorld first-step policy: choose the first safe state-changing action,
+  then validate before continuing.
 - M3A/Mobilerun-style per-step loop: observe one fresh Accessibility tree /
   indexed UI state, current screenshot, short history, and previous tool result;
   choose one action, then use after-action feedback to correct the next step.
   Marked screenshots are optional fallback evidence, not the default.
+- M3A-style per-step loop means one observation, one action, one validation
+  result.
 - Mobilerun-style structured loop is a reference pattern, not a runtime
   replacement: inject current device state, indexed page evidence, screenshot,
   and the previous tool result; require exactly one executable tool call; then
@@ -44,6 +49,25 @@ description: Use for OOB VLM Android GUI automation, AndroidWorld phone tasks, v
 - Validate after at least two visible UI states before `finished`.
 - Multi-target goals: keep ordered checklist; finish only after named targets verified.
 
+## First-Step AndroidWorld Rules
+
+AndroidWorld first-step policy:
+
+- Do not encode assumptions into the first action. Pass `packageName` when
+  known, otherwise derive it from installed app evidence.
+- If the first screen is a permission, onboarding, or account prompt, handle the
+  safe visible prompt before pursuing the target task.
+- If an editable field is already focused, type directly. If not, click or
+  `input_text` the intended field first.
+- For sliders, seekbars, and system panels, use drag actions. For Display brightness,
+  drag near 90-95% with 0-1000 normalized coordinates, for example
+  `x2=990`. To move a horizontal panel left, use
+  `x1=990,y1=110,x2=10,y2=110`; `x1` must be greater than `x2` for a leftward
+  drag, not `click`.
+- For on-screen numeric keypads, click the visible digit buttons.
+
+Validation prompts must compare at least two UI states before finishing.
+
 ## Runtime Flow: VLM, UDEG, RunLog, Function
 
 This is the canonical OOB execution flow. Keep the live VLM loop, UDEG recall,
@@ -65,12 +89,13 @@ connected by artifacts, but do not merge their responsibilities.
    `currentPageSummary` as current-page decision context, not into pre-run
    `stepSkillGuidance`, not as task memory, and not by flat-scanning all
    Functions.
-4. Treat node-attached Functions as optional capability candidates.
-   Default `allowOmniFlowFunctionAutoExecute=false`: the live VLM still chooses
-   native screen tools (`click`, `input_text`, `swipe`, `open_app`,
-   `press_back`, `press_home`, `finished`) from live screenshot/XML/indexed
-   evidence. Direct replay requires explicit user/agent Function selection or an
-   explicitly enabled strict auto-execute path.
+4. Treat node-attached Functions as callable capability candidates. Default
+   `allowOmniFlowFunctionAutoExecute=false`: the live VLM still chooses native
+   screen tools (`click`, `input_text`, `swipe`, `open_app`, `press_back`,
+   `press_home`, `finished`) from live screenshot/XML/indexed evidence unless
+   the current task has a high-confidence Function match. For a high-confidence
+   match, prefer explicit replay through guard + Function run instead of
+   re-clicking the same flow manually.
 5. Explicit Function replay runs through `oob_function_guard_check` then
    `oob_function_run`, `omniflow.call_tool`, or `call_tool(function_id=...)`.
    This is an OmniFlow replay step, not a VLM click. It must create its own

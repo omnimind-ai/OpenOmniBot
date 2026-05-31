@@ -269,23 +269,11 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     final initialSurfaceMode = !_hasAppliedInitialSurfaceMode
         ? _requestedInitialSurfaceMode
         : null;
-    var requestedWorkspaceProjectMode =
-        initialSurfaceMode == ChatSurfaceMode.project;
-    if (requestedWorkspaceProjectMode) {
-      final activeProject = await NativeWorkbenchProjectBackend()
-          .getActiveProject();
-      if (isStaleRequest()) return;
-      requestedWorkspaceProjectMode = activeProject != null;
-      if (!requestedWorkspaceProjectMode) {
-        showToast(
-          AppTextLocalizer.choose(
-            zh: '请先在 Project 中激活一个项目',
-            en: 'Activate a Project first',
-          ),
-          type: ToastType.warning,
-        );
-      }
-    }
+    final hasInitialSurfaceMode = initialSurfaceMode != null;
+    final requestedWorkspaceProjectMode =
+        initialSurfaceMode == ChatSurfaceMode.project ||
+        (initialSurfaceMode == ChatSurfaceMode.workspace &&
+            _workspaceProjectModeEnabled);
     final targetSurfaceMode = initialSurfaceMode == ChatSurfaceMode.project
         ? ChatSurfaceMode.workspace
         : initialSurfaceMode ??
@@ -309,7 +297,9 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
       _activeSurfaceMode = targetSurfaceMode;
       _workspacePathsLoadFuture = workspacePathsFuture;
       _hasAppliedInitialSurfaceMode = true;
-      _workspaceProjectModeEnabled = requestedWorkspaceProjectMode;
+      _workspaceProjectModeEnabled = hasInitialSurfaceMode
+          ? requestedWorkspaceProjectMode
+          : _workspaceProjectModeEnabled;
       if (_workspaceProjectModeEnabled) {
         _workspaceBrowserCanGoUp = false;
       }
@@ -859,33 +849,13 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     ChatSurfaceMode targetMode, {
     bool syncPage = true,
   }) async {
-    final requestedProjectMode = targetMode == ChatSurfaceMode.project;
-    if (requestedProjectMode && _workspaceProjectModeRequestInFlight) {
-      return;
-    }
+    final requestedProjectMode =
+        targetMode == ChatSurfaceMode.project ||
+        (targetMode == ChatSurfaceMode.workspace &&
+            _activeSurfaceMode != ChatSurfaceMode.workspace &&
+            _workspaceProjectModeEnabled);
     final requestId = ++_surfaceSwitchRequestId;
     bool isStaleRequest() => !mounted || requestId != _surfaceSwitchRequestId;
-    if (requestedProjectMode) {
-      _workspaceProjectModeRequestInFlight = true;
-      try {
-        final activeProject = await NativeWorkbenchProjectBackend()
-            .getActiveProject();
-        if (isStaleRequest()) return;
-        if (activeProject == null) {
-          showToast(
-            AppTextLocalizer.choose(
-              zh: '请先在 Project 中激活一个项目',
-              en: 'Activate a Project first',
-            ),
-            type: ToastType.warning,
-          );
-          if (syncPage) _jumpToCurrentModePage();
-          return;
-        }
-      } finally {
-        _workspaceProjectModeRequestInFlight = false;
-      }
-    }
     final resolvedTargetMode = targetMode == ChatSurfaceMode.openclaw
         ? ChatSurfaceMode.normal
         : requestedProjectMode
@@ -1128,6 +1098,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     };
   }
 
+  @override
   Future<void> _syncVisibleChatConversation() async {
     if (!mounted) return;
     final route = ModalRoute.of(context);
@@ -1148,6 +1119,7 @@ mixin _ChatPageLifecycleMixin on _ChatPageStateBase {
     );
   }
 
+  @override
   Future<void> _clearVisibleChatConversation() {
     return AssistsMessageService.setVisibleChatConversation(visible: false);
   }

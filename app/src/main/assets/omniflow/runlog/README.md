@@ -124,9 +124,13 @@ decision context, node skill, and state manifest through `OobUdegNodeStore`,
 then appends a skipped `get_state` evidence card to the active RunLog.
 Registered reusable-command steps can be edited from the command library and
 are saved back under the same `function_id`. Manual action cards retain
-`event_context` for conversion diagnostics. Click and long-click actions
-require an Accessibility source node; scroll events without movement/index
-signal are not emitted as replayable swipe steps.
+`event_context` for conversion diagnostics. Replayable manual actions must come
+from concrete input backends: `overlay_touch`, `overlay_touch_text_input`,
+`device_getevent`, or `device_getevent_text_input`. Accessibility events are
+evidence only and must not create replayable actions by themselves. Every
+manual action must have a before XML snapshot; if execution succeeds but the
+action cannot be recorded with its before XML, the recorder reports failure
+instead of writing a partial RunLog step.
 
 RunLog save results, the command library page, and the memory-center embedded
 command list share the same reusable-command summary card. Keep the primary run

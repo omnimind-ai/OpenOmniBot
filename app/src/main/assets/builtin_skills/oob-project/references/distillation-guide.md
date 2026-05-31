@@ -9,7 +9,7 @@ This guide turns external inspiration into an OOB-native Workbench Project. Use 
 3. Project Soul Template
 4. Data Model Template
 5. API Design Template
-6. HTML/UI Design Template
+6. Display/UI Design Template
 7. AI Backend Workflow Mapping
 8. Compliance and IP Guardrails
 9. Readiness Checklist
@@ -250,9 +250,9 @@ Keep v1 small:
 
 ---
 
-## 6. HTML/UI Design Template
+## 6. Display/UI Design Template
 
-Default output is static HTML/CSS/native JS under `frontend/html/`.
+Default display output is static HTML/CSS/native JS under `frontend/html/`. Treat this as a lightweight Project surface, not the core value. The durable value is the normalized data model, Project Tools, Agent/script workflows, and Project docs.
 
 Do not generate React by default. If React is justified, it must be bundled into static files that the Project WebView can load from `frontend/html/`. The WebView must never depend on a dev server.
 
@@ -364,14 +364,14 @@ Before proposing or creating a Project:
 - [ ] `PROJECT_SOUL.md` draft exists.
 - [ ] Primary entity and 4-7 fields are defined.
 - [ ] API IDs are stable and minimal.
-- [ ] HTML first viewport is useful on phone.
+- [ ] Display first viewport is useful on phone.
 - [ ] AI-heavy workflows are mapped to OOB tools.
 - [ ] Limitations and open questions are explicit.
 
 Before implementation:
 
 - [ ] Use `oob-project` creation/update mechanics.
-- [ ] Create with HTML files by default.
+- [ ] Create with a lightweight display by default (`htmlFiles` unless another renderer is explicitly chosen).
 - [ ] Add `PROJECT_SOUL.md` immediately.
 - [ ] Do not create React dev-server dependency.
 - [ ] Do not include source product assets.

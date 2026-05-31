@@ -2,6 +2,8 @@
 
 Complete HTML/CSS/JS patterns for OOB Workbench Projects. Target: phone portrait WebView, 360–430dp wide.
 
+Use this guide only when implementing or changing the HTML Display surface. Project business logic belongs in Entity fields, Project Tools, Agent actions, scripts, and `PROJECT_SOUL.md` / `PROJECT_CONTEXT.md`; HTML should remain a thin display and trigger layer.
+
 ---
 
 ## File Structure

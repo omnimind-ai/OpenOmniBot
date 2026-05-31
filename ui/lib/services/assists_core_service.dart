@@ -714,7 +714,7 @@ class UtgManualRunResult {
         context['fallback_available'],
   );
 
-  bool get canContinueWithVlm {
+  bool get canContinueWithAgent {
     if (success || completedVlmFallback || startedAgentFallback) return false;
     if (fallbackAvailable || modelRequired) return true;
     return stepResults.any(
@@ -724,6 +724,8 @@ class UtgManualRunResult {
           step['blocked_executor'] != null,
     );
   }
+
+  bool get canContinueWithVlm => canContinueWithAgent;
 
   bool get delegatedToolUsed => _truthy(
     terminalState['delegated_tool_used'] ??
@@ -781,9 +783,14 @@ class UtgManualRunResult {
 
   bool get startedAgentFallback {
     if (completedVlmFallback) return false;
+    final agentTaskStarted =
+        terminalState['agent_task_started'] ??
+        rawJson['agent_task_started'] ??
+        context['agent_task_started'];
+    if (agentTaskStarted == false) return false;
     return executionStatus == 'started_agent_fallback' ||
         executionStatus == 'started_agent' ||
-        (taskId.isNotEmpty && modelRequired);
+        (success && taskId.isNotEmpty && modelRequired);
   }
 
   bool get failed =>

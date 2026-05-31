@@ -66,7 +66,7 @@ void main() {
     });
 
     test(
-      'parses VLM fallback start separately from local completion',
+      'parses Agent fallback start separately from local completion',
       () async {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(assistCoreChannel, (call) async {
@@ -77,7 +77,7 @@ void main() {
                 'terminal_state': <String, dynamic>{
                   'status': 'started_agent_fallback',
                   'execution_status': 'started_agent_fallback',
-                  'taskId': 'task-vlm-1',
+                  'taskId': 'task-agent-1',
                   'model_required': true,
                   'local_steps_completed': 1,
                   'agent_steps_pending': 2,
@@ -109,10 +109,30 @@ void main() {
         expect(result.executionStatus, 'started_agent_fallback');
         expect(result.startedAgentFallback, isTrue);
         expect(result.completedLocal, isFalse);
-        expect(result.taskId, 'task-vlm-1');
+        expect(result.taskId, 'task-agent-1');
         expect(result.stepResults, hasLength(2));
       },
     );
+
+    test('does not classify failed Agent fallback start as handed off', () {
+      final result = UtgManualRunResult.fromMap(<String, dynamic>{
+        'success': false,
+        'function_id': 'search_settings',
+        'execution_status': 'failed',
+        'error_code': 'AGENT_RUN_ALREADY_ACTIVE',
+        'terminal_state': <String, dynamic>{
+          'status': 'error',
+          'execution_status': 'failed',
+          'taskId': 'task-agent-failed',
+          'agent_task_started': false,
+          'model_required': true,
+        },
+      });
+
+      expect(result.startedAgentFallback, isFalse);
+      expect(result.failed, isTrue);
+      expect(result.errorCode, 'AGENT_RUN_ALREADY_ACTIVE');
+    });
 
     test(
       'parses direct VLM fallback completion separately from agent start',

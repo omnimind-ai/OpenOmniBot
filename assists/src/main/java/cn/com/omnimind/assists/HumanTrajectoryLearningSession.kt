@@ -34,7 +34,7 @@ data class HumanTrajectoryLearningStatus(
     val rawTouchEnabled: Boolean = false,
     val rawTouchAvailable: Boolean = false,
     val overlayTouchRecordedCount: Int = 0,
-    val recordingBackend: String = "accessibility_event"
+    val recordingBackend: String = "overlay_touch"
 ) {
     fun asMap(): Map<String, Any?> = linkedMapOf(
         "active" to active,
@@ -231,13 +231,16 @@ object HumanTrajectoryLearningSession {
         return resumed
     }
 
-    suspend fun recordOverlayGesture(gesture: ManualOverlayTouchGesture): ManualOverlayGestureReplayResult {
+    suspend fun recordOverlayGesture(
+        gesture: ManualOverlayTouchGesture,
+        onGestureDispatched: suspend (mayOpenIme: Boolean) -> Unit = {}
+    ): ManualOverlayGestureReplayResult {
         val session = synchronized(lock) { activeSession }
             ?: return ManualOverlayGestureReplayResult(executed = false)
         if (synchronized(lock) { activePaused }) {
             return ManualOverlayGestureReplayResult(executed = false)
         }
-        return runCatching { session.recorder.recordOverlayGesture(gesture) }
+        return runCatching { session.recorder.recordOverlayGesture(gesture, onGestureDispatched) }
             .getOrElse { error ->
                 OmniLog.w(TAG, "manual overlay gesture failed: ${error.message}")
                 ManualOverlayGestureReplayResult(executed = false)
