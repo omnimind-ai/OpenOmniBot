@@ -11,6 +11,12 @@ import cn.com.omnimind.bot.omniflow.OobFunctionRunPolicy
 import cn.com.omnimind.bot.omniflow.OobFunctionSpecBuilder
 import cn.com.omnimind.bot.omniflow.OobFunctionUpdateService
 import cn.com.omnimind.bot.omniflow.OobFunctionRunner
+import cn.com.omnimind.bot.runlog.OobActionCodec.boolArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.boolArgOrDefault
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
+import cn.com.omnimind.bot.runlog.OobActionCodec.intArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.listArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.mapArg
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 
 /**
@@ -532,7 +538,7 @@ class OobOmniFlowToolkitService(
         val success = boolArg(runLog["success"]) || boolArg(resultMap["success"])
         val cards = listArg(runLog["cards"]).ifEmpty {
             listArg(runLog["steps"])
-        }.mapNotNull { it as? Map<*, *> }.map(::stringMap)
+        }.map { mapArg(it) }.filter { it.isNotEmpty() }
         val record = InternalRunLogRecord(
             runId = runId,
             goal = firstNonBlank(runLog["goal"], runLog["task"]),
@@ -630,45 +636,6 @@ class OobOmniFlowToolkitService(
         riskLevel?.let { put("risk_level", it) }
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> {
-        return when (value) {
-            is Map<*, *> -> stringMap(value)
-            else -> emptyMap()
-        }
-    }
-
-    private fun stringMap(value: Map<*, *>): Map<String, Any?> =
-        linkedMapOf<String, Any?>().apply {
-            value.forEach { (key, item) ->
-                if (key != null) put(key.toString(), item)
-            }
-        }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
-
-    private fun intArg(vararg values: Any?, defaultValue: Int): Int {
-        values.forEach { value ->
-            when (value) {
-                is Number -> return value.toInt()
-                is String -> value.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
-    }
-
     private fun longArg(vararg values: Any?, defaultValue: Long = 0L): Long {
         values.forEach { value ->
             when (value) {
@@ -678,30 +645,5 @@ class OobOmniFlowToolkitService(
         }
         return defaultValue
     }
-
-    private fun boolArg(value: Any?): Boolean =
-        when (value) {
-            is Boolean -> value
-            is String -> value.trim().equals("true", ignoreCase = true) ||
-                value.trim() == "1"
-            is Number -> value.toInt() != 0
-            else -> false
-        }
-
-    private fun boolArgOrDefault(value: Any?, defaultValue: Boolean): Boolean =
-        when (value) {
-            null -> defaultValue
-            is Boolean -> value
-            is String -> {
-                val text = value.trim().lowercase()
-                when (text) {
-                    "true", "1", "yes", "y", "on" -> true
-                    "false", "0", "no", "n", "off" -> false
-                    else -> defaultValue
-                }
-            }
-            is Number -> value.toInt() != 0
-            else -> defaultValue
-        }
 
 }

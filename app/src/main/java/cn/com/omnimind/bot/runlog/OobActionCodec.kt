@@ -217,6 +217,30 @@ object OobActionCodec {
         return defaultValue
     }
 
+    fun boolArg(value: Any?): Boolean =
+        when (value) {
+            is Boolean -> value
+            is String -> value.trim().equals("true", ignoreCase = true) || value.trim() == "1"
+            is Number -> value.toInt() != 0
+            else -> false
+        }
+
+    fun boolArgOrDefault(value: Any?, defaultValue: Boolean): Boolean =
+        when (value) {
+            null -> defaultValue
+            is Boolean -> value
+            is String -> {
+                val text = value.trim().lowercase()
+                when (text) {
+                    "true", "1", "yes", "y", "on" -> true
+                    "false", "0", "no", "n", "off" -> false
+                    else -> defaultValue
+                }
+            }
+            is Number -> value.toInt() != 0
+            else -> defaultValue
+        }
+
     fun firstNonBlank(vararg values: Any?): String {
         values.forEach { value ->
             val text = value?.toString()?.trim().orEmpty()

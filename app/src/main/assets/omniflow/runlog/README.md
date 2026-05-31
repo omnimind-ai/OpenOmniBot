@@ -56,6 +56,7 @@ record. Do not read only the snapshot when correctness matters.
 - RunLog card field/JSON accessors: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogCardAccessors.kt`
 - RunLog startup/launcher bridge cleaner: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogStartupBridgeCleaner.kt`
 - RunLog reusable Function parameterizer: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReusableFunctionParameterizer.kt`
+- RunLog action/value codec: `app/src/main/java/cn/com/omnimind/bot/runlog/OobActionCodec.kt`
 - Function execution startup: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunner.kt`
 - Replay step runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
 - Replay frontend session controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionFrontendSessionController.kt`
@@ -123,6 +124,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep RunLog card field extraction and JSON coercion in `RunLogCardAccessors`.
   Do not duplicate `tool_call`/`header`/observation parsing across compiler,
   startup cleanup, or future analysis code.
+- Keep generic RunLog action/value coercion in `OobActionCodec`. Tool facades
+  such as `OobOmniFlowToolkitService` should call it instead of adding private
+  `mapArg`/`listArg`/`firstNonBlank`/`boolArg` copies.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
   in `RunLogReusableFunctionParameterizer`; do not put those rules back into
