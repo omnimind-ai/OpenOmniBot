@@ -148,6 +148,109 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `update function materializes optional checker annotations as supported runtime rules`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "optional_checker_rule_update"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "关闭可选弹窗后继续",
+                    "description" to "用于验证 optional checker 标注会落成运行时规则",
+                    "sourcePage" to mapOf(
+                        "xml" to TAKEOUT_XML,
+                        "packageName" to "com.example.food",
+                    ),
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "click",
+                            "title" to "关闭广告弹窗",
+                            "target_description" to "关闭",
+                            "x" to 900,
+                            "y" to 120,
+                        ),
+                        mapOf(
+                            "action" to "click",
+                            "title" to "继续主路径",
+                            "target_description" to "外卖",
+                            "x" to 790,
+                            "y" to 140,
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val update = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "mode" to "enhance",
+                    "patch" to mapOf(
+                        "steps" to listOf(
+                            mapOf(
+                                "index" to 0,
+                                "title" to "关闭可选广告弹窗",
+                                "description" to "如果广告弹窗遮挡主路径，关闭它以继续后续操作。",
+                                "cleanup_annotation" to mapOf(
+                                    "schema_version" to "oob.step_cleanup_annotation.v1",
+                                    "cleanup_action" to "optional_checker",
+                                    "optional_condition" to "仅当广告弹窗实际遮挡目标区域时执行。",
+                                    "reason" to "广告弹窗不一定每次出现。",
+                                ),
+                            )
+                        ),
+                        "metadata" to mapOf(
+                            "checker_rules" to listOf(
+                                mapOf(
+                                    "id" to "dismiss_optional_overlay_before_action",
+                                    "phase" to "pre_transfer",
+                                    "condition" to "overlay_blocking",
+                                    "action" to "dismiss",
+                                    "enabled" to true,
+                                    "params" to mapOf("selector" to "unsupported"),
+                                ),
+                                mapOf(
+                                    "id" to "unsupported_model_checker",
+                                    "phase" to "pre_action",
+                                    "condition" to "model_call",
+                                    "action" to "run_script",
+                                ),
+                            )
+                        ),
+                    ),
+                )
+            )
+
+            assertEquals(true, update["success"])
+            assertEquals(true, update["changed"])
+            assertEquals(true, update["saved"])
+
+            val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val function = stored["function"] as Map<*, *>
+            val metadata = function["metadata"] as Map<*, *>
+            val checkerRules = metadata["checker_rules"] as List<*>
+            assertEquals(1, checkerRules.size)
+            val rule = checkerRules.single() as Map<*, *>
+            assertEquals("dismiss_optional_overlay_before_action", rule["id"])
+            assertEquals("overlay_blocking", rule["condition"])
+            assertEquals("dismiss", rule["action"])
+            assertEquals("pre_transfer", rule["phase"])
+            assertEquals(emptyMap<String, Any?>(), rule["params"])
+
+            val agentReuse = function["agent_reuse"] as Map<*, *>
+            val checkerAssets = agentReuse["checker_assets"] as List<*>
+            val asset = checkerAssets.single() as Map<*, *>
+            assertEquals("dismiss_optional_overlay_before_action", asset["checker_id"])
+            assertEquals(0, (asset["step_index"] as Number).toInt())
+            assertEquals("checker_candidate", asset["role"])
+            assertEquals("metadata_checker_rule", asset["materialization"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `update function gates inserts and deletes as structural changes`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -606,7 +709,6 @@ class OobOmniFlowLoopAcceptanceTest {
                 "load_function_spec_ms",
                 "check_arguments_ms",
                 "materialize_function_ms",
-                "slice_function_ms",
                 "create_runner_ms",
                 "run_materialized_function_ms",
             ).forEach { phaseName ->
@@ -792,7 +894,6 @@ class OobOmniFlowLoopAcceptanceTest {
             )
             val nodeCapabilities = recall["node_capabilities"] as? List<*>
             val functionCapabilities = recall["node_function_capabilities"] as? List<*>
-            val segmentCapabilities = recall["node_segment_capabilities"] as? List<*>
             assertEquals(matchingFunctionId, firstCapabilityId(nodeCapabilities))
             assertEquals(matchingFunctionId, firstCapabilityId(functionCapabilities))
             assertFalse(
@@ -800,7 +901,9 @@ class OobOmniFlowLoopAcceptanceTest {
                     .mapNotNull { (it as? Map<*, *>)?.get("function_id") }
                     .contains(otherFunctionId)
             )
-            assertEquals(0, segmentCapabilities.orEmpty().size)
+            assertFalse(recall.containsKey("node_segment_capabilities"))
+            assertFalse(recall.containsKey("segment_candidates"))
+            assertFalse(recall.containsKey("segment_hit"))
         } finally {
             context.root.deleteRecursively()
         }
@@ -942,14 +1045,14 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
-    fun `parent function loads reusable open settings segment through call_tool`() = runBlocking {
+    fun `parent function loads reusable open settings function through call_tool`() = runBlocking {
         val context = TempFilesContext()
         val backend = RecordingOmniflowBackend(initialPackage = "com.android.launcher")
         val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
         try {
             val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
-            val childFunctionId = "open_settings_segment"
-            val parentFunctionId = "parent_calls_open_settings_segment"
+            val childFunctionId = "open_settings_function"
+            val parentFunctionId = "parent_calls_open_settings_function"
 
             val registerChild = toolkit.registerFunction(
                 mapOf(
@@ -966,7 +1069,7 @@ class OobOmniFlowLoopAcceptanceTest {
                     "functionSpec" to reusableFunctionSpec(
                         functionId = parentFunctionId,
                         name = "Call Open Settings",
-                        description = "Parent Function that reuses the open Settings segment.",
+                        description = "Parent Function that reuses the open Settings Function.",
                         steps = listOf(callFunctionStep(childFunctionId))
                     )
                 )
@@ -991,7 +1094,7 @@ class OobOmniFlowLoopAcceptanceTest {
             assertTrue((recallTiming["duration_ms"] as Number).toLong() >= 0L)
             assertRecallTimingPhases(recallTiming)
             val recallCounts = recallTiming["counts"] as? Map<*, *>
-            assertEquals(0, (recallCounts?.get("segment_candidates") as Number).toInt())
+            assertFalse(recallCounts.orEmpty().containsKey("segment_candidates"))
 
             val firstRun = toolkit.callFunction(
                 mapOf(
@@ -1016,140 +1119,6 @@ class OobOmniFlowLoopAcceptanceTest {
                 backend.launchedPackages
             )
             assertEquals("com.android.settings", backend.currentPackageName())
-        } finally {
-            backendHandle.close()
-            context.root.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun `recall returns segment hit and callFunction can run only the suffix`() = runBlocking {
-        val context = TempFilesContext()
-        val backend = RecordingOmniflowBackend(initialPackage = "com.example.target")
-        val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
-        try {
-            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
-            val functionId = "continue_from_internal_page_segment"
-            OobUdegNodeStore(context).observePage(
-                OobUdegNodeStore.ObservedPage(
-                    pageXml = TARGET_XML,
-                    packageName = "com.example.target",
-                    activityName = "TargetActivity",
-                    goal = "open settings",
-                )
-            )
-            val register = toolkit.registerFunction(
-                mapOf(
-                    "functionSpec" to reusableFunctionSpec(
-                        functionId = functionId,
-                        name = "Continue from target page",
-                        description = "continue flow opening settings",
-                        steps = listOf(
-                            clickTransitionStep(
-                                sourceXml = SOURCE_XML,
-                                sourcePackage = "com.example.settings",
-                                destXml = TARGET_XML,
-                                destPackage = "com.example.settings",
-                            ),
-                            openAppStepWithSource(
-                                id = "open_settings_from_target",
-                                sourceXml = TARGET_XML,
-                                sourcePackage = "com.example.target",
-                                targetPackage = "com.android.settings",
-                            )
-                        )
-                    )
-                )
-            )
-            assertEquals(true, register["success"])
-
-            val recall = toolkit.recall(
-                mapOf(
-                    "goal" to "settings",
-                    "current_package" to "com.example.target",
-                    "current_xml" to TARGET_XML,
-                    "k" to 5,
-                    "include_debug" to true,
-                )
-            )
-            assertEquals(true, recall["success"])
-            assertEquals("segment_recall", recall["decision"])
-            assertEquals("udeg_node_segment_recall", recall["reason"])
-            assertEquals(null, recall["segment_hit"])
-            val segmentCandidates = recall["segment_candidates"] as? List<*>
-            val segmentHit = requireNotNull(segmentCandidates?.firstOrNull() as? Map<*, *>)
-            assertEquals(functionId, segmentHit["function_id"])
-            assertEquals(1, (segmentHit["start_step_index"] as Number).toInt())
-            assertEquals(1, (segmentHit["remaining_step_count"] as Number).toInt())
-            assertEquals("function_suffix", segmentHit["execution_scope"])
-            assertEquals("udeg_node_segment", segmentHit["recall_scope"])
-            assertEquals("function_segment", segmentHit["capability_type"])
-            val currentNode = requireNotNull(recall["current_node"] as? Map<*, *>)
-            val functionIds = currentNode["function_ids"] as? List<*>
-            assertFalse(functionIds.orEmpty().contains(functionId))
-            assertStructuredSkillArtifact(
-                context = context,
-                artifact = currentNode["skill_artifact"] as? Map<*, *>,
-                expectedPackage = "com.example.target",
-            )
-            val segmentSummaries = currentNode["segments"] as? List<*>
-            val nodeSegment = segmentSummaries.orEmpty()
-                .mapNotNull { it as? Map<*, *> }
-                .firstOrNull { it["function_id"] == functionId }
-            assertNotNull(nodeSegment)
-            assertEquals(1, (nodeSegment?.get("start_step_index") as Number).toInt())
-            val timing = requireNotNull(recall["timing"] as? Map<*, *>)
-            assertRecallTimingPhases(timing)
-            val counts = requireNotNull(timing["counts"] as? Map<*, *>)
-            assertEquals(1, (counts["segment_candidates"] as Number).toInt())
-            assertEquals(1, (counts["segment_scanned_functions"] as Number).toInt())
-            assertEquals(1, (counts["node_capabilities"] as Number).toInt())
-            assertEquals(0, (counts["node_function_capabilities"] as Number).toInt())
-            assertEquals(1, (counts["node_segment_capabilities"] as Number).toInt())
-            assertTrue((counts["segment_boundaries"] as Number).toInt() >= 1)
-            assertTrue((counts["segment_boundary_page_hits"] as Number).toInt() >= 1)
-            val nodeCapabilities = recall["node_capabilities"] as? List<*>
-            val segmentCapabilities = recall["node_segment_capabilities"] as? List<*>
-            assertEquals(functionId, firstCapabilityId(nodeCapabilities))
-            assertEquals(functionId, firstCapabilityId(segmentCapabilities))
-            val capability = requireNotNull(segmentCapabilities?.firstOrNull() as? Map<*, *>)
-            assertEquals("function_segment", capability["capability_type"])
-            assertEquals("udeg_node_segment", capability["recall_scope"])
-            assertEquals(1, (capability["start_step_index"] as Number).toInt())
-            assertEquals("oob_udeg_node_capability", capability["source"])
-
-            val directRecall = toolkit.recall(
-                mapOf(
-                    "goal" to "settings",
-                    "current_package" to "com.example.target",
-                    "current_xml" to TARGET_XML,
-                    "k" to 5,
-                    "auto_execute" to true,
-                    "include_debug" to true,
-                )
-            )
-            assertEquals(true, directRecall["success"])
-            assertEquals("segment_recall", directRecall["decision"])
-            assertEquals("udeg_node_segment_recall", directRecall["reason"])
-            assertEquals(null, directRecall["segment_hit"])
-
-            val call = toolkit.callFunction(
-                mapOf(
-                    "function_id" to functionId,
-                    "goal" to "settings",
-                    "start_step_index" to 1,
-                )
-            )
-            assertEquals(true, call["success"])
-            assertEquals(false, call["fallback"])
-            assertEquals(listOf("com.android.settings"), backend.launchedPackages)
-            val oobResult = call["oob_result"] as? Map<*, *>
-            val segment = requireNotNull(oobResult?.get("segment") as? Map<*, *>)
-            assertEquals(1, (segment["start_step_index"] as Number).toInt())
-            assertEquals(1, (segment["remaining_step_count"] as Number).toInt())
-            val stepResults = call["step_results"] as? List<*>
-            val replayedStep = stepResults?.single() as? Map<*, *>
-            assertEquals("open_app", replayedStep?.get("tool"))
         } finally {
             backendHandle.close()
             context.root.deleteRecursively()
@@ -1247,7 +1216,6 @@ class OobOmniFlowLoopAcceptanceTest {
             "read_current_page_ms",
             "page_match_ms",
             "rank_functions_ms",
-            "segment_match_ms",
         ).forEach { phaseName ->
             assertTrue("missing timing phase $phaseName", phases.containsKey(phaseName))
             assertTrue(
@@ -1404,9 +1372,9 @@ class OobOmniFlowLoopAcceptanceTest {
     )
 
     private fun callFunctionStep(functionId: String): Map<String, Any?> = mapOf(
-        "id" to "call_open_settings_segment",
+        "id" to "call_open_settings_function",
         "index" to 0,
-        "title" to "Call open Settings segment",
+        "title" to "Call open Settings Function",
         "kind" to "omniflow_function",
         "executor" to "omniflow",
         "tool" to "call_tool",

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/features/home/pages/command_overlay/services/manual_recording_permission_guard.dart';
 import 'package:ui/l10n/app_text_localizer.dart';
 import 'package:ui/l10n/l10n.dart';
 import 'package:ui/services/special_permission.dart';
@@ -364,10 +365,21 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
   late ValueNotifier<_ComposerInteractionState> _composerStateNotifier;
   bool _isPopupVisible = false;
   double _lastKeyboardInset = 0;
+  ManualRecordingPermissionCheck? _manualRecordingPermissionCheck;
+  bool _isCheckingManualRecordingPermissions = false;
+  int _manualRecordingPermissionCheckGeneration = 0;
 
   final ScrollController _textFieldScrollController = ScrollController();
 
   bool get isPopupVisible => _isPopupVisible;
+  bool get _hasManualRecordingAction => widget.onManualRecordingTap != null;
+  bool get _isManualRecordingPermissionBlocked {
+    final permissionCheck = _manualRecordingPermissionCheck;
+    return _hasManualRecordingAction &&
+        permissionCheck != null &&
+        !permissionCheck.isAuthorized;
+  }
+
   double _lastReportedInputHeight = 44;
   bool _inputHeightReportScheduled = false;
   bool _isComposerHovered = false;
@@ -559,6 +571,41 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
     _syncKeyboardPhaseFromView();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isPopupVisible) {
+      unawaited(_refreshManualRecordingPermissions());
+    }
+  }
+
+  Future<void> _refreshManualRecordingPermissions() async {
+    if (!_hasManualRecordingAction || !mounted) return;
+    final generation = ++_manualRecordingPermissionCheckGeneration;
+    setState(() {
+      _isCheckingManualRecordingPermissions = true;
+    });
+    try {
+      final permissionCheck = await ManualRecordingPermissionGuard.check(
+        context,
+      );
+      if (!mounted || generation != _manualRecordingPermissionCheckGeneration) {
+        return;
+      }
+      setState(() {
+        _manualRecordingPermissionCheck = permissionCheck;
+        _isCheckingManualRecordingPermissions = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _manualRecordingPermissionCheckGeneration) {
+        return;
+      }
+      setState(() {
+        _manualRecordingPermissionCheck = null;
+        _isCheckingManualRecordingPermissions = false;
+      });
+    }
+  }
+
   void _syncKeyboardPhaseFromView() {
     if (!mounted) return;
     final view = _safeViewForMetrics();
@@ -629,10 +676,16 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
         oldWidget.selectedModelOverrideId != widget.selectedModelOverrideId) {
       _reportInputHeightAfterBuild();
     }
+    if (oldWidget.onManualRecordingTap != widget.onManualRecordingTap &&
+        widget.onManualRecordingTap == null) {
+      _manualRecordingPermissionCheck = null;
+      _isCheckingManualRecordingPermissions = false;
+    }
   }
 
   @override
   void dispose() {
+    _manualRecordingPermissionCheckGeneration++;
     WidgetsBinding.instance.removeObserver(this);
     _textFieldScrollController.dispose();
     _composerStateNotifier.dispose();

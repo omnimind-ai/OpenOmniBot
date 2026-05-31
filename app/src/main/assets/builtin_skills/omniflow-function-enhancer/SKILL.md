@@ -31,12 +31,27 @@ Allowed in `enhance` mode:
   Agent selection: what visible operations it performs, where it applies,
   runtime inputs, and success signal when known.
 - Rewrite per-step `title`, `summary`, or `description`.
+- For every executable step, write what the action does and why it exists in
+  the trajectory. Use `description` for the visible action and
+  `cleanup_annotation.action_purpose` for the durable purpose label.
 - Add or improve runtime parameter metadata for existing non-coordinate leaf
   args.
 - Add non-executable `agent_reuse` metadata for selection, reuse boundaries,
-  key actions, success signal, and future segment review.
+  key actions, and success signal.
 - Add per-step `cleanup_annotation` metadata for keep, merge candidate,
-  drop candidate, or noise.
+  drop candidate, noise, or optional checker.
+- Mark conditional obstruction dismissals such as closing ads, popups, banners,
+  coupons, or permission nudges as `cleanup_action=optional_checker` with an
+  `optional_condition`. Do not remove the action or make it part of the
+  guaranteed happy path unless the user explicitly asks for a structural repair.
+- For each `optional_checker`, create a supported runtime checker in
+  `metadata.checker_rules` and link it from `agent_reuse.checker_assets` to the
+  source step. The runtime whitelist is:
+  `overlay_blocking` + `dismiss` + `pre_transfer`,
+  `permission_dialog` + `allow` + `pre_transfer`,
+  `keyboard_obscuring` + `hide_keyboard` + `pre_action`, and
+  `package_mismatch` + `open_app` + `pre_transfer`. Do not invent checker
+  conditions, scripts, selectors, or model calls.
 - Write an explicit enhancement report into metadata.
 
 Forbidden in `enhance` mode:
@@ -64,8 +79,8 @@ to save.
 Before enhancing, inspect the Function spec and extract:
 
 - Function id, source RunLog id, app/package constraints, and current name.
-- Step list with index, id, tool/action, executor, title/summary, and compact
-  args preview.
+- Step list with index, id, tool/action, executor, title/summary/description,
+  action purpose, cleanup annotation, and compact args preview.
 - Existing parameters and bindings.
 - Candidate binding paths from non-coordinate args only, such as:
   `$.execution.steps[2].args.text`.
@@ -84,10 +99,11 @@ RunLog payloads to the label enhancer. Use a compact digest.
 2. Header pass: produce a concise action-oriented command name and a compact
    reusable description that states the visible operation sequence, required
    app/page conditions, runtime inputs, and success signal when known.
-3. Step pass: produce one title and one useful description for every existing
-   step index.
-4. Cleanup pass: mark deterministic noise, merge candidates, and drop
-   candidates as metadata only.
+3. Step pass: produce one title, one useful description, and one action purpose
+   for every existing step index. The purpose must say what the action does and
+   why it exists in this trajectory.
+4. Cleanup pass: mark deterministic noise, merge candidates, drop candidates,
+   and optional checkers as metadata only.
 5. Parameter pass: add runtime slots only from allowed candidate bindings.
 6. Reuse pass: write `agent_reuse` metadata.
 7. Validate the patch against the original Function.
@@ -295,15 +311,6 @@ Reuse patch:
     "success_signal": "联系人详情页展示刚写入的姓名或手机号。",
     "key_actions": [
       {"step_index":0,"reason":"写入运行时联系人姓名","parameter_names":["contact_name"]}
-    ],
-    "segments": [
-      {
-        "name":"填写联系人字段",
-        "start_step_index":0,
-        "end_step_index":1,
-        "description":"可作为未来拆分候选的连续填写片段。",
-        "inputs":["contact_name","phone_number"]
-      }
     ]
   }
 }
@@ -326,6 +333,46 @@ Cleanup patch:
 }
 ```
 
+Optional checker patch:
+
+```json
+{
+  "steps": [
+    {
+      "index": 2,
+      "title": "关闭可选广告弹窗",
+      "description": "如果广告弹窗遮挡主路径，关闭它以继续后续操作。",
+      "action_purpose": "处理可能出现的条件性遮挡物，不属于稳定主路径。",
+      "importance": "optional",
+      "cleanup_action": "optional_checker",
+      "cleanup_reason": "广告弹窗不一定每次出现。",
+      "optional_condition": "仅当广告弹窗实际遮挡目标区域时执行。"
+    }
+  ],
+  "metadata": {
+    "checker_rules": [
+      {
+        "id": "dismiss_optional_overlay_before_action",
+        "phase": "pre_transfer",
+        "condition": "overlay_blocking",
+        "action": "dismiss",
+        "enabled": true,
+        "params": {}
+      }
+    ]
+  },
+  "agent_reuse": {
+    "checker_assets": [
+      {
+        "checker_id": "dismiss_optional_overlay_before_action",
+        "step_index": 2,
+        "reason": "由录制中的关闭广告/弹窗动作提炼成条件 checker。"
+      }
+    ]
+  }
+}
+```
+
 ## Quality Gates
 
 - Name: short, user-facing, verb-object style.
@@ -338,8 +385,6 @@ Cleanup patch:
 - `agent_reuse.avoid_when`: concrete mismatch or risk cases.
 - `success_signal`: visible final state, not "tool returned success".
 - `key_actions.step_index`: valid existing indexes only.
-- `segments`: contiguous inclusive ranges only; metadata only, not registered
-  standalone commands.
 - Repair must identify a concrete step. Ambiguous repair must return/ask for
   confirmation instead of guessing.
 - Insert/delete actions require an explicit user request and

@@ -65,7 +65,7 @@ connected by artifacts, but do not merge their responsibilities.
    `currentPageSummary` as current-page decision context, not into pre-run
    `stepSkillGuidance`, not as task memory, and not by flat-scanning all
    Functions.
-4. Treat node-attached Functions and segments as optional capability candidates.
+4. Treat node-attached Functions as optional capability candidates.
    Default `allowOmniFlowFunctionAutoExecute=false`: the live VLM still chooses
    native screen tools (`click`, `input_text`, `swipe`, `open_app`,
    `press_back`, `press_home`, `finished`) from live screenshot/XML/indexed
@@ -103,7 +103,7 @@ Tool ownership:
 - Function enhancement: `omniflow-function-enhancer` skill or background
   enhancement job, writing `metadata.oob_enhancement`.
 - Function recall: UDEG current-page match returning node decision context and
-  node-attached Function/segment candidates.
+  node-attached Function candidates.
 - Agent-facing Function cards: show `call_function` as a real tool call, not as
   hidden JSON under the parent VLM result.
 
@@ -467,7 +467,7 @@ external clients can call the same names through MCP:
   Function can replay locally before any execution.
 - `oob_function_delete` to delete one Function and remove UDEG node references.
 - `oob_function_clear` with `confirm=true` to clear all Functions and detach
-  all UDEG node Function/segment references.
+  all UDEG node Function references.
 - `oob_function_run` or `omniflow.call_tool` with `function_id` to explicitly
   replay a Function after user/agent selection.
 
@@ -706,14 +706,14 @@ Rules:
   Flow fallback rule: stop replay, report the reason, and continue with bounded
   VLM only through explicit selection.
 
-## Reusable Command Segment Validation
+## Nested Reusable Command Validation
 
-When validating a reusable segment, do not only check registration or recall.
+When validating a nested reusable command, do not only check registration or recall.
 Run a parent reusable command whose step is `call_tool(function_id=...)`, and
 verify that the result contains:
 
 - parent step `executor=omniflow_function`
-- `nested_function_id` equal to the expected segment id
+- `nested_function_id` equal to the expected child Function id
 - one streamed `tool_started` and one `tool_completed` card for the
   `call_function` step
 - nested `step_results` with concrete model-free actions such as `open_app`
@@ -754,11 +754,11 @@ Keep user experience validation and actual phone execution validation separate:
   These tests must not start emulators, call VLM, or depend on AndroidWorld.
 - Runtime/unit validation: verify RunLog collection, reusable command
   generation, nested reusable command calls, replay timing propagation, UDEG node
-  recall, segment recall, and no timing leakage into VLM prompts.
+  recall, and no timing leakage into VLM prompts.
 - Device validation: run bounded tasks on emulator-5554 or emulator-5556 only
   when explicitly requested. Record run id, package, goal, step count, success,
   `duration_ms`, token usage, replay result, and whether recall hit a UDEG node
-  or reusable command segment.
+  or reusable command.
 - AndroidWorld method validation: by default export or inspect the method only.
   Do not claim benchmark success unless a live runner initialized the task,
   OOB executed the task through the native VLM loop, and AndroidWorld evaluated
@@ -822,7 +822,7 @@ consider only reusable commands attached to that node as outgoing capability
 candidates.
 
 `omniflow.recall` defaults to an agent-compact payload. It should contain the
-decision, node id/package, optional Function or segment candidates, compact
+decision, node id/package, optional Function candidates, compact
 step summaries, and decision policy. It should not include raw timing, full node
 skill body, page vectors, or skill artifacts unless a test/debug caller sets
 `include_debug=true`.

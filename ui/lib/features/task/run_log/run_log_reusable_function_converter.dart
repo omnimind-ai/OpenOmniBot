@@ -35,6 +35,7 @@ const String kOmniFlowFunctionEnhancerContractAsset =
 const String kOmniFlowFunctionEnhancerContract = '''
 OmniFlow Function Enhancer skill contract:
 - This is the saved Function enhancement pass; RunLog is provenance only.
+- Enhancement is offline editing only; do not execute the Function while enhancing it.
 - Save changes only by calling `update_function`; do not hand-register rewritten Function JSON.
 - Improve reuse clarity without silently changing execution.
 - Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
@@ -44,7 +45,11 @@ OmniFlow Function Enhancer skill contract:
 - If the target step is ambiguous, return/ask for confirmation instead of guessing.
 - Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
 - Header enhancement must write a compact but detailed reusable description that helps the Agent decide when to call the Function later. Include the user-visible operation sequence, required app/page conditions, runtime inputs, and success signal when known; avoid coordinates and internal implementation details.
-- Per-step enhancement must mark each step with useful/merge/drop/noise metadata when applicable, but this metadata must not change executable replay by itself.
+- Per-step enhancement must label every executable step/action with what it does and why it exists in the trajectory. Each step needs a concise title, a concrete description/action_purpose, importance, cleanup_action, and cleanup_reason.
+- Per-step enhancement must mark each step with useful/merge/drop/noise/optional_checker metadata when applicable, but this metadata must not rewrite executable steps by itself.
+- Conditional obstruction dismissals such as closing ads, popups, banners, coupons, or permission nudges should be annotated as optional_checker metadata, not treated as a guaranteed happy-path action.
+- When marking a step as optional_checker, also add supported runtime checker rules in metadata.checker_rules and link them from agent_reuse.checker_assets so replay can apply the condition only when it is observed.
+- Supported checker rules are limited to overlay_blocking/dismiss/pre_transfer, permission_dialog/allow/pre_transfer, keyboard_obscuring/hide_keyboard/pre_action, and package_mismatch/open_app/pre_transfer. Do not invent checker conditions, scripts, selectors, or model calls.
 - If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
 - The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.
 ''';
@@ -1219,7 +1224,7 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 
 Work one section at a time:
 1. Name and description.
-2. Per-step titles/descriptions.
+2. Per-step titles/descriptions/action purpose labels.
 3. Runtime parameters from candidate_bindings only.
 4. Non-executable agent_reuse metadata.
 
@@ -1240,18 +1245,34 @@ Return exactly one JSON object. Use this example shape:
     {
       "index": 0,
       "title": "short action title",
-      "description": "what this action does",
+      "description": "what visible action this step performs and why it is needed",
+      "action_purpose": "why this action exists in the recorded trajectory",
       "importance": "key",
       "cleanup_action": "keep",
       "cleanup_reason": "why this step is useful or can be merged/dropped"
     }
   ],
+  "metadata": {
+    "checker_rules": [
+      {
+        "id": "dismiss_optional_overlay_before_action",
+        "phase": "pre_transfer",
+        "condition": "overlay_blocking",
+        "action": "dismiss",
+        "enabled": true,
+        "params": {}
+      }
+    ]
+  },
   "agent_reuse": {
     "reuse_when": ["when this recorded trajectory matches the current app/page"],
     "avoid_when": ["when the target app/page is different"],
     "success_signal": "visible state that confirms success",
     "key_actions": [
       {"step_index": 1, "reason": "writes the runtime contact name", "parameter_names": ["contact_name"]}
+    ],
+    "checker_assets": [
+      {"checker_id": "dismiss_optional_overlay_before_action", "step_index": 2, "reason": "turns a conditional popup close into a runtime checker"}
     ],
     "segments": [
       {
@@ -1276,7 +1297,11 @@ Rules:
 - Write a compact but detailed description that helps the Agent decide when to call this Function later. Cover what user-visible operations it performs, required app/page conditions, runtime inputs, and success signal when known.
 - Keep titles concise and action-oriented.
 - Include every input step index from execution.steps.
-- cleanup_action must be one of keep, merge_candidate, drop_candidate, or noise.
+- Every executable step/action must have title, description, action_purpose, importance, cleanup_action, and cleanup_reason.
+- Step description/action_purpose must say what the action does and why it exists in this trajectory; avoid generic labels like "tap button".
+- cleanup_action must be one of keep, merge_candidate, drop_candidate, noise, or optional_checker.
+- Use optional_checker for conditional obstruction actions such as closing ads, popups, banners, coupons, or permission nudges that may not appear on every replay. Add optional_condition when known. Do not remove or force the step.
+- For every optional_checker, add a supported metadata.checker_rules entry and link it from agent_reuse.checker_assets. Supported combinations only: overlay_blocking+dismiss+pre_transfer, permission_dialog+allow+pre_transfer, keyboard_obscuring+hide_keyboard+pre_action, package_mismatch+open_app+pre_transfer. Do not invent scripts, selectors, model calls, or unsupported checker types.
 - Mark repeated, wrapper, state-refresh, wait-like, or no-op steps as merge_candidate/drop_candidate/noise with a short cleanup_reason. This is annotation only; do not remove steps.
 
 Input digest:
@@ -1290,7 +1315,7 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 
 按顺序逐项处理：
 1. 名称和简介。
-2. 每个 step 的标题/描述。
+2. 每个 step 的标题/描述/动作用途标注。
 3. 只从 candidate_bindings 中选择运行时参数。
 4. 非执行的 agent_reuse 元数据。
 
@@ -1311,18 +1336,34 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
     {
       "index": 0,
       "title": "简短动作标题",
-      "description": "这个动作做了什么",
+      "description": "这个动作具体做什么，以及为什么需要它",
+      "action_purpose": "这个动作在录制轨迹里的用途",
       "importance": "key",
       "cleanup_action": "keep",
       "cleanup_reason": "说明这一步为什么有用，或为什么可合并/可删除"
     }
   ],
+  "metadata": {
+    "checker_rules": [
+      {
+        "id": "dismiss_optional_overlay_before_action",
+        "phase": "pre_transfer",
+        "condition": "overlay_blocking",
+        "action": "dismiss",
+        "enabled": true,
+        "params": {}
+      }
+    ]
+  },
   "agent_reuse": {
     "reuse_when": ["当前 app/页面与记录轨迹一致时"],
     "avoid_when": ["目标 app/页面不同或字段语义不匹配时"],
     "success_signal": "可见的完成状态",
     "key_actions": [
       {"step_index": 1, "reason": "写入运行时联系人姓名", "parameter_names": ["contact_name"]}
+    ],
+    "checker_assets": [
+      {"checker_id": "dismiss_optional_overlay_before_action", "step_index": 2, "reason": "把条件性弹窗关闭动作转成运行时 checker"}
     ],
     "segments": [
       {
@@ -1347,7 +1388,11 @@ ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'all')}
 - 简介要紧凑但更详细，方便 Agent 下次判断是否调用。说明它执行了哪些可见操作、需要处于哪个 app/页面、依赖哪些运行时输入，以及已知的成功信号。
 - 标题要短，像动作说明。
 - execution.steps 里的每个 step index 都要覆盖。
-- cleanup_action 只能是 keep、merge_candidate、drop_candidate 或 noise。
+- 每个可执行 step/action 都必须有 title、description、action_purpose、importance、cleanup_action 和 cleanup_reason。
+- description/action_purpose 必须说明这个动作做什么、为什么在这条轨迹里需要它；不要写“点击按钮”这种空泛描述。
+- cleanup_action 只能是 keep、merge_candidate、drop_candidate、noise 或 optional_checker。
+- 对关闭广告、弹窗、横幅、优惠券、权限提示等不一定每次出现的条件性遮挡动作，标成 optional_checker，并在知道条件时写 optional_condition。不要删除或强制改执行。
+- 每个 optional_checker 都要补一个可运行的 metadata.checker_rules，并在 agent_reuse.checker_assets 里关联原 step。只允许这些组合：overlay_blocking+dismiss+pre_transfer、permission_dialog+allow+pre_transfer、keyboard_obscuring+hide_keyboard+pre_action、package_mismatch+open_app+pre_transfer。不要发明脚本、selector、模型调用或不支持的 checker 类型。
 - 对重复、wrapper、刷新状态、类似 wait、无页面变化的步骤，标成 merge_candidate/drop_candidate/noise 并写简短 cleanup_reason。这只是标注，不要删除步骤。
 
 输入摘要：
@@ -1421,21 +1466,25 @@ $input
     final input = const JsonEncoder.withIndent('  ').convert({'steps': steps});
     if (useEnglish) {
       return '''
-You are editing only per-step titles and descriptions for an OOB reusable command.
+You are editing only per-step titles, descriptions, and action-purpose labels for an OOB reusable command.
 
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 Return exactly one JSON object:
-{"steps":[{"index":0,"title":"short action title","description":"what this action does","importance":"key","cleanup_action":"keep","cleanup_reason":"why this step is useful or can be merged/dropped"}]}
+{"steps":[{"index":0,"title":"short action title","description":"what visible action this step performs and why it is needed","action_purpose":"why this action exists in the recorded trajectory","importance":"key","cleanup_action":"keep","cleanup_reason":"why this step is useful or can be merged/dropped"}],"metadata":{"checker_rules":[{"id":"dismiss_optional_overlay_before_action","phase":"pre_transfer","condition":"overlay_blocking","action":"dismiss","enabled":true,"params":{}}]},"agent_reuse":{"checker_assets":[{"checker_id":"dismiss_optional_overlay_before_action","step_index":0,"reason":"turns a conditional popup close into a runtime checker"}]}}
 
 Rules:
 - Return raw JSON only. Do not use Markdown or explanations.
 - Include every input step index exactly once.
 - Use only indexes from the input digest.
-- Do not include name, parameters, execution, tools, args, or agent_reuse.
+- Do not include name, parameters, execution, tools, or args.
+- Include metadata.checker_rules and agent_reuse.checker_assets only when a step is marked optional_checker.
 - Keep titles concise and action-oriented.
-- Describe visible user intent, not raw coordinates or low-level implementation.
-- cleanup_action must be one of keep, merge_candidate, drop_candidate, or noise.
+- Describe visible user intent and why the action exists, not raw coordinates or low-level implementation.
+- Every executable step/action must have title, description, action_purpose, importance, cleanup_action, and cleanup_reason.
+- cleanup_action must be one of keep, merge_candidate, drop_candidate, noise, or optional_checker.
+- Use optional_checker for conditional obstruction actions such as closing ads, popups, banners, coupons, or permission nudges that may not appear on every replay. Add optional_condition when known. Do not remove or force the step.
+- For every optional_checker, add a supported metadata.checker_rules entry and link it from agent_reuse.checker_assets. Supported combinations only: overlay_blocking+dismiss+pre_transfer, permission_dialog+allow+pre_transfer, keyboard_obscuring+hide_keyboard+pre_action, package_mismatch+open_app+pre_transfer. Do not invent scripts, selectors, model calls, or unsupported checker types.
 - Mark repeated, wrapper, state-refresh, wait-like, or no-op steps as merge_candidate/drop_candidate/noise with a short cleanup_reason. This is annotation only; do not remove steps.
 
 Input digest:
@@ -1443,21 +1492,25 @@ $input
 ''';
     }
     return '''
-你只负责整理 OOB 复用指令中每个 step 的标题和描述。
+你只负责整理 OOB 复用指令中每个 step 的标题、描述和动作用途标注。
 
 ${_labelEnhancementSkillContract(skillContract: skillContract, section: 'steps')}
 
 只返回一个 JSON object：
-{"steps":[{"index":0,"title":"简短动作标题","description":"这个动作做了什么","importance":"key","cleanup_action":"keep","cleanup_reason":"说明这一步为什么有用，或为什么可合并/可删除"}]}
+{"steps":[{"index":0,"title":"简短动作标题","description":"这个动作具体做什么，以及为什么需要它","action_purpose":"这个动作在录制轨迹里的用途","importance":"key","cleanup_action":"keep","cleanup_reason":"说明这一步为什么有用，或为什么可合并/可删除"}],"metadata":{"checker_rules":[{"id":"dismiss_optional_overlay_before_action","phase":"pre_transfer","condition":"overlay_blocking","action":"dismiss","enabled":true,"params":{}}]},"agent_reuse":{"checker_assets":[{"checker_id":"dismiss_optional_overlay_before_action","step_index":0,"reason":"把条件性弹窗关闭动作转成运行时 checker"}]}}
 
 规则：
 - 只返回原始 JSON。不要 Markdown，不要解释。
 - 输入摘要里的每个 step index 都必须出现一次。
 - 只能使用输入摘要中已有的 index。
-- 不要包含 name、parameters、execution、tools、args 或 agent_reuse。
+- 不要包含 name、parameters、execution、tools 或 args。
+- 只有当 step 标成 optional_checker 时，才包含 metadata.checker_rules 和 agent_reuse.checker_assets。
 - 标题要短，像动作说明。
-- 描述可见的用户意图，不要描述裸坐标或底层实现。
-- cleanup_action 只能是 keep、merge_candidate、drop_candidate 或 noise。
+- 描述可见用户意图和动作存在的原因，不要描述裸坐标或底层实现。
+- 每个可执行 step/action 都必须有 title、description、action_purpose、importance、cleanup_action 和 cleanup_reason。
+- cleanup_action 只能是 keep、merge_candidate、drop_candidate、noise 或 optional_checker。
+- 对关闭广告、弹窗、横幅、优惠券、权限提示等不一定每次出现的条件性遮挡动作，标成 optional_checker，并在知道条件时写 optional_condition。不要删除或强制改执行。
+- 每个 optional_checker 都要补一个可运行的 metadata.checker_rules，并在 agent_reuse.checker_assets 里关联原 step。只允许这些组合：overlay_blocking+dismiss+pre_transfer、permission_dialog+allow+pre_transfer、keyboard_obscuring+hide_keyboard+pre_action、package_mismatch+open_app+pre_transfer。不要发明脚本、selector、模型调用或不支持的 checker 类型。
 - 对重复、wrapper、刷新状态、类似 wait、无页面变化的步骤，标成 merge_candidate/drop_candidate/noise 并写简短 cleanup_reason。这只是标注，不要删除步骤。
 
 输入摘要：
@@ -1704,6 +1757,14 @@ $fallback
             'index': step['index'],
             'title': step['title'],
             'description': step['summary'],
+            'action_purpose': _firstNonBlank([
+              step['action_purpose'],
+              step['summary'],
+              step['title'],
+            ]),
+            'importance': 'normal',
+            'cleanup_action': 'keep',
+            'cleanup_reason': 'Existing executable step preserved.',
           },
         )
         .toList(growable: false);
@@ -1716,6 +1777,7 @@ $fallback
     final steps = <dynamic>[];
     final parameters = <dynamic>[];
     var agentReuse = <String, dynamic>{};
+    var metadata = <String, dynamic>{};
     for (final patch in patches) {
       final name = _firstNonBlank([patch['name'], patch['title']]);
       if (name.isNotEmpty) {
@@ -1747,11 +1809,23 @@ $fallback
         'avoid_when',
         'success_signal',
         'key_actions',
+        'checker_assets',
         'segments',
       ]) {
         if (patch.containsKey(key)) {
           agentReuse[key] = patch[key];
         }
+      }
+      metadata = _mergeMaps(metadata, _asStringKeyMap(patch['metadata']));
+      final checkerRules = _firstListValue(patch, const [
+        'checker_rules',
+        'checkerRules',
+      ]);
+      if (checkerRules.isNotEmpty) {
+        final existing = metadata['checker_rules'] is List
+            ? metadata['checker_rules'] as List
+            : const <dynamic>[];
+        metadata['checker_rules'] = [...existing, ...checkerRules];
       }
     }
     if (steps.isNotEmpty) {
@@ -1762,6 +1836,9 @@ $fallback
     }
     if (agentReuse.isNotEmpty) {
       merged['agent_reuse'] = agentReuse;
+    }
+    if (metadata.isNotEmpty) {
+      merged['metadata'] = metadata;
     }
     return merged;
   }
@@ -1797,20 +1874,32 @@ $fallback
           : const <dynamic>[],
       'steps': [
         for (var index = 0; index < steps.length; index++)
-          {
-            'index': index,
-            'id': _firstNonBlank([steps[index]['id'], 'step_${index + 1}']),
-            'tool': _firstNonBlank([steps[index]['tool']]),
-            'executor': _firstNonBlank([steps[index]['executor']]),
-            'title': _firstNonBlank([steps[index]['title']]),
-            'summary': _firstNonBlank([
-              steps[index]['description'],
-              steps[index]['summary'],
-            ]),
-            'args_preview': _enhancementArgsPreview(steps[index]['args']),
-          },
+          _labelEnhancementStepDigest(steps[index], index),
       ],
       'candidate_bindings': _enhancementBindingCandidates(functionJson),
+    };
+  }
+
+  static Map<String, dynamic> _labelEnhancementStepDigest(
+    Map<String, dynamic> step,
+    int index,
+  ) {
+    final cleanupAnnotation = _asStringKeyMap(step['cleanup_annotation']);
+    return {
+      'index': index,
+      'id': _firstNonBlank([step['id'], 'step_${index + 1}']),
+      'tool': _firstNonBlank([step['tool']]),
+      'executor': _firstNonBlank([step['executor']]),
+      'title': _firstNonBlank([step['title']]),
+      'description': _firstNonBlank([step['description']]),
+      'action_purpose': _firstNonBlank([
+        cleanupAnnotation['action_purpose'],
+        step['description'],
+        step['summary'],
+      ]),
+      'summary': _firstNonBlank([step['description'], step['summary']]),
+      if (cleanupAnnotation.isNotEmpty) 'cleanup_annotation': cleanupAnnotation,
+      'args_preview': _enhancementArgsPreview(step['args']),
     };
   }
 
@@ -1869,6 +1958,9 @@ $fallback
           aiStep['description'],
           aiStep['detail'],
           aiStep['intent'],
+          aiStep['action_purpose'],
+          aiStep['actionPurpose'],
+          aiStep['purpose'],
         ]);
         if (title.isNotEmpty) {
           steps[index]['title'] = title;
@@ -1912,7 +2004,14 @@ $fallback
       }
     }
     result['parameters'] = _applyParameterEnhancement(aiJson, result);
-    final agentReuse = _agentReuseEnhancement(aiJson, result);
+    final checkerEnhancement = _checkerRuleEnhancement(aiJson, result);
+    _applyCheckerRuleEnhancement(result, checkerEnhancement);
+    final agentReuse = _agentReuseEnhancement(
+      aiJson,
+      result,
+      checkerAssets: checkerEnhancement.assets,
+      checkerRuleIds: checkerEnhancement.ruleIds,
+    );
     if (agentReuse.isNotEmpty) {
       result['agent_reuse'] = _mergeMaps(
         _asStringKeyMap(result['agent_reuse']),
@@ -1933,6 +2032,12 @@ $fallback
     final enhancedParameters = _parameterSummaries(enhanced['parameters']);
     final originalReuse = _asStringKeyMap(original['agent_reuse']);
     final enhancedReuse = _asStringKeyMap(enhanced['agent_reuse']);
+    final originalCheckerRules = _asStringKeyMapList(
+      _asStringKeyMap(original['metadata'])['checker_rules'],
+    );
+    final enhancedCheckerRules = _asStringKeyMapList(
+      _asStringKeyMap(enhanced['metadata'])['checker_rules'],
+    );
 
     final headerChanges = <String>[];
     if (!_valuesEquivalent(original['name'], enhanced['name'])) {
@@ -1948,7 +2053,12 @@ $fallback
         : enhancedSteps.length;
     for (var index = 0; index < maxStepCount; index++) {
       final changedFields = <String>[];
-      for (final field in const ['title', 'summary', 'description']) {
+      for (final field in const [
+        'title',
+        'summary',
+        'description',
+        'cleanup_annotation',
+      ]) {
         if (!_valuesEquivalent(
           originalSteps[index][field],
           enhancedSteps[index][field],
@@ -2018,7 +2128,8 @@ $fallback
         headerChanges.isNotEmpty ||
         stepChanges.isNotEmpty ||
         !_valuesEquivalent(originalParameters, enhancedParameters) ||
-        reuseChangedKeys.isNotEmpty;
+        reuseChangedKeys.isNotEmpty ||
+        !_valuesEquivalent(originalCheckerRules, enhancedCheckerRules);
 
     return {
       'part': 'validated_diff',
@@ -2029,6 +2140,14 @@ $fallback
       'step_changes': stepChanges,
       'parameter_changes': parameterChanges,
       'reuse_changed_keys': reuseChangedKeys,
+      'checker_rule_changes': {
+        'before_count': originalCheckerRules.length,
+        'after_count': enhancedCheckerRules.length,
+        'changed': !_valuesEquivalent(
+          originalCheckerRules,
+          enhancedCheckerRules,
+        ),
+      },
       'rejected_candidates': {
         'parameter_names': rejectedParameterNames,
         'count': rejectedParameterNames.length,
@@ -2171,17 +2290,21 @@ $fallback
 
   static Map<String, dynamic> _agentReuseEnhancement(
     Map<String, dynamic> aiJson,
-    Map<String, dynamic> functionJson,
-  ) {
+    Map<String, dynamic> functionJson, {
+    List<Map<String, dynamic>> checkerAssets = const <Map<String, dynamic>>[],
+    Set<String> checkerRuleIds = const <String>{},
+  }) {
     final raw = _mergeMaps(_asStringKeyMap(aiJson['agent_reuse']), {
       if (aiJson['reuse_when'] != null) 'reuse_when': aiJson['reuse_when'],
       if (aiJson['avoid_when'] != null) 'avoid_when': aiJson['avoid_when'],
       if (aiJson['success_signal'] != null)
         'success_signal': aiJson['success_signal'],
       if (aiJson['key_actions'] != null) 'key_actions': aiJson['key_actions'],
+      if (aiJson['checker_assets'] != null)
+        'checker_assets': aiJson['checker_assets'],
       if (aiJson['segments'] != null) 'segments': aiJson['segments'],
     });
-    if (raw.isEmpty) {
+    if (raw.isEmpty && checkerAssets.isEmpty) {
       return const <String, dynamic>{};
     }
 
@@ -2198,6 +2321,16 @@ $fallback
       steps,
       parameterNames,
     );
+    final existingAgentReuse = _asStringKeyMap(functionJson['agent_reuse']);
+    final safeCheckerAssets = _mergeCheckerAssets(
+      _asStringKeyMapList(existingAgentReuse['checker_assets']),
+      [
+        ..._safeCheckerAssets(raw['checker_assets'], steps, checkerRuleIds),
+        ...checkerAssets,
+      ],
+      steps,
+      checkerRuleIds,
+    );
     final segments = _safeReuseSegments(raw['segments'], steps, parameterNames);
 
     final output = <String, dynamic>{
@@ -2208,6 +2341,7 @@ $fallback
       if (avoidWhen.isNotEmpty) 'avoid_when': avoidWhen,
       if (successSignal.isNotEmpty) 'success_signal': successSignal,
       if (keyActions.isNotEmpty) 'key_actions': keyActions,
+      if (safeCheckerAssets.isNotEmpty) 'checker_assets': safeCheckerAssets,
       if (segments.isNotEmpty) 'segments': segments,
     };
     return output.length <= 3 ? const <String, dynamic>{} : output;
@@ -2555,6 +2689,510 @@ class _ParameterBindingTarget {
   final String leafKey;
   final dynamic value;
 }
+
+class _CheckerRuleEnhancement {
+  const _CheckerRuleEnhancement({
+    required this.rules,
+    required this.assets,
+    required this.allRuleIds,
+  });
+
+  final List<Map<String, dynamic>> rules;
+  final List<Map<String, dynamic>> assets;
+  final Set<String> allRuleIds;
+
+  Set<String> get ruleIds => allRuleIds;
+}
+
+_CheckerRuleEnhancement _checkerRuleEnhancement(
+  Map<String, dynamic> aiJson,
+  Map<String, dynamic> functionJson,
+) {
+  final metadata = _asStringKeyMap(functionJson['metadata']);
+  final existingRules = _asStringKeyMapList(metadata['checker_rules']);
+  final existingIds = existingRules
+      .map((rule) => _firstNonBlank([rule['id']]))
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final usedIds = <String>{...existingIds};
+  final signatureToId = <String, String>{};
+  for (final rule in existingRules) {
+    final sanitized = _sanitizeCheckerRule(
+      rule,
+      usedIds: <String>{},
+      reserveId: false,
+    );
+    if (sanitized == null) continue;
+    signatureToId[_checkerRuleSignature(sanitized)] = _firstNonBlank([
+      rule['id'],
+      sanitized['id'],
+    ]);
+  }
+
+  final newRules = <Map<String, dynamic>>[];
+  for (final rawRule in _checkerRuleCandidates(aiJson)) {
+    final sanitized = _sanitizeCheckerRule(
+      _asStringKeyMap(rawRule),
+      usedIds: usedIds,
+      fallbackId: 'function_checker_${newRules.length + 1}',
+    );
+    if (sanitized == null) continue;
+    final signature = _checkerRuleSignature(sanitized);
+    if (signatureToId.containsKey(signature)) {
+      continue;
+    }
+    signatureToId[signature] = _firstNonBlank([sanitized['id']]);
+    newRules.add(sanitized);
+  }
+
+  final steps = _executionSteps(functionJson);
+  final derivedAssets = <Map<String, dynamic>>[];
+  for (var index = 0; index < steps.length; index++) {
+    final derived = _deriveCheckerRuleFromOptionalStep(steps[index], index);
+    if (derived == null) continue;
+    final signature = _checkerRuleSignature(derived);
+    var checkerId = signatureToId[signature];
+    if (checkerId == null || checkerId.isEmpty) {
+      final rule = _sanitizeCheckerRule(
+        derived,
+        usedIds: usedIds,
+        fallbackId: 'optional_checker_step_$index',
+      );
+      if (rule == null) continue;
+      checkerId = _firstNonBlank([rule['id']]);
+      signatureToId[signature] = checkerId;
+      newRules.add(rule);
+    }
+    derivedAssets.add(
+      _checkerAssetForStep(
+        checkerId: checkerId,
+        step: steps[index],
+        stepIndex: index,
+        reason: _optionalCheckerReason(steps[index]),
+      ),
+    );
+  }
+
+  final allRuleIds = <String>{
+    ...existingIds,
+    ...newRules.map((rule) => _firstNonBlank([rule['id']])),
+  }..removeWhere((id) => id.isEmpty);
+  final rawAssets = <Map<String, dynamic>>[];
+  for (final rawAsset in _checkerAssetCandidates(aiJson)) {
+    rawAssets.addAll(_safeCheckerAssets([rawAsset], steps, allRuleIds));
+  }
+  final assets = _mergeCheckerAssets(
+    const <Map<String, dynamic>>[],
+    [...rawAssets, ...derivedAssets],
+    steps,
+    allRuleIds,
+  );
+
+  return _CheckerRuleEnhancement(
+    rules: newRules,
+    assets: assets,
+    allRuleIds: allRuleIds,
+  );
+}
+
+void _applyCheckerRuleEnhancement(
+  Map<String, dynamic> functionJson,
+  _CheckerRuleEnhancement enhancement,
+) {
+  if (enhancement.rules.isEmpty) return;
+  final metadata = <String, dynamic>{
+    ..._asStringKeyMap(functionJson['metadata']),
+  };
+  final existing = metadata['checker_rules'] is List
+      ? (metadata['checker_rules'] as List).map(_jsonSafe).toList()
+      : const <dynamic>[];
+  final merged = _mergeCheckerRules(existing, enhancement.rules);
+  if (!_valuesEquivalent(existing, merged)) {
+    metadata['checker_rules'] = merged;
+    functionJson['metadata'] = metadata;
+  }
+}
+
+List<dynamic> _checkerRuleCandidates(Map<String, dynamic> aiJson) {
+  final metadata = _asStringKeyMap(aiJson['metadata']);
+  final agentReuse = _asStringKeyMap(aiJson['agent_reuse']);
+  return [
+    ..._firstListValue(aiJson, const ['checker_rules', 'checkerRules']),
+    ..._firstListValue(metadata, const ['checker_rules', 'checkerRules']),
+    ..._firstListValue(agentReuse, const ['checker_rules', 'checkerRules']),
+  ];
+}
+
+List<dynamic> _checkerAssetCandidates(Map<String, dynamic> aiJson) {
+  final agentReuse = _asStringKeyMap(aiJson['agent_reuse']);
+  return [
+    ..._firstListValue(aiJson, const ['checker_assets', 'checkerAssets']),
+    ..._firstListValue(agentReuse, const ['checker_assets', 'checkerAssets']),
+  ];
+}
+
+Map<String, dynamic>? _sanitizeCheckerRule(
+  Map<String, dynamic> raw, {
+  required Set<String> usedIds,
+  String fallbackId = 'function_checker',
+  bool reserveId = true,
+}) {
+  if (raw.isEmpty) return null;
+  final condition = _normalizeCheckerCondition(
+    _firstNonBlank([raw['condition'], raw['when'], raw['type']]),
+  );
+  if (condition.isEmpty) return null;
+  final action = _normalizeCheckerAction(
+    _firstNonBlank([raw['action'], raw['then'], raw['effect']]),
+    condition: condition,
+  );
+  if (action.isEmpty || !_isSupportedCheckerPair(condition, action)) {
+    return null;
+  }
+  final phase = _checkerPhaseForCondition(condition);
+  final rawParams = _asStringKeyMap(raw['params']);
+  final packageName = _firstNonBlank([
+    rawParams['package_name'],
+    rawParams['packageName'],
+    raw['package_name'],
+    raw['packageName'],
+  ]);
+  final params = <String, dynamic>{};
+  if (condition == 'package_mismatch' &&
+      RegExp(
+        r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$',
+      ).hasMatch(packageName)) {
+    params['package_name'] = packageName;
+  }
+  final id = reserveId
+      ? _uniqueCheckerRuleId(raw['id'], usedIds, fallbackId)
+      : _firstNonBlank([raw['id'], fallbackId]);
+  if (id.isEmpty) return null;
+  return {
+    'id': id,
+    'phase': phase,
+    'condition': condition,
+    'action': action,
+    'enabled': _asBool(raw['enabled']) ?? true,
+    'params': params,
+  };
+}
+
+Map<String, dynamic>? _deriveCheckerRuleFromOptionalStep(
+  Map<String, dynamic> step,
+  int index,
+) {
+  final annotation = _asStringKeyMap(step['cleanup_annotation']);
+  if (!_isOptionalCheckerAnnotation(annotation)) return null;
+  final text = _checkerInferenceText(step, annotation);
+  final condition = _checkerConditionFromText(text);
+  final action = _checkerActionForCondition(condition);
+  return {
+    'id': 'optional_checker_step_${index}_$condition',
+    'phase': _checkerPhaseForCondition(condition),
+    'condition': condition,
+    'action': action,
+    'enabled': true,
+    'params': {},
+  };
+}
+
+bool _isOptionalCheckerAnnotation(Map<String, dynamic> annotation) {
+  final normalized = _normalizeCleanupAction(
+    _firstNonBlank([
+      annotation['cleanup_action'],
+      annotation['cleanupAction'],
+      annotation['action'],
+    ]),
+  );
+  final usefulness = _firstNonBlank([annotation['usefulness']]).toLowerCase();
+  final category = _firstNonBlank([annotation['category']]).toLowerCase();
+  return normalized == 'optional_checker' ||
+      usefulness == 'conditional_checker' ||
+      category == 'conditional_obstruction' ||
+      category == 'runtime_checker' ||
+      category == 'checker_candidate';
+}
+
+String _checkerInferenceText(
+  Map<String, dynamic> step,
+  Map<String, dynamic> annotation,
+) {
+  final args = _asStringKeyMap(step['args']);
+  return [
+    step['title'],
+    step['summary'],
+    step['description'],
+    annotation['optional_condition'],
+    annotation['reason'],
+    annotation['action_purpose'],
+    args['target_description'],
+    args['text'],
+    args['content'],
+  ].map((value) => value?.toString() ?? '').join(' ').toLowerCase();
+}
+
+String _checkerConditionFromText(String text) {
+  if (_containsAny(text, const ['keyboard', 'ime', '键盘', '输入法'])) {
+    return 'keyboard_obscuring';
+  }
+  if (_containsAny(text, const [
+    'permission',
+    'allow',
+    'authorize',
+    'grant',
+    '权限',
+    '授权',
+    '允许',
+  ])) {
+    return 'permission_dialog';
+  }
+  return 'overlay_blocking';
+}
+
+String _checkerActionForCondition(String condition) => switch (condition) {
+  'keyboard_obscuring' => 'hide_keyboard',
+  'permission_dialog' => 'allow',
+  'package_mismatch' => 'open_app',
+  _ => 'dismiss',
+};
+
+String _normalizeCheckerCondition(String raw) {
+  final text = raw.trim().toLowerCase().replaceAll('-', '_');
+  return switch (text) {
+    'overlay_blocking' ||
+    'blocking_overlay' ||
+    'popup_blocking' ||
+    'popup' ||
+    'ad_popup' ||
+    'ad' ||
+    'banner' ||
+    'coupon' ||
+    'obstruction' ||
+    'conditional_obstruction' => 'overlay_blocking',
+    'permission_dialog' ||
+    'permission' ||
+    'permission_prompt' ||
+    'permission_nudge' => 'permission_dialog',
+    'keyboard_obscuring' ||
+    'keyboard' ||
+    'ime_obscuring' ||
+    'soft_keyboard' => 'keyboard_obscuring',
+    'package_mismatch' ||
+    'wrong_app' ||
+    'app_mismatch' ||
+    'foreground_package_mismatch' => 'package_mismatch',
+    _ => '',
+  };
+}
+
+String _normalizeCheckerAction(String raw, {required String condition}) {
+  final text = raw.trim().toLowerCase().replaceAll('-', '_');
+  if (text.isEmpty) return _checkerActionForCondition(condition);
+  return switch (text) {
+    'dismiss' ||
+    'close' ||
+    'close_popup' ||
+    'click_close' ||
+    'click_dismiss' ||
+    'skip' => 'dismiss',
+    'allow' || 'grant' || 'grant_permission' || 'click_allow' => 'allow',
+    'hide_keyboard' ||
+    'dismiss_keyboard' ||
+    'close_keyboard' => 'hide_keyboard',
+    'open_app' || 'launch_app' || 'start_app' => 'open_app',
+    'click' when condition == 'overlay_blocking' => 'dismiss',
+    'click' when condition == 'permission_dialog' => 'allow',
+    _ => '',
+  };
+}
+
+String _checkerPhaseForCondition(String condition) =>
+    condition == 'keyboard_obscuring' ? 'pre_action' : 'pre_transfer';
+
+bool _isSupportedCheckerPair(String condition, String action) =>
+    (condition == 'overlay_blocking' && action == 'dismiss') ||
+    (condition == 'permission_dialog' && action == 'allow') ||
+    (condition == 'keyboard_obscuring' && action == 'hide_keyboard') ||
+    (condition == 'package_mismatch' && action == 'open_app');
+
+String _checkerRuleSignature(Map<String, dynamic> rule) {
+  final params = _asStringKeyMap(rule['params']);
+  return [
+    rule['phase'],
+    rule['condition'],
+    rule['action'],
+    params['package_name'] ?? params['packageName'] ?? '',
+  ].map((value) => value?.toString() ?? '').join('|');
+}
+
+String _uniqueCheckerRuleId(dynamic raw, Set<String> usedIds, String fallback) {
+  var base = _firstNonBlank([raw, fallback])
+      .replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]}_${m[2]}')
+      .replaceAll(RegExp(r'[^A-Za-z0-9_]+'), '_')
+      .toLowerCase()
+      .replaceAll(RegExp(r'_+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
+  if (base.isEmpty) {
+    base = 'function_checker';
+  }
+  if (base.length > 80) {
+    base = base.substring(0, 80).replaceAll(RegExp(r'_$'), '');
+  }
+  var candidate = base;
+  var suffix = 2;
+  while (usedIds.contains(candidate)) {
+    final suffixText = '_$suffix';
+    final prefixLength = (80 - suffixText.length).clamp(1, 80).toInt();
+    final safeLength = base.length.clamp(1, prefixLength).toInt();
+    candidate =
+        '${base.substring(0, safeLength)}'
+        '$suffixText';
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+List<dynamic> _mergeCheckerRules(
+  List<dynamic> existing,
+  List<Map<String, dynamic>> additions,
+) {
+  final output = existing.map(_jsonSafe).toList(growable: true);
+  final signatures = <String>{};
+  for (final raw in existing) {
+    final sanitized = _sanitizeCheckerRule(
+      _asStringKeyMap(raw),
+      usedIds: <String>{},
+      reserveId: false,
+    );
+    if (sanitized != null) {
+      signatures.add(_checkerRuleSignature(sanitized));
+    }
+  }
+  for (final rule in additions) {
+    final signature = _checkerRuleSignature(rule);
+    if (signatures.add(signature)) {
+      output.add(rule);
+    }
+  }
+  return output;
+}
+
+List<Map<String, dynamic>> _safeCheckerAssets(
+  dynamic raw,
+  List<Map<String, dynamic>> steps,
+  Set<String> checkerRuleIds,
+) {
+  final items = raw is List ? raw : const <dynamic>[];
+  return items
+      .map(_asStringKeyMap)
+      .map((item) => _safeCheckerAsset(item, steps, checkerRuleIds))
+      .whereType<Map<String, dynamic>>()
+      .toList(growable: false);
+}
+
+Map<String, dynamic>? _safeCheckerAsset(
+  Map<String, dynamic> item,
+  List<Map<String, dynamic>> steps,
+  Set<String> checkerRuleIds,
+) {
+  final checkerId = _firstNonBlank([
+    item['checker_id'],
+    item['checkerId'],
+    item['id'],
+    item['rule_id'],
+    item['ruleId'],
+  ]);
+  if (checkerId.isEmpty ||
+      (checkerRuleIds.isNotEmpty && !checkerRuleIds.contains(checkerId))) {
+    return null;
+  }
+  final index = _resolveStepIndex(item, steps);
+  if (index < 0 || index >= steps.length) return null;
+  return _checkerAssetForStep(
+    checkerId: checkerId,
+    step: steps[index],
+    stepIndex: index,
+    reason: _boundedText(
+      _firstNonBlank([item['reason'], item['description'], item['summary']]),
+      maxLength: 240,
+    ),
+  );
+}
+
+int _resolveStepIndex(
+  Map<String, dynamic> item,
+  List<Map<String, dynamic>> steps,
+) {
+  final index = _asInt(
+    item['step_index'] ?? item['stepIndex'] ?? item['index'],
+  );
+  if (index != null) return index;
+  final stepId = _firstNonBlank([item['step_id'], item['stepId']]);
+  if (stepId.isEmpty) return -1;
+  return steps.indexWhere((step) => _firstNonBlank([step['id']]) == stepId);
+}
+
+Map<String, dynamic> _checkerAssetForStep({
+  required String checkerId,
+  required Map<String, dynamic> step,
+  required int stepIndex,
+  required String reason,
+}) {
+  return {
+    'checker_id': checkerId,
+    'step_index': stepIndex,
+    'step_id': _firstNonBlank([step['id'], 'step_${stepIndex + 1}']),
+    'role': 'checker_candidate',
+    'materialization': 'metadata_checker_rule',
+    if (reason.isNotEmpty) 'reason': _boundedText(reason, maxLength: 240),
+  };
+}
+
+String _optionalCheckerReason(Map<String, dynamic> step) {
+  final annotation = _asStringKeyMap(step['cleanup_annotation']);
+  return _firstNonBlank([
+    annotation['optional_condition'],
+    annotation['reason'],
+    annotation['action_purpose'],
+    step['description'],
+    step['summary'],
+    step['title'],
+    'Conditional obstruction action converted to runtime checker.',
+  ]);
+}
+
+List<Map<String, dynamic>> _mergeCheckerAssets(
+  List<Map<String, dynamic>> existing,
+  List<Map<String, dynamic>> additions,
+  List<Map<String, dynamic>> steps,
+  Set<String> checkerRuleIds,
+) {
+  final output = <Map<String, dynamic>>[];
+  final seen = <String>{};
+  void addAsset(Map<String, dynamic> raw) {
+    final asset = _safeCheckerAsset(raw, steps, checkerRuleIds) ?? raw;
+    final checkerId = _firstNonBlank([asset['checker_id']]);
+    final index = _asInt(asset['step_index']);
+    if (checkerId.isEmpty || index == null || index < 0) return;
+    final signature = '$checkerId|$index|${_firstNonBlank([asset['step_id']])}';
+    if (seen.add(signature)) {
+      output.add(asset);
+    }
+  }
+
+  for (final asset in existing) {
+    addAsset(asset);
+  }
+  for (final asset in additions) {
+    addAsset(asset);
+  }
+  return output;
+}
+
+bool _containsAny(String text, List<String> needles) =>
+    needles.any((needle) => text.contains(needle));
 
 List<dynamic> _firstListValue(Map<String, dynamic> source, List<String> keys) {
   for (final key in keys) {
@@ -3808,6 +4446,25 @@ Map<String, dynamic> _stepCleanupAnnotationFromAi(
     ]),
     maxLength: 240,
   );
+  final actionPurpose = _boundedText(
+    _firstNonBlank([
+      aiStep['action_purpose'],
+      aiStep['actionPurpose'],
+      aiStep['purpose'],
+      aiStep['intent'],
+    ]),
+    maxLength: 240,
+  );
+  final optionalCondition = _boundedText(
+    _firstNonBlank([
+      aiStep['optional_condition'],
+      aiStep['optionalCondition'],
+      aiStep['condition'],
+      aiStep['checker_condition'],
+      aiStep['checkerCondition'],
+    ]),
+    maxLength: 240,
+  );
   final category = _boundedText(
     _firstNonBlank([
       aiStep['cleanup_category'],
@@ -3823,6 +4480,8 @@ Map<String, dynamic> _stepCleanupAnnotationFromAi(
       normalizedAction.isEmpty &&
       !isNoise &&
       reason.isEmpty &&
+      actionPurpose.isEmpty &&
+      optionalCondition.isEmpty &&
       category.isEmpty) {
     return fallback;
   }
@@ -3842,8 +4501,13 @@ Map<String, dynamic> _stepCleanupAnnotationFromAi(
     'confidence': _safeCleanupConfidence(aiStep['confidence']),
     'execution_rewrite_allowed': false,
     if (importance.isNotEmpty) 'importance': importance,
+    if (actionPurpose.isNotEmpty) 'action_purpose': actionPurpose,
+    if (optionalCondition.isNotEmpty) 'optional_condition': optionalCondition,
     if (reason.isNotEmpty) 'reason': reason,
-    if (category.isNotEmpty) 'category': category,
+    if (category.isNotEmpty)
+      'category': category
+    else if (cleanupAction == 'optional_checker')
+      'category': 'conditional_obstruction',
   };
   final mergeWith = _asInt(
     aiStep['merge_with_index'] ??
@@ -3864,6 +4528,13 @@ String _normalizeCleanupAction(String raw) {
     'merge' || 'merge_candidate' || 'merged' => 'merge_candidate',
     'drop' || 'delete' || 'remove' || 'drop_candidate' => 'drop_candidate',
     'noise' || 'noisy' || 'noop' || 'no_op' => 'noise',
+    'optional' ||
+    'optional_checker' ||
+    'conditional' ||
+    'conditional_checker' ||
+    'conditional_obstruction' ||
+    'popup_checker' ||
+    'ad_checker' => 'optional_checker',
     'review' || 'review_candidate' => 'review',
     _ => '',
   };
@@ -3875,6 +4546,7 @@ String _usefulnessForCleanupAction(String cleanupAction, String importance) {
     'drop_candidate' => 'probably_useless',
     'merge_candidate' => 'redundant_candidate',
     'noise' => 'noise',
+    'optional_checker' => 'conditional_checker',
     'review' => 'review_required',
     'merged_duplicate' => 'useful_with_merged_noise',
     _ => 'useful',

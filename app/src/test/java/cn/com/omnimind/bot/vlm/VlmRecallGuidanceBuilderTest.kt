@@ -187,28 +187,14 @@ class VlmRecallGuidanceBuilderTest {
                         ),
                     )
                 ),
-                "segment_candidates" to listOf(
-                    mapOf(
-                        "function_id" to "settings_suffix",
-                        "score" to 0.88,
-                        "page_similarity" to 0.93,
-                        "start_step_index" to 1,
-                        "remaining_step_count" to 2,
-                        "description" to "Continue Settings suffix.",
-                        "step_summaries" to listOf(
-                            mapOf("tool" to "click", "title" to "click: Network"),
-                        ),
-                    )
-                ),
             )
         )
 
         assertTrue(guidance.contains("function_execution_policy=optional_candidates_only"))
         assertTrue(guidance.contains("do_not_auto_execute=true"))
         assertTrue(guidance.contains("1. function_id=open_network_settings"))
-        assertTrue(guidance.contains("segment 1: function_id=settings_suffix"))
-        assertTrue(guidance.contains("agent_optional_function: function_id=settings_suffix start_step_index=1"))
-        assertFalse(guidance.contains("call: call_tool function_id=settings_suffix"))
+        assertFalse(guidance.contains("segment"))
+        assertFalse(guidance.contains("start_step_index"))
         assertNull(
             VlmRecallGuidanceBuilder.directHitFunctionId(
                 mapOf(
@@ -245,40 +231,7 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertNull(contextOnly.directHitFunctionId)
-        assertEquals(0, contextOnly.directHitStartStepIndex)
         assertEquals("open_network_settings", directAllowed.directHitFunctionId)
-    }
-
-    @Test
-    fun `render guidance exposes segment hit with suffix execution id`() {
-        val payload = mapOf(
-            "success" to true,
-            "decision" to "segment_hit",
-            "segment_hit" to mapOf(
-                    "function_id" to "continue_from_internal_page_segment",
-                    "score" to 1.0,
-                    "text_score" to 1.0,
-                    "page_similarity" to 1.0,
-                    "start_step_index" to 2,
-                "remaining_step_count" to 3,
-                "matched_boundary" to "src_ctx",
-                "description" to "Continue from an internal page",
-                "step_summaries" to listOf(
-                    mapOf("tool" to "click", "title" to "click: Continue"),
-                    mapOf("tool" to "open_app", "title" to "open_app: Settings"),
-                ),
-            ),
-        )
-
-        val guidance = VlmRecallGuidanceBuilder.renderGuidance(payload)
-
-        assertTrue(guidance.contains("decision=segment_hit"))
-        assertTrue(guidance.contains("segment 1: function_id=continue_from_internal_page_segment"))
-        assertTrue(guidance.contains("start_step_index=2"))
-        assertTrue(guidance.contains("remaining_step: 1. click"))
-        assertTrue(guidance.contains("agent_optional_function: function_id=continue_from_internal_page_segment start_step_index=2"))
-        assertEquals("continue_from_internal_page_segment", VlmRecallGuidanceBuilder.directHitFunctionId(payload))
-        assertEquals(2, VlmRecallGuidanceBuilder.directHitStartStepIndex(payload))
     }
 
     @Test
@@ -301,22 +254,6 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertEquals("", guidance)
-    }
-
-    @Test
-    fun `segment hit requiring arguments is not exposed as direct execution`() {
-        val payload = mapOf(
-            "success" to true,
-            "decision" to "segment_hit",
-            "segment_hit" to mapOf(
-                "function_id" to "fill_contact_segment",
-                "start_step_index" to 3,
-                "requires_arguments" to true,
-            ),
-        )
-
-        assertNull(VlmRecallGuidanceBuilder.directHitFunctionId(payload))
-        assertEquals(0, VlmRecallGuidanceBuilder.directHitStartStepIndex(payload))
     }
 
     @Test

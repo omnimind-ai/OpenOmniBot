@@ -1,7 +1,12 @@
 package cn.com.omnimind.bot.agent.tool.handlers
+import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
+import cn.com.omnimind.bot.runlog.OobPageVectorSet
+import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
+import cn.com.omnimind.bot.runlog.PendingActionStack
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.atomic.AtomicLong
@@ -234,6 +239,13 @@ class OobFunctionToolHandler(
             callStack
         }
         val steps = timing.measure("materialized_steps_ms") { materializedSteps(materializedSpec) }
+        val pendingActionStack = timing.measure("pending_action_stack_build_ms") {
+            PendingActionStack.fromSteps(
+                steps = steps,
+                functionSpec = materializedSpec,
+                originalSpec = spec,
+            )
+        }
         val preflightFailure = timing.measure("accessibility_preflight_ms") {
             accessibilityPreflightFailure(
                 functionId = functionId,
@@ -246,6 +258,16 @@ class OobFunctionToolHandler(
         preflightFailure?.let {
             return withRunnerTiming(it, timing.finish())
         }
+
+        // Global package checker: if the foreground app doesn't match the Function's
+        // entry package, launch it before the step loop. Handles the case where the
+        // user navigated away, or the Function was compiled without an open_app step.
+        ensureEntryPackageForeground(steps)
+
+        // Checker rules from the Function spec (metadata.checker_rules).
+        // These are layered on top of the global built-in rules inside the executor.
+        val functionCheckerRules = OmniflowCheckerRule.fromSpec(spec)
+
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
         var modelRequired = false
@@ -253,9 +275,23 @@ class OobFunctionToolHandler(
 
         val stepLoopStartedAt = System.nanoTime()
         timing.recordSinceStart("pre_step_loop_ms", stepLoopStartedAt)
-        for ((index, step) in steps.withIndex()) {
+        var skippedBySourceAlignmentCount = 0
+        while (!pendingActionStack.isEmpty()) {
             val stepStartedAtMs = System.currentTimeMillis()
             toolHandle?.throwIfStopRequested()
+            val alignmentResult = alignPendingActionStack(pendingActionStack)
+            if (alignmentResult.skippedResults.isNotEmpty()) {
+                skippedBySourceAlignmentCount += alignmentResult.skippedResults.size
+                stepResults += alignmentResult.skippedResults
+            }
+            alignmentResult.failureResult?.let { failure ->
+                stepResults += failure
+                failureReason = failure["summary"]?.toString()
+                break
+            }
+            val frame = pendingActionStack.peek() ?: break
+            val index = frame.originalIndex
+            val step = frame.step
             val stepIndex = index + 1
             val stepId = step["id"]?.toString() ?: "step_$stepIndex"
             val stepTitle = step["title"]?.toString() ?: stepId
@@ -280,6 +316,7 @@ class OobFunctionToolHandler(
                     "finished_at_ms" to stepStartedAtMs,
                     "duration_ms" to 0L
                 )
+                pendingActionStack.popExecuted()
                 continue
             }
 
@@ -336,12 +373,13 @@ class OobFunctionToolHandler(
                         stepId = stepId,
                         stepTitle = stepTitle,
                         callableTool = omniflowExecutionTool,
+                        checkerRules = functionCheckerRules,
                     )
                 }
 
                 OmniflowStepExecutor.isOmniflowStep(step) -> {
                     try {
-                        executeOmniflowStep(step, stepId, stepTitle)
+                        executeOmniflowStep(step, stepId, stepTitle, functionCheckerRules)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -499,6 +537,7 @@ class OobFunctionToolHandler(
                 failureReason = timedStepResult["summary"]?.toString()
                 break
             }
+            pendingActionStack.popExecuted()
         }
         timing.recordElapsed("step_loop_ms", stepLoopStartedAt)
 
@@ -526,6 +565,10 @@ class OobFunctionToolHandler(
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
             "fallback_available" to (allowAgentFallback && modelRequired),
+            "pending_action_stack" to linkedMapOf(
+                "source_alignment_enabled" to pendingActionStack.sourceAlignmentEnabled,
+                "skipped_by_source_alignment_count" to skippedBySourceAlignmentCount,
+            ),
             "error_code" to stepResults.firstOrNull { it["success"] == false }
                 ?.get("error_code"),
             "error_message" to failureReason,
@@ -566,6 +609,120 @@ class OobFunctionToolHandler(
                 "error_message" to error.message.orEmpty(),
             )
         }
+
+    private fun alignPendingActionStack(
+        stack: PendingActionStack,
+    ): StackAlignmentResult {
+        if (!stack.sourceAlignmentEnabled) return StackAlignmentResult()
+        val top = stack.peek() ?: return StackAlignmentResult()
+        val window = stack.windowUntilNextKey()
+        val candidates = window.filter { it.hasSourcePage }
+        if (candidates.isEmpty()) return StackAlignmentResult()
+
+        val observedAtMs = System.currentTimeMillis()
+        val currentXml = runCatching { OmniflowActionRuntime.backend.currentXml()?.trim().orEmpty() }
+            .getOrDefault("")
+        if (currentXml.isBlank()) return StackAlignmentResult()
+        val currentPackage = runCatching { OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty() }
+            .getOrDefault("")
+        val currentVector = OobPageVectorSet.encode(xml = currentXml, packageName = currentPackage)
+            ?: return StackAlignmentResult()
+
+        var bestFrame: PendingActionStack.ActionFrame? = null
+        var bestScore = Float.NEGATIVE_INFINITY
+        candidates.forEach { frame ->
+            val sourceVector = frame.sourceVector ?: return@forEach
+            val score = OobPageVectorSet.cosine(currentVector.vector, sourceVector.vector)
+            if (score > bestScore) {
+                bestScore = score
+                bestFrame = frame
+            }
+        }
+        val matched = bestFrame?.takeIf { bestScore >= OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE }
+        if (matched == null) {
+            if (!top.hasSourcePage) return StackAlignmentResult()
+            val failedAtMs = System.currentTimeMillis()
+            return StackAlignmentResult(
+                failureResult = linkedMapOf<String, Any?>(
+                    "step_id" to top.stepId,
+                    "index" to top.originalIndex,
+                    "tool" to top.tool,
+                    "executor" to "omniflow",
+                    "model_free" to true,
+                    "success" to false,
+                    "needs_agent" to false,
+                    "fallback_available" to false,
+                    "error_code" to "OOB_SOURCE_ALIGNMENT_MISS",
+                    "summary" to "Current page does not match the pending function source window",
+                    "source_alignment" to linkedMapOf(
+                        "matched" to false,
+                        "best_score" to bestScore.takeIf { it.isFinite() },
+                        "min_score" to OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE,
+                        "window" to window.map(::sourceAlignmentFrameSummary),
+                        "current" to linkedMapOf(
+                            "node_id" to currentVector.nodeId,
+                            "package_name" to currentVector.packageName.takeIf { it.isNotBlank() },
+                            "signature" to currentVector.signature,
+                            "observed_at_ms" to observedAtMs,
+                        ).filterValues { it != null },
+                    ).filterValues { it != null },
+                    "recovery" to linkedMapOf(
+                        "refetched_current_page" to true,
+                        "reason" to "source_alignment_miss",
+                        "navigate_recovery_available" to false,
+                        "target_window" to window.map(::sourceAlignmentFrameSummary),
+                    ),
+                    "started_at_ms" to observedAtMs,
+                    "finished_at_ms" to failedAtMs,
+                    "duration_ms" to (failedAtMs - observedAtMs).coerceAtLeast(0),
+                ).filterValues { it != null }
+            )
+        }
+        if (matched == top) return StackAlignmentResult()
+
+        val skipped = stack.popSkippedUntil(matched)
+        val skippedAtMs = System.currentTimeMillis()
+        val skippedResults = skipped.map { frame ->
+            linkedMapOf<String, Any?>(
+                "step_id" to frame.stepId,
+                "index" to frame.originalIndex,
+                "tool" to frame.tool,
+                "executor" to "omniflow",
+                "model_free" to true,
+                "skipped" to true,
+                "skipped_by_source_alignment" to true,
+                "success" to true,
+                "summary" to "Skipped by source alignment: current page already matches step ${matched.originalIndex + 1}",
+                "source_alignment" to linkedMapOf(
+                    "matched" to true,
+                    "matched_step_index" to matched.originalIndex,
+                    "matched_step_id" to matched.stepId,
+                    "page_similarity" to bestScore,
+                    "min_score" to OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE,
+                    "current_node_id" to currentVector.nodeId,
+                    "current_package" to currentVector.packageName.takeIf { it.isNotBlank() },
+                    "target_frame" to sourceAlignmentFrameSummary(matched),
+                ).filterValues { it != null },
+                "started_at_ms" to observedAtMs,
+                "finished_at_ms" to skippedAtMs,
+                "duration_ms" to (skippedAtMs - observedAtMs).coerceAtLeast(0),
+            )
+        }
+        return StackAlignmentResult(skippedResults = skippedResults)
+    }
+
+    private fun sourceAlignmentFrameSummary(
+        frame: PendingActionStack.ActionFrame,
+    ): Map<String, Any?> = linkedMapOf(
+        "step_index" to frame.originalIndex,
+        "step_id" to frame.stepId,
+        "tool" to frame.tool,
+        "role" to frame.role,
+        "is_key_action" to frame.isKeyAction,
+        "source_package" to frame.sourcePackage.takeIf { it.isNotBlank() },
+        "source_node_id" to frame.sourceVector?.nodeId,
+        "source_signature" to frame.sourceVector?.signature,
+    ).filterValues { it != null }
 
     private fun recoveryPromptSuffix(recovery: Map<String, Any?>): String {
         if (recovery.isEmpty()) return ""
@@ -1098,6 +1255,7 @@ class OobFunctionToolHandler(
         stepId: String,
         stepTitle: String,
         callableTool: String,
+        checkerRules: List<OmniflowCheckerRule> = emptyList(),
     ): Map<String, Any?> {
         val path = resolveGraphPath(step, callableTool)
         if (path.isEmpty()) {
@@ -1117,7 +1275,7 @@ class OobFunctionToolHandler(
                 ?: "$stepTitle path ${index + 1}"
             val startedAtMs = System.currentTimeMillis()
             val result = try {
-                executeOmniflowStep(primitiveStep, pathStepId, pathTitle)
+                executeOmniflowStep(primitiveStep, pathStepId, pathTitle, checkerRules)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1164,8 +1322,57 @@ class OobFunctionToolHandler(
         step: Map<String, Any?>,
         stepId: String,
         stepTitle: String,
+        checkerRules: List<OmniflowCheckerRule> = emptyList(),
     ): Map<String, Any?> {
-        return OmniflowStepExecutor.execute(step, stepId, stepTitle)
+        return OmniflowStepExecutor.execute(step, stepId, stepTitle, checkerRules)
+    }
+
+    private suspend fun ensureEntryPackageForeground(steps: List<Map<String, Any?>>) {
+        val entryPackage = entryPackageForSteps(steps).takeIf { it.isNotBlank() } ?: return
+        val currentPackage = runCatching {
+            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
+        }.getOrDefault("")
+        if (currentPackage.isBlank() || currentPackage == entryPackage) return
+        // Skip if the first step is already an open_app — it will handle launch itself.
+        val firstAction = OmniflowStepExecutor.actionNameForStep(steps.first())
+        if (firstAction == "open_app") return
+        OmniLog.d(TAG, "global open_app: current=$currentPackage expected=$entryPackage")
+        val openAppStep = linkedMapOf<String, Any?>(
+            "id" to "global_open_app",
+            "title" to "open_app: $entryPackage",
+            "kind" to "omniflow_action",
+            "executor" to "omniflow",
+            "omniflow_action" to "open_app",
+            "local_action" to "open_app",
+            "model_free" to true,
+            "tool" to "open_app",
+            "callable_tool" to "open_app",
+            "args" to linkedMapOf("package_name" to entryPackage, "reset_task" to false),
+        )
+        runCatching { OmniflowStepExecutor.execute(openAppStep, "global_open_app", "open_app: $entryPackage") }
+            .onFailure { OmniLog.w(TAG, "global open_app failed for $entryPackage: ${it.message}") }
+    }
+
+    private fun entryPackageForSteps(steps: List<Map<String, Any?>>): String {
+        // Prefer an explicit open_app arg.
+        for (step in steps) {
+            if (OmniflowStepExecutor.actionNameForStep(step) == "open_app") {
+                val args = stringMap(step["args"])
+                val pkg = firstNonBlank(args["package_name"], args["packageName"])
+                if (pkg.isNotBlank()) return pkg
+            }
+        }
+        // Fall back to src_ctx package from the first step that has one.
+        for (step in steps) {
+            val srcCtx = stringMap(stringMap(step["source_context"])["src_ctx"])
+            val pkg = firstNonBlank(srcCtx["package_name"], srcCtx["packageName"])
+            if (pkg.isNotBlank() &&
+                !pkg.startsWith("cn.com.omnimind") &&
+                pkg != "android" &&
+                pkg != "com.android.systemui"
+            ) return pkg
+        }
+        return ""
     }
 
     private fun isOmniflowExecutionStep(step: Map<String, Any?>): Boolean {
@@ -1724,7 +1931,13 @@ class OobFunctionToolHandler(
         val functionId: String,
     )
 
+    private data class StackAlignmentResult(
+        val skippedResults: List<Map<String, Any?>> = emptyList(),
+        val failureResult: Map<String, Any?>? = null,
+    )
+
     private companion object {
+        const val TAG = "OobFunctionToolHandler"
         const val MAX_OMNIFLOW_CALL_DEPTH = 8
         const val MAX_RECOVERY_PROMPT_XML_CHARS = 6000
         val RUN_SEQUENCE = AtomicLong(0)

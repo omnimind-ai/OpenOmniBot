@@ -10,7 +10,6 @@ data class VlmRecallGuidance(
     val guidance: String,
     val payload: Map<String, Any?> = emptyMap(),
     val directHitFunctionId: String? = null,
-    val directHitStartStepIndex: Int = 0,
 )
 
 /**
@@ -78,11 +77,6 @@ object VlmRecallGuidanceBuilder {
             guidance = renderGuidance(payload),
             payload = payload,
             directHitFunctionId = directHitFunctionId(payload).takeIf { allowDirectExecutionDecision },
-            directHitStartStepIndex = if (allowDirectExecutionDecision) {
-                directHitStartStepIndex(payload)
-            } else {
-                0
-            },
         )
     }
 
@@ -92,26 +86,13 @@ object VlmRecallGuidanceBuilder {
     internal fun directHitFunctionId(payload: Map<String, Any?>): String? {
         if (payload["success"] != true) return null
         val decision = payload["decision"]?.toString()?.trim().orEmpty()
-        val source = when (decision) {
-            "hit" -> mapArg(payload["hit"])
-            "segment_hit" -> mapArg(payload["segment_hit"]).takeUnless { requiresArguments(it) }
-            else -> null
-        } ?: return null
+        if (decision != "hit") return null
+        val source = mapArg(payload["hit"])
         if (!hasStrictDirectHitEvidence(source)) return null
         return source["function_id"]
             ?.toString()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-    }
-
-    internal fun directHitStartStepIndex(payload: Map<String, Any?>): Int {
-        if (payload["success"] != true) return 0
-        if (payload["decision"]?.toString()?.trim() != "segment_hit") return 0
-        val segmentHit = mapArg(payload["segment_hit"])
-        if (requiresArguments(segmentHit)) return 0
-        if (!hasStrictDirectHitEvidence(segmentHit)) return 0
-        return intArg(segmentHit["start_step_index"], segmentHit["startStepIndex"])
-            .coerceAtLeast(0)
     }
 
     internal fun renderGuidance(payload: Map<String, Any?>): String {
@@ -131,13 +112,8 @@ object VlmRecallGuidanceBuilder {
         } else {
             emptyList()
         }
-        val segmentCandidates = if (anchoredContext) {
-            segmentCandidateList(payload).take(MAX_GUIDANCE_CANDIDATES)
-        } else {
-            emptyList()
-        }
         if (!directDecision && nodeCandidates.isEmpty() && !directCandidatePayload) return ""
-        if (candidates.isEmpty() && segmentCandidates.isEmpty() && nodeCandidates.isEmpty()) return ""
+        if (candidates.isEmpty() && nodeCandidates.isEmpty()) return ""
 
         return buildString {
             appendLine("OmniFlow UDEG node skill-like decision context:")
@@ -196,35 +172,14 @@ object VlmRecallGuidanceBuilder {
                 val type = capability["capability_type"]?.toString()?.trim().orEmpty()
                 val scope = capability["recall_scope"]?.toString()?.trim().orEmpty()
                 val score = capability["score"]?.toString()?.trim().orEmpty()
-                val startStepIndex = capability["start_step_index"]?.toString()?.trim().orEmpty()
                 val description = firstNonBlank(capability["description"], capability["name"], functionId)
                     .take(MAX_DESCRIPTION_CHARS)
                 appendLine(
                     "capability ${index + 1}: type=$type scope=$scope function_id=$functionId " +
-                        "score=$score start_step_index=$startStepIndex description=$description"
+                        "score=$score description=$description"
                 )
                 renderStepSummaries(capability).take(MAX_STEP_SUMMARIES).forEach { summary ->
                     appendLine("   capability_step: $summary")
-                }
-            }
-            segmentCandidates.forEachIndexed { index, candidate ->
-                val functionId = candidate["function_id"]?.toString()?.trim().orEmpty()
-                val score = candidate["score"]?.toString()?.trim().orEmpty()
-                val pageSimilarity = candidate["page_similarity"]?.toString()?.trim().orEmpty()
-                val startStepIndex = candidate["start_step_index"]?.toString()?.trim().orEmpty()
-                val remainingStepCount = candidate["remaining_step_count"]?.toString()?.trim().orEmpty()
-                val matchedBoundary = candidate["matched_boundary"]?.toString()?.trim().orEmpty()
-                val description = firstNonBlank(candidate["description"], candidate["name"], functionId)
-                    .take(MAX_DESCRIPTION_CHARS)
-                appendLine(
-                    "segment ${index + 1}: function_id=$functionId score=$score " +
-                        "page_similarity=$pageSimilarity start_step_index=$startStepIndex " +
-                        "remaining_step_count=$remainingStepCount matched_boundary=$matchedBoundary " +
-                        "description=$description"
-                )
-                appendLine("   agent_optional_function: function_id=$functionId start_step_index=$startStepIndex")
-                renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
-                    appendLine("   remaining_step: $summary")
                 }
             }
         }.trim()
@@ -234,14 +189,6 @@ object VlmRecallGuidanceBuilder {
         val hit = mapArg(payload["hit"])
         if (hit.isNotEmpty()) return listOf(hit)
         return listArg(payload["candidates"]).mapNotNull { raw -> mapArg(raw).takeIf { it.isNotEmpty() } }
-    }
-
-    private fun segmentCandidateList(payload: Map<String, Any?>): List<Map<String, Any?>> {
-        val hit = mapArg(payload["segment_hit"])
-        if (hit.isNotEmpty()) return listOf(hit)
-        return listArg(payload["segment_candidates"]).mapNotNull { raw ->
-            mapArg(raw).takeIf { it.isNotEmpty() }
-        }
     }
 
     private fun renderStepSummaries(candidate: Map<String, Any?>): List<String> {
@@ -295,7 +242,7 @@ object VlmRecallGuidanceBuilder {
         decision: String,
         decisionPolicy: Map<String, Any?>,
     ): Boolean {
-        if (decision != "hit" && decision != "segment_hit") return false
+        if (decision != "hit") return false
         if (boolArg(decisionPolicy["direct_hit_requested"], decisionPolicy["directHitRequested"])) return true
         val mode = firstNonBlank(
             decisionPolicy["mode"],
@@ -311,7 +258,6 @@ object VlmRecallGuidanceBuilder {
     ): Boolean {
         return when (decision) {
             "hit" -> mapArg(payload["hit"]).isNotEmpty()
-            "segment_hit" -> mapArg(payload["segment_hit"]).isNotEmpty()
             else -> false
         }
     }
@@ -359,16 +305,6 @@ object VlmRecallGuidanceBuilder {
         if (textScore < STRICT_DIRECT_HIT_SCORE) return false
         if (requiresArguments(payload)) return false
         return true
-    }
-
-    private fun intArg(vararg values: Any?): Int {
-        values.forEach { value ->
-            when (value) {
-                is Number -> return value.toInt()
-                is String -> value.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return 0
     }
 
     private fun doubleArg(vararg values: Any?): Double {

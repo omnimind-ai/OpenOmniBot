@@ -65,12 +65,12 @@ Recall is not a flat reusable-command-store search:
 1. Match the current page to a UDEG node.
 2. Read that node's skill-like decision context.
 3. Consider reusable commands attached to that node.
-4. Rank attached reusable commands and segment candidates.
+4. Rank attached reusable commands.
 5. Execute a safe no-argument hit locally, or fall back to bounded VLM.
 
 Timing fields such as `parse_request_ms`, `read_current_package_ms`,
-`read_current_page_ms`, `page_match_ms`, `rank_functions_ms`, and
-`segment_match_ms` are internal diagnostics and must not be injected into the
+`read_current_page_ms`, `page_match_ms`, and `rank_functions_ms` are
+internal diagnostics and must not be injected into the
 VLM prompt.
 
 ## Validation Without Running AndroidWorld
@@ -102,7 +102,7 @@ three phases:
 2. `replay`: convert the successful OOB RunLog to a reusable command, reset the
    same task params, then replay the command without a model call.
 3. `recall_repeat`: reset the same task params again and call OOB VLM. A good
-   run should hit direct or segment recall before falling back to live VLM.
+   run should hit direct or node-attached Function recall before falling back to live VLM.
 
 Use simple AndroidWorld tasks first, such as opening Settings pages or verifying
 Clock/Contacts read-only pages. These are validation gates for the adapter and

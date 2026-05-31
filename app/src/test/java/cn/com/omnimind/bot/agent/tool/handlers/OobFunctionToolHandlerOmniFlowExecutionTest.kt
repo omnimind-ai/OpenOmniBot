@@ -200,6 +200,129 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
+    fun `call_function source alignment skips non-key prefix frames`() = runBlocking {
+        val context = TempFilesContext()
+        val pageA = pageXml("A", "com.example.a")
+        val pageB = pageXml("B", "com.example.b")
+        val pageC = pageXml("C", "com.example.c")
+        val pageD = pageXml("D", "com.example.d")
+        try {
+            val spec = functionSpec(
+                functionId = "source_alignment_skip_prefix",
+                steps = listOf(
+                    finishedStepWithSource("step_a", pageA, "com.example.a"),
+                    finishedStepWithSource("step_b", pageB, "com.example.b"),
+                    finishedStepWithSource("step_c", pageC, "com.example.c"),
+                    finishedStepWithSource("step_d", pageD, "com.example.d"),
+                    finishedStepWithSource("step_key", pageD, "com.example.d"),
+                ),
+                extras = mapOf(
+                    "agent_reuse" to mapOf(
+                        "key_actions" to listOf(mapOf("step_index" to 4)),
+                    ),
+                ),
+            )
+            val backend = RecordingBackend(pageD, "com.example.d", "TestActivity")
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = "source_alignment_skip_prefix",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(true, run["success"])
+                val results = stepResults(run)
+                assertEquals(5, results.size)
+                assertEquals(listOf("step_a", "step_b", "step_c"), results.take(3).map { it["step_id"] })
+                assertTrue(results.take(3).all { it["skipped_by_source_alignment"] == true })
+                assertEquals("step_d", results[3]["step_id"])
+                assertEquals("step_key", results[4]["step_id"])
+                val stack = run["pending_action_stack"] as Map<*, *>
+                assertEquals(true, stack["source_alignment_enabled"])
+                assertEquals(3, (stack["skipped_by_source_alignment_count"] as Number).toInt())
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `call_function source alignment does not cross key action boundary`() = runBlocking {
+        val context = TempFilesContext()
+        val pageA = pageXml("A", "com.example.a")
+        val pageB = pageXml("B", "com.example.b")
+        val pageC = pageXml("C", "com.example.c")
+        try {
+            val spec = functionSpec(
+                functionId = "source_alignment_key_boundary",
+                steps = listOf(
+                    finishedStepWithSource("step_a", pageA, "com.example.a"),
+                    finishedStepWithSource("step_key", pageB, "com.example.b"),
+                    finishedStepWithSource("step_after_key", pageC, "com.example.c"),
+                ),
+                extras = mapOf(
+                    "agent_reuse" to mapOf(
+                        "key_actions" to listOf(mapOf("step_index" to 1)),
+                    ),
+                ),
+            )
+            val backend = RecordingBackend(pageC, "com.example.c", "TestActivity")
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = "source_alignment_key_boundary",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(false, run["success"])
+                assertEquals("OOB_SOURCE_ALIGNMENT_MISS", run["error_code"])
+                val results = stepResults(run)
+                assertEquals(1, results.size)
+                assertEquals("step_a", results.single()["step_id"])
+                assertEquals("OOB_SOURCE_ALIGNMENT_MISS", results.single()["error_code"])
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `call_function keeps fixed order when no key action metadata exists`() = runBlocking {
+        val context = TempFilesContext()
+        val pageA = pageXml("A", "com.example.a")
+        val pageB = pageXml("B", "com.example.b")
+        try {
+            val spec = functionSpec(
+                functionId = "source_alignment_no_key_metadata",
+                steps = listOf(
+                    finishedStepWithSource("step_a", pageA, "com.example.a"),
+                    finishedStepWithSource("step_b", pageB, "com.example.b"),
+                ),
+            )
+            val backend = RecordingBackend(pageB, "com.example.b", "TestActivity")
+            OmniflowActionRuntime.useBackendForTesting(backend).use {
+                val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
+                    functionId = "source_alignment_no_key_metadata",
+                    spec = spec,
+                    materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
+                    allowAgentFallback = false,
+                )
+
+                assertEquals(true, run["success"])
+                val results = stepResults(run)
+                assertEquals(listOf("step_a", "step_b"), results.map { it["step_id"] })
+                assertFalse(results.any { it["skipped_by_source_alignment"] == true })
+                val stack = run["pending_action_stack"] as Map<*, *>
+                assertEquals(false, stack["source_alignment_enabled"])
+            }
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `go_to_node executes UTG path locally`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -852,7 +975,8 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     private fun functionSpec(
         functionId: String,
         steps: List<Map<String, Any?>>,
-    ): Map<String, Any?> = linkedMapOf(
+        extras: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
         "schema_version" to "oob.reusable_function.v1",
         "function_id" to functionId,
         "name" to functionId,
@@ -865,7 +989,9 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             "steps" to steps,
             "step_count" to steps.size,
         ),
-    )
+    ).apply {
+        putAll(extras)
+    }
 
     private fun finishedStep(stepId: String): Map<String, Any?> = mapOf(
         "id" to stepId,
@@ -879,6 +1005,30 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         "callable_tool" to "finished",
         "args" to emptyMap<String, Any?>(),
     )
+
+    private fun finishedStepWithSource(
+        stepId: String,
+        sourceXml: String,
+        packageName: String,
+    ): Map<String, Any?> = linkedMapOf<String, Any?>().apply {
+        putAll(finishedStep(stepId))
+        put(
+            "source_context",
+            mapOf(
+                "src_ctx" to mapOf(
+                    "page" to sourceXml,
+                    "package_name" to packageName,
+                ),
+            ),
+        )
+    }
+
+    private fun pageXml(label: String, packageName: String): String = """
+        <hierarchy rotation="0">
+          <node index="0" text="$label" resource-id="$packageName:id/title" class="android.widget.TextView" package="$packageName" content-desc="$label" bounds="[0,0][1080,220]" clickable="false" focusable="false" />
+          <node index="1" text="Action $label" resource-id="$packageName:id/action" class="android.widget.Button" package="$packageName" content-desc="Action $label" bounds="[0,260][1080,420]" clickable="true" focusable="true" />
+        </hierarchy>
+    """.trimIndent()
 
     private fun runLogCard(
         toolName: String,

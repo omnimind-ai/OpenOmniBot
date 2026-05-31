@@ -1324,12 +1324,17 @@ class ManualVlmTraceRecorder(
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
         ).filterValues { it != null }
+        // Package name from XML is null for SurfaceView/WebView apps (no accessible nodes).
+        // Fall back to the accessibility service's current window package so that the
+        // compiled Function step carries a valid src_ctx.package_name for the checker.
+        val resolvedPackageName = target.packageName
+            ?: AccessibilityController.getPackageName()
         appendRecordedAction(
             ManualVlmRecordedAction(
                 actionName = recordedActionName,
                 title = title,
                 params = params,
-                packageName = target.packageName,
+                packageName = resolvedPackageName,
                 beforeXml = beforeXml,
                 afterXml = afterXml,
                 beforeScreenshot = beforeScreenshot,
@@ -1380,12 +1385,14 @@ class ManualVlmTraceRecorder(
             "display_width" to gesture.displayWidth.takeIf { it > 0 },
             "display_height" to gesture.displayHeight.takeIf { it > 0 }
         ).filterValues { it != null }
+        val resolvedPackageName = target.packageName
+            ?: AccessibilityController.getPackageName()
         appendRecordedAction(
             ManualVlmRecordedAction(
                 actionName = "swipe",
                 title = title,
                 params = params,
-                packageName = target.packageName,
+                packageName = resolvedPackageName,
                 beforeXml = beforeXml,
                 afterXml = afterXml,
                 beforeScreenshot = beforeScreenshot,
@@ -2291,7 +2298,13 @@ class ManualVlmTraceRecorder(
     private fun captureCurrentXml(): String? {
         return try {
             AccessibilityController.initController()
-            AccessibilityController.getCaptureScreenShotXml(true)
+            // withOld=false: live accessibility-tree query, not event-driven cache.
+            // Apps that render via SurfaceView/WebView never fire AccessibilityEvents,
+            // so the cache is always stale. The live query still returns the container
+            // tree (nav bar, toolbar, tab bar) which is enough for anchor-based transfer.
+            AccessibilityController.getCaptureScreenShotXml(false)
+                ?.takeIf { it.isNotBlank() }
+                ?: AccessibilityController.getCaptureScreenShotXml(true)
         } catch (e: Exception) {
             OmniLog.w(TAG, "manual trace xml capture failed: ${e.message}")
             null

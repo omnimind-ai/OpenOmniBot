@@ -1263,6 +1263,11 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
   }
 
   Future<void> _startManualRecordingFlow(String messageText) async {
+    final canRecord = await ManualRecordingPermissionGuard.ensureAuthorized(
+      context,
+    );
+    if (!mounted || !canRecord) return;
+
     _inputFocusNode.unfocus();
     final messageIds = addUserMessage(messageText);
     _syncUserMessageLinkPreviews(messageIds.userMessageId);

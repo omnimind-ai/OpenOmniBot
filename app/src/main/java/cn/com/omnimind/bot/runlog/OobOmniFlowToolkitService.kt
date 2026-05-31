@@ -97,11 +97,6 @@ class OobOmniFlowToolkitService(
                     counts = linkedMapOf(
                         "node_candidates" to 0,
                         "function_candidates" to 0,
-                        "segment_candidates" to 0,
-                        "segment_scanned_functions" to 0,
-                        "segment_text_candidates" to 0,
-                        "segment_boundaries" to 0,
-                        "segment_boundary_page_hits" to 0,
                     )
                 ),
                 "source" to "oob_native_udeg_page_match",
@@ -143,23 +138,6 @@ class OobOmniFlowToolkitService(
                 )
             )
         }
-        val segmentMatches = timing.measure("segment_match_ms") {
-            segmentMatches(
-                recalledFunctions = ranked,
-                nodeMatches = decisionNodeMatches,
-                goal = goal,
-                currentXml = currentXml,
-                currentPackage = currentPackage,
-                topK = k,
-            )
-        }
-        val segmentCandidates = segmentMatches.matches.map { it.toMap() }
-        val segmentHit = segmentMatches.matches.takeIf { it.size == 1 }?.firstOrNull {
-            it.score >= DIRECT_HIT_SCORE &&
-                it.pageScore >= DIRECT_HIT_SCORE &&
-                it.textScore >= DIRECT_HIT_SCORE &&
-                it.noArgumentFunction
-        }.takeIf { allowDirectExecutionDecision }
         val directHit = ranked.takeIf { it.size == 1 }?.firstOrNull {
             it.score >= DIRECT_HIT_SCORE &&
                 it.pageScore >= DIRECT_HIT_SCORE &&
@@ -168,8 +146,6 @@ class OobOmniFlowToolkitService(
         }.takeIf { allowDirectExecutionDecision }
         val decision = when {
             directHit != null -> "hit"
-            segmentHit != null -> "segment_hit"
-            segmentCandidates.isNotEmpty() -> "segment_recall"
             nodeCandidates.isNotEmpty() -> "recall"
             else -> "miss"
         }
@@ -192,13 +168,10 @@ class OobOmniFlowToolkitService(
                     "step_summaries" to stepSummaries(it.spec)
                 )
             },
-            "segment_hit" to segmentHit?.toMap(),
             "candidates" to if (directHit == null) candidates else emptyList<Map<String, Any?>>(),
-            "segment_candidates" to if (segmentHit == null) segmentCandidates else emptyList<Map<String, Any?>>(),
             "capability_candidates" to nodeCapabilityRanking.capabilities,
             "node_capabilities" to nodeCapabilityRanking.capabilities,
             "node_function_capabilities" to nodeCapabilityRanking.functionCapabilities,
-            "node_segment_capabilities" to nodeCapabilityRanking.segmentCapabilities,
             "node_candidates" to nodeCandidates,
             "current_node" to nodeCandidates.firstOrNull(),
             "node_skill" to (nodeCandidates.firstOrNull()?.get("skill")),
@@ -213,14 +186,10 @@ class OobOmniFlowToolkitService(
                 "direct_hit_requires_no_arguments" to true,
             ),
             "count" to candidates.size,
-            "segment_count" to segmentCandidates.size,
             "reason" to when {
                 directHit != null -> "udeg_page_match_direct_function_hit"
-                segmentHit != null -> "page_vector_segment_function_hit"
-                nodeCandidates.isEmpty() && segmentCandidates.isEmpty() -> "no_udeg_node_or_segment_page_match"
-                nodeCandidates.isEmpty() -> "no_udeg_node_for_segment_recall"
+                nodeCandidates.isEmpty() -> "no_udeg_node_page_match"
                 nodeCapabilityRanking.capabilities.isEmpty() -> "udeg_node_match_without_attached_capability"
-                candidates.isEmpty() && segmentCandidates.isNotEmpty() -> "udeg_node_segment_recall"
                 candidates.isEmpty() -> "udeg_node_match_without_attached_function"
                 else -> "udeg_node_skill_context_recall"
             },
@@ -234,12 +203,6 @@ class OobOmniFlowToolkitService(
                     "function_candidates" to ranked.size,
                     "node_capabilities" to nodeCapabilityRanking.capabilities.size,
                     "node_function_capabilities" to nodeCapabilityRanking.functionCapabilities.size,
-                    "node_segment_capabilities" to nodeCapabilityRanking.segmentCapabilities.size,
-                    "segment_candidates" to segmentCandidates.size,
-                    "segment_scanned_functions" to segmentMatches.scannedFunctionCount,
-                    "segment_text_candidates" to segmentMatches.textEligibleFunctionCount,
-                    "segment_boundaries" to segmentMatches.boundaryCount,
-                    "segment_boundary_page_hits" to segmentMatches.boundaryPageHitCount,
                 )
             ),
             "source" to "oob_native_udeg_page_match"
@@ -253,13 +216,6 @@ class OobOmniFlowToolkitService(
         val functionId = firstNonBlank(request["function_id"], request["functionId"])
         val goal = firstNonBlank(request["goal"])
         val callArguments = mapArg(request["arguments"])
-        val startStepIndex = intArg(
-            request["start_step_index"],
-            request["startStepIndex"],
-            request["segment_start_step_index"],
-            request["segmentStartStepIndex"],
-            defaultValue = 0
-        ).coerceAtLeast(0)
         if (functionId.isEmpty()) {
             return canonicalCallError(
                 functionId = functionId,
@@ -273,7 +229,6 @@ class OobOmniFlowToolkitService(
                 linkedMapOf(
                     "functionId" to functionId,
                     "arguments" to callArguments,
-                    "start_step_index" to startStepIndex,
                 )
             )
         }
@@ -299,7 +254,6 @@ class OobOmniFlowToolkitService(
             executeFunction(
                 functionId = functionId,
                 arguments = callArguments,
-                startStepIndex = startStepIndex,
                 allowAgentFallback = false
             )
         }
@@ -329,7 +283,6 @@ class OobOmniFlowToolkitService(
             "run_id" to runPayload["run_id"],
             "audit_run_id" to runPayload["audit_run_id"],
             "function_id" to functionId,
-            "segment_start_step_index" to startStepIndex.takeIf { it > 0 },
             "goal" to goal.takeIf { it.isNotEmpty() },
             "actions_executed" to (runPayload["success_step_count"] ?: 0),
             "step_results" to runPayload["step_results"],
@@ -937,15 +890,396 @@ class OobOmniFlowToolkitService(
             val metadata = mutableJsonMap(mapArg(spec["metadata"]))
             metadataPatch.forEach { (key, value) ->
                 if (key == "function_id" || key == "execution") return@forEach
+                val metadataKey = if (key == "checkerRules") "checker_rules" else key
+                if (metadataKey == "checker_rules") {
+                    applyCheckerRulesPatch(metadata, value, changes)
+                    return@forEach
+                }
                 val safeValue = mutableJsonValue(value)
-                if (metadata[key] != safeValue) {
-                    changes += changeMap("metadata", key, metadata[key], safeValue)
-                    metadata[key] = safeValue
+                if (metadata[metadataKey] != safeValue) {
+                    changes += changeMap("metadata", metadataKey, metadata[metadataKey], safeValue)
+                    metadata[metadataKey] = safeValue
                 }
             }
             spec["metadata"] = metadata
         }
+
+        val topLevelCheckerRules = listArg(patch["checker_rules"])
+            .ifEmpty { listArg(patch["checkerRules"]) }
+        if (topLevelCheckerRules.isNotEmpty()) {
+            val metadata = mutableJsonMap(mapArg(spec["metadata"]))
+            applyCheckerRulesPatch(metadata, topLevelCheckerRules, changes)
+            spec["metadata"] = metadata
+        }
+
+        applyOptionalCheckerMetadataFromSteps(spec, changes)
     }
+
+    private fun applyCheckerRulesPatch(
+        metadata: MutableMap<String, Any?>,
+        rawRules: Any?,
+        changes: MutableList<Map<String, Any?>>,
+    ) {
+        val additions = listArg(rawRules)
+            .mapNotNull { sanitizeCheckerRule(mapArg(it)) }
+        if (additions.isEmpty()) return
+        val existing = listArg(metadata["checker_rules"])
+        val merged = mergeCheckerRules(existing, additions)
+        if (existing != merged) {
+            changes += changeMap("metadata", "checker_rules", existing.takeIf { it.isNotEmpty() }, merged)
+            metadata["checker_rules"] = merged
+        }
+    }
+
+    private fun applyOptionalCheckerMetadataFromSteps(
+        spec: MutableMap<String, Any?>,
+        changes: MutableList<Map<String, Any?>>,
+    ) {
+        val execution = mapArg(spec["execution"])
+        val steps = listArg(execution["steps"])
+            .mapNotNull { mapArg(it).takeIf { step -> step.isNotEmpty() } }
+        if (steps.isEmpty()) return
+
+        val metadata = mutableJsonMap(mapArg(spec["metadata"]))
+        val existingRules = listArg(metadata["checker_rules"])
+        val mergedRules = mergeCheckerRules(
+            existingRules,
+            steps.mapIndexedNotNull { index, step -> optionalCheckerRuleForStep(step, index) }
+        )
+        val signatureToId = checkerRuleSignatureToId(mergedRules)
+        val checkerAssets = steps.mapIndexedNotNull { index, step ->
+            val rule = optionalCheckerRuleForStep(step, index) ?: return@mapIndexedNotNull null
+            val checkerId = signatureToId[checkerRuleSignature(rule)] ?: firstNonBlank(rule["id"])
+            checkerAssetForStep(checkerId, step, index)
+        }
+
+        if (existingRules != mergedRules) {
+            changes += changeMap(
+                "metadata",
+                "checker_rules",
+                existingRules.takeIf { it.isNotEmpty() },
+                mergedRules,
+            )
+            metadata["checker_rules"] = mergedRules
+            spec["metadata"] = metadata
+        }
+
+        if (checkerAssets.isNotEmpty()) {
+            val agentReuse = mutableJsonMap(mapArg(spec["agent_reuse"]))
+            val existingAssets = listArg(agentReuse["checker_assets"])
+            val mergedAssets = mergeCheckerAssets(existingAssets, checkerAssets)
+            if (existingAssets != mergedAssets) {
+                changes += changeMap(
+                    "agent_reuse",
+                    "checker_assets",
+                    existingAssets.takeIf { it.isNotEmpty() },
+                    mergedAssets,
+                )
+                agentReuse["checker_assets"] = mergedAssets
+                spec["agent_reuse"] = agentReuse
+            }
+        }
+    }
+
+    private fun optionalCheckerRuleForStep(
+        step: Map<String, Any?>,
+        stepIndex: Int,
+    ): Map<String, Any?>? {
+        val annotation = mapArg(step["cleanup_annotation"])
+        if (!isOptionalCheckerAnnotation(annotation)) return null
+        val text = checkerInferenceText(step, annotation)
+        val condition = when {
+            containsAny(text, listOf("keyboard", "ime", "键盘", "输入法")) ->
+                OmniflowCheckerRule.COND_KEYBOARD_OBSCURING
+            containsAny(text, listOf("permission", "allow", "authorize", "grant", "权限", "授权", "允许")) ->
+                OmniflowCheckerRule.COND_PERMISSION_DIALOG
+            else -> OmniflowCheckerRule.COND_OVERLAY_BLOCKING
+        }
+        val action = checkerActionForCondition(condition)
+        return linkedMapOf(
+            "id" to "optional_checker_step_${stepIndex}_$condition",
+            "phase" to checkerPhaseForCondition(condition),
+            "condition" to condition,
+            "action" to action,
+            "enabled" to true,
+            "params" to emptyMap<String, Any?>(),
+        )
+    }
+
+    private fun isOptionalCheckerAnnotation(annotation: Map<String, Any?>): Boolean {
+        val action = normalizeCleanupAction(
+            firstNonBlank(
+                annotation["cleanup_action"],
+                annotation["cleanupAction"],
+                annotation["action"],
+            )
+        )
+        val usefulness = firstNonBlank(annotation["usefulness"]).lowercase()
+        val category = firstNonBlank(annotation["category"]).lowercase()
+        return action == "optional_checker" ||
+            usefulness == "conditional_checker" ||
+            category in setOf("conditional_obstruction", "runtime_checker", "checker_candidate")
+    }
+
+    private fun normalizeCleanupAction(raw: String): String =
+        when (raw.trim().lowercase().replace('-', '_')) {
+            "optional",
+            "optional_checker",
+            "conditional",
+            "conditional_checker",
+            "conditional_obstruction",
+            "popup_checker",
+            "ad_checker" -> "optional_checker"
+            else -> raw.trim().lowercase().replace('-', '_')
+        }
+
+    private fun checkerInferenceText(
+        step: Map<String, Any?>,
+        annotation: Map<String, Any?>,
+    ): String {
+        val args = mapArg(step["args"])
+        return listOf(
+            step["title"],
+            step["summary"],
+            step["description"],
+            annotation["optional_condition"],
+            annotation["optionalCondition"],
+            annotation["reason"],
+            annotation["action_purpose"],
+            args["target_description"],
+            args["text"],
+            args["content"],
+        ).joinToString(" ") { it?.toString().orEmpty() }.lowercase()
+    }
+
+    private fun sanitizeCheckerRule(raw: Map<String, Any?>): Map<String, Any?>? {
+        if (raw.isEmpty()) return null
+        val condition = normalizeCheckerCondition(firstNonBlank(raw["condition"], raw["when"], raw["type"]))
+        if (condition.isBlank()) return null
+        val action = normalizeCheckerAction(firstNonBlank(raw["action"], raw["then"], raw["effect"]), condition)
+        if (action.isBlank() || !isSupportedCheckerPair(condition, action)) return null
+        val params = mutableMapOf<String, Any?>()
+        val rawParams = mapArg(raw["params"])
+        val packageName = firstNonBlank(
+            rawParams["package_name"],
+            rawParams["packageName"],
+            raw["package_name"],
+            raw["packageName"],
+        )
+        if (condition == OmniflowCheckerRule.COND_PACKAGE_MISMATCH &&
+            Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(packageName)
+        ) {
+            params["package_name"] = packageName
+        }
+        return linkedMapOf(
+            "id" to safeCheckerRuleId(firstNonBlank(raw["id"], "function_checker")),
+            "phase" to checkerPhaseForCondition(condition),
+            "condition" to condition,
+            "action" to action,
+            "enabled" to boolArgOrDefault(raw["enabled"], true),
+            "params" to params,
+        )
+    }
+
+    private fun normalizeCheckerCondition(raw: String): String =
+        when (raw.trim().lowercase().replace('-', '_')) {
+            "overlay_blocking",
+            "blocking_overlay",
+            "popup_blocking",
+            "popup",
+            "ad_popup",
+            "ad",
+            "banner",
+            "coupon",
+            "obstruction",
+            "conditional_obstruction" -> OmniflowCheckerRule.COND_OVERLAY_BLOCKING
+            "permission_dialog",
+            "permission",
+            "permission_prompt",
+            "permission_nudge" -> OmniflowCheckerRule.COND_PERMISSION_DIALOG
+            "keyboard_obscuring",
+            "keyboard",
+            "ime_obscuring",
+            "soft_keyboard" -> OmniflowCheckerRule.COND_KEYBOARD_OBSCURING
+            "package_mismatch",
+            "wrong_app",
+            "app_mismatch",
+            "foreground_package_mismatch" -> OmniflowCheckerRule.COND_PACKAGE_MISMATCH
+            else -> ""
+        }
+
+    private fun normalizeCheckerAction(raw: String, condition: String): String {
+        val text = raw.trim().lowercase().replace('-', '_')
+        if (text.isBlank()) return checkerActionForCondition(condition)
+        return when (text) {
+            "dismiss",
+            "close",
+            "close_popup",
+            "click_close",
+            "click_dismiss",
+            "skip" -> OmniflowCheckerRule.ACTION_DISMISS
+            "allow",
+            "grant",
+            "grant_permission",
+            "click_allow" -> OmniflowCheckerRule.ACTION_ALLOW
+            "hide_keyboard",
+            "dismiss_keyboard",
+            "close_keyboard" -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
+            "open_app",
+            "launch_app",
+            "start_app" -> OmniflowCheckerRule.ACTION_OPEN_APP
+            "click" -> when (condition) {
+                OmniflowCheckerRule.COND_OVERLAY_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
+                OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
+                else -> ""
+            }
+            else -> ""
+        }
+    }
+
+    private fun checkerActionForCondition(condition: String): String =
+        when (condition) {
+            OmniflowCheckerRule.COND_KEYBOARD_OBSCURING -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
+            OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
+            OmniflowCheckerRule.COND_PACKAGE_MISMATCH -> OmniflowCheckerRule.ACTION_OPEN_APP
+            else -> OmniflowCheckerRule.ACTION_DISMISS
+        }
+
+    private fun checkerPhaseForCondition(condition: String): String =
+        if (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING) {
+            OmniflowCheckerRule.PHASE_PRE_ACTION
+        } else {
+            OmniflowCheckerRule.PHASE_PRE_TRANSFER
+        }
+
+    private fun isSupportedCheckerPair(condition: String, action: String): Boolean =
+        (condition == OmniflowCheckerRule.COND_OVERLAY_BLOCKING &&
+            action == OmniflowCheckerRule.ACTION_DISMISS) ||
+            (condition == OmniflowCheckerRule.COND_PERMISSION_DIALOG &&
+                action == OmniflowCheckerRule.ACTION_ALLOW) ||
+            (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING &&
+                action == OmniflowCheckerRule.ACTION_HIDE_KEYBOARD) ||
+            (condition == OmniflowCheckerRule.COND_PACKAGE_MISMATCH &&
+                action == OmniflowCheckerRule.ACTION_OPEN_APP)
+
+    private fun mergeCheckerRules(
+        existing: List<Any?>,
+        additions: List<Map<String, Any?>>,
+    ): List<Any?> {
+        if (additions.isEmpty()) return existing
+        val output = existing.map { mutableJsonValue(it) }.toMutableList()
+        val signatures = existing.mapNotNull { raw ->
+            sanitizeCheckerRule(mapArg(raw))?.let(::checkerRuleSignature)
+        }.toMutableSet()
+        val usedIds = existing.mapNotNull {
+            firstNonBlank(mapArg(it)["id"]).takeIf(String::isNotBlank)
+        }.toMutableSet()
+        additions.forEach { rawRule ->
+            val signature = checkerRuleSignature(rawRule)
+            if (!signatures.add(signature)) return@forEach
+            val rule = mutableJsonMap(rawRule)
+            val id = uniqueCheckerRuleId(firstNonBlank(rule["id"], "function_checker"), usedIds)
+            rule["id"] = id
+            output += rule
+        }
+        return output
+    }
+
+    private fun checkerRuleSignatureToId(rules: List<Any?>): Map<String, String> =
+        rules.mapNotNull { raw ->
+            val sanitized = sanitizeCheckerRule(mapArg(raw)) ?: return@mapNotNull null
+            checkerRuleSignature(sanitized) to firstNonBlank(mapArg(raw)["id"], sanitized["id"])
+        }.toMap()
+
+    private fun checkerRuleSignature(rule: Map<String, Any?>): String {
+        val params = mapArg(rule["params"])
+        return listOf(
+            rule["phase"],
+            rule["condition"],
+            rule["action"],
+            firstNonBlank(params["package_name"], params["packageName"]),
+        ).joinToString("|") { it?.toString().orEmpty() }
+    }
+
+    private fun checkerAssetForStep(
+        checkerId: String,
+        step: Map<String, Any?>,
+        stepIndex: Int,
+    ): Map<String, Any?>? {
+        if (checkerId.isBlank()) return null
+        val annotation = mapArg(step["cleanup_annotation"])
+        val reason = firstNonBlank(
+            annotation["optional_condition"],
+            annotation["reason"],
+            annotation["action_purpose"],
+            step["description"],
+            step["summary"],
+            step["title"],
+        )
+        return linkedMapOf(
+            "checker_id" to checkerId,
+            "step_index" to stepIndex,
+            "step_id" to firstNonBlank(step["id"], "step_${stepIndex + 1}"),
+            "role" to "checker_candidate",
+            "materialization" to "metadata_checker_rule",
+            "reason" to reason.takeIf { it.isNotBlank() },
+        ).filterValues { it != null }
+    }
+
+    private fun mergeCheckerAssets(
+        existing: List<Any?>,
+        additions: List<Map<String, Any?>>,
+    ): List<Any?> {
+        if (additions.isEmpty()) return existing
+        val output = existing.map { mutableJsonValue(it) }.toMutableList()
+        val seen = existing.mapNotNull { raw ->
+            val asset = mapArg(raw)
+            checkerAssetSignature(asset).takeIf { it.isNotBlank() }
+        }.toMutableSet()
+        additions.forEach { asset ->
+            val signature = checkerAssetSignature(asset)
+            if (signature.isNotBlank() && seen.add(signature)) {
+                output += mutableJsonMap(asset)
+            }
+        }
+        return output
+    }
+
+    private fun checkerAssetSignature(asset: Map<String, Any?>): String {
+        val checkerId = firstNonBlank(asset["checker_id"], asset["checkerId"])
+        val stepIndex = intArg(asset["step_index"], asset["stepIndex"], asset["index"], defaultValue = -1)
+        val stepId = firstNonBlank(asset["step_id"], asset["stepId"])
+        if (checkerId.isBlank() || stepIndex < 0) return ""
+        return "$checkerId|$stepIndex|$stepId"
+    }
+
+    private fun safeCheckerRuleId(raw: String): String {
+        val normalized = raw
+            .replace(Regex("([a-z])([A-Z])"), "$1_$2")
+            .replace(Regex("[^A-Za-z0-9_]+"), "_")
+            .lowercase()
+            .replace(Regex("_+"), "_")
+            .trim('_')
+            .take(80)
+            .trim('_')
+        return normalized.ifBlank { "function_checker" }
+    }
+
+    private fun uniqueCheckerRuleId(raw: String, usedIds: MutableSet<String>): String {
+        val base = safeCheckerRuleId(raw)
+        var candidate = base
+        var suffix = 2
+        while (candidate in usedIds) {
+            val suffixText = "_$suffix"
+            candidate = base.take((80 - suffixText.length).coerceAtLeast(1)).trimEnd('_') + suffixText
+            suffix += 1
+        }
+        usedIds += candidate
+        return candidate
+    }
+
+    private fun containsAny(text: String, needles: List<String>): Boolean =
+        needles.any { text.contains(it) }
 
     private fun isSafeParameterPatch(parameter: Map<String, Any?>): Boolean {
         val bindings = listArg(parameter["bindings"])
@@ -2090,13 +2424,6 @@ class OobOmniFlowToolkitService(
     fun guardCheck(args: Map<String, Any?>?): Map<String, Any?> {
         val request = args ?: emptyMap()
         val functionId = firstNonBlank(request["functionId"], request["function_id"])
-        val startStepIndex = intArg(
-            request["start_step_index"],
-            request["startStepIndex"],
-            request["segment_start_step_index"],
-            request["segmentStartStepIndex"],
-            defaultValue = 0
-        ).coerceAtLeast(0)
         val spec = replayService.getFunctionSpec(functionId)
             ?: return errorPayload(
                 code = "OOB_FUNCTION_NOT_FOUND",
@@ -2118,17 +2445,7 @@ class OobOmniFlowToolkitService(
         }
 
         val materialized = OobReusableFunctionStore.materialize(spec, arguments)
-        val materializedForGuard = sliceMaterializedSpec(
-            materializedSpec = materialized,
-            startStepIndex = startStepIndex,
-        ) ?: return errorPayload(
-            code = "OOB_FUNCTION_SEGMENT_EMPTY",
-            message = "start_step_index $startStepIndex is outside function steps",
-            functionId = functionId,
-            decision = "block",
-            riskLevel = "high"
-        ) + linkedMapOf("segment_start_step_index" to startStepIndex)
-        val stepDecisions = materializedSteps(materializedForGuard).map(::guardStep)
+        val stepDecisions = materializedSteps(materialized).map(::guardStep)
         val decision = aggregateDecision(stepDecisions)
         val riskLevel = aggregateRisk(stepDecisions)
         val reason = when (decision) {
@@ -2146,12 +2463,6 @@ class OobOmniFlowToolkitService(
             "reason" to reason,
             "requires_confirmation" to (decision == "needs_confirmation"),
             "requires_root" to stepDecisions.any { it["requires_root"] == true },
-            "segment_start_step_index" to startStepIndex.takeIf { it > 0 },
-            "segment" to if (startStepIndex > 0) {
-                segmentExecutionMeta(materialized, startStepIndex)
-            } else {
-                null
-            },
             "step_decisions" to stepDecisions,
             "source" to "oob_native_omniflow_toolkit"
         ).filterValues { it != null }
@@ -2164,13 +2475,6 @@ class OobOmniFlowToolkitService(
         val arguments = mapArg(request["arguments"])
         val dryRun = boolArg(request["dryRun"]) || boolArg(request["dry_run"])
         val confirmed = boolArg(request["confirmed"]) || boolArg(request["userConfirmed"])
-        val startStepIndex = intArg(
-            request["start_step_index"],
-            request["startStepIndex"],
-            request["segment_start_step_index"],
-            request["segmentStartStepIndex"],
-            defaultValue = 0
-        ).coerceAtLeast(0)
         val executionMode = firstNonBlank(request["executionMode"], request["execution_mode"])
             .ifBlank { "foreground" }
 
@@ -2179,7 +2483,6 @@ class OobOmniFlowToolkitService(
                 linkedMapOf(
                     "functionId" to functionId,
                     "arguments" to arguments,
-                    "start_step_index" to startStepIndex,
                 )
             )
         }
@@ -2211,7 +2514,6 @@ class OobOmniFlowToolkitService(
             executeFunction(
                 functionId = functionId,
                 arguments = arguments,
-                startStepIndex = startStepIndex,
                 allowAgentFallback = false
             )
         }
@@ -2244,7 +2546,6 @@ class OobOmniFlowToolkitService(
             "run_id" to runPayload["run_id"],
             "audit_run_id" to runPayload["audit_run_id"],
             "function_id" to functionId,
-            "segment_start_step_index" to startStepIndex.takeIf { it > 0 },
             "runner" to runPayload["runner"],
             "step_count" to intArg(runPayload["step_count"], defaultValue = stepResults.size),
             "success_step_count" to successStepCount,
@@ -2339,7 +2640,6 @@ class OobOmniFlowToolkitService(
     private suspend fun executeFunction(
         functionId: String,
         arguments: Map<String, Any?>,
-        startStepIndex: Int = 0,
         allowAgentFallback: Boolean,
     ): Map<String, Any?> = withContext(Dispatchers.Default) {
         val timing = FunctionExecutionTiming()
@@ -2364,21 +2664,6 @@ class OobOmniFlowToolkitService(
         val materialized = timing.measure("materialize_function_ms") {
             OobReusableFunctionStore.materialize(spec, arguments)
         }
-        val materializedForRun = timing.measure("slice_function_ms") {
-            sliceMaterializedSpec(
-                materializedSpec = materialized,
-                startStepIndex = startStepIndex,
-            )
-        } ?: return@withContext errorPayload(
-            code = "OOB_FUNCTION_SEGMENT_EMPTY",
-            message = "start_step_index $startStepIndex is outside function steps",
-            functionId = functionId
-        ).let {
-            attachFunctionExecutionTiming(
-                it + linkedMapOf("segment_start_step_index" to startStepIndex),
-                timing
-            )
-        }
         val runner = timing.measure("create_runner_ms") {
             OobFunctionToolHandler(
                 context = context,
@@ -2392,20 +2677,10 @@ class OobOmniFlowToolkitService(
                 runner.runMaterializedFunction(
                     functionId = functionId,
                     spec = spec,
-                    materializedSpec = materializedForRun,
+                    materializedSpec = materialized,
                     allowAgentFallback = allowAgentFallback,
                     allowToolDelegationWithoutRouter = false
-                ).let { payload ->
-                    if (startStepIndex <= 0) {
-                        payload
-                    } else {
-                        linkedMapOf<String, Any?>().apply {
-                            putAll(payload)
-                            put("segment_start_step_index", startStepIndex)
-                            put("segment", segmentExecutionMeta(materialized, startStepIndex))
-                        }
-                    }
-                }
+                )
             }
         }.getOrElse { error ->
             errorPayload(
@@ -2417,204 +2692,6 @@ class OobOmniFlowToolkitService(
         attachFunctionExecutionTiming(payload, timing)
     }
 
-    private fun segmentMatches(
-        recalledFunctions: List<RankedFunction>,
-        nodeMatches: List<OobUdegNodeStore.RecallMatch>,
-        goal: String,
-        currentXml: String,
-        currentPackage: String,
-        topK: Int,
-    ): SegmentRecallResult {
-        val query = OobPageVectorSet.encode(currentXml, currentPackage)
-            ?: return emptySegmentRecallResult()
-        val queryPackage = query.packageName
-        val bySegmentKey = linkedMapOf<String, SegmentMatch>()
-        val nodeRankedByFunctionId = recalledFunctions.associateBy { it.functionId }
-        val specsByFunctionId = linkedMapOf<String, Map<String, Any?>>()
-        recalledFunctions.forEach { recalledFunction ->
-            if (recalledFunction.functionId.isNotEmpty()) {
-                specsByFunctionId[recalledFunction.functionId] = recalledFunction.spec
-            }
-        }
-        val nodeSegmentBoundaries = nodeSegmentBoundaries(
-            recalledFunctions = recalledFunctions,
-            nodeMatches = nodeMatches,
-        )
-
-        var scannedFunctionCount = 0
-        var textEligibleFunctionCount = 0
-        var boundaryCount = 0
-        var boundaryPageHitCount = 0
-        specsByFunctionId.forEach { (functionId, spec) ->
-            scannedFunctionCount += 1
-            val recalledFunction = nodeRankedByFunctionId[functionId]
-                ?: rankFunction(spec, goal, currentPackage)
-                ?: return@forEach
-            if (recalledFunction.textScore < MIN_RECALL_SCORE) return@forEach
-            textEligibleFunctionCount += 1
-            val steps = materializedSteps(spec)
-            if (steps.size < 2) return@forEach
-
-            for ((index, step) in steps.withIndex()) {
-                for (boundary in segmentBoundaryContexts(step, index)) {
-                    if (boundary.startStepIndex <= 0 || boundary.startStepIndex >= steps.size) {
-                        continue
-                    }
-                    boundaryCount += 1
-                    val boundaryVector = OobPageVectorSet.encode(
-                        xml = boundary.pageXml,
-                        packageName = boundary.packageName.ifBlank { queryPackage },
-                    ) ?: continue
-                    val rawPageScore = OobPageVectorSet.cosine(query.vector, boundaryVector.vector)
-                    val packageMultiplier = segmentPackageMatchMultiplier(
-                        queryPackage = queryPackage,
-                        boundaryPackage = boundaryVector.packageName,
-                    )
-                    val pageScore = (rawPageScore * packageMultiplier).toDouble()
-                    if (pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) continue
-                    boundaryPageHitCount += 1
-                    val combinedScore = (
-                        PAGE_MATCH_WEIGHT * pageScore +
-                            GOAL_MATCH_WEIGHT * recalledFunction.textScore
-                        ).coerceIn(0.0, 1.0)
-                    val remainingSummaries = stepSummaries(spec).drop(boundary.startStepIndex)
-                    if (remainingSummaries.isEmpty()) continue
-                    val match = SegmentMatch(
-                        spec = spec,
-                        functionId = functionId,
-                        score = roundScore(combinedScore),
-                        reason = segmentMatchReason(
-                            recalledFunction = recalledFunction,
-                            boundary = boundary.boundary,
-                            packageMultiplier = packageMultiplier,
-                            rawPageScore = rawPageScore,
-                        ),
-                        textScore = recalledFunction.textScore,
-                        pageScore = pageScore,
-                        node = recalledFunction.node,
-                        recallScope = recalledFunction.recallScope,
-                        matchedStepIndex = boundary.matchedStepIndex,
-                        matchedBoundary = boundary.boundary,
-                        startStepIndex = boundary.startStepIndex,
-                        remainingStepCount = remainingSummaries.size,
-                        stepSummaries = remainingSummaries,
-                        noArgumentFunction = isNoArgumentFunction(spec),
-                    )
-                    val key = "${match.functionId}:${match.startStepIndex}"
-                    val existing = bySegmentKey[key]
-                    if (shouldReplaceSegmentMatch(existing, match)) {
-                        bySegmentKey[key] = match
-                    }
-                }
-            }
-        }
-        nodeSegmentBoundaries.forEach { nodeSegment ->
-            scannedFunctionCount += 1
-            val functionId = nodeSegment.functionId
-            val spec = specsByFunctionId[functionId]
-                ?: replayService.getFunctionSpec(functionId)
-                ?: return@forEach
-            val rankedFromNode = nodeRankedByFunctionId[functionId]
-            val recalledFunction = rankedFromNode
-                ?: rankNodeSegmentFunction(
-                    spec = spec,
-                    nodeSegment = nodeSegment,
-                    goal = goal,
-                    currentPackage = currentPackage,
-                )
-                ?: return@forEach
-            if (recalledFunction.textScore < MIN_RECALL_SCORE) return@forEach
-            textEligibleFunctionCount += 1
-            val steps = materializedSteps(spec)
-            if (nodeSegment.startStepIndex <= 0 || nodeSegment.startStepIndex >= steps.size) {
-                return@forEach
-            }
-            boundaryCount += 1
-            if (nodeSegment.pageScore < OobUdegNodeStore.MIN_PAGE_MATCH_SCORE.toDouble()) {
-                return@forEach
-            }
-            boundaryPageHitCount += 1
-            val combinedScore = (
-                PAGE_MATCH_WEIGHT * nodeSegment.pageScore +
-                    GOAL_MATCH_WEIGHT * recalledFunction.textScore
-            ).coerceIn(0.0, 1.0)
-            val remainingSummaries = stepSummaries(spec).drop(nodeSegment.startStepIndex)
-            if (remainingSummaries.isEmpty()) return@forEach
-            val match = SegmentMatch(
-                spec = spec,
-                functionId = functionId,
-                score = roundScore(combinedScore),
-                reason = segmentMatchReason(
-                    recalledFunction = recalledFunction,
-                    boundary = nodeSegment.matchedBoundary,
-                    packageMultiplier = 1.0f,
-                    rawPageScore = nodeSegment.pageScore.toFloat(),
-                ),
-                textScore = recalledFunction.textScore,
-                pageScore = nodeSegment.pageScore,
-                node = nodeSegment.node,
-                recallScope = "udeg_node_segment",
-                matchedStepIndex = nodeSegment.matchedStepIndex,
-                matchedBoundary = nodeSegment.matchedBoundary,
-                startStepIndex = nodeSegment.startStepIndex,
-                remainingStepCount = remainingSummaries.size,
-                stepSummaries = remainingSummaries,
-                noArgumentFunction = isNoArgumentFunction(spec),
-            )
-            val key = "${match.functionId}:${match.startStepIndex}"
-            val existing = bySegmentKey[key]
-            if (shouldReplaceSegmentMatch(existing, match)) {
-                bySegmentKey[key] = match
-            }
-        }
-        val matches = bySegmentKey.values
-            .sortedWith(
-                compareByDescending<SegmentMatch> { it.score }
-                    .thenByDescending { it.pageScore }
-                    .thenBy { it.functionId }
-                    .thenBy { it.startStepIndex }
-            )
-            .take(topK.coerceIn(1, 50))
-        return SegmentRecallResult(
-            matches = matches,
-            scannedFunctionCount = scannedFunctionCount,
-            textEligibleFunctionCount = textEligibleFunctionCount,
-            boundaryCount = boundaryCount,
-            boundaryPageHitCount = boundaryPageHitCount,
-        )
-    }
-
-    private fun shouldReplaceSegmentMatch(
-        existing: SegmentMatch?,
-        candidate: SegmentMatch,
-    ): Boolean {
-        if (existing == null) return true
-        val candidateIsNodeSegment = candidate.recallScope == "udeg_node_segment"
-        val existingIsNodeSegment = existing.recallScope == "udeg_node_segment"
-        if (candidateIsNodeSegment != existingIsNodeSegment) {
-            return candidateIsNodeSegment
-        }
-        if (candidate.score != existing.score) {
-            return candidate.score > existing.score
-        }
-        if (candidate.pageScore != existing.pageScore) {
-            return candidate.pageScore > existing.pageScore
-        }
-        if (candidate.remainingStepCount != existing.remainingStepCount) {
-            return candidate.remainingStepCount < existing.remainingStepCount
-        }
-        return candidate.matchedBoundary < existing.matchedBoundary
-    }
-
-    private fun emptySegmentRecallResult(): SegmentRecallResult =
-        SegmentRecallResult(
-            matches = emptyList(),
-            scannedFunctionCount = 0,
-            textEligibleFunctionCount = 0,
-            boundaryCount = 0,
-            boundaryPageHitCount = 0,
-        )
-
     private fun rankNodeCapabilities(
         nodeMatches: List<OobUdegNodeStore.RecallMatch>,
         goal: String,
@@ -2623,7 +2700,6 @@ class OobOmniFlowToolkitService(
     ): NodeCapabilityRanking {
         val rankedFunctions = mutableListOf<RankedFunction>()
         val functionCapabilities = mutableListOf<Map<String, Any?>>()
-        val segmentCapabilities = mutableListOf<Map<String, Any?>>()
         nodeMatches.forEach { nodeMatch ->
             val node = nodeMatch.toMap()
             val pageScore = nodeMatch.pageSimilarity.toDouble()
@@ -2664,36 +2740,9 @@ class OobOmniFlowToolkitService(
                     nodeCapability = functionSummary,
                 )
             }
-            OobUdegNodeStore.segmentSummaries(nodeMatch.node).forEach { segment ->
-                val functionId = firstNonBlank(segment["function_id"])
-                if (functionId.isBlank()) return@forEach
-                val spec = replayService.getFunctionSpec(functionId) ?: return@forEach
-                val textScore = scoreNodeSegmentText(
-                    spec = spec,
-                    segment = segment,
-                    goal = goal,
-                    currentPackage = currentPackage,
-                )
-                val combinedScore = (
-                    PAGE_MATCH_WEIGHT * pageScore +
-                        GOAL_MATCH_WEIGHT * textScore.score
-                    ).coerceIn(0.0, 1.0)
-                segmentCapabilities += nodeCapabilityMap(
-                    node = node,
-                    functionId = functionId,
-                    capabilityType = "function_segment",
-                    score = roundScore(combinedScore),
-                    textScore = textScore.score,
-                    pageScore = pageScore,
-                    reason = "udeg_${nodeMatch.reason};udeg_node_attached_segment;${textScore.reason}",
-                    spec = spec,
-                    segment = segment,
-                )
-            }
         }
         val limit = topK.coerceIn(1, 50)
         val sortedFunctionCapabilities = functionCapabilities.sortedWith(capabilityComparator())
-        val sortedSegmentCapabilities = segmentCapabilities.sortedWith(capabilityComparator())
         return NodeCapabilityRanking(
             functions = rankedFunctions
                 .sortedWith(
@@ -2701,11 +2750,8 @@ class OobOmniFlowToolkitService(
                         .thenBy { it.functionId }
                 )
                 .take(limit),
-            capabilities = (sortedFunctionCapabilities + sortedSegmentCapabilities)
-                .sortedWith(capabilityComparator())
-                .take(limit),
+            capabilities = sortedFunctionCapabilities.take(limit),
             functionCapabilities = sortedFunctionCapabilities.take(limit),
-            segmentCapabilities = sortedSegmentCapabilities.take(limit),
         )
     }
 
@@ -2713,7 +2759,6 @@ class OobOmniFlowToolkitService(
         compareByDescending<Map<String, Any?>> { numberDouble(it["score"]) }
             .thenByDescending { numberDouble(it["page_similarity"]) }
             .thenBy { it["function_id"]?.toString().orEmpty() }
-            .thenBy { intArg(it["start_step_index"], defaultValue = 0) }
 
     private fun nodeCapabilityMap(
         node: Map<String, Any?>,
@@ -2725,38 +2770,19 @@ class OobOmniFlowToolkitService(
         reason: String,
         spec: Map<String, Any?>,
         nodeCapability: Map<String, Any?> = emptyMap(),
-        segment: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
-        val startStepIndex = intArg(
-            segment["start_step_index"],
-            segment["startStepIndex"],
-            defaultValue = 0,
-        )
         val functionSteps = stepSummaries(spec)
-        val segmentSteps = listArg(segment["step_summaries"]).mapNotNull { raw ->
-            mapArg(raw).takeIf { it.isNotEmpty() }
-        }
-        val effectiveSteps = if (capabilityType == "function_segment") {
-            segmentSteps.ifEmpty { functionSteps.drop(startStepIndex) }
-        } else {
-            functionSteps
-        }
         val call = linkedMapOf<String, Any?>(
             "tool" to "call_tool",
             "function_id" to functionId,
             "arguments" to emptyMap<String, Any?>(),
-        ).apply {
-            if (capabilityType == "function_segment") {
-                put("start_step_index", startStepIndex)
-            }
-        }
+        )
         return linkedMapOf(
             "capability_type" to capabilityType,
-            "recall_scope" to if (capabilityType == "function_segment") "udeg_node_segment" else "udeg_node",
+            "recall_scope" to "udeg_node",
             "function_id" to functionId,
-            "name" to firstNonBlank(segment["name"], nodeCapability["name"], spec["name"], functionId),
+            "name" to firstNonBlank(nodeCapability["name"], spec["name"], functionId),
             "description" to firstNonBlank(
-                segment["description"],
                 nodeCapability["description"],
                 spec["description"],
                 spec["name"],
@@ -2776,201 +2802,14 @@ class OobOmniFlowToolkitService(
             "node_skill_context" to node["node_skill_context"],
             "node_capability" to nodeCapability.takeIf { it.isNotEmpty() },
             "inputSchema" to inputSchema(spec),
-            "start_step_index" to startStepIndex.takeIf { capabilityType == "function_segment" },
-            "remaining_step_count" to effectiveSteps.size,
-            "matched_boundary" to segment["matched_boundary"],
-            "matched_step_index" to segment["matched_step_index"],
-            "execution_scope" to if (capabilityType == "function_segment") "function_suffix" else "function",
+            "remaining_step_count" to functionSteps.size,
+            "execution_scope" to "function",
             "call" to call,
-            "step_summaries" to effectiveSteps,
+            "step_summaries" to functionSteps,
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
             "source" to "oob_udeg_node_capability",
         ).filterValues { it != null }
-    }
-
-    private fun segmentPackageMatchMultiplier(queryPackage: String, boundaryPackage: String): Float {
-        if (queryPackage.isBlank() || boundaryPackage.isBlank()) return 1.0f
-        if (queryPackage == boundaryPackage) return 1.0f
-        return SEGMENT_PACKAGE_MISMATCH_MULTIPLIER
-    }
-
-    private fun segmentMatchReason(
-        recalledFunction: RankedFunction,
-        boundary: String,
-        packageMultiplier: Float,
-        rawPageScore: Float,
-    ): String {
-        val suffix = if (packageMultiplier >= 1.0f) {
-            ""
-        } else {
-            ";package_soft_mismatch;raw_page_similarity=${roundScore(rawPageScore.toDouble())}"
-        }
-        val prefix = when (recalledFunction.recallScope) {
-            "udeg_node" -> "udeg_node_function"
-            "udeg_node_segment" -> "udeg_node_segment"
-            else -> "function_boundary_page_match"
-        }
-        return "${prefix}_${recalledFunction.reason};segment_$boundary$suffix"
-    }
-
-    private fun nodeSegmentBoundaries(
-        recalledFunctions: List<RankedFunction>,
-        nodeMatches: List<OobUdegNodeStore.RecallMatch>,
-    ): List<NodeSegmentBoundary> {
-        val byKey = linkedMapOf<String, NodeSegmentBoundary>()
-        recalledFunctions.forEach { rankedFunction ->
-            addNodeSegmentBoundaries(
-                output = byKey,
-                node = rankedFunction.node,
-                pageScore = rankedFunction.pageScore,
-            )
-        }
-        nodeMatches.forEach { nodeMatch ->
-            addNodeSegmentBoundaries(
-                output = byKey,
-                node = nodeMatch.toMap(),
-                pageScore = nodeMatch.pageSimilarity.toDouble(),
-            )
-        }
-        return byKey.values.toList()
-    }
-
-    private fun addNodeSegmentBoundaries(
-        output: MutableMap<String, NodeSegmentBoundary>,
-        node: Map<String, Any?>,
-        pageScore: Double,
-    ) {
-        val segments = OobUdegNodeStore.segmentSummaries(node)
-        segments.forEach { segment ->
-            val functionId = firstNonBlank(segment["function_id"])
-            val startStepIndex = intArg(
-                segment["start_step_index"],
-                segment["startStepIndex"],
-                defaultValue = 0,
-            )
-            if (functionId.isBlank() || startStepIndex <= 0) return@forEach
-            val boundary = NodeSegmentBoundary(
-                functionId = functionId,
-                startStepIndex = startStepIndex,
-                matchedStepIndex = intArg(
-                    segment["matched_step_index"],
-                    segment["matchedStepIndex"],
-                    defaultValue = (startStepIndex - 1).coerceAtLeast(0),
-                ),
-                matchedBoundary = firstNonBlank(segment["matched_boundary"], segment["matchedBoundary"])
-                    .ifBlank { "node_segment" },
-                pageScore = pageScore,
-                node = node,
-                segment = segment,
-            )
-            val key = "${boundary.functionId}:${boundary.startStepIndex}"
-            val existing = output[key]
-            if (existing == null || boundary.pageScore > existing.pageScore) {
-                output[key] = boundary
-            }
-        }
-    }
-
-    private fun segmentBoundaryContexts(
-        step: Map<String, Any?>,
-        stepIndex: Int,
-    ): List<SegmentBoundaryContext> {
-        val sourceContext = mapArg(step["source_context"])
-            .ifEmpty { mapArg(mapArg(step["args"])["source_context"]) }
-        if (sourceContext.isEmpty()) return emptyList()
-        val output = mutableListOf<SegmentBoundaryContext>()
-        val srcCtx = mapArg(sourceContext["src_ctx"])
-        val srcPage = firstNonBlank(
-            srcCtx["page"],
-            srcCtx["xml"],
-            srcCtx["observation_xml"],
-            srcCtx["observationXml"],
-        )
-        if (srcPage.isNotBlank()) {
-            output += SegmentBoundaryContext(
-                boundary = "src_ctx",
-                pageXml = srcPage,
-                packageName = firstNonBlank(srcCtx["package_name"], srcCtx["packageName"]),
-                matchedStepIndex = stepIndex,
-                startStepIndex = stepIndex,
-            )
-        }
-        val dstCtx = mapArg(sourceContext["dst_ctx"])
-        val dstPage = firstNonBlank(
-            dstCtx["page"],
-            dstCtx["xml"],
-            dstCtx["observation_xml"],
-            dstCtx["observationXml"],
-        )
-        if (dstPage.isNotBlank()) {
-            output += SegmentBoundaryContext(
-                boundary = "dst_ctx",
-                pageXml = dstPage,
-                packageName = firstNonBlank(dstCtx["package_name"], dstCtx["packageName"]),
-                matchedStepIndex = stepIndex,
-                startStepIndex = stepIndex + 1,
-            )
-        }
-        return output
-    }
-
-    private fun sliceMaterializedSpec(
-        materializedSpec: Map<String, Any?>,
-        startStepIndex: Int,
-    ): Map<String, Any?>? {
-        if (startStepIndex <= 0) return materializedSpec
-        val execution = mapArg(materializedSpec["execution"])
-        val steps = materializedSteps(materializedSpec)
-        if (startStepIndex >= steps.size) return null
-        val slicedSteps = steps.drop(startStepIndex).mapIndexed { offset, step ->
-            linkedMapOf<String, Any?>().apply {
-                putAll(step)
-                putIfAbsent("original_index", step["index"] ?: (startStepIndex + offset))
-                put("index", offset)
-            }
-        }
-        val slicedExecution = linkedMapOf<String, Any?>().apply {
-            putAll(execution)
-            put("steps", slicedSteps)
-            put("step_count", slicedSteps.size)
-            put("omniflow_step_count", slicedSteps.count { it["executor"] == "omniflow" })
-            put("agent_step_count", slicedSteps.count { it["executor"] == "agent" })
-            put("requires_agent_fallback", slicedSteps.any { it["executor"] == "agent" })
-            val capabilities = mapArg(execution["capabilities"])
-            if (capabilities.isNotEmpty()) {
-                put(
-                    "capabilities",
-                    linkedMapOf<String, Any?>().apply {
-                        putAll(capabilities)
-                        put("scriptable_step_count", slicedSteps.count { it["scriptable"] == true })
-                        put("model_free_step_count", slicedSteps.count { it["model_free"] == true })
-                        put("omniflow_step_count", slicedSteps.count { it["executor"] == "omniflow" })
-                        put("agent_step_count", slicedSteps.count { it["executor"] == "agent" })
-                        put("requires_agent_fallback", slicedSteps.any { it["executor"] == "agent" })
-                    }
-                )
-            }
-        }
-        return linkedMapOf<String, Any?>().apply {
-            putAll(materializedSpec)
-            put("execution", slicedExecution)
-            put("segment_execution", segmentExecutionMeta(materializedSpec, startStepIndex))
-        }
-    }
-
-    private fun segmentExecutionMeta(
-        materializedSpec: Map<String, Any?>,
-        startStepIndex: Int,
-    ): Map<String, Any?> {
-        val originalStepCount = materializedSteps(materializedSpec).size
-        val remainingStepCount = (originalStepCount - startStepIndex).coerceAtLeast(0)
-        return linkedMapOf(
-            "execution_scope" to "function_suffix",
-            "start_step_index" to startStepIndex,
-            "original_step_count" to originalStepCount,
-            "remaining_step_count" to remainingStepCount,
-        )
     }
 
     private fun compactRecallPayload(
@@ -2988,14 +2827,9 @@ class OobOmniFlowToolkitService(
             put("decision", payload["decision"])
             put("decision_path", payload["decision_path"])
             put("hit", compactRecallCandidate(payload["hit"]))
-            put("segment_hit", compactRecallCandidate(payload["segment_hit"]))
             put(
                 "candidates",
                 listArg(payload["candidates"]).mapNotNull { compactRecallCandidate(it) }
-            )
-            put(
-                "segment_candidates",
-                listArg(payload["segment_candidates"]).mapNotNull { compactRecallCandidate(it) }
             )
             put(
                 "capability_candidates",
@@ -3010,10 +2844,6 @@ class OobOmniFlowToolkitService(
                 listArg(payload["node_function_capabilities"]).mapNotNull { compactRecallCandidate(it) }
             )
             put(
-                "node_segment_capabilities",
-                listArg(payload["node_segment_capabilities"]).mapNotNull { compactRecallCandidate(it) }
-            )
-            put(
                 "node_candidates",
                 listArg(payload["node_candidates"]).mapNotNull { compactRecallNode(it) }
             )
@@ -3022,7 +2852,6 @@ class OobOmniFlowToolkitService(
             put("decision_context", compactDecisionContext(payload["decision_context"]))
             put("decision_policy", payload["decision_policy"])
             put("count", payload["count"])
-            put("segment_count", payload["segment_count"])
             put("reason", payload["reason"])
             put("current_package", payload["current_package"])
             put("current_node_id", payload["current_node_id"])
@@ -3051,9 +2880,6 @@ class OobOmniFlowToolkitService(
             ).takeIf { it.isNotBlank() },
             "node_skill_context" to compactNodeSkillContext(candidate["node_skill_context"]),
             "recall_scope" to candidate["recall_scope"],
-            "matched_boundary" to candidate["matched_boundary"],
-            "matched_step_index" to candidate["matched_step_index"],
-            "start_step_index" to candidate["start_step_index"],
             "remaining_step_count" to candidate["remaining_step_count"],
             "requires_arguments" to candidate["requires_arguments"],
             "execution_scope" to candidate["execution_scope"],
@@ -3081,7 +2907,6 @@ class OobOmniFlowToolkitService(
             "function_ids" to listArg(node["function_ids"]).mapNotNull {
                 it?.toString()?.trim()?.takeIf(String::isNotEmpty)
             },
-            "segment_count" to node["segment_count"],
             "source" to node["source"],
         ).filterValues { it != null }
     }
@@ -3108,7 +2933,6 @@ class OobOmniFlowToolkitService(
             ).filterValues { it != null }.takeIf { it.isNotEmpty() },
             "decision_context" to compactDecisionContext(context["decision_context"]),
             "attached_function_count" to listArg(context["attached_functions"]).size,
-            "attached_segment_count" to listArg(context["attached_segments"]).size,
         ).filterValues { it != null }
     }
 
@@ -3121,7 +2945,6 @@ class OobOmniFlowToolkitService(
             "skill_id" to context["skill_id"],
             "decision_path" to context["decision_path"],
             "function_count" to context["function_count"],
-            "segment_count" to context["segment_count"],
             "page_analysis" to compactPageAnalysis(context["page_analysis"]),
         ).filterValues { it != null }
     }
@@ -3149,87 +2972,6 @@ class OobOmniFlowToolkitService(
         ).filterValues { it != null }
     }
 
-    private fun SegmentMatch.toMap(): Map<String, Any?> =
-        linkedMapOf(
-            "capability_type" to "function_segment",
-            "function_id" to functionId,
-            "description" to (spec["description"] ?: spec["name"] ?: functionId),
-            "name" to spec["name"],
-            "inputSchema" to inputSchema(spec),
-            "score" to score,
-            "reason" to reason,
-            "text_score" to roundScore(textScore),
-            "page_similarity" to roundScore(pageScore),
-            "strict_direct_hit" to (
-                score >= DIRECT_HIT_SCORE &&
-                    pageScore >= DIRECT_HIT_SCORE &&
-                    textScore >= DIRECT_HIT_SCORE
-                ),
-            "udeg_node" to node.takeIf { it.isNotEmpty() },
-            "node_skill_context" to node["node_skill_context"],
-            "recall_scope" to recallScope,
-            "matched_boundary" to matchedBoundary,
-            "matched_step_index" to matchedStepIndex,
-            "start_step_index" to startStepIndex,
-            "remaining_step_count" to remainingStepCount,
-            "requires_arguments" to !noArgumentFunction,
-            "execution_scope" to "function_suffix",
-            "call" to linkedMapOf(
-                "tool" to "call_tool",
-                "function_id" to functionId,
-                "arguments" to emptyMap<String, Any?>(),
-                "start_step_index" to startStepIndex,
-            ),
-            "step_summaries" to stepSummaries,
-            "function_kind" to "oob_reusable_function",
-            "asset_state" to "native_local",
-            "source" to "oob_page_vector_segment_match",
-        )
-
-    private fun rankFunction(
-        spec: Map<String, Any?>,
-        goal: String,
-        currentPackage: String,
-    ): RankedFunction? {
-        val functionId = OobFunctionSchemaBuilder.functionId(spec)
-        if (functionId.isEmpty()) return null
-        val scored = scoreFunctionText(spec, goal, currentPackage)
-        if (scored.score < MIN_RECALL_SCORE) return null
-        return RankedFunction(
-            spec = spec,
-            functionId = functionId,
-            score = roundScore(scored.score),
-            reason = "page_vector_boundary_candidate;${scored.reason}",
-            textScore = scored.score,
-            recallScope = "function_boundary_page_match",
-        )
-    }
-
-    private fun rankNodeSegmentFunction(
-        spec: Map<String, Any?>,
-        nodeSegment: NodeSegmentBoundary,
-        goal: String,
-        currentPackage: String,
-    ): RankedFunction? {
-        val scored = scoreNodeSegmentText(
-            spec = spec,
-            segment = nodeSegment.segment,
-            goal = goal,
-            currentPackage = currentPackage,
-        )
-        if (scored.score < MIN_RECALL_SCORE) return null
-        return RankedFunction(
-            spec = spec,
-            functionId = nodeSegment.functionId,
-            score = roundScore(scored.score),
-            reason = "udeg_node_attached_segment;${scored.reason}",
-            textScore = scored.score,
-            pageScore = nodeSegment.pageScore,
-            node = nodeSegment.node,
-            recallScope = "udeg_node_segment",
-        )
-    }
-
     private fun scoreNodeFunctionText(
         spec: Map<String, Any?>,
         function: Map<String, Any?>,
@@ -3254,36 +2996,6 @@ class OobOmniFlowToolkitService(
         }
         return if (capabilityScore > base.score) {
             FunctionTextScore(capabilityScore, "node_function_capability_match")
-        } else {
-            base
-        }
-    }
-
-    private fun scoreNodeSegmentText(
-        spec: Map<String, Any?>,
-        segment: Map<String, Any?>,
-        goal: String,
-        currentPackage: String,
-    ): FunctionTextScore {
-        val base = scoreFunctionText(spec, goal, currentPackage)
-        val segmentCorpus = listOf(
-            segment["function_id"],
-            segment["name"],
-            segment["description"],
-            segment["matched_boundary"],
-            listArg(segment["step_summaries"]).joinToString(" ") { raw ->
-                val step = mapArg(raw)
-                listOf(step["title"], step["tool"], step["id"])
-                    .joinToString(" ")
-            },
-        ).joinToString(" ").trim()
-        val segmentScore = if (goal.isBlank() || segmentCorpus.isBlank()) {
-            0.0
-        } else {
-            tokenOverlapScore(goal, segmentCorpus)
-        }
-        return if (segmentScore > base.score) {
-            FunctionTextScore(segmentScore, "segment_text_match")
         } else {
             base
         }
@@ -3689,54 +3401,10 @@ class OobOmniFlowToolkitService(
         val reason: String,
     )
 
-    private data class SegmentBoundaryContext(
-        val boundary: String,
-        val pageXml: String,
-        val packageName: String,
-        val matchedStepIndex: Int,
-        val startStepIndex: Int,
-    )
-
-    private data class NodeSegmentBoundary(
-        val functionId: String,
-        val startStepIndex: Int,
-        val matchedStepIndex: Int,
-        val matchedBoundary: String,
-        val pageScore: Double,
-        val node: Map<String, Any?>,
-        val segment: Map<String, Any?>,
-    )
-
-    private data class SegmentMatch(
-        val spec: Map<String, Any?>,
-        val functionId: String,
-        val score: Double,
-        val reason: String,
-        val textScore: Double,
-        val pageScore: Double,
-        val node: Map<String, Any?>,
-        val recallScope: String,
-        val matchedStepIndex: Int,
-        val matchedBoundary: String,
-        val startStepIndex: Int,
-        val remainingStepCount: Int,
-        val stepSummaries: List<Map<String, Any?>>,
-        val noArgumentFunction: Boolean,
-    )
-
-    private data class SegmentRecallResult(
-        val matches: List<SegmentMatch>,
-        val scannedFunctionCount: Int,
-        val textEligibleFunctionCount: Int,
-        val boundaryCount: Int,
-        val boundaryPageHitCount: Int,
-    )
-
     private data class NodeCapabilityRanking(
         val functions: List<RankedFunction>,
         val capabilities: List<Map<String, Any?>>,
         val functionCapabilities: List<Map<String, Any?>>,
-        val segmentCapabilities: List<Map<String, Any?>>,
     )
 
     private fun attachFunctionExecutionTiming(
@@ -3759,7 +3427,6 @@ class OobOmniFlowToolkitService(
             "load_function_spec_ms",
             "check_arguments_ms",
             "materialize_function_ms",
-            "slice_function_ms",
             "create_runner_ms",
         ).forEach { phaseName ->
             startupPhaseMs[phaseName] = longArg(toolkitPhaseMs[phaseName])
@@ -3838,7 +3505,6 @@ class OobOmniFlowToolkitService(
                 "load_function_spec_ms",
                 "check_arguments_ms",
                 "materialize_function_ms",
-                "slice_function_ms",
                 "create_runner_ms",
                 "run_materialized_function_ms",
             ).forEach { phaseName ->
@@ -3934,7 +3600,6 @@ class OobOmniFlowToolkitService(
                 "read_current_page_ms",
                 "page_match_ms",
                 "rank_functions_ms",
-                "segment_match_ms",
             ).forEach { phaseName ->
                 completedPhases[phaseName] = phases[phaseName] ?: 0L
             }
@@ -3961,8 +3626,6 @@ class OobOmniFlowToolkitService(
         private const val DIRECT_HIT_SCORE = 0.999
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
-        private const val SEGMENT_PACKAGE_MISMATCH_MULTIPLIER = 0.82f
-        private const val MAX_SEGMENT_FUNCTION_SCAN = 500
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

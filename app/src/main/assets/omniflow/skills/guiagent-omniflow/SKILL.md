@@ -82,13 +82,13 @@ the in-app Agent to use OmniFlow UI/native capabilities.
    context -> VLM/tool decision`, then use that node's skill-like decision
    context and attached reusable commands. Do not treat recall as a flat search
    over the reusable command store.
-2. Treat `decision=recall` or `decision=segment_recall` as context, not
+2. Treat `decision=recall` as context, not
    completion: read `current_node`, `node_skill_context`,
    `decision_context`, and `capability_candidates`, then decide whether a
-   node-attached reusable command or segment fits the live goal.
+   node-attached reusable command fits the live goal.
 3. If a node-attached capability fits, fill arguments from `inputSchema`, then
-   call `omniflow.call_tool({function_id, arguments, start_step_index?})`.
-4. Only use `decision=hit` or `decision=segment_hit` as direct execution when
+   call `omniflow.call_tool({function_id, arguments})`.
+4. Only use `decision=hit` as direct execution when
    the host explicitly requested direct recall execution, for example through
    `auto_execute=true`.
 5. If recall misses or call_tool returns `fallback=true`, return that state to
@@ -115,7 +115,7 @@ Allowed enhancement output:
   contact name, phone number, search term, message text, date, URL, or target
   object name.
 - `agent_reuse` metadata: `reuse_when`, `avoid_when`, `success_signal`,
-  `key_actions`, and contiguous `segments`.
+  and `key_actions`.
 
 Hard boundaries:
 
@@ -124,8 +124,6 @@ Hard boundaries:
 - Bind parameters only to existing args, for example
   `$.execution.steps[2].args.text`. Do not bind coordinates, bounds, width, or
   height.
-- Treat `agent_reuse.segments` as metadata for future selection or split review.
-  Do not assume they are already registered standalone commands.
 - Before replay, fill fresh argument values through `parameters.bindings`; a
   recording with defaults like "妈妈" and a phone number should be reusable for
   another contact and phone number through those bindings.
@@ -167,7 +165,7 @@ Open OOB, go to Run Logs, select a successful run, inspect timeline cards,
 save it as a reusable command, inspect the generated spec/details, then save.
 If the command is already registered for that RunLog, open the existing command
 instead of registering a duplicate. Use Enhance when the user wants better
-reuse labels, runtime slots, key actions, or segment metadata.
+reuse labels, runtime slots, or key action metadata.
 
 ### Run
 

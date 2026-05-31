@@ -795,6 +795,9 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
               final nextVisible = !_isPopupVisible;
               setState(() => _isPopupVisible = nextVisible);
               widget.onPopupVisibilityChanged?.call(nextVisible);
+              if (nextVisible) {
+                unawaited(_refreshManualRecordingPermissions());
+              }
             },
     );
   }

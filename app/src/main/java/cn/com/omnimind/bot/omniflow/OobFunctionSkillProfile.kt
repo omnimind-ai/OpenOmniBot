@@ -242,8 +242,6 @@ object OobFunctionSkillProfile {
                     putJsonObject("continueWithAgent") { put("type", "boolean") }
                     putJsonObject("executionMode") { put("type", "string") }
                     putJsonObject("confirmed") { put("type", "boolean") }
-                    putJsonObject("startStepIndex") { put("type", "integer") }
-                    putJsonObject("start_step_index") { put("type", "integer") }
                 }
                 putJsonArray("required") { add("functionId") }
             }

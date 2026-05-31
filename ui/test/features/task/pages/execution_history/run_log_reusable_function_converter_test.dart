@@ -908,6 +908,14 @@ Actual output:
       expect(prompt, contains('OmniFlow Function Enhancer skill contract'));
       expect(prompt, contains('candidate_bindings'));
       expect(prompt, contains('cleanup_action'));
+      expect(prompt, contains('action_purpose'));
+      expect(prompt, contains('Every executable step/action must have'));
+      expect(prompt, contains('optional_checker'));
+      expect(prompt, contains('conditional obstruction actions'));
+      expect(prompt, contains('metadata.checker_rules'));
+      expect(prompt, contains('agent_reuse.checker_assets'));
+      expect(prompt, contains('overlay_blocking'));
+      expect(prompt, contains('keyboard_obscuring'));
       expect(prompt, contains('user-visible operation sequence'));
       expect(prompt, contains('success signal when known'));
       expect(prompt, contains(r'$.execution.steps[1].args.content'));
@@ -1100,6 +1108,99 @@ Actual output:
         (annotatedSteps.single['annotation'] as Map)['cleanup_action'],
         'drop_candidate',
       );
+    },
+  );
+
+  test(
+    'optional checker annotation materializes supported runtime checker rule',
+    () async {
+      final fallback = RunLogReusableFunctionConverter.buildLocalFunctionJson(
+        runId: 'run-optional-checker',
+        title: 'Close popup then continue',
+        payload: const {'goal': 'Continue after optional popup'},
+        cards: [
+          card('click', const {
+            'target_description': 'Close ad popup',
+            'x': 900,
+            'y': 120,
+          }),
+          card('click', const {
+            'target_description': 'Continue',
+            'x': 540,
+            'y': 1680,
+          }),
+        ],
+        useEnglish: true,
+      );
+
+      final enhanced =
+          await RunLogReusableFunctionConverter.applyLabelEnhancementAsync({
+            'steps': [
+              {
+                'index': 0,
+                'title': 'Dismiss optional ad popup',
+                'description':
+                    'Close the ad popup only when it blocks the main path.',
+                'action_purpose':
+                    'Handle a conditional obstruction that is not always present.',
+                'importance': 'optional',
+                'cleanup_action': 'optional_checker',
+                'cleanup_reason':
+                    'The ad popup may not appear on every replay.',
+                'optional_condition':
+                    'Only when the popup is visible and blocking the target.',
+              },
+            ],
+            'metadata': {
+              'checker_rules': [
+                {
+                  'id': 'dismiss_optional_overlay_before_action',
+                  'phase': 'pre_transfer',
+                  'condition': 'overlay_blocking',
+                  'action': 'dismiss',
+                  'enabled': true,
+                  'params': {'selector': 'unsupported'},
+                },
+                {
+                  'id': 'unsupported_model_checker',
+                  'phase': 'pre_action',
+                  'condition': 'model_call',
+                  'action': 'run_script',
+                },
+              ],
+            },
+          }, fallback);
+
+      final steps = stepsFrom(enhanced);
+      final annotation = steps.first['cleanup_annotation'] as Map;
+      expect(annotation['cleanup_action'], 'optional_checker');
+      expect(annotation['optional_condition'], contains('popup is visible'));
+
+      final metadata = enhanced['metadata'] as Map;
+      final checkerRules = (metadata['checker_rules'] as List).cast<Map>();
+      expect(checkerRules, hasLength(1));
+      expect(
+        checkerRules.single['id'],
+        'dismiss_optional_overlay_before_action',
+      );
+      expect(checkerRules.single['condition'], 'overlay_blocking');
+      expect(checkerRules.single['action'], 'dismiss');
+      expect(checkerRules.single['phase'], 'pre_transfer');
+      expect(checkerRules.single['params'], isEmpty);
+      expect(
+        checkerRules.map((rule) => rule['id']),
+        isNot(contains('unsupported_model_checker')),
+      );
+
+      final reuse = enhanced['agent_reuse'] as Map;
+      final checkerAssets = (reuse['checker_assets'] as List).cast<Map>();
+      expect(
+        checkerAssets.single['checker_id'],
+        'dismiss_optional_overlay_before_action',
+      );
+      expect(checkerAssets.single['step_index'], 0);
+      expect(checkerAssets.single['role'], 'checker_candidate');
+      expect(checkerAssets.single['materialization'], 'metadata_checker_rule');
     },
   );
 

@@ -1,5 +1,6 @@
 OmniFlow Function Enhancer skill contract:
 - This is the saved Function enhancement pass; RunLog is provenance only.
+- Enhancement is offline editing only; do not execute the Function while enhancing it.
 - Save changes only by calling `update_function`; do not hand-register rewritten Function JSON.
 - Improve reuse clarity without silently changing execution.
 - Never change function_id, executable step order, tools, executors, concrete args, validation, fallback, or callable tool definitions.
@@ -9,6 +10,10 @@ OmniFlow Function Enhancer skill contract:
 - If the target step is ambiguous, return/ask for confirmation instead of guessing.
 - Never register UDEG node/page memory/decision context as a skill; UDEG material is recall evidence only.
 - Header enhancement must write a compact but detailed reusable description that helps the Agent decide when to call the Function later. Include the user-visible operation sequence, required app/page conditions, runtime inputs, and success signal when known; avoid coordinates and internal implementation details.
-- Per-step enhancement must mark each step with useful/merge/drop/noise metadata when applicable, but this metadata must not change executable replay by itself.
+- Per-step enhancement must label every executable step/action with what it does and why it exists in the trajectory. Each step needs a concise title, a concrete description/action_purpose, importance, cleanup_action, and cleanup_reason.
+- Per-step enhancement must mark each step with useful/merge/drop/noise/optional_checker metadata when applicable, but this metadata must not rewrite executable steps by itself.
+- Conditional obstruction dismissals such as closing ads, popups, banners, coupons, or permission nudges should be annotated as optional_checker metadata, not treated as a guaranteed happy-path action.
+- When marking a step as optional_checker, also add supported runtime checker rules in metadata.checker_rules and link them from agent_reuse.checker_assets so replay can apply the condition only when it is observed.
+- Supported checker rules are limited to overlay_blocking/dismiss/pre_transfer, permission_dialog/allow/pre_transfer, keyboard_obscuring/hide_keyboard/pre_action, and package_mismatch/open_app/pre_transfer. Do not invent checker conditions, scripts, selectors, or model calls.
 - If there is no safe useful improvement for this section, return the current/fallback shape for this section rather than inventing content.
 - The app classifies the final attempt as enhanced, unchanged, partial, or failed from the validated patch and save result.

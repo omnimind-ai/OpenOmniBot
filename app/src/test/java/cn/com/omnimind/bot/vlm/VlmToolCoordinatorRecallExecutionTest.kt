@@ -27,11 +27,10 @@ class VlmToolCoordinatorRecallExecutionTest {
                 decision = "hit",
                 guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
-                directHitFunctionId = "open_settings_segment",
+                directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = { functionId, startStepIndex ->
-                assertEquals(0, startStepIndex)
+            callFunction = { functionId ->
                 mapOf(
                     "success" to true,
                     "fallback" to false,
@@ -45,51 +44,11 @@ class VlmToolCoordinatorRecallExecutionTest {
         assertNotNull(outcome)
         assertEquals(VlmToolOutcomeStatus.FINISHED, outcome?.status)
         assertEquals(TaskStatus.FINISHED, state.status)
-        assertEquals("omniflow_recall_hit:open_settings_segment", state.executionRoute)
-        assertTrue(state.finishedContent?.contains("open_settings_segment") == true)
+        assertEquals("omniflow_recall_hit:open_settings_function", state.executionRoute)
+        assertTrue(state.finishedContent?.contains("open_settings_function") == true)
         assertTrue(state.summaryText?.contains("actions_executed=1") == true)
         assertEquals(2, events.size)
         assertEquals("FINISHED", events.last()["status"])
-    }
-
-    @Test
-    fun `segment recall hit passes suffix start index to function runner`() = runBlocking {
-        val state = TaskState(
-            taskId = "task-segment-recall-hit",
-            goal = "continue settings flow",
-            status = TaskStatus.RUNNING,
-        )
-        var capturedFunctionId = ""
-
-        val outcome = VlmToolCoordinator.tryExecuteRecallHit(
-            taskState = state,
-            goal = state.goal,
-            recallGuidance = VlmRecallGuidance(
-                decision = "segment_hit",
-                guidance = "OmniFlow UDEG node skill-like decision context",
-                payload = mapOf("success" to true),
-                directHitFunctionId = "open_settings_segment",
-                directHitStartStepIndex = 2,
-            ),
-            progressReporter = { _, _ -> },
-            callFunction = { functionId, startStepIndex ->
-                capturedFunctionId = functionId
-                assertEquals(2, startStepIndex)
-                mapOf(
-                    "success" to true,
-                    "fallback" to false,
-                    "function_id" to functionId,
-                    "run_id" to "omniflow_segment_run_test",
-                    "actions_executed" to 2,
-                )
-            },
-        )
-
-        assertNotNull(outcome)
-        assertEquals("open_settings_segment", capturedFunctionId)
-        assertEquals(VlmToolOutcomeStatus.FINISHED, outcome?.status)
-        assertEquals("omniflow_recall_segment_hit:open_settings_segment:2", state.executionRoute)
-        assertTrue(state.summaryText?.contains("segment_start_step_index=2") == true)
     }
 
     @Test
@@ -108,10 +67,10 @@ class VlmToolCoordinatorRecallExecutionTest {
                 decision = "hit",
                 guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
-                directHitFunctionId = "open_settings_segment",
+                directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = { _, _ ->
+            callFunction = {
                 mapOf(
                     "success" to false,
                     "fallback" to true,
@@ -147,7 +106,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = null,
             ),
             progressReporter = { _, _ -> },
-            callFunction = { _, _ ->
+            callFunction = {
                 called = true
                 emptyMap()
             },
@@ -207,10 +166,10 @@ class VlmToolCoordinatorRecallExecutionTest {
                 decision = "hit",
                 guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
-                directHitFunctionId = "open_settings_segment",
+                directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, _ -> },
-            callFunction = { _, _ ->
+            callFunction = {
                 called = true
                 mapOf("success" to true)
             },
@@ -242,15 +201,15 @@ class VlmToolCoordinatorRecallExecutionTest {
                 decision = "hit",
                 guidance = "OmniFlow UDEG node skill-like decision context",
                 payload = mapOf("success" to true),
-                directHitFunctionId = "open_settings_segment",
+                directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, _ -> },
-            callFunction = { _, _ ->
+            callFunction = {
                 called = true
                 mapOf(
                     "success" to true,
                     "fallback" to false,
-                    "function_id" to "open_settings_segment",
+                    "function_id" to "open_settings_function",
                     "run_id" to "omniflow_run_test",
                     "actions_executed" to 1,
                 )

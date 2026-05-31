@@ -220,6 +220,48 @@ class OobPageVectorSetTest {
         }
     }
 
+    @Test
+    fun `udeg export contains function and call function edges without segment payloads`() {
+        val context = OobOmniFlowLoopAcceptanceTest.TempFilesContext()
+        try {
+            val store = OobUdegNodeStore(context)
+            val result = store.upsertFunction(
+                functionId = "settings_two_step",
+                functionSpec = multiStepFunctionSpecWithBoundaries(),
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(2, (result["raw_action_edge_count"] as Number).toInt())
+            assertEquals(3, (result["edge_count"] as Number).toInt())
+
+            val payload = store.exportBundle()["payload"] as Map<*, *>
+            val edges = (payload["edges"] as List<*>).mapNotNull { it as? Map<*, *> }
+            val callEdges = edges.filter { it["kind"] == "call_function" }
+            val functionEdges = edges.filter { it["kind"] == "function" }
+
+            assertEquals(1, callEdges.size)
+            assertEquals("settings_two_step", callEdges.first()["function_id"])
+            assertEquals(true, callEdges.first()["callable"])
+            val orderedFunctionEdges = functionEdges.sortedBy { (it["step_index"] as Number).toInt() }
+            assertEquals(edges.toString(), 2, orderedFunctionEdges.size)
+            assertEquals(listOf(0, 1), orderedFunctionEdges.map { (it["step_index"] as Number).toInt() })
+            assertEquals(listOf("click", "input_text"), orderedFunctionEdges.map { it["action_type"] })
+
+            val rawActionEdges = (payload["raw_action_edges"] as List<*>).mapNotNull { it as? Map<*, *> }
+            assertEquals(functionEdges.size, rawActionEdges.size)
+            assertTrue(rawActionEdges.all { it["kind"] == "function" })
+
+            val serialized = payload.toString()
+            assertFalse(serialized.contains("function_segment"))
+            assertFalse(serialized.contains("segment_hit"))
+            assertFalse(serialized.contains("segment_candidates"))
+            assertFalse(serialized.contains("node_segment_capabilities"))
+            assertFalse(serialized.contains("segment_start_step_index"))
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
     private fun functionSpecWithSourcePage(functionId: String, xml: String): Map<String, Any?> = mapOf(
         "schema_version" to "oob.reusable_function.v1",
         "function_id" to functionId,
@@ -243,6 +285,63 @@ class OobPageVectorSetTest {
                 )
             )
         )
+    )
+
+    private fun multiStepFunctionSpecWithBoundaries(): Map<String, Any?> = mapOf(
+        "schema_version" to "oob.reusable_function.v1",
+        "function_id" to "settings_two_step",
+        "name" to "Settings two step",
+        "description" to "Tap Network and type a search term.",
+        "parameters" to emptyList<Map<String, Any?>>(),
+        "source" to mapOf("run_id" to "run_settings_two_step"),
+        "execution" to mapOf(
+            "kind" to "tool_sequence",
+            "steps" to listOf(
+                mapOf(
+                    "id" to "step_1",
+                    "index" to 0,
+                    "title" to "Tap Network",
+                    "tool" to "click",
+                    "omniflow_action" to "click",
+                    "args" to mapOf(
+                        "target_description" to "Network",
+                        "x" to 540,
+                        "y" to 300,
+                    ),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf(
+                            "page" to SOURCE_XML,
+                            "package_name" to "com.example.settings",
+                        ),
+                        "dst_ctx" to mapOf(
+                            "page" to OTHER_XML,
+                            "package_name" to "com.example.settings",
+                        ),
+                    ),
+                ),
+                mapOf(
+                    "id" to "step_2",
+                    "index" to 1,
+                    "title" to "Type query",
+                    "tool" to "input_text",
+                    "omniflow_action" to "input_text",
+                    "args" to mapOf(
+                        "target_description" to "Phone",
+                        "text" to "network",
+                    ),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf(
+                            "page" to OTHER_XML,
+                            "package_name" to "com.example.settings",
+                        ),
+                        "dst_ctx" to mapOf(
+                            "page" to SOURCE_XML_VARIANT,
+                            "package_name" to "com.example.settings",
+                        ),
+                    ),
+                ),
+            ),
+        ),
     )
 
     private companion object {

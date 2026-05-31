@@ -90,9 +90,8 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   `candidate_bindings`, plus a valid example output JSON. Do not send the full
   executable spec, source XML, screenshots, or `source_context` to the label
   enhancer.
-- `agent_reuse.key_actions` and `agent_reuse.segments` are planning metadata
-  only. Segment candidates are contiguous step slices for future selection or
-  split review; they are not auto-registered as new reusable commands.
+- `agent_reuse.key_actions` is planning metadata only. It helps later agent
+  selection but is not an executable split.
 - OmniFlow graph/reusable-command tools convert to `kind=omniflow_graph` or
   `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
 

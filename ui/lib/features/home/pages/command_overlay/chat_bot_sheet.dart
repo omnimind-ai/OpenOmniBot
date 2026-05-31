@@ -16,6 +16,7 @@ import 'package:ui/services/assists_core_service.dart';
 import 'package:ui/services/agent_stream_meta.dart';
 import 'package:ui/services/app_state_service.dart';
 import 'package:ui/features/home/pages/command_overlay/services/chat_service.dart';
+import 'package:ui/features/home/pages/command_overlay/services/manual_recording_permission_guard.dart';
 import 'package:ui/features/home/pages/command_overlay/constants/messages.dart';
 import 'package:ui/features/home/pages/command_overlay/utils/deep_thinking_parser.dart';
 import 'package:ui/features/home/pages/chat/utils/agent_run_timeline.dart';
@@ -1853,6 +1854,11 @@ class _ChatBotSheetState extends State<ChatBotSheet>
   Future<void> _startManualRecordingFlow({
     required String userMessageText,
   }) async {
+    final canRecord = await ManualRecordingPermissionGuard.ensureAuthorized(
+      context,
+    );
+    if (!mounted || !canRecord) return;
+
     _inputFocusNode.unfocus();
     final messageIds = _addUserMessage(userMessageText);
     await _saveConversationToDb();

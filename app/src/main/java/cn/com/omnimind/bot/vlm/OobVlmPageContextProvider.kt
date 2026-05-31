@@ -60,8 +60,6 @@ class OobVlmPageContextProvider(
             .ifEmpty { mapArg(payload["decision_context"]) }
         val attachedFunctions = listArg(nodeSkillContext["attached_functions"])
             .mapNotNull { mapArg(it).takeIf(Map<String, Any?>::isNotEmpty) }
-        val attachedSegments = listArg(nodeSkillContext["attached_segments"])
-            .mapNotNull { mapArg(it).takeIf(Map<String, Any?>::isNotEmpty) }
         val visibleTexts = listArg(summary["visible_texts"])
             .take(MAX_ITEMS)
             .joinToString(" / ") { it.toString() }
@@ -109,12 +107,8 @@ class OobVlmPageContextProvider(
                 title = "UDEG attached Functions (optional capabilities)",
                 capabilities = attachedFunctions
             )
-            appendCapabilitySection(
-                title = "UDEG attached Function segments (optional capabilities)",
-                capabilities = attachedSegments
-            )
             append("\n约束: 这是当前页决策上下文；下一步动作仍必须基于本轮 live screenshot/XML/indexed evidence。")
-            append("\n约束: attached Function/segment 只是候选能力，不是完成证明；除非外层显式允许且严格命中，否则不要自动重放。")
+            append("\n约束: attached Function 只是候选能力，不是完成证明；除非外层显式允许且严格命中，否则不要自动重放。")
             append("\nUDEG观测来源: live screenshot/XML page match")
         }.take(MAX_GUIDANCE_CHARS)
     }
@@ -152,11 +146,9 @@ class OobVlmPageContextProvider(
                     capability["name"],
                     functionId
                 ).take(MAX_DESCRIPTION_CHARS)
-                val startStep = firstNonBlank(capability["start_step_index"])
                 val steps = renderStepSummaries(capability)
                 buildString {
                     append(index + 1).append(". function_id=").append(functionId)
-                    if (startStep.isNotBlank()) append(" start_step_index=").append(startStep)
                     if (description.isNotBlank()) append(" description=").append(description)
                     if (steps.isNotEmpty()) {
                         append(" steps=").append(steps.joinToString(" | "))

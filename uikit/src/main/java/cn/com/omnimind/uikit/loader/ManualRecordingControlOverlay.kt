@@ -121,6 +121,14 @@ object ManualRecordingControlOverlay {
         synchronized(this) {
             dismissLocked()
         }
+        // Cancel any active session that was never explicitly completed.
+        // This covers force-dismissal paths (back press, system overlay kill, etc.)
+        // where the Finish button was never tapped.
+        if (HumanTrajectoryLearningSession.isActive()) {
+            recordingControlScope.launch {
+                HumanTrajectoryLearningSession.cancelActive("录制窗口关闭，轨迹学习已取消")
+            }
+        }
     }
 
     private fun dismissLocked() {
@@ -330,13 +338,15 @@ object ManualRecordingControlOverlay {
             setOnClickListener {
                 isEnabled = false
                 val finishingState = ManualRecordingControlOverlay.state
-                dismiss()
+                // Complete/cancel BEFORE dismiss so that dismiss() sees isActive()=false
+                // and does not trigger a redundant cancelActive().
                 recordingControlScope.launch {
                     val updated = if (finishingState == State.READY || finishingState == State.PREPARING) {
                         HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
                     } else {
                         HumanTrajectoryLearningSession.completeActive()
                     }
+                    withContext(Dispatchers.Main) { dismiss() }
                     if (!updated) {
                         OmniLog.w(TAG, "finish clicked without active manual recording session state=$finishingState")
                     }

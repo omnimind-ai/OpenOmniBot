@@ -26,6 +26,8 @@ object RunLogReusableFunctionCompiler {
                 )
             }
         val replaySteps = dropDuplicateTextInputSteps(rawSteps)
+            .let(::collapseConsecutiveTextInputSteps)
+            .let(::dropRedundantClickBeforeInputText)
         val stepsWithStart = prepareInitialOpenAppStep(
             prependInitialOpenAppStepIfNeeded(replayableCards, replaySteps)
         )
@@ -112,6 +114,110 @@ object RunLogReusableFunctionCompiler {
                 "storage" to "workspace",
             ),
         )
+    }
+
+    /**
+     * Collapses consecutive input_text steps on the same target into the last one.
+     *
+     * Accessibility text-change events fire on every keystroke, producing one
+     * input_text card per character. Only the final value matters for replay.
+     * This pass keeps the last step in each same-target run, preserving its
+     * accumulated text while dropping the intermediate keystroke steps.
+     */
+    private fun collapseConsecutiveTextInputSteps(
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.size < 2) return steps
+        val output = mutableListOf<Map<String, Any?>>()
+        var i = 0
+        while (i < steps.size) {
+            val step = steps[i]
+            if (replayActionForStep(step) !in INPUT_TEXT_ACTIONS) {
+                output += step
+                i++
+                continue
+            }
+            // Advance while subsequent steps are input_text on the same target.
+            var last = step
+            while (i + 1 < steps.size) {
+                val next = steps[i + 1]
+                if (replayActionForStep(next) !in INPUT_TEXT_ACTIONS) break
+                if (!textInputTargetSignature(next).let { sig ->
+                        sig.isNotBlank() && sig == textInputTargetSignature(last)
+                    }
+                ) break
+                last = next
+                i++
+            }
+            output += last
+            i++
+        }
+        return output
+    }
+
+    /**
+     * Drops a click step that immediately precedes an input_text step on the same target.
+     *
+     * Chat apps and form flows commonly record a tap on the input field followed by
+     * a type action. The click is redundant at replay time — input_text already
+     * focuses the field — and often fails because the chat list shifts the element
+     * position between record and replay.
+     */
+    private fun dropRedundantClickBeforeInputText(
+        steps: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (steps.size < 2) return steps
+        val output = mutableListOf<Map<String, Any?>>()
+        var i = 0
+        while (i < steps.size) {
+            val step = steps[i]
+            val next = steps.getOrNull(i + 1)
+            if (next != null &&
+                replayActionForStep(step) == "click" &&
+                replayActionForStep(next) in INPUT_TEXT_ACTIONS &&
+                clickAndInputShareTarget(step, next)
+            ) {
+                i++
+                continue
+            }
+            output += step
+            i++
+        }
+        return output
+    }
+
+    private fun clickAndInputShareTarget(
+        clickStep: Map<String, Any?>,
+        inputStep: Map<String, Any?>,
+    ): Boolean {
+        val clickArgs = asMap(clickStep["args"])
+        val inputArgs = asMap(inputStep["args"])
+
+        val clickResId = firstNonBlank(
+            clickArgs["node_resource_id"],
+            clickArgs["nodeResourceId"],
+            clickArgs["resource_id"],
+        )
+        val inputResId = firstNonBlank(
+            inputArgs["node_resource_id"],
+            inputArgs["nodeResourceId"],
+            inputArgs["resource_id"],
+        )
+        if (clickResId.isNotBlank() && clickResId == inputResId) return true
+
+        val clickBounds = firstNonBlank(clickArgs["bounds"])
+        val inputBounds = firstNonBlank(inputArgs["bounds"])
+        if (clickBounds.isNotBlank() && clickBounds == inputBounds) return true
+
+        val cx = firstNonBlank(clickArgs["x"], clickArgs["center_x"], clickArgs["centerX"]).toFloatOrNull()
+        val cy = firstNonBlank(clickArgs["y"], clickArgs["center_y"], clickArgs["centerY"]).toFloatOrNull()
+        val ix = firstNonBlank(inputArgs["x"], inputArgs["center_x"], inputArgs["centerX"]).toFloatOrNull()
+        val iy = firstNonBlank(inputArgs["y"], inputArgs["center_y"], inputArgs["centerY"]).toFloatOrNull()
+        if (cx != null && cy != null && ix != null && iy != null) {
+            return Math.abs(cx - ix) < 80f && Math.abs(cy - iy) < 80f
+        }
+
+        return false
     }
 
     /**

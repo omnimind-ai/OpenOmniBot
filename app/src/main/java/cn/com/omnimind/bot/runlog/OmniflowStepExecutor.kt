@@ -94,6 +94,7 @@ object OmniflowStepExecutor {
         step: Map<String, Any?>,
         stepId: String,
         stepTitle: String,
+        checkerRules: List<OmniflowCheckerRule> = emptyList(),
     ): Map<String, Any?> {
         val timing = ReplayStepTiming()
         val action = actionNameForStep(step)
@@ -124,9 +125,11 @@ object OmniflowStepExecutor {
             if (fixedReplay) {
                 emptyList()
             } else {
-                runPreTransferControls(
+                runCheckerPhase(
+                    phase = OmniflowCheckerRule.PHASE_PRE_TRANSFER,
                     state = replayState("before_step"),
                     replayAction = ReplayAction(step, action, initialArgs),
+                    extraRules = checkerRules,
                 )
             }
         }
@@ -164,9 +167,11 @@ object OmniflowStepExecutor {
             if (fixedReplay) {
                 emptyList()
             } else {
-                runBeforeActionControls(
+                runCheckerPhase(
+                    phase = OmniflowCheckerRule.PHASE_PRE_ACTION,
                     state = replayState("before_action"),
                     replayAction = ReplayAction(step, action, args),
+                    extraRules = checkerRules,
                 )
             }
         }
@@ -558,52 +563,172 @@ object OmniflowStepExecutor {
         }
     }
 
-    private suspend fun runPreTransferControls(
+    private suspend fun runCheckerPhase(
+        phase: String,
         state: ReplayState,
         replayAction: ReplayAction,
+        extraRules: List<OmniflowCheckerRule>,
     ): List<Map<String, Any?>> {
         val action = replayAction.action
-        val args = replayAction.args
         if (action == "finished" || action == "open_app") return emptyList()
-        if (targetLooksLikeDismiss(args)) return emptyList()
-        val page = state.page ?: return emptyList()
-        val candidate = blockingOverlayDismissCandidate(page) ?: return emptyList()
+        val globalRules = when (phase) {
+            OmniflowCheckerRule.PHASE_PRE_TRANSFER -> OmniflowCheckerRule.GLOBAL_PRE_TRANSFER
+            OmniflowCheckerRule.PHASE_PRE_ACTION -> OmniflowCheckerRule.GLOBAL_PRE_ACTION
+            else -> emptyList()
+        }
+        val activeRules = globalRules + extraRules.filter { it.phase == phase && it.enabled }
+        for (rule in activeRules) {
+            val result = evaluateAndExecuteRule(rule, state, replayAction) ?: continue
+            // Stop after the first rule that produces a recovery action.
+            return listOf(result)
+        }
+        return emptyList()
+    }
+
+    private suspend fun evaluateAndExecuteRule(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? = when (rule.condition) {
+        OmniflowCheckerRule.COND_PERMISSION_DIALOG ->
+            checkerPermissionDialog(rule, state, replayAction)
+        OmniflowCheckerRule.COND_PACKAGE_MISMATCH ->
+            checkerPackageMismatch(rule, state, replayAction)
+        OmniflowCheckerRule.COND_OVERLAY_BLOCKING ->
+            checkerOverlayBlocking(rule, state, replayAction)
+        OmniflowCheckerRule.COND_KEYBOARD_OBSCURING ->
+            checkerKeyboardObscuring(rule, state, replayAction)
+        else -> null
+    }
+
+    private suspend fun checkerPermissionDialog(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? {
+        val page = state.page ?: return null
+        val candidate = permissionAllowCandidate(page) ?: return null
         OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
         delay(PRE_ACTION_CONTROL_DELAY_MS)
-        return listOf(
-            linkedMapOf(
-                "phase" to "before_action",
-                "effect" to "run_actions",
-                "controller" to "dismiss_blocking_overlay",
-                "action" to "click",
-                "x" to candidate.centerX,
-                "y" to candidate.centerY,
-                "target_element" to summarizeNode(candidate),
-            )
+        return linkedMapOf(
+            "phase" to "before_action",
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "action" to OmniflowCheckerRule.ACTION_ALLOW,
+            "button_text" to nodeLabelText(candidate),
+            "x" to candidate.centerX,
+            "y" to candidate.centerY,
         )
     }
 
-    private suspend fun runBeforeActionControls(
+    private fun permissionAllowCandidate(page: PageModel): UiNode? {
+        val hasPermissionPackage = page.nodes.any { node ->
+            PERMISSION_PACKAGES.any { node.packageName.startsWith(it) }
+        }
+        if (!hasPermissionPackage) return null
+        return page.nodes
+            .asSequence()
+            .filter { it.visible && it.enabled && it.clickable }
+            .mapNotNull { node ->
+                val score = allowButtonScore(node)
+                if (score > 0f) node to score else null
+            }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    private fun allowButtonScore(node: UiNode): Float {
+        val label = nodeLabelText(node).lowercase()
+        val resource = node.resourceTail.lowercase()
+        val resourceScore = when {
+            ALLOW_RESOURCE_TAILS.any { resource == it } -> 400f
+            else -> 0f
+        }
+        val labelScore = when {
+            ALLOW_EXACT_LABELS.any { label == it } -> 300f
+            ALLOW_CONTAINS_LABELS.any { label.contains(it) } -> 150f
+            else -> 0f
+        }
+        // Penalise "only this time" style buttons — prefer broader grants.
+        val oncePenalty = if (ALLOW_ONCE_LABELS.any { label.contains(it) }) -100f else 0f
+        return resourceScore + labelScore + oncePenalty
+    }
+
+    private suspend fun checkerPackageMismatch(
+        rule: OmniflowCheckerRule,
         state: ReplayState,
         replayAction: ReplayAction,
-    ): List<Map<String, Any?>> {
+    ): Map<String, Any?>? {
+        if (targetLooksLikeDismiss(replayAction.args)) return null
+        val expectedPkg = rule.params["package_name"]?.toString()?.trim()
+            ?: stepSourcePackage(replayAction.step)
+        if (expectedPkg.isBlank()) return null
+        val currentPkg = state.snapshot.effectivePackage()
+        if (packageMatchMode(expectedPkg, currentPkg) != null) return null
+        runCatching {
+            OmniflowActionRuntime.backend.launchApplication(expectedPkg, resetTask = false)
+        }
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return linkedMapOf(
+            "phase" to "before_action",
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "action" to OmniflowCheckerRule.ACTION_OPEN_APP,
+            "expected_package" to expectedPkg,
+            "current_package" to currentPkg,
+        )
+    }
+
+    private suspend fun checkerOverlayBlocking(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? {
+        if (targetLooksLikeDismiss(replayAction.args)) return null
+        val page = state.page ?: return null
+        val candidate = blockingOverlayDismissCandidate(page) ?: return null
+        OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return linkedMapOf(
+            "phase" to "before_action",
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "action" to "click",
+            "x" to candidate.centerX,
+            "y" to candidate.centerY,
+            "target_element" to summarizeNode(candidate),
+        )
+    }
+
+    private suspend fun checkerKeyboardObscuring(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? {
         val action = replayAction.action
-        val args = replayAction.args
-        if (action !in setOf("click", "long_press", "scroll", "swipe")) return emptyList()
-        val page = state.page ?: return emptyList()
-        val keyboardTop = keyboardTop(page) ?: return emptyList()
-        if (!actionTargetIntersectsKeyboard(action, args, keyboardTop)) return emptyList()
+        if (action !in setOf("click", "long_press", "scroll", "swipe")) return null
+        val page = state.page ?: return null
+        val keyboardTop = keyboardTop(page) ?: return null
+        if (!actionTargetIntersectsKeyboard(action, replayAction.args, keyboardTop)) return null
         OmniflowActionRuntime.backend.hideKeyboard()
         delay(PRE_ACTION_CONTROL_DELAY_MS)
-        return listOf(
-            linkedMapOf(
-                "phase" to "before_action",
-                "effect" to "run_actions",
-                "controller" to "hide_keyboard_if_obscuring",
-                "action" to "hide_keyboard",
-                "keyboard_top" to keyboardTop,
-            )
+        return linkedMapOf(
+            "phase" to "before_action",
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "action" to OmniflowCheckerRule.ACTION_HIDE_KEYBOARD,
+            "keyboard_top" to keyboardTop,
         )
+    }
+
+    private fun stepSourcePackage(step: Map<String, Any?>): String {
+        val srcCtx = (step["source_context"] as? Map<*, *>)?.get("src_ctx") as? Map<*, *>
+        val pkg = srcCtx?.get("package_name")?.toString()?.trim().orEmpty()
+        if (pkg.isBlank()) return ""
+        if (pkg.startsWith("cn.com.omnimind")) return ""
+        if (pkg == "android" || pkg == "com.android.systemui") return ""
+        if (pkg.contains("launcher", ignoreCase = true)) return ""
+        return pkg
     }
 
     private fun packageMatchMode(expectedPackage: String, currentPackage: String): String? {
@@ -1800,5 +1925,28 @@ object OmniflowStepExecutor {
         "softinput",
         "软键盘",
         "键盘",
+    )
+
+    private val PERMISSION_PACKAGES = setOf(
+        "com.android.permissioncontroller",
+        "com.android.packageinstaller",
+    )
+
+    private val ALLOW_EXACT_LABELS = setOf(
+        "允许", "allow", "始终允许", "always allow",
+        "authorize", "授权", "同意", "agree",
+    )
+
+    private val ALLOW_CONTAINS_LABELS = setOf("允许", "allow")
+
+    // "仅此一次" / "one time" style — valid allow but deprioritised vs broader grants.
+    private val ALLOW_ONCE_LABELS = setOf("仅此一次", "one time", "once")
+
+    private val ALLOW_RESOURCE_TAILS = setOf(
+        "permission_allow_button",
+        "permission_allow_one_time_button",
+        "permission_allow_foreground_only_button",
+        "allow_button",
+        "btn_allow",
     )
 }

@@ -145,8 +145,27 @@ object HumanTrajectoryLearningSession {
             enableRawTouch = enableRawTouch
         )
         synchronized(lock) {
-            if (activeSession != null) {
-                throw IllegalStateException("已有人工轨迹学习正在进行")
+            // Auto-cancel any stale session whose coroutine was cancelled without
+            // calling completeActive() / cancelActive() (e.g. app crash, mainJob cancel).
+            val stale = activeSession
+            if (stale != null) {
+                OmniLog.w(TAG, "auto-cancelling stale session ${stale.runId} before starting new one")
+                activeSession = null
+                activePaused = false
+                runCatching { stale.recorder.stop() }
+                runCatching {
+                    stale.result.complete(
+                        HumanTrajectoryLearningResult(
+                            success = false,
+                            runId = stale.runId,
+                            name = stale.name,
+                            description = stale.description,
+                            actionCount = 0,
+                            summary = "",
+                            errorMessage = "会话被新录制强制取消",
+                        )
+                    )
+                }
             }
             activePaused = false
             InternalRunLogStore.beginRun(

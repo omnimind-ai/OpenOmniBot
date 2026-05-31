@@ -198,13 +198,12 @@ object VlmToolCoordinator {
             taskState = taskState,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
-            callFunction = { functionId, startStepIndex ->
+            callFunction = { functionId ->
                 OobOmniFlowToolkitService(context).callFunction(
                     mapOf(
                         "function_id" to functionId,
                         "goal" to boundedRequest.goal,
                         "arguments" to emptyMap<String, Any?>(),
-                        "start_step_index" to startStepIndex,
                     )
                 )
             },
@@ -372,13 +371,12 @@ object VlmToolCoordinator {
                     taskState = taskState,
                     recallGuidance = recallGuidance,
                     progressReporter = progressReporter,
-                    callFunction = { functionId, startStepIndex ->
+                    callFunction = { functionId ->
                         OobOmniFlowToolkitService(context).callFunction(
                             mapOf(
                                 "function_id" to functionId,
                                 "goal" to boundedRequest.goal,
                                 "arguments" to emptyMap<String, Any?>(),
-                                "start_step_index" to startStepIndex,
                             )
                         )
                     },
@@ -831,7 +829,7 @@ object VlmToolCoordinator {
         goal: String,
         recallGuidance: VlmRecallGuidance,
         progressReporter: VlmToolProgressReporter,
-        callFunction: suspend (String, Int) -> Map<String, Any?>,
+        callFunction: suspend (String) -> Map<String, Any?>,
     ): VlmToolOutcome? {
         val functionId = recallGuidance.directHitFunctionId?.trim()?.takeIf { it.isNotEmpty() }
             ?: return null
@@ -844,10 +842,9 @@ object VlmToolCoordinator {
                 "summary" to "命中可直接执行的 OmniFlow Function",
                 "omniflowRecallDecision" to recallGuidance.decision,
                 "functionId" to functionId,
-                "segmentStartStepIndex" to recallGuidance.directHitStartStepIndex.takeIf { it > 0 },
             )
         )
-        val result = runCatching { callFunction(functionId, recallGuidance.directHitStartStepIndex) }.getOrElse { error ->
+        val result = runCatching { callFunction(functionId) }.getOrElse { error ->
             linkedMapOf<String, Any?>(
                 "success" to false,
                 "fallback" to true,
@@ -859,7 +856,6 @@ object VlmToolCoordinator {
         if (!success) {
             val fallbackGuidance = buildRecallFallbackGuidance(
                 functionId = functionId,
-                segmentStartStepIndex = recallGuidance.directHitStartStepIndex,
                 result = result
             )
             if (fallbackGuidance.isNotBlank()) {
@@ -903,15 +899,10 @@ object VlmToolCoordinator {
         taskState.summaryText = listOfNotNull(
             "OmniFlow recall hit executed successfully.",
             "function_id=$functionId",
-            recallGuidance.directHitStartStepIndex.takeIf { it > 0 }?.let { "segment_start_step_index=$it" },
             runId.takeIf { it.isNotEmpty() }?.let { "run_id=$it" },
             actionsExecuted.takeIf { it.isNotEmpty() }?.let { "actions_executed=$it" },
         ).joinToString("\n")
-        taskState.executionRoute = if (recallGuidance.directHitStartStepIndex > 0) {
-            "omniflow_recall_segment_hit:$functionId:${recallGuidance.directHitStartStepIndex}"
-        } else {
-            "omniflow_recall_hit:$functionId"
-        }
+        taskState.executionRoute = "omniflow_recall_hit:$functionId"
         taskState.addChatMessage("[SYSTEM] $message")
         taskState.markStateChanged()
         emitProgress(
@@ -922,7 +913,6 @@ object VlmToolCoordinator {
             mapOf(
                 "summary" to message,
                 "functionId" to functionId,
-                "segmentStartStepIndex" to recallGuidance.directHitStartStepIndex.takeIf { it > 0 },
                 "omniflowRecallResult" to result,
             )
         )
@@ -934,7 +924,7 @@ object VlmToolCoordinator {
         taskState: TaskState,
         recallGuidance: VlmRecallGuidance,
         progressReporter: VlmToolProgressReporter,
-        callFunction: suspend (String, Int) -> Map<String, Any?>,
+        callFunction: suspend (String) -> Map<String, Any?>,
     ): VlmToolOutcome? {
         if (!request.allowOmniFlowFunctionAutoExecute) return null
         return tryExecuteRecallHit(
@@ -948,7 +938,6 @@ object VlmToolCoordinator {
 
     private fun buildRecallFallbackGuidance(
         functionId: String,
-        segmentStartStepIndex: Int,
         result: Map<String, Any?>,
     ): String {
         val failedStep = findFailedRecallStep(result)
@@ -964,9 +953,6 @@ object VlmToolCoordinator {
         return buildString {
             append("OmniFlow 本地重放未完成，下一步必须回到 VLM 视觉执行。")
             append("\n失败 Function：").append(functionId)
-            if (segmentStartStepIndex > 0) {
-                append("\n失败段起点 step_index：").append(segmentStartStepIndex)
-            }
             append("\n失败原因：").append(reason)
             if (failedStep != null) {
                 append("\n失败步骤：")

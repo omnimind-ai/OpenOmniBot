@@ -143,6 +143,27 @@ class AccessibilityController() {
             checkAccessibilityPermissions()
             val errors = mutableListOf<String>()
 
+            // Try direct node focus before any click. The editable node is visible in
+            // the main window before the keyboard opens; once a click triggers the IME,
+            // the node migrates to the IME window and disappears from getNodeMap().
+            val preClickNode = withTimeout(INPUT_TARGET_LOOKUP_TIMEOUT_MS) {
+                findEditableInputCandidate(
+                    targetDescription = targetDescription,
+                    nodeResourceId = nodeResourceId,
+                    x = x,
+                    y = y,
+                )
+            }
+            if (preClickNode != null) {
+                runCatching {
+                    inputTextIntoNode(preClickNode, text)
+                }.onSuccess {
+                    return
+                }.onFailure { error ->
+                    errors += "pre_click_direct_input_failed=${error.message.orEmpty()}"
+                }
+            }
+
             if (x != null && y != null) {
                 val clicked = runCatching {
                     clickCoordinate(x, y)

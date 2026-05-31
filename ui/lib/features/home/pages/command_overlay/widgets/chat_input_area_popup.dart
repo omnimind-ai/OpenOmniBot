@@ -24,10 +24,15 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
           label: context.l10n.chatInputRecordTrajectory,
           tooltip: context.l10n.chatInputRecordTrajectoryTooltip,
           onTap: widget.onManualRecordingTap!,
+          requiresManualRecordingPermissions: true,
         ),
     ];
     if (actions.isEmpty) return const SizedBox.shrink();
     final palette = context.omniPalette;
+    final showPermissionNotice =
+        _hasManualRecordingAction &&
+        (_isCheckingManualRecordingPermissions ||
+            _isManualRecordingPermissionBlocked);
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -45,18 +50,28 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: actions
-              .asMap()
-              .entries
-              .map(
-                (entry) => Padding(
-                  padding: EdgeInsets.only(left: entry.key == 0 ? 0 : 8),
-                  child: _buildTrajectoryPopupItem(entry.value),
-                ),
-              )
-              .toList(growable: false),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showPermissionNotice) ...[
+              _buildManualRecordingPermissionNotice(),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: actions
+                  .asMap()
+                  .entries
+                  .map(
+                    (entry) => Padding(
+                      padding: EdgeInsets.only(left: entry.key == 0 ? 0 : 8),
+                      child: _buildTrajectoryPopupItem(entry.value),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
         ),
       ),
     );
@@ -64,7 +79,12 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
 
   Widget _buildTrajectoryPopupItem(_TrajectoryPopupAction action) {
     final palette = context.omniPalette;
-    final accentColor = context.isDarkTheme
+    final blocked =
+        action.requiresManualRecordingPermissions &&
+        _isManualRecordingPermissionBlocked;
+    final accentColor = blocked
+        ? palette.textTertiary
+        : context.isDarkTheme
         ? palette.accentPrimary
         : const Color(0xFF2F65D9);
     return Tooltip(
@@ -75,9 +95,7 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () {
-            setState(() => _isPopupVisible = false);
-            widget.onPopupVisibilityChanged?.call(false);
-            unawaited(Future<void>.sync(action.onTap));
+            unawaited(_handleTrajectoryPopupActionTap(action));
           },
           child: SizedBox(
             width: 78,
@@ -114,6 +132,114 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
       ),
     );
   }
+
+  Widget _buildManualRecordingPermissionNotice() {
+    final palette = context.omniPalette;
+    final locale = Localizations.localeOf(context);
+    final permissionCheck = _manualRecordingPermissionCheck;
+    final missingText = permissionCheck?.missingPermissionText(locale: locale);
+    final message = _isCheckingManualRecordingPermissions
+        ? AppTextLocalizer.choose(
+            zh: '正在检查录制权限',
+            en: 'Checking recording permissions',
+            locale: locale,
+          )
+        : AppTextLocalizer.choose(
+            zh: '${missingText?.isNotEmpty == true ? missingText : '无障碍辅助权限、悬浮窗权限'}未开启，无法录制',
+            en: '${missingText?.isNotEmpty == true ? missingText : 'Accessibility, Overlay permission'} required before recording',
+            locale: locale,
+          );
+    final warningColor = context.isDarkTheme
+        ? const Color(0xFFE4B06A)
+        : const Color(0xFFD97706);
+
+    return Container(
+      width: 258,
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: warningColor.withValues(
+          alpha: context.isDarkTheme ? 0.16 : 0.10,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: warningColor.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline_rounded, size: 16, color: warningColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.isDarkTheme
+                    ? palette.textPrimary
+                    : const Color(0xFF7C2D12),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _isCheckingManualRecordingPermissions
+                ? null
+                : () {
+                    unawaited(_openManualRecordingPermissionSheet());
+                  },
+            style: TextButton.styleFrom(
+              minimumSize: const Size(52, 30),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: warningColor,
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+            child: Text(
+              AppTextLocalizer.choose(zh: '去开启', en: 'Open', locale: locale),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleTrajectoryPopupActionTap(
+    _TrajectoryPopupAction action,
+  ) async {
+    if (action.requiresManualRecordingPermissions) {
+      await _refreshManualRecordingPermissions();
+      if (!mounted) return;
+      if (_isManualRecordingPermissionBlocked) {
+        await _openManualRecordingPermissionSheet();
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _isPopupVisible = false);
+    widget.onPopupVisibilityChanged?.call(false);
+    unawaited(Future<void>.sync(action.onTap));
+  }
+
+  Future<void> _openManualRecordingPermissionSheet() async {
+    final authorized = await ManualRecordingPermissionGuard.ensureAuthorized(
+      context,
+    );
+    if (!mounted) return;
+    await _refreshManualRecordingPermissions();
+    if (!mounted || !authorized || widget.onManualRecordingTap == null) {
+      return;
+    }
+    setState(() => _isPopupVisible = false);
+    widget.onPopupVisibilityChanged?.call(false);
+    unawaited(Future<void>.sync(widget.onManualRecordingTap!));
+  }
 }
 
 class _TrajectoryPopupAction {
@@ -122,10 +248,12 @@ class _TrajectoryPopupAction {
     required this.label,
     required this.tooltip,
     required this.onTap,
+    this.requiresManualRecordingPermissions = false,
   });
 
   final IconData icon;
   final String label;
   final String tooltip;
   final FutureOr<void> Function() onTap;
+  final bool requiresManualRecordingPermissions;
 }

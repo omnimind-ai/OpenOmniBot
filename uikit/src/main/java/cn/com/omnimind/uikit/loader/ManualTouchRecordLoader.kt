@@ -1,6 +1,8 @@
 package cn.com.omnimind.uikit.loader
 
+import android.accessibilityservice.AccessibilityService
 import android.content.Context
+import android.view.accessibility.AccessibilityWindowInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
@@ -25,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -34,8 +37,12 @@ object ManualTouchRecordLoader {
     private const val MIN_SWIPE_DISTANCE_DP = 24f
     private const val OVERLAY_UNLOCK_REPLAY_DELAY_MS = 32L
     private const val IME_VISIBILITY_GRACE_MS = 450L
+    private const val IME_VISIBILITY_INITIAL_CHECK_MS = 80L
     private const val IME_RELOCK_INITIAL_DELAY_MS = 400L
     private const val IME_RELOCK_POLL_MS = 300L
+    private const val PROCESSING_RESET_TIMEOUT_MS = 2000L
+    private const val IME_WAIT_TIMEOUT_MS = 600L
+    private const val IME_POLL_MS = 50L
 
     private val recordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var windowManager: WindowManager? = null
@@ -60,12 +67,14 @@ object ManualTouchRecordLoader {
                 lockTouchLocked()
                 return@synchronized true
             }
+            // Prefer AccessibilityService context: TYPE_ACCESSIBILITY_OVERLAY needs no
+            // SYSTEM_ALERT_WINDOW permission and is available whenever the service is running.
             val candidates = buildList {
-                appContext?.let { add(it to false) }
-                accessibilityContext?.let { add(it to false) }
-            }.distinctBy { it.first }
-            for ((candidateContext, accessibilityOverlay) in candidates) {
-                if (tryShowLocked(candidateContext, accessibilityOverlay)) {
+                accessibilityContext?.let { add(it) }
+                appContext?.let { add(it) }
+            }.distinctBy { it }
+            for (candidateContext in candidates) {
+                if (tryShowLocked(candidateContext)) {
                     return@synchronized true
                 }
             }
@@ -97,30 +106,20 @@ object ManualTouchRecordLoader {
         }
     }
 
-    private fun tryShowLocked(
-        context: Context,
-        accessibilityOverlay: Boolean
-    ): Boolean {
+    private fun tryShowLocked(context: Context): Boolean {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = buildTouchView(context)
         val params = buildParams(context, touchable = true)
+        val overlayType = if (context is AccessibilityService) "accessibility" else "application"
         return runCatching {
             manager.addView(view, params)
             windowManager = manager
             overlayView = view
             overlayParams = params
-            val overlayType = if (accessibilityOverlay) "accessibility" else "application"
-            OmniLog.d(
-                TAG,
-                "manual touch recording overlay shown type=$overlayType"
-            )
+            OmniLog.d(TAG, "manual touch recording overlay shown type=$overlayType")
             true
         }.getOrElse { error ->
-            OmniLog.e(
-                TAG,
-                "show failed type=${if (accessibilityOverlay) "accessibility" else "application"}: ${error.message}",
-                error
-            )
+            OmniLog.e(TAG, "show failed type=$overlayType: ${error.message}", error)
             false
         }
     }
@@ -146,11 +145,15 @@ object ManualTouchRecordLoader {
         touchable: Boolean
     ): WindowManager.LayoutParams {
         return WindowManager.LayoutParams().apply {
-            type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
+            type = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && context is AccessibilityService ->
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else -> {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
             }
             val touchFlag = if (touchable) {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -252,7 +255,27 @@ object ManualTouchRecordLoader {
                 withContext(Dispatchers.Main) { showGestureFeedback(gesture) }
             }
             if (mayOpenIme) {
-                delay(IME_VISIBILITY_GRACE_MS)
+                // Poll until the keyboard appears or we give up. A single 80 ms check
+                // is too short — the IME can take 200-400 ms to show. Re-locking the
+                // overlay before the keyboard is visible lets the next tap hit the overlay
+                // instead of the keyboard, causing GestureDescription to replay into the
+                // IME window which crashes the accessibility service.
+                val appeared = awaitImeVisible()
+                if (!appeared) {
+                    delay(IME_VISIBILITY_GRACE_MS)
+                }
+            }
+            // WindowManager.updateViewLayout() must run on the main thread — never call
+            // lockTouchLocked/unlockTouchLocked/hide() from IO thread.
+            // Give the main thread up to PROCESSING_RESET_TIMEOUT_MS to execute; if it
+            // is stalled, fall back to resetting the flag only (no WindowManager call)
+            // so subsequent touches are not silently lost.
+            val mainDispatchSucceeded = withTimeoutOrNull(PROCESSING_RESET_TIMEOUT_MS) {
+                withContext(Dispatchers.Main) { true }
+            } != null
+            if (!mainDispatchSucceeded) {
+                synchronized(this@ManualTouchRecordLoader) { isProcessing = false }
+                return@launch
             }
             withContext(Dispatchers.Main) {
                 var shouldKeepRecording = false
@@ -338,10 +361,32 @@ object ManualTouchRecordLoader {
         }
     }
 
+    /** Polls until the soft keyboard is visible or [IME_WAIT_TIMEOUT_MS] elapses.
+     *  Returns true if the keyboard appeared, false if timed out. */
+    private suspend fun awaitImeVisible(): Boolean {
+        val deadline = System.currentTimeMillis() + IME_WAIT_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val visible = withContext(Dispatchers.Main) {
+                synchronized(this@ManualTouchRecordLoader) { isImeVisibleLocked() }
+            }
+            if (visible) return true
+            delay(IME_POLL_MS)
+        }
+        return false
+    }
+
     private fun isImeVisibleLocked(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-        return overlayView?.rootWindowInsets
-            ?.isVisible(WindowInsets.Type.ime()) == true
+        // Primary: window insets — works for TYPE_APPLICATION_OVERLAY.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (overlayView?.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true) {
+                return true
+            }
+        }
+        // Fallback: scan accessibility windows — works for TYPE_ACCESSIBILITY_OVERLAY
+        // which does not receive IME inset updates from the WindowManager.
+        return AssistsService.instance?.windows?.any { window ->
+            window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        } == true
     }
 
     private fun lockTouchLocked() {

@@ -12,7 +12,7 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
     fun `local reusable function payload reports completed local status and timing internally`() {
         val timing = mapOf(
             "duration_ms" to 21L,
-            "phase_ms" to mapOf("segment_match_ms" to 3L)
+            "phase_ms" to mapOf("rank_functions_ms" to 3L)
         )
         val stepResults = listOf<Map<*, *>>(
             mapOf("tool" to "click", "success" to true),
