@@ -1,7 +1,6 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.bot.agent.ManualToolStopCancellationException
-import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
@@ -27,10 +26,12 @@ class OobFunctionToolHandler(
         OobFunctionCallRequestResolver(),
     private val stepClassifier: OobFunctionStepClassifier =
         OobFunctionStepClassifier(callRequestResolver),
-    private val toolDelegationExecutor: OobFunctionToolDelegationExecutor =
-        OobFunctionToolDelegationExecutor(helper),
     private val runResultBuilder: OobFunctionRunResultBuilder =
         OobFunctionRunResultBuilder(),
+    private val toolDelegationExecutor: OobFunctionToolDelegationExecutor =
+        OobFunctionToolDelegationExecutor(helper),
+    private val accessibilityPreflightGuard: OobFunctionAccessibilityPreflightGuard =
+        OobFunctionAccessibilityPreflightGuard(stepClassifier, runResultBuilder),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -274,7 +275,7 @@ class OobFunctionToolHandler(
             )
         }
         val preflightFailure = timing.measure("accessibility_preflight_ms") {
-            accessibilityPreflightFailure(
+            accessibilityPreflightGuard.failureIfBlocked(
                 functionId = functionId,
                 spec = spec,
                 auditRunId = auditRunId,
@@ -913,51 +914,6 @@ class OobFunctionToolHandler(
         errorCode = errorCode,
         extras = extras,
     )
-
-    private fun accessibilityPreflightFailure(
-        functionId: String,
-        spec: Map<String, Any?>,
-        auditRunId: String,
-        startedAtMs: Long,
-        steps: List<Map<String, Any?>>,
-    ): Map<String, Any?>? {
-        val indexedStep = steps.withIndex().firstOrNull { (_, step) ->
-            !stepClassifier.isSkippedLegacyStep(step) && OmniflowStepExecutor.requiresAccessibility(step)
-        } ?: return null
-        if (OmniflowActionRuntime.backend.isReady()) return null
-
-        val step = indexedStep.value
-        val stepId = step["id"]?.toString() ?: "step_${indexedStep.index + 1}"
-        val action = OmniflowStepExecutor.actionNameForStep(step)
-        val message = "请先开启无障碍权限，复用指令才能执行点击、滑动和输入。"
-        return runResultBuilder.failedRun(
-            functionId = functionId,
-            spec = spec,
-            auditRunId = auditRunId,
-            startedAtMs = startedAtMs,
-            errorCode = "OOB_ACCESSIBILITY_REQUIRED",
-            errorMessage = message,
-            extras = linkedMapOf(
-                "step_count" to steps.size,
-                "required_permission" to "accessibility",
-                "missing_permissions" to listOf("accessibility"),
-                "blocked_step_index" to indexedStep.index,
-                "step_results" to listOf(
-                    failureStepResult(
-                        stepId = stepId,
-                        tool = action,
-                        executor = "omniflow",
-                        summary = message,
-                        errorCode = "OOB_ACCESSIBILITY_REQUIRED",
-                        extras = linkedMapOf(
-                            "index" to indexedStep.index,
-                            "required_permission" to "accessibility",
-                        )
-                    )
-                )
-            )
-        )
-    }
 
     private fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {

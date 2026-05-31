@@ -175,6 +175,13 @@ belong in UI documentation.
 - launch the expected package when the foreground app drifted before replay
 - keep package recovery outside the main step loop
 
+`OobFunctionAccessibilityPreflightGuard` owns replay permission preflight:
+
+- scan active replay steps for deterministic actions that require accessibility
+- check whether the accessibility action backend is ready before the step loop
+- build the stable permission-blocked failed-run payload
+- keep permission preflight outside replay ordering and step execution
+
 `OobFunctionFrontendSessionController` owns transient replay UI state:
 
 - start, update, and finish the local OmniFlow execution overlay
@@ -277,6 +284,7 @@ Agent/MCP tool surface
               -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
+              -> OobFunctionAccessibilityPreflightGuard # permission preflight
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
           -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
@@ -343,6 +351,8 @@ Keep these pieces separate:
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,
   summaries, args payloads, and result preview payloads
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
+- `OobFunctionAccessibilityPreflightGuard`: permission readiness checks and
+  permission-blocked failed-run payloads before replay starts
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
 - `OobOmniFlowToolkitService`: public tool facade and response shaping
