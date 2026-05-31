@@ -26,7 +26,12 @@ import cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompiler
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -35,9 +40,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class OobFunctionToolHandlerOmniFlowExecutionTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+
     @Test
     fun `local click replay fails before execution when accessibility is unavailable`() = runBlocking {
         val context = TempFilesContext()
@@ -1354,5 +1366,18 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     private companion object {
         private const val CURRENT_PAGE_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[10,20][200,80]\" text=\"Current\" package=\"com.example.current\" class=\"android.widget.TextView\"/></hierarchy>"
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainDispatcherRule : TestWatcher() {
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    override fun starting(description: Description) {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    override fun finished(description: Description) {
+        Dispatchers.resetMain()
     }
 }
