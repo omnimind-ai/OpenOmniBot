@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import kotlinx.serialization.json.JsonObject
 
@@ -115,14 +116,6 @@ class OobFunctionAgentFallbackController(
             if (xml.isNotBlank()) append("\n当前页面 XML（截断）：\n").append(xml)
             append("\n请基于这个最新页面继续，不要沿用失败步骤里的旧坐标或旧页面。")
         }
-    }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
     }
 
     private companion object {

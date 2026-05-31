@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 import cn.com.omnimind.assists.OmniFlowUiSession
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.ManualToolStopCancellationException
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.uikit.loader.ScreenMaskLoader
 import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
 import kotlinx.coroutines.Dispatchers
@@ -131,14 +132,6 @@ class OobFunctionFrontendSessionController(
                 OmniLog.w(TAG, "finish OmniFlow frontend failed: ${it.message}")
             }
         }
-    }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
     }
 
     private companion object {

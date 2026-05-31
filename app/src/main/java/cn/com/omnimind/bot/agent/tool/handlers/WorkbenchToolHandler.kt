@@ -6,6 +6,7 @@ import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.ToolExecutionResult
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -768,11 +769,4 @@ class WorkbenchToolHandler(
         )
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
 }

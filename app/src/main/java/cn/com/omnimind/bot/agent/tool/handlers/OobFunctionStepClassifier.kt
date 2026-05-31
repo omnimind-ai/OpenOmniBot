@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
@@ -14,15 +16,15 @@ class OobFunctionStepClassifier(
     private val callRequestResolver: OobFunctionCallRequestResolver,
 ) {
     fun requiresAgentPlanning(step: Map<String, Any?>): Boolean {
-        val reason = stringMap(step["agent_call"])["reason"]?.toString()
+        val reason = mapArg(step["agent_call"])["reason"]?.toString()
             ?: step["reason"]?.toString()
             ?: ""
         return RunLogReplayPolicy.requiresAgentPlanningReason(reason)
     }
 
     fun replayableAgentTool(step: Map<String, Any?>, callableTool: String): String {
-        val agentCall = stringMap(step["agent_call"])
-        val agentArgs = stringMap(agentCall["args"])
+        val agentCall = mapArg(step["agent_call"])
+        val agentArgs = mapArg(agentCall["args"])
         val candidates = listOf(
             agentArgs["original_tool"],
             step["tool"],
@@ -80,8 +82,8 @@ class OobFunctionStepClassifier(
         step: Map<String, Any?>,
         callableTool: String,
     ): String {
-        val agentCall = stringMap(step["agent_call"])
-        val agentArgs = stringMap(agentCall["args"])
+        val agentCall = mapArg(step["agent_call"])
+        val agentArgs = mapArg(agentCall["args"])
         val candidates = listOf(
             callableTool,
             step["tool"],
@@ -99,16 +101,4 @@ class OobFunctionStepClassifier(
             .orEmpty()
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun stringMap(value: Any?): Map<String, Any?> {
-        val map = value as? Map<*, *> ?: return emptyMap()
-        return map.entries.associate { (key, item) -> key.toString() to item }
-    }
 }

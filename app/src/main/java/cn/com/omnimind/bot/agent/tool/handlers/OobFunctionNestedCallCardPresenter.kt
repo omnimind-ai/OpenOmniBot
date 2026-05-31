@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
@@ -105,11 +106,4 @@ class OobFunctionNestedCallCardPresenter(
         return normalized.take(96).ifBlank { "function" }
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
 }

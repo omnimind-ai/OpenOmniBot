@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 
 data class OobNestedFunctionRunRequest(
     val functionId: String,
@@ -194,11 +195,4 @@ class OobFunctionNestedFunctionExecutor(
         extras = extras,
     )
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
 }
