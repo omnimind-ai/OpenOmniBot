@@ -104,6 +104,13 @@ belong in UI documentation.
 - keep main-thread UI calls outside the deterministic step executor
 - skip nested Function calls so only the top-level replay owns the overlay
 
+`OobFunctionSourceAlignmentController` owns source-page alignment during replay:
+
+- compare the current page vector against the pending source window
+- skip already-satisfied replay steps when the current page matches a later step
+- produce the alignment-miss failure payload when replay is on the wrong page
+- keep vector matching and skip/fail policy outside the main step loop
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -132,6 +139,7 @@ Agent/MCP tool surface
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
               -> OobFunctionFrontendSessionController # replay overlay/session
+              -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -163,6 +171,8 @@ Keep these pieces separate:
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
 - `OobFunctionFrontendSessionController`: top-level replay overlay lifecycle
   and stop signal handling
+- `OobFunctionSourceAlignmentController`: current-page/source-page alignment
+  policy, replay skip results, and alignment-miss failure payloads
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
