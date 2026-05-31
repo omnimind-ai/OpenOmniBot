@@ -51,6 +51,8 @@ belong in UI documentation.
 - apply safe metadata, target-repair, insert-step, and delete-step patches
 - delegate checker rule and optional checker candidate normalization to
   `OobFunctionCheckerPatchService`
+- delegate source XML target matching for repair patches to
+  `OobFunctionTargetSourceMatcher`
 
 `OobFunctionCheckerPatchService` owns checker metadata patching:
 
@@ -59,6 +61,14 @@ belong in UI documentation.
 - keep ad, popup, permission, resolver, keyboard, and package mismatch handling
   as conditional checker metadata instead of mandatory execution steps
 - deduplicate checker rules and `agent_reuse.checker_assets`
+
+`OobFunctionTargetSourceMatcher` owns target repair source matching:
+
+- extract source XML from a step's recorded `source_context`
+- parse source XML safely for target repair only
+- score candidate nodes by text, content-desc, resource id, visibility, and
+  clickability
+- return coordinates, bounds, and selector hints for `replace_target` patches
 
 `OobFunctionRecallService` owns recall policy:
 
@@ -162,6 +172,7 @@ Agent/MCP tool surface
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
           -> OobFunctionCheckerPatchService # checker metadata normalization
+          -> OobFunctionTargetSourceMatcher # source XML repair matching
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
           -> OobUdegNodeStore        # page/node recall index
       -> OobFunctionRunPolicy        # guard and fallback handoff
@@ -196,6 +207,8 @@ Keep these pieces separate:
 - `OobFunctionUpdateService`: RunLog evidence packaging and Function patching
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
+- `OobFunctionTargetSourceMatcher`: source XML parsing and node scoring for
+  target-repair patches
 - `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
   compact recall payload shaping
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
