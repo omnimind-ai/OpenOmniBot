@@ -31,8 +31,25 @@ belong in UI documentation.
 - expose recall, run, guard, register, update, delete, and clear
 - route all Function storage operations through `OobFunctionRepository`
 - route deterministic Function execution through `OobFunctionRunner`
-- package RunLog evidence for `update_function`
-- apply agent-provided Function patches
+- route Function registration normalization through `OobFunctionSpecBuilder`
+- route `update_function` evidence analysis and patches through
+  `OobFunctionUpdateService`
+
+`OobFunctionSpecBuilder` owns simple Function spec construction:
+
+- normalize simple register requests into canonical Function specs
+- capture current page source context when a simple registration needs it
+- normalize inserted steps for `update_function`
+- compute execution capability counts from canonical steps
+
+`OobFunctionUpdateService` owns the `update_function` contract:
+
+- package Function + RunLog evidence for agent analysis
+- persist agent analysis in Function metadata
+- apply safe metadata, checker, target-repair, insert-step, and delete-step
+  patches
+- keep optional checker candidates as metadata/checker rules instead of
+  mandatory execution steps
 
 `OobFunctionRunner` owns runtime execution startup:
 
@@ -61,6 +78,8 @@ operation.
 Agent/MCP tool surface
   -> OobOmniFlowToolkitService
       -> OobFunctionRepository       # storage/index/source bindings
+      -> OobFunctionSpecBuilder      # simple register/insert-step normalization
+      -> OobFunctionUpdateService    # update_function evidence and patches
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -81,10 +100,12 @@ only for `convertRunLog` and `autoRegisterRecentRunLogs`.
 Keep these pieces separate:
 
 - `OobFunctionRepository`: persistent Function records and index synchronization
+- `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
+- `OobFunctionUpdateService`: RunLog evidence packaging and Function patching
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
-- `OobOmniFlowToolkitService.updateFunction`: agent-facing patch application
+- `OobOmniFlowToolkitService`: public tool facade and response shaping
 - builtin skill prompts: agent instructions, not executable policy
 
 Merging these would make it harder to tell whether a change affects storage,
@@ -92,11 +113,11 @@ conversion, execution, or agent patching.
 
 ## Cleanup Direction
 
-`OobFunctionRunner` is intentionally small. Keep public tool response shaping,
-guard decisions, and run-stat recording in `OobOmniFlowToolkitService` unless
-they become reusable outside the toolkit facade. Do not introduce a larger
-service graph just to move methods around; extract only when a class owns a
-clear runtime contract.
+`OobOmniFlowToolkitService` should stay a facade. New Function behavior should
+land in one of the owned services above before adding more private helper blocks
+to the toolkit. Keep `OobFunctionRunner` intentionally small: guard decisions,
+public response shaping, and run-stat recording remain in the toolkit unless
+they become reusable outside that facade.
 
 ## Verification
 
