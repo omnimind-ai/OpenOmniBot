@@ -30,6 +30,8 @@ belong in UI documentation.
 - parse public tool arguments
 - expose recall, run, guard, register, update, delete, and clear
 - route all Function storage operations through `OobFunctionRepository`
+- route Function recall and direct-hit decisions through
+  `OobFunctionRecallService`
 - route deterministic Function execution through `OobFunctionRunner`
 - route Function registration normalization through `OobFunctionSpecBuilder`
 - route `update_function` evidence analysis and patches through
@@ -50,6 +52,14 @@ belong in UI documentation.
   patches
 - keep optional checker candidates as metadata/checker rules instead of
   mandatory execution steps
+
+`OobFunctionRecallService` owns recall policy:
+
+- read current page/package context for Function recall
+- ask `OobUdegNodeStore` for page/node matches
+- rank attached Function capabilities against the agent goal
+- decide whether a no-argument Function is a strict direct hit
+- compact recall payloads for normal agent use while preserving debug mode
 
 `OobFunctionRunPolicy` owns run-time policy:
 
@@ -87,11 +97,12 @@ Agent/MCP tool surface
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
+      -> OobFunctionRecallService    # page/node recall and direct-hit policy
+          -> OobUdegNodeStore        # page/node recall index
       -> OobFunctionRunPolicy        # guard and fallback handoff
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
       -> OobRunLogReplayService      # RunLog -> Function conversion
-      -> OobUdegNodeStore            # page/node recall index
 
 Flutter method channel
   -> AssistsCoreManager
@@ -110,6 +121,8 @@ Keep these pieces separate:
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
 - `OobFunctionUpdateService`: RunLog evidence packaging and Function patching
+- `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
+  compact recall payload shaping
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
