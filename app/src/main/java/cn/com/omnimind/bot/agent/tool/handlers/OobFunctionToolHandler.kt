@@ -2013,6 +2013,7 @@ class OobFunctionToolHandler(
         callStack: List<String>,
     ): OmniFlowFrontendSession? {
         if (stepCount <= 0 || callStack.isNotEmpty()) return null
+        if (!canUseMainDispatcher()) return null
         val runId = toolHandle?.runId
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -2026,8 +2027,8 @@ class OobFunctionToolHandler(
             onCompleteRequested = { stopRequested.set(true) }
         )
         OmniFlowUiSession.beginTask(runId, taskId)
-        withContext(Dispatchers.Main) {
-            runCatching {
+        runCatching {
+            withContext(Dispatchers.Main) {
                 ScreenMaskLoader.loadGoneViewScreenMask()
                 DraggableBallInstance.loadBall()
                 DraggableBallInstance.setDoing(
@@ -2037,9 +2038,9 @@ class OobFunctionToolHandler(
                     isShowStop = false,
                     isTouchable = false
                 )
-            }.onFailure {
-                OmniLog.w(TAG, "start OmniFlow frontend failed: ${it.message}")
             }
+        }.onFailure {
+            OmniLog.w(TAG, "start OmniFlow frontend failed: ${it.message}")
         }
         return OmniFlowFrontendSession(
             runId = runId,
@@ -2054,8 +2055,8 @@ class OobFunctionToolHandler(
         val message = helper.localized(
             "OmniFlow：${progress.trim().ifBlank { label }.take(48)}"
         )
-        withContext(Dispatchers.Main) {
-            runCatching {
+        runCatching {
+            withContext(Dispatchers.Main) {
                 ScreenMaskLoader.loadGoneViewScreenMask()
                 DraggableBallInstance.setDoing(
                     message = message,
@@ -2064,9 +2065,9 @@ class OobFunctionToolHandler(
                     isShowStop = false,
                     isTouchable = false
                 )
-            }.onFailure {
-                OmniLog.w(TAG, "update OmniFlow frontend failed: ${it.message}")
             }
+        }.onFailure {
+            OmniLog.w(TAG, "update OmniFlow frontend failed: ${it.message}")
         }
         throwIfStopRequested()
     }
@@ -2075,14 +2076,20 @@ class OobFunctionToolHandler(
         OmniFlowUiSession.endTask(taskId)
         val end = OmniFlowUiSession.endRun(runId)
         if (!end.wasActive) return
-        withContext(NonCancellable + Dispatchers.Main) {
-            runCatching {
+        runCatching {
+            withContext(NonCancellable + Dispatchers.Main) {
                 ScreenMaskLoader.loadGoneViewScreenMask()
                 DraggableBallInstance.finishDoingTask(message)
             }
-                .onFailure { OmniLog.w(TAG, "finish OmniFlow frontend failed: ${it.message}") }
+        }.onFailure {
+            OmniLog.w(TAG, "finish OmniFlow frontend failed: ${it.message}")
         }
     }
+
+    private suspend fun canUseMainDispatcher(): Boolean =
+        runCatching {
+            withContext(Dispatchers.Main.immediate) { true }
+        }.getOrDefault(false)
 
     private fun omniflowFrontendLabel(
         functionId: String,

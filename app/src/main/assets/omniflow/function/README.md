@@ -30,8 +30,17 @@ belong in UI documentation.
 - parse public tool arguments
 - expose recall, run, guard, register, update, delete, and clear
 - route all Function storage operations through `OobFunctionRepository`
+- route deterministic Function execution through `OobFunctionRunner`
 - package RunLog evidence for `update_function`
 - apply agent-provided Function patches
+
+`OobFunctionRunner` owns runtime execution startup:
+
+- load the Function spec from `OobFunctionRepository`
+- validate and materialize runtime arguments
+- create the local `OobFunctionToolHandler`
+- pass resume/fallback controls into the replay handler
+- merge execution timing into the returned payload
 
 `AssistsCoreManager` owns method-channel wiring only:
 
@@ -52,8 +61,9 @@ operation.
 Agent/MCP tool surface
   -> OobOmniFlowToolkitService
       -> OobFunctionRepository       # storage/index/source bindings
+      -> OobFunctionRunner           # load/materialize/execute Functions
+          -> OobFunctionToolHandler  # deterministic replay and agent handoff
       -> OobRunLogReplayService      # RunLog -> Function conversion
-      -> OobFunctionToolHandler      # execution entry
       -> OobUdegNodeStore            # page/node recall index
 
 Flutter method channel
@@ -72,7 +82,8 @@ Keep these pieces separate:
 
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
-- `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime execution
+- `OobFunctionRunner`: Function loading, materialization, and execution timing
+- `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
 - `OobOmniFlowToolkitService.updateFunction`: agent-facing patch application
 - builtin skill prompts: agent instructions, not executable policy
 
@@ -81,17 +92,9 @@ conversion, execution, or agent patching.
 
 ## Cleanup Direction
 
-The next useful cleanup is runner extraction:
-
-```text
-OobFunctionRunner
-  -> guard/check start step
-  -> run deterministic prefix
-  -> return needs_agent fallback context
-  -> record run stats
-```
-
-Do this only after repository ownership is stable. Do not introduce a large
+`OobFunctionRunner` is intentionally small. Keep public tool response shaping,
+guard decisions, and run-stat recording in `OobOmniFlowToolkitService` unless
+they become reusable outside the toolkit facade. Do not introduce a larger
 service graph just to move methods around; extract only when a class owns a
 clear runtime contract.
 

@@ -5,13 +5,9 @@ import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
-import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
-import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
+import cn.com.omnimind.bot.omniflow.OobFunctionRunner
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import org.xml.sax.InputSource
@@ -36,12 +32,8 @@ class OobOmniFlowToolkitService(
 ) {
     private val replayService = OobRunLogReplayService(context, workspaceFunctionStore)
     private val functionRepository = OobFunctionRepository(context, workspaceFunctionStore)
+    private val functionRunner = OobFunctionRunner(context, workspaceFunctionStore, functionRepository)
     private val explorer = OobOmniFlowExplorer(context)
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = false
-    }
 
     fun recall(args: Map<String, Any?>?): Map<String, Any?> {
         val timing = RecallTiming()
@@ -253,7 +245,7 @@ class OobOmniFlowToolkitService(
         }
 
         var runPayload = callTiming.measureSuspend("execute_function_ms") {
-            executeFunction(
+            functionRunner.execute(
                 functionId = functionId,
                 arguments = callArguments,
                 allowAgentFallback = false
@@ -2714,7 +2706,7 @@ class OobOmniFlowToolkitService(
         }
 
         var runPayload = callTiming.measureSuspend("execute_function_ms") {
-            executeFunction(
+            functionRunner.execute(
                 functionId = functionId,
                 arguments = arguments,
                 allowAgentFallback = true,
@@ -3039,67 +3031,6 @@ class OobOmniFlowToolkitService(
             后续本地步骤：
             $remainingText$retryText
         """.trimIndent()
-    }
-
-    private suspend fun executeFunction(
-        functionId: String,
-        arguments: Map<String, Any?>,
-        allowAgentFallback: Boolean,
-        resumeFromStep: Int = 0,
-        fallbackSessionId: String = "",
-        fallbackAttempt: Int = 0,
-    ): Map<String, Any?> = withContext(Dispatchers.Default) {
-        val timing = FunctionExecutionTiming()
-        val spec = timing.measure("load_function_spec_ms") {
-            functionRepository.get(functionId)
-        }
-            ?: return@withContext errorPayload(
-                code = "OOB_FUNCTION_NOT_FOUND",
-                message = "OOB reusable function not found: $functionId",
-                functionId = functionId
-            ).let { attachFunctionExecutionTiming(it, timing) }
-        val missing = timing.measure("check_arguments_ms") {
-            OobReusableFunctionStore.missingRequiredArguments(spec, arguments)
-        }
-        if (missing.isNotEmpty()) {
-            return@withContext errorPayload(
-                code = "OOB_FUNCTION_ARGUMENTS_MISSING",
-                message = "Missing required arguments: ${missing.joinToString(", ")}",
-                functionId = functionId
-            ).let { attachFunctionExecutionTiming(it + linkedMapOf("missing_required_arguments" to missing), timing) }
-        }
-        val materialized = timing.measure("materialize_function_ms") {
-            OobReusableFunctionStore.materialize(spec, arguments)
-        }
-        val runner = timing.measure("create_runner_ms") {
-            OobFunctionToolHandler(
-                context = context,
-                helper = SharedHelper(context, json)
-            ).apply {
-                this.workspaceFunctionStore = workspaceFunctionStore
-            }
-        }
-        val payload = runCatching {
-            timing.measureSuspend("run_materialized_function_ms") {
-                runner.runMaterializedFunction(
-                    functionId = functionId,
-                    spec = spec,
-                    materializedSpec = materialized,
-                    allowAgentFallback = allowAgentFallback,
-                    allowToolDelegationWithoutRouter = false,
-                    resumeFromStep = resumeFromStep,
-                    fallbackSessionId = fallbackSessionId,
-                    fallbackAttempt = fallbackAttempt
-                )
-            }
-        }.getOrElse { error ->
-            errorPayload(
-                code = "OOB_FUNCTION_RUN_FAILED",
-                message = error.message.orEmpty(),
-                functionId = functionId
-            )
-        }
-        attachFunctionExecutionTiming(payload, timing)
     }
 
     private fun rankNodeCapabilities(
@@ -3817,55 +3748,6 @@ class OobOmniFlowToolkitService(
         val functionCapabilities: List<Map<String, Any?>>,
     )
 
-    private fun attachFunctionExecutionTiming(
-        payload: Map<String, Any?>,
-        timing: FunctionExecutionTiming,
-    ): Map<String, Any?> {
-        val toolkitTiming = timing.finish()
-        val toolkitPhaseMs = mapArg(toolkitTiming["phase_ms"])
-        val existingTiming = mapArg(payload["timing"])
-        val runnerSource = existingTiming["source"]?.toString().orEmpty()
-        val runnerPhaseMs = mapArg(existingTiming["phase_ms"])
-        val runnerStartedAtMs = longArg(existingTiming["started_at_ms"])
-        val runnerFinishedAtMs = longArg(existingTiming["finished_at_ms"])
-        val runnerDurationMs = longArg(
-            existingTiming["runner_duration_ms"],
-            existingTiming["duration_ms"],
-        )
-        val startupPhaseMs = linkedMapOf<String, Any?>()
-        listOf(
-            "load_function_spec_ms",
-            "check_arguments_ms",
-            "materialize_function_ms",
-            "create_runner_ms",
-        ).forEach { phaseName ->
-            startupPhaseMs[phaseName] = longArg(toolkitPhaseMs[phaseName])
-        }
-        if (runnerPhaseMs.isNotEmpty()) {
-            startupPhaseMs["runner_pre_step_loop_ms"] = longArg(runnerPhaseMs["pre_step_loop_ms"])
-        }
-        val startupDurationMs = startupPhaseMs.values.sumOf { longArg(it) }
-        val mergedTiming = linkedMapOf<String, Any?>().apply {
-            putAll(existingTiming)
-            if (runnerSource.isNotBlank()) put("runner_source", runnerSource)
-            if (runnerStartedAtMs > 0L) put("runner_started_at_ms", runnerStartedAtMs)
-            if (runnerFinishedAtMs > 0L) put("runner_finished_at_ms", runnerFinishedAtMs)
-            if (runnerDurationMs > 0L) put("runner_duration_ms", runnerDurationMs)
-            if (runnerPhaseMs.isNotEmpty()) put("runner_phase_ms", runnerPhaseMs)
-            put("source", "oob_function_execute")
-            put("started_at_ms", toolkitTiming["started_at_ms"])
-            put("finished_at_ms", toolkitTiming["finished_at_ms"])
-            put("duration_ms", toolkitTiming["duration_ms"])
-            put("phase_ms", toolkitPhaseMs)
-            put("startup_phase_ms", startupPhaseMs)
-            put("startup_duration_ms", startupDurationMs)
-        }
-        return linkedMapOf<String, Any?>().apply {
-            putAll(payload)
-            put("timing", mergedTiming)
-        }
-    }
-
     private fun attachFunctionCallTiming(
         payload: Map<String, Any?>,
         timing: FunctionCallTiming,
@@ -3883,57 +3765,6 @@ class OobOmniFlowToolkitService(
             putAll(payload)
             put("timing", mergedTiming)
         }
-    }
-
-    private class FunctionExecutionTiming {
-        private val startedAtNanos = System.nanoTime()
-        val startedAtMs: Long = System.currentTimeMillis()
-        private val phases = linkedMapOf<String, Long>()
-
-        fun <T> measure(phaseName: String, block: () -> T): T {
-            val phaseStartedAtNanos = System.nanoTime()
-            return try {
-                block()
-            } finally {
-                phases[phaseName] = elapsedMs(phaseStartedAtNanos)
-            }
-        }
-
-        suspend fun <T> measureSuspend(phaseName: String, block: suspend () -> T): T {
-            val phaseStartedAtNanos = System.nanoTime()
-            return try {
-                block()
-            } finally {
-                phases[phaseName] = elapsedMs(phaseStartedAtNanos)
-            }
-        }
-
-        fun finish(): Map<String, Any?> {
-            val finishedAtMs = System.currentTimeMillis()
-            val completedPhases = linkedMapOf<String, Long>()
-            listOf(
-                "load_function_spec_ms",
-                "check_arguments_ms",
-                "materialize_function_ms",
-                "create_runner_ms",
-                "run_materialized_function_ms",
-            ).forEach { phaseName ->
-                completedPhases[phaseName] = phases[phaseName] ?: 0L
-            }
-            phases.forEach { (phaseName, durationMs) ->
-                completedPhases.putIfAbsent(phaseName, durationMs)
-            }
-            return linkedMapOf(
-                "source" to "oob_function_execute",
-                "started_at_ms" to startedAtMs,
-                "finished_at_ms" to finishedAtMs,
-                "duration_ms" to elapsedMs(startedAtNanos),
-                "phase_ms" to completedPhases,
-            )
-        }
-
-        private fun elapsedMs(startedAtNanos: Long): Long =
-            ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
     }
 
     private class FunctionCallTiming {
