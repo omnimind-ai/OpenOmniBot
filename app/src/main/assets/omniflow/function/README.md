@@ -26,6 +26,23 @@ belong in UI documentation.
 - mirror source RunLogs into the workspace
 - delegate all Function persistence to `OobFunctionRepository`
 
+`RunLogReusableFunctionCompiler` owns RunLog card-to-Function assembly:
+
+- filter replayable cards and perception wrappers according to replay policy
+- repair transient startup launch bridge artifacts before step indexing
+- convert RunLog cards into canonical execution steps with source context
+- assemble top-level reusable Function fields and metadata
+- delegate deterministic parameter/action compatibility output to
+  `RunLogReusableFunctionParameterizer`
+
+`RunLogReusableFunctionParameterizer` owns reusable Function parameterization:
+
+- infer deterministic `input_text` runtime parameters from compiled steps
+- build the canonical JSON schema exposed through `parameters`
+- build the legacy `actions` compatibility list from compiled execution steps
+- record parameter binding metadata under `metadata.oob_parameter_bindings`
+- keep canonical action compatibility separate from RunLog card filtering
+
 `OobOmniFlowToolkitService` owns the agent/MCP tool facade:
 
 - parse public tool arguments
@@ -246,6 +263,7 @@ Agent/MCP tool surface
       -> OobRunLogReplayService      # RunLog -> Function conversion
           -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
               -> RunLogReplayStepNoiseNormalizer # compiled step noise cleanup
+              -> RunLogReusableFunctionParameterizer # parameters/actions/bindings
 
 Flutter method channel
   -> AssistsCoreManager
@@ -282,6 +300,9 @@ Keep these pieces separate:
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
 - `OobFunctionCallTiming`: Function call timing payload construction
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
+- `RunLogReusableFunctionParameterizer`: deterministic runtime parameter
+  inference, canonical JSON schema, legacy action compatibility, and binding
+  metadata for compiled Function specs
 - `RunLogReplayStepNoiseNormalizer`: repeated input and redundant compiled-step
   cleanup after card-to-step conversion
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
