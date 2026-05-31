@@ -29,6 +29,7 @@ belong in UI documentation.
 
 - parse public tool arguments
 - expose recall, run, guard, register, update, delete, and clear
+- use `OobFunctionCallTiming` for Function call timing payloads
 - route all Function storage operations through `OobFunctionRepository`
 - route Function recall and direct-hit decisions through
   `OobFunctionRecallService`
@@ -113,6 +114,12 @@ belong in UI documentation.
 - create the local `OobFunctionToolHandler`
 - pass resume/fallback controls into the replay handler
 - merge execution timing into the returned payload
+
+`OobFunctionCallTiming` owns toolkit call timing payloads:
+
+- measure guard and execution phases for Function calls
+- merge call-level timing into runner timing without changing run results
+- keep timing payload shape outside the public tool facade
 
 `OobFunctionGraphStepRunner` owns local graph/UTG execution inside replay:
 
@@ -199,6 +206,7 @@ Agent/MCP tool surface
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
           -> OobUdegNodeStore        # page/node recall index
       -> OobFunctionRunPolicy        # guard and fallback handoff
+      -> OobFunctionCallTiming       # call-level timing merge
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
               -> OobFunctionFrontendSessionController # replay overlay/session
@@ -239,6 +247,7 @@ Keep these pieces separate:
 - `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
   compact recall payload shaping
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
+- `OobFunctionCallTiming`: Function call timing payload construction
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution

@@ -45,6 +45,7 @@ record. Do not read only the snapshot when correctness matters.
 - Function target repair source matcher: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionTargetSourceMatcher.kt`
 - Function recall policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRecallService.kt`
 - Function guard/fallback policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunPolicy.kt`
+- Function call timing: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionCallTiming.kt`
 - SharedPreferences registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - Function execution startup: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunner.kt`

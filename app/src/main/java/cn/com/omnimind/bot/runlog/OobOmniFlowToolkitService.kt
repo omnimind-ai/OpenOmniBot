@@ -41,7 +41,7 @@ class OobOmniFlowToolkitService(
         functionRecallService.recall(args)
 
     suspend fun callFunction(args: Map<String, Any?>?): Map<String, Any?> {
-        val callTiming = FunctionCallTiming()
+        val callTiming = OobFunctionCallTiming()
         val request = args ?: emptyMap()
         val functionId = firstNonBlank(request["function_id"], request["functionId"])
         val goal = firstNonBlank(request["goal"])
@@ -87,7 +87,7 @@ class OobOmniFlowToolkitService(
                 allowAgentFallback = false
             )
         }
-        runPayload = attachFunctionCallTiming(runPayload, callTiming)
+        runPayload = callTiming.attachTo(runPayload)
         val success = runPayload["success"] == true && runPayload["model_required"] != true
         OobReusableFunctionStore.recordRun(
             context = context,
@@ -365,7 +365,7 @@ class OobOmniFlowToolkitService(
     }
 
     suspend fun runFunction(args: Map<String, Any?>?): Map<String, Any?> {
-        val callTiming = FunctionCallTiming()
+        val callTiming = OobFunctionCallTiming()
         val request = args ?: emptyMap()
         val functionId = firstNonBlank(request["functionId"], request["function_id"])
         val arguments = mapArg(request["arguments"])
@@ -432,7 +432,7 @@ class OobOmniFlowToolkitService(
                 fallbackAttempt = fallbackAttempt
             )
         }
-        runPayload = attachFunctionCallTiming(runPayload, callTiming)
+        runPayload = callTiming.attachTo(runPayload)
         val fallbackMetadata = functionRunPolicy.fallbackMetadata(
             functionId = functionId,
             arguments = arguments,
@@ -703,72 +703,5 @@ class OobOmniFlowToolkitService(
             is Number -> value.toInt() != 0
             else -> defaultValue
         }
-
-    private fun attachFunctionCallTiming(
-        payload: Map<String, Any?>,
-        timing: FunctionCallTiming,
-    ): Map<String, Any?> {
-        val callTiming = timing.finish()
-        val existingTiming = mapArg(payload["timing"])
-        val mergedTiming = linkedMapOf<String, Any?>().apply {
-            putAll(existingTiming)
-            put("call_started_at_ms", callTiming["started_at_ms"])
-            put("call_finished_at_ms", callTiming["finished_at_ms"])
-            put("call_duration_ms", callTiming["duration_ms"])
-            put("call_phase_ms", callTiming["phase_ms"])
-        }
-        return linkedMapOf<String, Any?>().apply {
-            putAll(payload)
-            put("timing", mergedTiming)
-        }
-    }
-
-    private class FunctionCallTiming {
-        private val startedAtNanos = System.nanoTime()
-        val startedAtMs: Long = System.currentTimeMillis()
-        private val phases = linkedMapOf<String, Long>()
-
-        fun <T> measure(phaseName: String, block: () -> T): T {
-            val phaseStartedAtNanos = System.nanoTime()
-            return try {
-                block()
-            } finally {
-                phases[phaseName] = elapsedMs(phaseStartedAtNanos)
-            }
-        }
-
-        suspend fun <T> measureSuspend(phaseName: String, block: suspend () -> T): T {
-            val phaseStartedAtNanos = System.nanoTime()
-            return try {
-                block()
-            } finally {
-                phases[phaseName] = elapsedMs(phaseStartedAtNanos)
-            }
-        }
-
-        fun finish(): Map<String, Any?> {
-            val finishedAtMs = System.currentTimeMillis()
-            val completedPhases = linkedMapOf<String, Long>()
-            listOf(
-                "guard_check_ms",
-                "execute_function_ms",
-            ).forEach { phaseName ->
-                completedPhases[phaseName] = phases[phaseName] ?: 0L
-            }
-            phases.forEach { (phaseName, durationMs) ->
-                completedPhases.putIfAbsent(phaseName, durationMs)
-            }
-            return linkedMapOf(
-                "source" to "oob_function_call",
-                "started_at_ms" to startedAtMs,
-                "finished_at_ms" to finishedAtMs,
-                "duration_ms" to elapsedMs(startedAtNanos),
-                "phase_ms" to completedPhases,
-            )
-        }
-
-        private fun elapsedMs(startedAtNanos: Long): Long =
-            ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
-    }
 
 }
