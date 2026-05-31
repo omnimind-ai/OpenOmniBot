@@ -1,7 +1,7 @@
 package cn.com.omnimind.bot.omniflow
 
 /**
- * Small JSON/value coercion helpers shared by Function update services.
+ * Small JSON/value coercion helpers shared by Function services.
  *
  * Keep these helpers mechanical: they should normalize public tool payload
  * shapes, not encode Function policy.

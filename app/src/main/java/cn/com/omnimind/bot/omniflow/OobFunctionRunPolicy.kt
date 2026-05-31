@@ -1,6 +1,10 @@
 package cn.com.omnimind.bot.omniflow
 
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.intArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
@@ -381,41 +385,6 @@ class OobFunctionRunPolicy(
     ).apply {
         decision?.let { put("decision", it) }
         riskLevel?.let { put("risk_level", it) }
-    }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
-
-    private fun intArg(vararg values: Any?, defaultValue: Int): Int {
-        values.forEach { value ->
-            when (value) {
-                is Number -> return value.toInt()
-                is String -> value.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
     }
 
     private companion object {

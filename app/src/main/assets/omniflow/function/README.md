@@ -151,7 +151,7 @@ belong in UI documentation.
 
 - normalize public tool payload maps/lists into stable Kotlin value shapes
 - build mutable JSON-compatible maps and lists for Function patch/update services
-- provide shared scalar coercion helpers used by Function register/update code
+- provide shared scalar coercion helpers used by Function register/update/run/recall code
 - stay policy-free; Function behavior rules belong in the service using the
   coerced values
 
@@ -320,8 +320,10 @@ Agent/MCP tool surface
               -> OobFunctionTargetSourceMatcher # source XML repair matching
           -> OobFunctionRunLogEvidencePackager # Function + RunLog agent context
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
+          -> OobFunctionJson # shared value coercion for Function payloads
           -> OobUdegNodeStore        # page/node recall index
       -> OobFunctionRunPolicy        # guard and fallback handoff
+          -> OobFunctionJson # shared value coercion for Function payloads
       -> OobFunctionCallTiming       # call-level timing merge
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
@@ -375,7 +377,7 @@ Keep these pieces separate:
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
 - `OobFunctionJson`: mechanical JSON/map/list/scalar coercion shared by Function
-  register/update services; do not hide policy or mutation behavior here
+  register/update/run/recall services; do not hide policy or mutation behavior here
 - `OobFunctionTargetSourceMatcher`: source XML parsing and node scoring for
   target-repair patches
 - `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
@@ -441,7 +443,7 @@ When changing run-time safety or recovery behavior, update
 tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 `OobOmniFlowToolkitService`.
 
-When changing Function register/update payload handling, use
+When changing Function register/update/run/recall payload handling, use
 `OobFunctionJson` for mechanical payload coercion instead of adding another
 private `mapArg`/`firstNonBlank`/`mutableJsonMap` copy. Keep it limited to
 shape conversion; new rules should live in the owning update service.
