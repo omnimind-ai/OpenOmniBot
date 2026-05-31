@@ -86,7 +86,7 @@ class OobRunLogReplayService(
         }
 
         workspaceFunctionStore.mirrorRunLog(record)
-        return registerFunctionSpec(spec).toMutableMap().apply {
+        return functionRepository.register(spec).toMutableMap().apply {
             put("registered", this["success"] == true)
             put("run_id", normalizedRunId)
             put("function_spec", spec)
@@ -94,23 +94,6 @@ class OobRunLogReplayService(
             put("source", "oob_run_log_replay_service")
         }
     }
-
-    fun registerFunctionSpec(functionSpec: Map<String, Any?>): Map<String, Any?> =
-        functionRepository.register(functionSpec)
-
-    fun listFunctions(limit: Int = 100, offset: Int = 0): Map<String, Any?> =
-        functionRepository.list(limit = limit, offset = offset)
-
-    fun listFunctionSpecs(limit: Int = 100): List<Map<String, Any?>> =
-        functionRepository.listSpecs(limit = limit)
-
-    fun getFunctionSpec(functionId: String): Map<String, Any?>? =
-        functionRepository.get(functionId)
-
-    fun deleteFunction(functionId: String): Map<String, Any?> =
-        functionRepository.delete(functionId)
-
-    fun clearFunctions(): Map<String, Any?> = functionRepository.clear()
 
     fun autoRegisterRecentRunLogs(limit: Int = 50): Map<String, Any?> {
         val records = InternalRunLogStore.listRunRecords(context, limit)
@@ -144,7 +127,7 @@ class OobRunLogReplayService(
                 alreadyExists++
                 continue
             }
-            val result = registerFunctionSpec(spec)
+            val result = functionRepository.register(spec)
             results += linkedMapOf(
                 "run_id" to record.runId,
                 "function_id" to functionId,

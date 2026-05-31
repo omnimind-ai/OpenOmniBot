@@ -62,11 +62,9 @@ Flutter method channel
       -> OobRunLogReplayService      # conversion and auto-register only
 ```
 
-`OobRunLogReplayService` still exposes compatibility methods such as
-`registerFunctionSpec`, `listFunctionSpecs`, and `getFunctionSpec`. These are
-thin delegates kept for legacy compatibility. Production code should depend on
-`OobFunctionRepository` when it needs storage and on `OobRunLogReplayService`
-only when it needs RunLog conversion.
+`OobRunLogReplayService` does not expose Function CRUD. New and legacy callers
+must use `OobFunctionRepository` for storage and use `OobRunLogReplayService`
+only for `convertRunLog` and `autoRegisterRecentRunLogs`.
 
 ## What Not To Merge
 

@@ -42,6 +42,8 @@ record. Do not read only the snapshot when correctness matters.
 - Replay runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
 - Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
 - RunLog conversion facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobRunLogReplayService.kt`
+  It only converts and auto-registers RunLogs; Function CRUD belongs in
+  `OobFunctionRepository`.
 - Agent/MCP Function facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowToolkitService.kt`
 - Function backend ownership: `app/src/main/assets/omniflow/function/README.md`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
