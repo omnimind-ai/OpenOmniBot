@@ -1,19 +1,27 @@
 package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
-import com.google.gson.GsonBuilder
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.androidPrivilegedReplayAction
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.androidPrivilegedReplayArgs
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asBoolean
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asMap
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.beforeObservationForCard
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.extractArgs
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.extractResult
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.firstNonBlank
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.isEmptyJsonValue
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.jsonSafe
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.jsonSafeMap
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.nullableMap
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.toJson
+import cn.com.omnimind.bot.runlog.RunLogCardAccessors.toolNameForCard
 
 object RunLogReusableFunctionCompiler {
-    private val gson = GsonBuilder()
-        .disableHtmlEscaping()
-        .setPrettyPrinting()
-        .create()
-
     fun compile(record: InternalRunLogRecord): Map<String, Any?>? {
         val replayableCards = record.cards.filter(::isSuccessfulCard)
-        val compileCards = dropTransientStartupBridgeCards(replayableCards)
+        val compileCards = RunLogStartupBridgeCleaner.dropTransientStartupBridgeCards(replayableCards)
         val droppedStartupBridgeCount = replayableCards.size - compileCards.size
-        val hasRecordedReplayStep = compileCards.any(::hasRecordedReplayStep)
+        val hasRecordedReplayStep = compileCards.any(RunLogStartupBridgeCleaner::hasRecordedReplayStep)
         val rawSteps = compileCards
             .mapIndexedNotNull { index, card ->
                 cardToStep(
@@ -22,17 +30,16 @@ object RunLogReusableFunctionCompiler {
                     nextReplayableCard = compileCards
                         .asSequence()
                         .drop(index + 1)
-                        .firstOrNull(::hasRecordedReplayStep),
+                        .firstOrNull(RunLogStartupBridgeCleaner::hasRecordedReplayStep),
                 )
             }
         val replaySteps = RunLogReplayStepNoiseNormalizer.normalize(rawSteps)
-        val stepsWithStart = prepareInitialOpenAppStep(
-            prependInitialOpenAppStepIfNeeded(replayableCards, replaySteps)
+        val initialStepCleanup = RunLogStartupBridgeCleaner.normalizeInitialOpenAppStep(
+            replayableCards,
+            replaySteps,
         )
-        val stepsAfterInitialLaunchBridgeDrop = dropRedundantInjectedLaunchBridgeStep(stepsWithStart)
-        val injectedLaunchBridgeDroppedCount =
-            stepsWithStart.size - stepsAfterInitialLaunchBridgeDrop.size
-        val steps = stepsAfterInitialLaunchBridgeDrop
+        val injectedLaunchBridgeDroppedCount = initialStepCleanup.injectedLaunchBridgeDroppedCount
+        val steps = initialStepCleanup.steps
             .mapIndexed { index, rawStep ->
                 linkedMapOf<String, Any?>().apply {
                     putAll(rawStep)
@@ -102,384 +109,6 @@ object RunLogReusableFunctionCompiler {
                 "storage" to "workspace",
             ),
         )
-    }
-
-    /**
-     * Resolves the canonical replay action carried by a compiled step.
-     *
-     * @param step Compiled execution step.
-     * @return Canonical action name, preserving unknown tool names for callers
-     * that need to compare non-OmniFlow steps.
-     */
-    private fun replayActionForStep(step: Map<String, Any?>): String {
-        return OobActionCodec.actionNameForStep(step)
-    }
-
-    private fun prependInitialOpenAppStepIfNeeded(
-        replayableCards: List<Map<String, Any?>>,
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.isEmpty()) return steps
-        val firstAction = replayActionForStep(steps.first())
-        if (firstAction == "open_app") return steps
-
-        val packageName = initialReplayPackage(steps, replayableCards) ?: return steps
-        val openAppStep = nullableMap(
-            "title" to "open_app: $packageName",
-            "kind" to "omniflow_action",
-            "executor" to "omniflow",
-            "omniflow_action" to "open_app",
-            "local_action" to "open_app",
-            "model_free" to true,
-            "scriptable" to true,
-            "tool" to "open_app",
-            "callable_tool" to "open_app",
-            "args" to linkedMapOf(
-                "package_name" to packageName,
-                "reset_task" to true,
-                "launch_mode" to "fresh_task",
-            ),
-            "route_note" to "injected_initial_package_from_runlog",
-        )
-        return listOf(openAppStep) + steps
-    }
-
-    private fun prepareInitialOpenAppStep(
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.isEmpty()) return steps
-        val first = steps.first()
-        val firstAction = replayActionForStep(first)
-        if (firstAction != "open_app") return steps
-        val args = jsonSafeMap(first["args"])
-        val packageName = firstNonBlank(args["package_name"], args["packageName"])
-        if (!isLaunchableInitialPackageCandidate(packageName)) return steps
-        val preparedFirst = linkedMapOf<String, Any?>().apply {
-            putAll(first)
-            put(
-                "args",
-                linkedMapOf<String, Any?>().apply {
-                    putAll(args)
-                    put("package_name", packageName)
-                    putIfAbsent("reset_task", true)
-                    putIfAbsent("launch_mode", "fresh_task")
-                }
-            )
-            putIfAbsent("route_note", "initial_open_app_fresh_launch")
-        }
-        return listOf(preparedFirst) + steps.drop(1)
-    }
-
-    private fun dropRedundantInjectedLaunchBridgeStep(
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.size < 2) return steps
-        val first = steps.first()
-        if (replayActionForStep(first) != "open_app") return steps
-        if (first["route_note"] != "injected_initial_package_from_runlog") return steps
-
-        val packageName = firstNonBlank(
-            asMap(first["args"])["package_name"],
-            asMap(first["args"])["packageName"],
-        )
-        if (!isLaunchableInitialPackageCandidate(packageName)) return steps
-
-        val candidate = steps[1]
-        if (replayActionForStep(candidate) != "click") return steps
-        if (!isInjectedLaunchBridgeClick(candidate, packageName, steps.drop(2))) {
-            return steps
-        }
-        return listOf(first) + steps.drop(2)
-    }
-
-    private fun isInjectedLaunchBridgeClick(
-        step: Map<String, Any?>,
-        launchedPackage: String,
-        followingSteps: List<Map<String, Any?>>,
-    ): Boolean {
-        val sourceContext = asMap(step["source_context"])
-        val srcCtx = asMap(sourceContext["src_ctx"])
-        val rawSourcePackage = firstNonBlank(
-            srcCtx["package_name"],
-            srcCtx["packageName"],
-        )
-        val sourceXml = firstNonBlank(srcCtx["page"], srcCtx["xml"])
-        val effectiveSourcePackage = RunLogPagePackageInference.effectivePackage(
-            rawSourcePackage,
-            sourceXml,
-        )
-        val followingUsesLaunchedPackage = followingSteps.any { following ->
-            stepMentionsPackage(following, launchedPackage)
-        }
-        if (!followingUsesLaunchedPackage) return false
-
-        if (isLauncherPackage(rawSourcePackage)) {
-            return true
-        }
-        return effectiveSourcePackage == launchedPackage &&
-            isSparseLaunchSurface(sourceXml, launchedPackage)
-    }
-
-    private fun stepMentionsPackage(
-        step: Map<String, Any?>,
-        packageName: String,
-    ): Boolean {
-        val args = asMap(step["args"])
-        val sourceContext = asMap(step["source_context"])
-        val srcCtx = asMap(sourceContext["src_ctx"])
-        val dstCtx = asMap(sourceContext["dst_ctx"])
-        return listOf(
-            firstNonBlank(args["package_name"], args["packageName"]),
-            effectivePackageForContext(srcCtx),
-            effectivePackageForContext(dstCtx),
-        ).any { it == packageName }
-    }
-
-    private fun effectivePackageForContext(context: Map<String, Any?>): String {
-        val rawPackage = firstNonBlank(context["package_name"], context["packageName"])
-        val xml = firstNonBlank(context["page"], context["xml"])
-        return RunLogPagePackageInference.effectivePackage(rawPackage, xml)
-    }
-
-    private fun isLauncherPackage(packageName: String): Boolean {
-        val normalized = packageName.trim().lowercase()
-        if (normalized.isEmpty()) return false
-        if (normalized.contains("launcher")) return true
-        return normalized in setOf(
-            "com.bbk.launcher2",
-            "com.google.android.apps.nexuslauncher",
-            "com.android.launcher",
-            "com.android.launcher2",
-            "com.android.launcher3",
-            "com.miui.home",
-            "com.huawei.android.launcher",
-            "com.oppo.launcher",
-            "com.sec.android.app.launcher",
-        )
-    }
-
-    private fun isSparseLaunchSurface(xml: String, packageName: String): Boolean {
-        if (xml.isBlank()) return false
-        val vector = OobPageVectorSet.encode(xml, packageName) ?: return false
-        return vector.packageName == packageName &&
-            vector.displayTextCount == 0 &&
-            vector.elementCount <= 4 &&
-            vector.actionableCount <= 2
-    }
-
-    private fun initialReplayPackage(
-        steps: List<Map<String, Any?>>,
-        replayableCards: List<Map<String, Any?>>,
-    ): String? {
-        initialReplayPackageFromSteps(steps)?.let { return it }
-        val packageName = replayableCards.asSequence()
-            .mapNotNull { card ->
-                firstNonBlank(
-                    card["package_name"],
-                    card["packageName"],
-                    asMap(card["before"])["package_name"],
-                    asMap(card["before"])["packageName"],
-                ).takeIf { it.isNotBlank() }
-            }
-            .firstOrNull()
-            ?: return null
-        return packageName.takeIf(::isLaunchableInitialPackageCandidate)
-    }
-
-    private fun initialReplayPackageFromSteps(steps: List<Map<String, Any?>>): String? {
-        return steps.asSequence()
-            .mapNotNull { step ->
-                val sourceContext = asMap(step["source_context"])
-                val srcCtx = asMap(sourceContext["src_ctx"])
-                firstNonBlank(
-                    srcCtx["package_name"],
-                    srcCtx["packageName"],
-                ).takeIf { it.isNotBlank() }
-            }
-            .firstOrNull(::isLaunchableInitialPackageCandidate)
-    }
-
-    private fun isLaunchableInitialPackageCandidate(packageName: String): Boolean {
-        val normalized = packageName.trim()
-        if (!PACKAGE_NAME_PATTERN.matches(normalized)) return false
-        if (normalized.startsWith("cn.com.omnimind.")) return false
-        if (normalized == "android") return false
-        if (normalized == "com.android.systemui") return false
-        if (normalized.startsWith("com.android.inputmethod")) return false
-        if (normalized.startsWith("com.google.android.inputmethod")) return false
-        if (normalized.contains("launcher", ignoreCase = true)) return false
-        if (normalized.startsWith("com.example")) return false
-        return true
-    }
-
-    private fun hasRecordedReplayStep(card: Map<String, Any?>): Boolean {
-        val toolName = toolNameForCard(card)
-        if (OobActionCodec.canonicalActionForName(toolName) != null) {
-            return true
-        }
-        if (RunLogReplayPolicy.normalizeToolName(toolName) != "android_privileged_action") {
-            return false
-        }
-        val args = asMap(extractArgs(card))
-        return androidPrivilegedReplayAction(args) != null
-    }
-
-    private fun dropTransientStartupBridgeCards(
-        replayableCards: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (replayableCards.size < 2) return replayableCards
-        val output = mutableListOf<Map<String, Any?>>()
-        var concreteActionIndex = 0
-        replayableCards.forEachIndexed { index, card ->
-            val isConcrete = hasRecordedReplayStep(card)
-            if (isConcrete &&
-                shouldDropTransientStartupBridgeCard(
-                    cards = replayableCards,
-                    cardIndex = index,
-                    concreteActionIndex = concreteActionIndex,
-                )
-            ) {
-                concreteActionIndex += 1
-                return@forEachIndexed
-            }
-            output += card
-            if (isConcrete) {
-                concreteActionIndex += 1
-            }
-        }
-        return output
-    }
-
-    private fun shouldDropTransientStartupBridgeCard(
-        cards: List<Map<String, Any?>>,
-        cardIndex: Int,
-        concreteActionIndex: Int,
-    ): Boolean {
-        if (concreteActionIndex > 1) return false
-        val card = cards[cardIndex]
-        if (isManualRecordingCard(card)) return false
-        val action = replayActionForCard(card) ?: return false
-        if (action != "click") return false
-
-        val args = jsonSafeMap(extractArgs(card))
-        val target = firstNonBlank(
-            args["target_description"],
-            args["targetDescription"],
-            args["label"],
-            asMap(card["header"])["title"],
-            card["title"],
-            card["summary"],
-        )
-        if (target.isBlank()) return false
-
-        val sourceXml = observationXml(beforeObservationForCard(card))
-        val afterXml = observationXml(afterObservationForCard(card))
-        if (sourceXml.isBlank() || afterXml.isBlank()) return false
-
-        val nextCard = cards.asSequence()
-            .drop(cardIndex + 1)
-            .firstOrNull(::hasRecordedReplayStep)
-            ?: return false
-        val nextBeforeXml = observationXml(beforeObservationForCard(nextCard))
-        if (nextBeforeXml.isBlank()) return false
-
-        if (!pagesAreSameTransition(afterXml, nextBeforeXml)) return false
-        if (xmlContainsTarget(sourceXml, target)) return false
-        if (!xmlContainsTarget(afterXml, target) && !xmlContainsTarget(nextBeforeXml, target)) {
-            return false
-        }
-        if (!hasCompatibleTransitionPackage(card, nextCard, afterXml, nextBeforeXml)) return false
-        return isTransientStartupSource(sourceXml, nextBeforeXml)
-    }
-
-    private fun isManualRecordingCard(card: Map<String, Any?>): Boolean {
-        return firstNonBlank(card["compile_kind"], card["compileKind"]) == "manual_recording" ||
-            firstNonBlank(card["source"], asMap(card["header"])["source"]) == "human_takeover"
-    }
-
-    private fun replayActionForCard(card: Map<String, Any?>): String? {
-        val toolName = toolNameForCard(card)
-        val normalizedToolName = RunLogReplayPolicy.normalizeToolName(toolName)
-        val args = jsonSafeMap(extractArgs(card))
-        return if (normalizedToolName == "android_privileged_action") {
-            androidPrivilegedReplayAction(args)
-        } else {
-            OobActionCodec.canonicalActionForName(toolName)
-        }
-    }
-
-    private fun afterObservationForCard(card: Map<String, Any?>): Map<String, Any?> {
-        return asMap(card["after"])
-            .ifEmpty { asMap(card["observation_after_act"]) }
-            .ifEmpty { asMap(card["after_observation"]) }
-    }
-
-    private fun observationXml(observation: Map<String, Any?>): String {
-        return firstNonBlank(
-            observation["observation_xml"],
-            observation["observationXml"],
-            observation["xml"],
-            observation["page"],
-        )
-    }
-
-    private fun pagesAreSameTransition(firstXml: String, secondXml: String): Boolean {
-        if (firstXml == secondXml) return true
-        val firstVector = OobPageVectorSet.encode(firstXml) ?: return false
-        val secondVector = OobPageVectorSet.encode(secondXml) ?: return false
-        return OobPageVectorSet.cosine(firstVector.vector, secondVector.vector) >=
-            TRANSIENT_BRIDGE_SAME_PAGE_SCORE
-    }
-
-    private fun xmlContainsTarget(xml: String, target: String): Boolean {
-        val tokens = meaningfulTargetTokens(target)
-        if (tokens.isEmpty()) return false
-        val haystack = xml.lowercase()
-        return tokens.any { token -> haystack.contains(token) }
-    }
-
-    private fun meaningfulTargetTokens(target: String): List<String> {
-        return target
-            .lowercase()
-            .split(Regex("[^a-z0-9]+"))
-            .map { it.trim() }
-            .filter { token ->
-                token.length >= 3 && token !in GENERIC_TARGET_TOKENS
-            }
-            .distinct()
-    }
-
-    private fun hasCompatibleTransitionPackage(
-        card: Map<String, Any?>,
-        nextCard: Map<String, Any?>,
-        afterXml: String,
-        nextBeforeXml: String,
-    ): Boolean {
-        val afterObservation = afterObservationForCard(card)
-        val nextBefore = beforeObservationForCard(nextCard)
-        val afterPackage = RunLogPagePackageInference.effectivePackage(
-            firstNonBlank(afterObservation["package_name"], afterObservation["packageName"]),
-            afterXml,
-        )
-        val nextPackage = RunLogPagePackageInference.effectivePackage(
-            firstNonBlank(nextBefore["package_name"], nextBefore["packageName"]),
-            nextBeforeXml,
-        )
-        return afterPackage.isBlank() ||
-            nextPackage.isBlank() ||
-            afterPackage == nextPackage
-    }
-
-    private fun isTransientStartupSource(sourceXml: String, nextSourceXml: String): Boolean {
-        val sourceVector = OobPageVectorSet.encode(sourceXml) ?: return false
-        val nextVector = OobPageVectorSet.encode(nextSourceXml) ?: return false
-        val sourceStrength = observationStrength(sourceVector)
-        val nextStrength = observationStrength(nextVector)
-        val compactPromptLike = sourceVector.elementCount <= TRANSIENT_BRIDGE_SOURCE_MAX_ELEMENTS &&
-            sourceVector.displayTextCount <= TRANSIENT_BRIDGE_SOURCE_MAX_TEXTS &&
-            sourceVector.actionableCount <= TRANSIENT_BRIDGE_SOURCE_MAX_ACTIONABLES
-        val nextIsRicher = nextStrength >= sourceStrength + TRANSIENT_BRIDGE_MIN_STRENGTH_GAIN
-        return compactPromptLike && nextIsRicher
     }
 
     private fun cardToStep(
@@ -764,55 +393,6 @@ object RunLogReusableFunctionCompiler {
         )
     }
 
-    private fun toolNameForCard(card: Map<String, Any?>): String {
-        val header = asMap(card["header"])
-        val toolCall = asMap(card["tool_call"]).ifEmpty { asMap(card["toolCall"]) }
-        val function = asMap(toolCall["function"])
-        return firstNonBlank(
-            toolCall["name"],
-            toolCall["tool_name"],
-            toolCall["toolName"],
-            function["name"],
-            card["tool_name"],
-            card["toolName"],
-            card["action_type"],
-            card["actionType"],
-            header["tool_name"],
-            header["toolName"],
-        )
-    }
-
-    private fun extractArgs(card: Map<String, Any?>): Any? {
-        val toolCall = asMap(card["tool_call"]).ifEmpty { asMap(card["toolCall"]) }
-        val function = asMap(toolCall["function"])
-        return firstPresent(
-            toolCall["params"],
-            toolCall["arguments"],
-            toolCall["args"],
-            function["arguments"],
-            card["params"],
-            card["arguments"],
-            card["args"],
-        ) ?: emptyMap<String, Any?>()
-    }
-
-    private fun extractResult(card: Map<String, Any?>): Any? {
-        return firstPresent(
-            card["result"],
-            card["raw_result_json"],
-            card["rawResultJson"],
-            card["resultPreviewJson"],
-            card["tool_result"],
-            card["toolResult"],
-            card["execution_result"],
-            card["executionResult"],
-            card["output"],
-            card["error"],
-            card["error_message"],
-            card["errorMessage"],
-        )
-    }
-
     private fun sourceContextForCard(
         card: Map<String, Any?>,
         args: Map<String, Any?>,
@@ -918,13 +498,6 @@ object RunLogReusableFunctionCompiler {
         ).filterValues { it != null }
     }
 
-    private fun beforeObservationForCard(card: Map<String, Any?>): Map<String, Any?> {
-        return asMap(card["before"])
-            .ifEmpty { asMap(card["observation_before_act"]) }
-            .ifEmpty { asMap(card["before_observation"]) }
-            .ifEmpty { asMap(card["observation"]) }
-    }
-
     private fun shouldUseNextBeforeAsAfter(afterXml: String, nextBeforeXml: String): Boolean {
         if (nextBeforeXml.isBlank()) return false
         if (afterXml.isBlank()) return true
@@ -953,7 +526,7 @@ object RunLogReusableFunctionCompiler {
         args: Map<String, Any?>,
     ): String {
         return "Re-plan this step from the current screen: $title " +
-            "(original tool: $toolName, args: ${gson.toJson(args)})"
+            "(original tool: $toolName, args: ${toJson(args)})"
     }
 
     private fun executionCapabilities(steps: List<Map<String, Any?>>): Map<String, Any?> {
@@ -971,41 +544,6 @@ object RunLogReusableFunctionCompiler {
         return asBoolean(card["success"]) != false && asBoolean(header["success"]) != false
     }
 
-    private fun asBoolean(value: Any?): Boolean? =
-        when (value) {
-            is Boolean -> value
-            is String -> value.trim().lowercase().let { text ->
-                when (text) {
-                    "true" -> true
-                    "false" -> false
-                    else -> null
-                }
-            }
-            else -> null
-        }
-
-    private fun androidPrivilegedReplayAction(args: Map<String, Any?>): String? {
-        return OobActionCodec.canonicalActionForName(
-            firstNonBlank(args["action"], args["omniflow_action"])
-        )
-    }
-
-    private fun androidPrivilegedReplayArgs(args: Map<String, Any?>): Map<String, Any?> {
-        val nestedArguments = asMap(args["arguments"])
-        val flattened = LinkedHashMap<String, Any?>()
-        for ((key, value) in args) {
-            if (key == "action" || key == "omniflow_action" || key == "arguments") continue
-            flattened[key] = value
-        }
-        flattened.putAll(nestedArguments)
-        return OobActionCodec.argsForStep(
-            mapOf(
-                "tool" to firstNonBlank(args["action"], args["omniflow_action"]),
-                "args" to flattened,
-            )
-        )
-    }
-
     private fun deriveFunctionId(record: InternalRunLogRecord): String {
         val base = record.toolName.ifBlank { record.goal }
             .lowercase()
@@ -1017,98 +555,4 @@ object RunLogReusableFunctionCompiler {
         return "oob_cmd_${base}_$suffix"
     }
 
-    private fun asMap(value: Any?): Map<String, Any?> {
-        val decoded = decodeJsonIfNeeded(value)
-        if (decoded !is Map<*, *>) return emptyMap()
-        return decoded.entries.associate { (key, item) -> key.toString() to item }
-    }
-
-    private fun jsonSafeMap(value: Any?): Map<String, Any?> = asMap(jsonSafe(value))
-
-    private fun jsonSafe(value: Any?): Any? {
-        val decoded = decodeJsonIfNeeded(value)
-        return when (decoded) {
-            null -> null
-            is String, is Number, is Boolean -> decoded
-            is Map<*, *> -> decoded.entries.associate { (key, item) ->
-                key.toString() to jsonSafe(item)
-            }
-            is Iterable<*> -> decoded.map(::jsonSafe)
-            is Array<*> -> decoded.map(::jsonSafe)
-            else -> decoded.toString()
-        }
-    }
-
-    private fun decodeJsonIfNeeded(value: Any?): Any? {
-        if (value !is String) return value
-        val text = value.trim()
-        if (text.isEmpty()) return value
-        if (!text.startsWith("{") && !text.startsWith("[")) return value
-        return runCatching { gson.fromJson(text, Any::class.java) }.getOrElse { value }
-    }
-
-    private fun firstPresent(vararg values: Any?): Any? {
-        for (value in values) {
-            if (value == null) continue
-            if (value is String && value.trim().isEmpty()) continue
-            return value
-        }
-        return null
-    }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun nullableMap(vararg pairs: Pair<String, Any?>): Map<String, Any?> {
-        return linkedMapOf<String, Any?>().apply {
-            pairs.forEach { (key, value) ->
-                if (value != null) put(key, value)
-            }
-        }
-    }
-
-    private fun isEmptyJsonValue(value: Any?): Boolean {
-        return when (value) {
-            null -> true
-            is String -> value.trim().isEmpty()
-            is Map<*, *> -> value.isEmpty()
-            is Iterable<*> -> !value.iterator().hasNext()
-            else -> false
-        }
-    }
-
-    private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+""")
-    private const val TRANSIENT_BRIDGE_SAME_PAGE_SCORE = 0.92f
-    private const val TRANSIENT_BRIDGE_SOURCE_MAX_ELEMENTS = 8
-    private const val TRANSIENT_BRIDGE_SOURCE_MAX_TEXTS = 3
-    private const val TRANSIENT_BRIDGE_SOURCE_MAX_ACTIONABLES = 3
-    private const val TRANSIENT_BRIDGE_MIN_STRENGTH_GAIN = 8
-    private val GENERIC_TARGET_TOKENS = setOf(
-        "click",
-        "clicked",
-        "tap",
-        "tapped",
-        "press",
-        "button",
-        "tab",
-        "view",
-        "viewgroup",
-        "textview",
-        "imageview",
-        "imagebutton",
-        "layout",
-        "frame",
-        "item",
-        "row",
-        "list",
-        "menu",
-        "icon",
-        "the",
-        "and",
-    )
 }
