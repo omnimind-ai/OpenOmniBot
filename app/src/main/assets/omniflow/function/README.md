@@ -90,6 +90,13 @@ belong in UI documentation.
 - execute the primitive path with the same checker rules as normal replay
 - report path-level success, failure, and per-edge step results
 
+`OobFunctionEntryPackageGuard` owns pre-replay app restoration:
+
+- infer the Function entry package from explicit `open_app` steps or source context
+- skip restoration when replay already starts with `open_app`
+- launch the expected package when the foreground app drifted before replay
+- keep package recovery outside the main step loop
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -117,6 +124,7 @@ Agent/MCP tool surface
       -> OobFunctionRunPolicy        # guard and fallback handoff
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
+              -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
 
@@ -145,6 +153,7 @@ Keep these pieces separate:
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
+- `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
 - `OobOmniFlowToolkitService`: public tool facade and response shaping

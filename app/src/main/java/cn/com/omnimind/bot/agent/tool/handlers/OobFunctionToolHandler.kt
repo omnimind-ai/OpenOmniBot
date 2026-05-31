@@ -24,6 +24,7 @@ class OobFunctionToolHandler(
     private val context: android.content.Context,
     private val helper: SharedHelper,
     private val graphStepRunner: OobFunctionGraphStepRunner = OobFunctionGraphStepRunner(),
+    private val entryPackageGuard: OobFunctionEntryPackageGuard = OobFunctionEntryPackageGuard(),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -289,10 +290,7 @@ class OobFunctionToolHandler(
         var frontendFinished = false
         var frontendFinishMessage = helper.localized("任务已完成")
         try {
-        // Global package checker: if the foreground app doesn't match the Function's
-        // entry package, launch it before the step loop. Handles the case where the
-        // user navigated away, or the Function was compiled without an open_app step.
-        ensureEntryPackageForeground(steps)
+        entryPackageGuard.ensureForeground(steps)
 
         // Checker rules from the Function spec (metadata.checker_rules).
         // These are layered on top of the global built-in rules inside the executor.
@@ -1305,54 +1303,6 @@ class OobFunctionToolHandler(
             "resultPreviewJson" to resultPayload?.let { helper.encodeLocalizedPayload(it) }.orEmpty(),
             "rawResultJson" to result?.let { helper.encodeLocalizedPayload(it) }.orEmpty(),
         ).filterValues { it != null }
-    }
-
-    private suspend fun ensureEntryPackageForeground(steps: List<Map<String, Any?>>) {
-        val entryPackage = entryPackageForSteps(steps).takeIf { it.isNotBlank() } ?: return
-        val currentPackage = runCatching {
-            OmniflowActionRuntime.backend.currentPackageName()?.trim().orEmpty()
-        }.getOrDefault("")
-        if (currentPackage.isBlank() || currentPackage == entryPackage) return
-        // Skip if the first step is already an open_app — it will handle launch itself.
-        val firstAction = OmniflowStepExecutor.actionNameForStep(steps.first())
-        if (firstAction == "open_app") return
-        OmniLog.d(TAG, "global open_app: current=$currentPackage expected=$entryPackage")
-        val openAppStep = linkedMapOf<String, Any?>(
-            "id" to "global_open_app",
-            "title" to "open_app: $entryPackage",
-            "kind" to "omniflow_action",
-            "executor" to "omniflow",
-            "omniflow_action" to "open_app",
-            "local_action" to "open_app",
-            "model_free" to true,
-            "tool" to "open_app",
-            "callable_tool" to "open_app",
-            "args" to linkedMapOf("package_name" to entryPackage, "reset_task" to false),
-        )
-        runCatching { OmniflowStepExecutor.execute(openAppStep, "global_open_app", "open_app: $entryPackage") }
-            .onFailure { OmniLog.w(TAG, "global open_app failed for $entryPackage: ${it.message}") }
-    }
-
-    private fun entryPackageForSteps(steps: List<Map<String, Any?>>): String {
-        // Prefer an explicit open_app arg.
-        for (step in steps) {
-            if (OmniflowStepExecutor.actionNameForStep(step) == "open_app") {
-                val args = stringMap(step["args"])
-                val pkg = firstNonBlank(args["package_name"], args["packageName"])
-                if (pkg.isNotBlank()) return pkg
-            }
-        }
-        // Fall back to src_ctx package from the first step that has one.
-        for (step in steps) {
-            val srcCtx = stringMap(stringMap(step["source_context"])["src_ctx"])
-            val pkg = firstNonBlank(srcCtx["package_name"], srcCtx["packageName"])
-            if (pkg.isNotBlank() &&
-                !pkg.startsWith("cn.com.omnimind") &&
-                pkg != "android" &&
-                pkg != "com.android.systemui"
-            ) return pkg
-        }
-        return ""
     }
 
     private fun isOmniflowExecutionStep(step: Map<String, Any?>): Boolean {
