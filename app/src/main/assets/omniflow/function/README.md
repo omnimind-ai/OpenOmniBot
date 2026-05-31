@@ -50,15 +50,14 @@ belong in UI documentation.
 
 - orchestrate Function loading, update mode decisions, dry-run/save behavior,
   and returned tool payloads
-- apply target-repair, insert-step, and delete-step structural patches
 - delegate raw patch op and natural-language repair intent normalization to
   `OobFunctionUpdateIntentParser`
 - delegate metadata, step label, evidence, checker, parameter, agent reuse, and
   audit patches to `OobFunctionMetadataPatchApplier`
+- delegate target-repair, insert-step, delete-step, and execution step
+  reindexing to `OobFunctionStructuralPatchApplier`
 - delegate Function + RunLog evidence context and agent prompt packaging to
   `OobFunctionRunLogEvidencePackager`
-- delegate source XML target matching for repair patches to
-  `OobFunctionTargetSourceMatcher`
 
 `OobFunctionMetadataPatchApplier` owns non-structural `update_function` patches:
 
@@ -68,6 +67,19 @@ belong in UI documentation.
 - delegate checker rule and optional checker candidate normalization to
   `OobFunctionCheckerPatchService`
 - never insert/delete/reorder execution steps or retarget a recorded action
+
+`OobFunctionStructuralPatchApplier` owns structural `update_function` patches:
+
+- retarget an existing action when the agent says the Function clicked or used
+  the wrong target
+- insert and delete execution steps only when structural changes are explicitly
+  allowed
+- normalize inserted simple steps through `OobFunctionSpecBuilder`
+- reindex execution steps and recompute execution capability counts after
+  structural edits
+- delegate source XML target matching for repair patches to
+  `OobFunctionTargetSourceMatcher`
+- never persist metadata evidence or save Functions
 
 `OobFunctionRunLogEvidencePackager` owns update evidence packaging:
 
@@ -213,8 +225,10 @@ Agent/MCP tool surface
           -> OobFunctionUpdateIntentParser # patch/instruction -> update ops
           -> OobFunctionMetadataPatchApplier # metadata/evidence/audit patches
               -> OobFunctionCheckerPatchService # checker metadata normalization
+          -> OobFunctionStructuralPatchApplier # retarget/insert/delete steps
+              -> OobFunctionSpecBuilder # inserted step normalization
+              -> OobFunctionTargetSourceMatcher # source XML repair matching
           -> OobFunctionRunLogEvidencePackager # Function + RunLog agent context
-          -> OobFunctionTargetSourceMatcher # source XML repair matching
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
           -> OobUdegNodeStore        # page/node recall index
       -> OobFunctionRunPolicy        # guard and fallback handoff
@@ -249,12 +263,14 @@ Keep these pieces separate:
 
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
-- `OobFunctionUpdateService`: update_function orchestration and structural
-  target/step patching
+- `OobFunctionUpdateService`: update_function orchestration, permission gates,
+  dry-run/save behavior, and tool response shaping
 - `OobFunctionUpdateIntentParser`: raw patch op and instruction intent
   normalization
 - `OobFunctionMetadataPatchApplier`: non-structural metadata, evidence,
   checker, parameter, agent reuse, and audit patching
+- `OobFunctionStructuralPatchApplier`: target repair, insert/delete step
+  mutation, execution reindexing, and execution capability recomputation
 - `OobFunctionRunLogEvidencePackager`: Function + RunLog evidence context and
   agent prompt packaging
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata

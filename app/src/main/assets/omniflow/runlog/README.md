@@ -40,6 +40,7 @@ record. Do not read only the snapshot when correctness matters.
 - Function spec normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSpecBuilder.kt`
 - Function update/evidence service: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionUpdateService.kt`
 - Function metadata/evidence patch applier: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionMetadataPatchApplier.kt`
+- Function structural patch applier: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionStructuralPatchApplier.kt`
 - Function update intent parser: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionUpdateIntentParser.kt`
 - Function RunLog evidence packager: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunLogEvidencePackager.kt`
 - Function checker metadata normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionCheckerPatchService.kt`
