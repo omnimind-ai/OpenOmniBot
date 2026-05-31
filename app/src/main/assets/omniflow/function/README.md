@@ -147,6 +147,14 @@ belong in UI documentation.
   as conditional checker metadata instead of mandatory execution steps
 - deduplicate checker rules and `agent_reuse.checker_assets`
 
+`OobFunctionJson` owns mechanical update payload coercion:
+
+- normalize public tool payload maps/lists into stable Kotlin value shapes
+- build mutable JSON-compatible maps and lists for Function patch services
+- provide shared scalar coercion helpers used by `update_function` services
+- stay policy-free; Function behavior rules belong in the service using the
+  coerced values
+
 `OobFunctionTargetSourceMatcher` owns target repair source matching:
 
 - extract source XML from a step's recorded `source_context`
@@ -302,6 +310,7 @@ Agent/MCP tool surface
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
+          -> OobFunctionJson # shared value coercion for update services
           -> OobFunctionUpdateIntentParser # patch/instruction -> update ops
           -> OobFunctionMetadataPatchApplier # metadata/evidence/audit patches
               -> OobFunctionCheckerPatchService # checker metadata normalization
@@ -364,6 +373,8 @@ Keep these pieces separate:
   agent prompt packaging
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
+- `OobFunctionJson`: mechanical JSON/map/list/scalar coercion shared by
+  update_function services; do not hide policy or mutation behavior here
 - `OobFunctionTargetSourceMatcher`: source XML parsing and node scoring for
   target-repair patches
 - `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
@@ -428,6 +439,11 @@ When changing run-time safety or recovery behavior, update
 `OobFunctionRunPolicy` first and keep the public response contract stable at the
 tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 `OobOmniFlowToolkitService`.
+
+When changing `update_function` patch/evidence/checker code, use
+`OobFunctionJson` for mechanical payload coercion instead of adding another
+private `mapArg`/`firstNonBlank`/`mutableJsonMap` copy. Keep it limited to
+shape conversion; new rules should live in the owning update service.
 
 ## Verification
 

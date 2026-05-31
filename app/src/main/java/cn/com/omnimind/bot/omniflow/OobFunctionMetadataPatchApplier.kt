@@ -1,5 +1,13 @@
 package cn.com.omnimind.bot.omniflow
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.intArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonList
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonMap
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonValue
+
 /**
  * Applies non-structural metadata updates for update_function.
  *
@@ -276,60 +284,4 @@ class OobFunctionMetadataPatchApplier(
         "new" to new,
     ).filterValues { it != null }
 
-    private fun mutableJsonMap(value: Map<String, Any?>): LinkedHashMap<String, Any?> =
-        linkedMapOf<String, Any?>().apply {
-            value.forEach { (key, item) ->
-                put(key, mutableJsonValue(item))
-            }
-        }
-
-    private fun mutableJsonList(value: List<Any?>): MutableList<Any?> =
-        value.map { mutableJsonValue(it) }.toMutableList()
-
-    private fun mutableJsonValue(value: Any?): Any? =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), mutableJsonValue(item))
-                }
-            }
-            is List<*> -> value.map { mutableJsonValue(it) }.toMutableList()
-            is Array<*> -> value.map { mutableJsonValue(it) }.toMutableList()
-            else -> value
-        }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
-
-    private fun intArg(vararg values: Any?, defaultValue: Int): Int {
-        values.forEach { value ->
-            when (value) {
-                is Number -> return value.toInt()
-                is String -> value.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
-    }
 }

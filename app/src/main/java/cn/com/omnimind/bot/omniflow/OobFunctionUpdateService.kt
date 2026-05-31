@@ -2,6 +2,10 @@ package cn.com.omnimind.bot.omniflow
 
 import android.content.Context
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.boolArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonMap
 
 /**
  * Applies agent-provided updates to registered OOB Functions.
@@ -261,50 +265,5 @@ class OobFunctionUpdateService(
         "error_message" to message,
         "function_id" to functionId,
     )
-
-    private fun mutableJsonMap(value: Map<String, Any?>): LinkedHashMap<String, Any?> =
-        linkedMapOf<String, Any?>().apply {
-            value.forEach { (key, item) ->
-                put(key, mutableJsonValue(item))
-            }
-        }
-
-    private fun mutableJsonValue(value: Any?): Any? =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), mutableJsonValue(item))
-                }
-            }
-            is List<*> -> value.map { mutableJsonValue(it) }.toMutableList()
-            is Array<*> -> value.map { mutableJsonValue(it) }.toMutableList()
-            else -> value
-        }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-
-    private fun boolArg(value: Any?): Boolean =
-        when (value) {
-            is Boolean -> value
-            is String -> value.trim().equals("true", ignoreCase = true) || value.trim() == "1"
-            is Number -> value.toInt() != 0
-            else -> false
-        }
 
 }
