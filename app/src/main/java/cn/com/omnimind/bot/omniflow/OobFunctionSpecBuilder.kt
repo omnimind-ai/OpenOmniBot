@@ -1,5 +1,9 @@
 package cn.com.omnimind.bot.omniflow
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.boolArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
@@ -427,40 +431,5 @@ class OobFunctionSpecBuilder {
             value != null && value.toString().trim().isNotEmpty()
         }?.let { target[key] = it }
     }
-
-
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
-
-    private fun boolArg(value: Any?): Boolean =
-        when (value) {
-            is Boolean -> value
-            is String -> value.trim().equals("true", ignoreCase = true) || value.trim() == "1"
-            is Number -> value.toInt() != 0
-            else -> false
-        }
 
 }

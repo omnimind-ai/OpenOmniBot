@@ -147,11 +147,11 @@ belong in UI documentation.
   as conditional checker metadata instead of mandatory execution steps
 - deduplicate checker rules and `agent_reuse.checker_assets`
 
-`OobFunctionJson` owns mechanical update payload coercion:
+`OobFunctionJson` owns mechanical Function payload coercion:
 
 - normalize public tool payload maps/lists into stable Kotlin value shapes
-- build mutable JSON-compatible maps and lists for Function patch services
-- provide shared scalar coercion helpers used by `update_function` services
+- build mutable JSON-compatible maps and lists for Function patch/update services
+- provide shared scalar coercion helpers used by Function register/update code
 - stay policy-free; Function behavior rules belong in the service using the
   coerced values
 
@@ -309,8 +309,9 @@ Agent/MCP tool surface
   -> OobOmniFlowToolkitService
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
+          -> OobFunctionJson # shared value coercion for Function payloads
       -> OobFunctionUpdateService    # update_function evidence and patches
-          -> OobFunctionJson # shared value coercion for update services
+          -> OobFunctionJson # shared value coercion for Function payloads
           -> OobFunctionUpdateIntentParser # patch/instruction -> update ops
           -> OobFunctionMetadataPatchApplier # metadata/evidence/audit patches
               -> OobFunctionCheckerPatchService # checker metadata normalization
@@ -373,8 +374,8 @@ Keep these pieces separate:
   agent prompt packaging
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
-- `OobFunctionJson`: mechanical JSON/map/list/scalar coercion shared by
-  update_function services; do not hide policy or mutation behavior here
+- `OobFunctionJson`: mechanical JSON/map/list/scalar coercion shared by Function
+  register/update services; do not hide policy or mutation behavior here
 - `OobFunctionTargetSourceMatcher`: source XML parsing and node scoring for
   target-repair patches
 - `OobFunctionRecallService`: page/node recall, ranking, direct-hit policy, and
@@ -440,7 +441,7 @@ When changing run-time safety or recovery behavior, update
 tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 `OobOmniFlowToolkitService`.
 
-When changing `update_function` patch/evidence/checker code, use
+When changing Function register/update payload handling, use
 `OobFunctionJson` for mechanical payload coercion instead of adding another
 private `mapArg`/`firstNonBlank`/`mutableJsonMap` copy. Keep it limited to
 shape conversion; new rules should live in the owning update service.
