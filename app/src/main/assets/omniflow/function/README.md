@@ -51,6 +51,13 @@ belong in UI documentation.
 - keep optional checker candidates as metadata/checker rules instead of
   mandatory execution steps
 
+`OobFunctionRunPolicy` owns run-time policy:
+
+- guard Function steps before execution
+- classify block, confirmation, agent-needed, and allow decisions
+- build agent fallback context when deterministic replay fails
+- generate the resume instruction for `oob_function_run`
+
 `OobFunctionRunner` owns runtime execution startup:
 
 - load the Function spec from `OobFunctionRepository`
@@ -80,6 +87,7 @@ Agent/MCP tool surface
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
+      -> OobFunctionRunPolicy        # guard and fallback handoff
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -102,6 +110,7 @@ Keep these pieces separate:
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
 - `OobFunctionUpdateService`: RunLog evidence packaging and Function patching
+- `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
@@ -115,9 +124,13 @@ conversion, execution, or agent patching.
 
 `OobOmniFlowToolkitService` should stay a facade. New Function behavior should
 land in one of the owned services above before adding more private helper blocks
-to the toolkit. Keep `OobFunctionRunner` intentionally small: guard decisions,
-public response shaping, and run-stat recording remain in the toolkit unless
-they become reusable outside that facade.
+to the toolkit. Keep `OobFunctionRunner` intentionally small: it starts
+execution but does not own guard policy, fallback prompts, or patching.
+
+When changing run-time safety or recovery behavior, update
+`OobFunctionRunPolicy` first and keep the public response contract stable at the
+tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
+`OobOmniFlowToolkitService`.
 
 ## Verification
 
