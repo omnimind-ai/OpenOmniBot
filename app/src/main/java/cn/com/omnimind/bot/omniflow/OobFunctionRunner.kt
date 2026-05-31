@@ -90,10 +90,10 @@ class OobFunctionRunner(
         timing: FunctionExecutionTiming,
     ): Map<String, Any?> {
         val toolkitTiming = timing.finish()
-        val toolkitPhaseMs = mapArg(toolkitTiming["phase_ms"])
-        val existingTiming = mapArg(payload["timing"])
+        val toolkitPhaseMs = OobFunctionJson.mapArg(toolkitTiming["phase_ms"])
+        val existingTiming = OobFunctionJson.mapArg(payload["timing"])
         val runnerSource = existingTiming["source"]?.toString().orEmpty()
-        val runnerPhaseMs = mapArg(existingTiming["phase_ms"])
+        val runnerPhaseMs = OobFunctionJson.mapArg(existingTiming["phase_ms"])
         val runnerStartedAtMs = longArg(existingTiming["started_at_ms"])
         val runnerFinishedAtMs = longArg(existingTiming["finished_at_ms"])
         val runnerDurationMs = longArg(
@@ -199,21 +199,7 @@ class OobFunctionRunner(
     }
 
     private companion object {
-        fun mapArg(value: Any?): Map<String, Any?> {
-            @Suppress("UNCHECKED_CAST")
-            return (value as? Map<*, *>)?.entries
-                ?.associate { it.key.toString() to it.value }
-                ?: emptyMap()
-        }
-
-        fun longArg(vararg values: Any?): Long {
-            values.forEach { value ->
-                when (value) {
-                    is Number -> return value.toLong()
-                    is String -> value.trim().toLongOrNull()?.let { return it }
-                }
-            }
-            return 0L
-        }
+        fun longArg(vararg values: Any?): Long =
+            OobFunctionJson.longArg(*values, defaultValue = 0L)
     }
 }

@@ -129,14 +129,14 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   such as `OobOmniFlowToolkitService` and small payload helpers such as
   `OobFunctionCallTiming`, schema/parameterization helpers, explorer utilities,
   and cleanup services should call it instead of adding private
-  `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`boolArg` copies when behavior is
-  equivalent.
+  `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg` copies when
+  behavior is equivalent.
 - Keep generic Function payload coercion in `OobFunctionJson`. Function
   register/update/run/recall services, Function replay argument compatibility,
   and Function run-result timing payload merge should use it instead of adding
-  local `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`boolArg` copies. It is a
-  mechanical JSON/value helper only; action aliases and RunLog-card semantics
-  stay in `OobActionCodec` and `RunLogCardAccessors`.
+  local `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg` copies.
+  It is a mechanical JSON/value helper only; action aliases and RunLog-card
+  semantics stay in `OobActionCodec` and `RunLogCardAccessors`.
 - Do not force-merge helpers with intentionally different compatibility
   behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
   and `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key

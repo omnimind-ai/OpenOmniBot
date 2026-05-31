@@ -636,14 +636,7 @@ class OobOmniFlowToolkitService(
         riskLevel?.let { put("risk_level", it) }
     }
 
-    private fun longArg(vararg values: Any?, defaultValue: Long = 0L): Long {
-        values.forEach { value ->
-            when (value) {
-                is Number -> return value.toLong()
-                is String -> value.trim().toLongOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
-    }
+    private fun longArg(vararg values: Any?, defaultValue: Long = 0L): Long =
+        OobActionCodec.longArg(*values, defaultValue = defaultValue)
 
 }

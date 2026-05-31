@@ -446,19 +446,19 @@ tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 
 When changing Function register/update/run/recall payload handling, use
 `OobFunctionJson` for mechanical payload coercion instead of adding another
-private `mapArg`/`listArg`/`firstNonBlank`/`mutableJsonMap` copy. Runtime
-replay helpers may also use it for argument-shape compatibility, but execution
-policy must remain in the replay service that owns the decision. Keep it
-limited to shape conversion; new rules should live in the owning update
-service or replay component.
+private `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg`/
+`mutableJsonMap` copy. Runtime replay helpers may also use it for
+argument-shape compatibility, but execution policy must remain in the replay
+service that owns the decision. Keep it limited to shape conversion; new rules
+should live in the owning update service or replay component.
 
 ## Helper Maintenance Audit
 
 Use these owner rules when removing duplicated helper code:
 
 - Function payload shape helpers belong in `OobFunctionJson`. This includes
-  generic map/list/string/int/bool coercion used by register, update, recall,
-  run payloads, timing merge payloads, and Function replay argument
+  generic map/list/string/int/long/bool coercion used by register, update,
+  recall, run payloads, timing merge payloads, and Function replay argument
   compatibility. It must stay policy-free.
 - RunLog action/value helpers belong in `OobActionCodec`. This includes action
   aliases, low-level action argument extraction, and generic coercion used while
@@ -483,8 +483,9 @@ change:
 - `OobFunctionCheckerPatchService.boolArgOrDefault` encodes checker-patch
   default semantics; only merge it if `OobFunctionJson` grows an equivalent
   default-aware helper with the same behavior.
-- `OobUdegNodeStore` keeps some graph-export sanitization helpers local because
-  they sanitize stored graph values, not just coerce Function payloads.
+- `OobUdegNodeStore` keeps some graph timestamp and graph-export sanitization
+  helpers local because they normalize stored graph values, not just coerce
+  Function or RunLog payloads.
 - `OmniflowStepExecutor.firstNonBlank` and `OobPageVectorSet.firstNonBlank`
   are low-risk local helpers in runtime/vector internals; merge them only when
   touching the surrounding code for another reason.

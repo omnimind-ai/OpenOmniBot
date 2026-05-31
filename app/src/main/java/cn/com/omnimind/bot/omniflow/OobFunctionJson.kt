@@ -71,4 +71,14 @@ internal object OobFunctionJson {
         }
         return defaultValue
     }
+
+    fun longArg(vararg values: Any?, defaultValue: Long): Long {
+        values.forEach { value ->
+            when (value) {
+                is Number -> return value.toLong()
+                is String -> value.trim().toLongOrNull()?.let { return it }
+            }
+        }
+        return defaultValue
+    }
 }

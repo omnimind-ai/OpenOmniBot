@@ -926,15 +926,8 @@ class OobOmniFlowExplorer(
         private fun intArg(vararg values: Any?, defaultValue: Int): Int =
             OobActionCodec.intArg(*values, defaultValue = defaultValue)
 
-        private fun longArg(vararg values: Any?, defaultValue: Long): Long {
-            values.forEach { value ->
-                when (value) {
-                    is Number -> return value.toLong()
-                    is String -> value.trim().toLongOrNull()?.let { return it }
-                }
-            }
-            return defaultValue
-        }
+        private fun longArg(vararg values: Any?, defaultValue: Long): Long =
+            OobActionCodec.longArg(*values, defaultValue = defaultValue)
 
         private fun boolArg(value: Any?): Boolean = OobActionCodec.boolArg(value)
 
