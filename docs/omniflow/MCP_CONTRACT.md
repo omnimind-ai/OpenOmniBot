@@ -245,7 +245,10 @@ or deterministic replay timing rather than recall-first activation.
 `oob_function_guard_check` returns `allow`, `needs_agent`,
 `needs_confirmation`, or `block` before execution. `oob_function_run` runs a
 Function directly and returns `run_id`, `runner`, `timing`, and
-`step_results`.
+`step_results`. When local replay fails but agent recovery is possible, it also
+returns `fallback_context`; after the agent completes the failed step, call
+`oob_function_run` again with `resume_from_step`, `fallback_session_id`, and
+`fallback_attempt` from that context to continue the remaining steps.
 
 Example direct run result:
 
@@ -265,6 +268,10 @@ Example direct run result:
 `oob_run_log_list` and `oob_run_log_get` expose recent OOB RunLogs.
 `oob_run_log_convert` converts a successful RunLog into a reusable Function
 and can register it when requested.
+`update_function` is the evidence writeback path for an existing Function:
+calling it with `functionId` and `run_id` returns `analysis_context` plus an
+`agent_prompt`; calling it again with agent-authored `analysis` and an optional
+`patch` saves the evidence and any safe Function updates.
 
 ## External Agent Flow
 

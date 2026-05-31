@@ -65,6 +65,61 @@ For requests like "增强这个复用指令" or "应该点 A 而不是 B":
 4. If `requires_confirmation=true`, show the candidate steps and ask the user.
 5. Report exactly what was saved. Do not claim the Function executed.
 
+### Analyze RunLog Evidence For update_function
+
+Use this when a Function should learn from an existing RunLog, especially after
+`oob_function_run` failed or after a successful run shows a better path.
+
+1. Resolve the Function id and RunLog id. Prefer the `run_id` returned by
+   `oob_function_run`, `oob_run_log_list`, or `oob_run_log_get`.
+2. Call `update_function` with `functionId` and `run_id` only. This returns
+   `needs_agent_analysis=true`, `analysis_context`, and `agent_prompt`.
+3. Compare `analysis_context.function.steps` with `analysis_context.runlog.cards`.
+   Mark each useful action as one of:
+   `required_action`, `optional_checker`, `noise`, `duplicate`,
+   `failed_action`, or `success_evidence`.
+4. Identify the concrete success or failure reason. Use one of:
+   `wrong_target`, `target_missing`, `ad_interruption`, `repeated_input`,
+   `unstable_coordinate`, or `unknown`.
+5. Build an `analysis` object in this shape:
+
+```json
+{
+  "summary": "这次 RunLog 说明 Function 为什么成功/失败",
+  "step_findings": [
+    {
+      "function_step_index": 1,
+      "runlog_card_index": 3,
+      "label": "点击外卖入口",
+      "role": "required_action | optional_checker | noise | duplicate | failed_action | success_evidence",
+      "reason": "为什么这样判断"
+    }
+  ],
+  "failure_reason": {
+    "code": "wrong_target | target_missing | ad_interruption | repeated_input | unstable_coordinate | unknown",
+    "message": "具体原因"
+  },
+  "recommended_patch": {
+    "ops": []
+  }
+}
+```
+
+6. Call `update_function` again with `functionId`, `run_id`, `analysis`, and
+   the smallest safe `patch`. If no safe modification is clear, pass an empty
+   `recommended_patch.ops`; the evidence analysis is still useful metadata.
+
+Rules:
+
+- If unsure, do not change the main path.
+- Ads, skip buttons, close popups, and transient interruptions are
+  `optional_checker` evidence, not mandatory replay steps.
+- `wait`, pure perception wrappers, failed cards, and repeated input are noise
+  unless they explain a concrete failure.
+- Successful RunLogs may improve descriptions, step titles/summaries, selector
+  hints, and evidence metadata.
+- Failed RunLogs may change a step only when the evidence is explicit.
+
 ### Execute A Function
 
 For requests like "执行这个复用指令" or "用刚才的指令填写 Eve":
@@ -74,8 +129,14 @@ For requests like "执行这个复用指令" or "用刚才的指令填写 Eve":
 2. If runtime parameters are required, map them from the user request.
 3. Prefer calling the registered Function tool directly when it is exposed.
    Otherwise call `oob_function_run`.
-4. Report the tool result. If replay fails, return the real error; do not fall
-   back to VLM unless the user explicitly asks.
+4. If `oob_function_run` returns `fallback_context`, complete only the failed
+   step using the live phone state, then call `oob_function_run` again with the
+   provided `resume_from_step`, `fallback_session_id`, and `fallback_attempt`.
+   Do not restart from step 0 unless the Function was repaired or the user asks.
+5. If the same step repeatedly fails and `fallback_available=false`, stop the
+   loop and report the real blocker. If the Function definition is wrong, call
+   `update_function` before running it again.
+6. Report the tool result.
 
 ### Skill Boundary
 

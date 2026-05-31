@@ -251,6 +251,7 @@ object McpRoutes {
             "oob_function_list" -> omniflowToolkit.listFunctions(args)
             "oob_function_get" -> omniflowToolkit.getFunction(args)
             "oob_function_register" -> omniflowToolkit.registerFunction(args)
+            "update_function" -> omniflowToolkit.updateFunction(args)
             "oob_function_guard_check" -> omniflowToolkit.guardCheck(args)
             "oob_function_run" -> omniflowToolkit.runFunction(args)
             "oob_function_delete" -> omniflowToolkit.deleteFunction(args)

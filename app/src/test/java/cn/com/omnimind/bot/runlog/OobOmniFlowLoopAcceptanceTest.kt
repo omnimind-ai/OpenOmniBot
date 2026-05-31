@@ -148,6 +148,158 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `update function with runlog returns agent analysis context without saving`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "runlog_analysis_context_demo"
+            val runId = "runlog-analysis-context-run"
+            assertEquals(true, toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "打开外卖入口",
+                    "description" to "点击外卖入口",
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "click",
+                            "title" to "点击外卖",
+                            "target_description" to "外卖",
+                            "x" to 790,
+                            "y" to 140,
+                        ),
+                    ),
+                )
+            )["success"])
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "打开外卖入口",
+                source = "test",
+                toolName = "oob_function_run",
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = mapOf(
+                    "tool_name" to "click",
+                    "header" to mapOf("success" to false),
+                    "arguments" to mapOf("target_description" to "美食"),
+                    "result" to mapOf("success" to false, "error" to "target_not_found"),
+                )
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = false,
+                doneReason = "replay_failed",
+                errorMessage = "target_not_found",
+            )
+
+            val update = toolkit.updateFunction(mapOf("function_id" to functionId, "run_id" to runId))
+
+            assertEquals(true, update["success"])
+            assertEquals(true, update["needs_agent_analysis"])
+            assertEquals(false, update["changed"])
+            assertEquals(false, update["saved"])
+            assertTrue(update["agent_prompt"].toString().contains("Analyze this OOB Function"))
+            val contextPayload = update["analysis_context"] as Map<*, *>
+            assertEquals(functionId, contextPayload["function_id"])
+            assertEquals(runId, (contextPayload["runlog"] as Map<*, *>)["run_id"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `update function saves agent runlog analysis metadata and recommended patch`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "runlog_analysis_save_demo"
+            val runId = "runlog-analysis-save-run"
+            assertEquals(true, toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "打开外卖入口",
+                    "description" to "点击入口",
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "click",
+                            "title" to "点击入口",
+                            "target_description" to "外卖",
+                            "x" to 790,
+                            "y" to 140,
+                        ),
+                    ),
+                )
+            )["success"])
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "打开外卖入口",
+                source = "test",
+                toolName = "oob_function_run",
+            )
+            InternalRunLogStore.appendCard(
+                context = context,
+                runId = runId,
+                card = mapOf(
+                    "tool_name" to "click",
+                    "header" to mapOf("success" to true),
+                    "arguments" to mapOf("target_description" to "外卖"),
+                    "result" to mapOf("success" to true),
+                )
+            )
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "finished",
+            )
+            val analysis = mapOf(
+                "summary" to "成功 RunLog 证明外卖入口点击是必要动作。",
+                "step_findings" to listOf(
+                    mapOf(
+                        "function_step_index" to 0,
+                        "runlog_card_index" to 0,
+                        "label" to "点击外卖入口",
+                        "role" to "success_evidence",
+                        "reason" to "RunLog card 成功点击同一目标。",
+                    )
+                ),
+                "failure_reason" to mapOf("code" to "unknown", "message" to ""),
+                "recommended_patch" to mapOf(
+                    "description" to "点击外卖入口，成功 RunLog 已验证。",
+                    "ops" to emptyList<Map<String, Any?>>(),
+                ),
+            )
+
+            val update = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "run_id" to runId,
+                    "analysis" to analysis,
+                )
+            )
+
+            assertEquals(true, update["success"])
+            assertEquals(true, update["changed"])
+            assertEquals(true, update["saved"])
+            val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val function = stored["function"] as Map<*, *>
+            assertEquals("点击外卖入口，成功 RunLog 已验证。", function["description"])
+            val metadata = function["metadata"] as Map<*, *>
+            val evidence = metadata["oob_function_evidence"] as Map<*, *>
+            assertEquals(runId, evidence["latest_run_id"])
+            assertEquals(listOf(runId), evidence["source_run_ids"])
+            val latestAnalysis = evidence["latest_analysis"] as Map<*, *>
+            assertEquals("成功 RunLog 证明外卖入口点击是必要动作。", latestAnalysis["summary"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `update function materializes optional checker annotations as supported runtime rules`() = runBlocking {
         val context = TempFilesContext()
         try {
@@ -1186,6 +1338,106 @@ class OobOmniFlowLoopAcceptanceTest {
                 backend.launchedPackages
             )
             assertEquals("com.android.settings", backend.currentPackageName())
+        } finally {
+            backendHandle.close()
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `run function returns agent fallback context and resumes remaining steps`() = runBlocking {
+        val context = TempFilesContext()
+        val backend = RecordingOmniflowBackend(initialPackage = "com.example.food")
+        val backendHandle = OmniflowActionRuntime.useBackendForTesting(backend)
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "fallback_then_resume_remaining"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionSpec" to reusableFunctionSpec(
+                        functionId = functionId,
+                        name = "Agent fallback then local click",
+                        description = "第一步需要 agent 接管，之后恢复本地重放。",
+                        steps = listOf(
+                            mapOf(
+                                "id" to "tap_takeout_with_agent",
+                                "index" to 0,
+                                "title" to "点击外卖",
+                                "kind" to "agent_action",
+                                "executor" to "tool",
+                                "tool" to "tap",
+                                "callable_tool" to "tap",
+                                "model_free" to false,
+                                "scriptable" to false,
+                                "args" to mapOf("target_description" to "外卖"),
+                            ),
+                            mapOf(
+                                "id" to "confirm_after_agent",
+                                "index" to 1,
+                                "title" to "点击确认",
+                                "kind" to "omniflow_action",
+                                "executor" to "omniflow",
+                                "omniflow_action" to "click",
+                                "local_action" to "click",
+                                "tool" to "click",
+                                "callable_tool" to "click",
+                                "model_free" to true,
+                                "scriptable" to true,
+                                "args" to mapOf("x" to 120, "y" to 240),
+                            ),
+                        )
+                    )
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val firstRun = toolkit.runFunction(mapOf("function_id" to functionId))
+            assertEquals(false, firstRun["success"])
+            assertEquals(true, firstRun["needs_agent"])
+            assertEquals(true, firstRun["fallback_available"])
+            assertEquals(0, (firstRun["resume_from_step"] as Number).toInt())
+            assertEquals(1, (firstRun["fallback_attempt"] as Number).toInt())
+            assertNotNull(firstRun["fallback_session_id"])
+            val fallbackContext = firstRun["fallback_context"] as? Map<*, *>
+            assertEquals("oob.function_fallback_context.v1", fallbackContext?.get("schema_version"))
+            assertEquals(functionId, fallbackContext?.get("function_id"))
+            assertEquals(0, (fallbackContext?.get("resume_from_step") as Number).toInt())
+            val failedStep = fallbackContext["failed_step"] as? Map<*, *>
+            assertEquals("tap_takeout_with_agent", failedStep?.get("step_id"))
+            val returnInstruction = fallbackContext["return_instruction"] as? Map<*, *>
+            assertEquals("oob_function_run", returnInstruction?.get("tool"))
+            val returnArgs = returnInstruction?.get("args") as? Map<*, *>
+            assertEquals(0, (returnArgs?.get("resume_from_step") as Number).toInt())
+
+            val secondRun = toolkit.runFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "resume_from_step" to 1,
+                    "fallback_session_id" to firstRun["fallback_session_id"],
+                    "fallback_attempt" to firstRun["fallback_attempt"],
+                )
+            )
+            assertEquals(true, secondRun["success"])
+            assertEquals(false, secondRun.containsKey("fallback_context"))
+            assertEquals(1, (secondRun["actions_executed"] as Number).toInt())
+            assertEquals(listOf(120f to 240f), backend.clicks)
+            val secondResults = secondRun["step_results"] as? List<*>
+            val resumedStep = secondResults?.single() as? Map<*, *>
+            assertEquals(1, (resumedStep?.get("index") as Number).toInt())
+            assertEquals("click", resumedStep?.get("tool"))
+
+            val exhaustedRun = toolkit.runFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "fallback_session_id" to firstRun["fallback_session_id"],
+                    "fallback_attempt" to 2,
+                )
+            )
+            assertEquals(false, exhaustedRun["success"])
+            assertEquals(false, exhaustedRun["fallback_available"])
+            assertEquals("repeated_failure_same_step", exhaustedRun["fallback_unavailable_reason"])
+            val exhaustedContext = exhaustedRun["fallback_context"] as? Map<*, *>
+            assertEquals(3, (exhaustedContext?.get("fallback_attempt") as Number).toInt())
         } finally {
             backendHandle.close()
             context.root.deleteRecursively()

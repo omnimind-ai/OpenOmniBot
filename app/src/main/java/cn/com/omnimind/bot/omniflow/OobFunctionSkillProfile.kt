@@ -201,12 +201,20 @@ object OobFunctionSkillProfile {
             put("name", "update_function")
             put("displayName", "更新复用指令")
             put("toolType", "workbench")
-            put("description", "根据结构化 patch 或用户纠错指令更新一个已保存的 OOB Function。不会执行手机操作。")
+            put("description", "根据结构化 patch、用户纠错指令或 RunLog 证据分析更新一个已保存的 OOB Function。传 run_id 且不传 analysis/patch 时只返回 agent 分析上下文；不会执行手机操作。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("functionId") { put("type", "string") }
                     putJsonObject("function_id") { put("type", "string") }
+                    putJsonObject("run_id") {
+                        put("type", "string")
+                        put("description", "Optional local RunLog id. With no analysis/patch, update_function returns analysis_context and agent_prompt for evidence analysis.")
+                    }
+                    putJsonObject("runId") {
+                        put("type", "string")
+                        put("description", "Camel-case alias for run_id.")
+                    }
                     putJsonObject("instruction") { put("type", "string") }
                     putJsonObject("mode") {
                         put("type", "string")
@@ -219,6 +227,10 @@ object OobFunctionSkillProfile {
                     putJsonObject("dryRun") { put("type", "boolean") }
                     putJsonObject("allowExecutionChange") { put("type", "boolean") }
                     putJsonObject("allowStructuralChange") { put("type", "boolean") }
+                    putJsonObject("analysis") {
+                        put("type", "object")
+                        put("description", "Agent-authored RunLog evidence analysis. Saved into Function metadata and may include recommended_patch.")
+                    }
                     putJsonObject("patch") { put("type", "object") }
                 }
             }
@@ -231,13 +243,37 @@ object OobFunctionSkillProfile {
             put("name", "oob_function_run")
             put("displayName", "执行复用指令")
             put("toolType", "workbench")
-            put("description", "显式执行一个用户或 agent 已选择的 OOB 复用指令。")
+            put("description", "显式执行一个用户或 agent 已选择的 OOB 复用指令；失败时返回 fallback_context，agent 可接管失败步骤后用 resume_from_step 回来继续。")
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("functionId") { put("type", "string") }
                     putJsonObject("function_id") { put("type", "string") }
                     putJsonObject("arguments") { put("type", "object") }
+                    putJsonObject("resume_from_step") {
+                        put("type", "integer")
+                        put("description", "0-based step index. Omit or set 0 for a fresh run; set to the failed/next step when resuming after agent fallback.")
+                    }
+                    putJsonObject("resumeFromStep") {
+                        put("type", "integer")
+                        put("description", "Camel-case alias for resume_from_step.")
+                    }
+                    putJsonObject("fallback_session_id") {
+                        put("type", "string")
+                        put("description", "Optional id returned by fallback_context to link replay -> agent fallback -> replay resume.")
+                    }
+                    putJsonObject("fallbackSessionId") {
+                        put("type", "string")
+                        put("description", "Camel-case alias for fallback_session_id.")
+                    }
+                    putJsonObject("fallback_attempt") {
+                        put("type", "integer")
+                        put("description", "Optional retry counter returned by fallback_context; used to avoid infinite fallback loops.")
+                    }
+                    putJsonObject("fallbackAttempt") {
+                        put("type", "integer")
+                        put("description", "Camel-case alias for fallback_attempt.")
+                    }
                     putJsonObject("dryRun") { put("type", "boolean") }
                     putJsonObject("continueWithAgent") { put("type", "boolean") }
                     putJsonObject("executionMode") { put("type", "string") }

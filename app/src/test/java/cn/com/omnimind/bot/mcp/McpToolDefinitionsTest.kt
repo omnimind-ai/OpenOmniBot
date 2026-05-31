@@ -21,6 +21,7 @@ class McpToolDefinitionsTest {
         assertTrue(names.contains("oob_function_list"))
         assertTrue(names.contains("oob_function_get"))
         assertTrue(names.contains("oob_function_register"))
+        assertTrue(names.contains("update_function"))
         assertTrue(names.contains("oob_function_guard_check"))
         assertTrue(names.contains("oob_function_run"))
         assertTrue(names.contains("oob_function_delete"))
@@ -64,6 +65,42 @@ class McpToolDefinitionsTest {
         assertTrue(properties.containsKey("allow_risky_actions"))
         assertTrue(properties.containsKey("replay"))
         assertTrue(properties.containsKey("reset_before_replay"))
+    }
+
+    @Test
+    fun oobFunctionRunToolExposesResumeControls() {
+        val tool = McpToolDefinitions.fixedTools.single {
+            it["name"] == "oob_function_run"
+        }
+        val schema = tool["inputSchema"] as Map<*, *>
+        val properties = schema["properties"] as Map<*, *>
+        val description = tool["description"]?.toString().orEmpty()
+
+        assertTrue(description.contains("fallback_context"))
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("function_id"))
+        assertTrue(properties.containsKey("resume_from_step"))
+        assertTrue(properties.containsKey("fallback_session_id"))
+        assertTrue(properties.containsKey("fallback_attempt"))
+    }
+
+    @Test
+    fun updateFunctionToolExposesRunLogAnalysisInputs() {
+        val tool = McpToolDefinitions.fixedTools.single {
+            it["name"] == "update_function"
+        }
+        val schema = tool["inputSchema"] as Map<*, *>
+        val properties = schema["properties"] as Map<*, *>
+        val description = tool["description"]?.toString().orEmpty()
+
+        assertTrue(description.contains("run_id"))
+        assertTrue(description.contains("analysis_context"))
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("function_id"))
+        assertTrue(properties.containsKey("run_id"))
+        assertTrue(properties.containsKey("runId"))
+        assertTrue(properties.containsKey("analysis"))
+        assertTrue(properties.containsKey("patch"))
     }
 
     @Test

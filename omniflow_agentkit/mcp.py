@@ -199,18 +199,25 @@ class OmniFlowMcpClient:
         continue_with_agent: bool = False,
         execution_mode: str = "foreground",
         confirmed: bool = False,
+        resume_from_step: int | None = None,
+        fallback_session_id: str | None = None,
+        fallback_attempt: int | None = None,
     ) -> dict[str, Any]:
-        return self.call_tool(
-            "oob_function_run",
-            {
-                "functionId": function_id,
-                "arguments": arguments or {},
-                "dryRun": dry_run,
-                "continueWithAgent": continue_with_agent,
-                "executionMode": execution_mode,
-                "confirmed": confirmed,
-            },
-        )
+        payload: dict[str, Any] = {
+            "functionId": function_id,
+            "arguments": arguments or {},
+            "dryRun": dry_run,
+            "continueWithAgent": continue_with_agent,
+            "executionMode": execution_mode,
+            "confirmed": confirmed,
+        }
+        if resume_from_step is not None:
+            payload["resume_from_step"] = resume_from_step
+        if fallback_session_id:
+            payload["fallback_session_id"] = fallback_session_id
+        if fallback_attempt is not None:
+            payload["fallback_attempt"] = fallback_attempt
+        return self.call_tool("oob_function_run", payload)
 
     def list_run_logs(self, limit: int = 50) -> dict[str, Any]:
         return self.call_tool("oob_run_log_list", {"limit": limit})

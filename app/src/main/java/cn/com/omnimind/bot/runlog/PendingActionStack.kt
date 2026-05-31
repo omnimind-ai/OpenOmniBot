@@ -58,13 +58,15 @@ class PendingActionStack private constructor(
             steps: List<Map<String, Any?>>,
             functionSpec: Map<String, Any?>,
             originalSpec: Map<String, Any?> = emptyMap(),
+            startIndex: Int = 0,
         ): PendingActionStack {
             val frames = steps.mapIndexed { index, step ->
+                val originalIndex = startIndex + index
                 val actionName = OobActionCodec.actionNameForStep(step)
                 val role = OobStepRoleClassifier.classify(
                     functionSpec = functionSpec,
                     step = step,
-                    stepIndex = index,
+                    stepIndex = originalIndex,
                     originalSpec = originalSpec,
                 )
                 val sourceContext = OobActionCodec.sourceContextForStep(step)
@@ -75,10 +77,10 @@ class PendingActionStack private constructor(
                     OobPageVectorSet.encode(xml = it, packageName = srcPackage)
                 }
                 ActionFrame(
-                    originalIndex = index,
+                    originalIndex = originalIndex,
                     step = step,
                     stepId = OobActionCodec.firstNonBlank(step["id"], step["step_id"], step["stepId"])
-                        .ifBlank { "step_${index + 1}" },
+                        .ifBlank { "step_${originalIndex + 1}" },
                     tool = actionName,
                     sourceContext = sourceContext,
                     sourcePageXml = srcXml,
@@ -92,8 +94,10 @@ class PendingActionStack private constructor(
             val hasExplicitKeyAction = frames.any { it.isKeyAction && it.explicitRole }
             return PendingActionStack(
                 frames = frames,
-                sourceAlignmentEnabled = hasExplicitKeyAction,
+                sourceAlignmentEnabled = ENABLE_SOURCE_ALIGNMENT && hasExplicitKeyAction,
             )
         }
+
+        private const val ENABLE_SOURCE_ALIGNMENT = false
     }
 }

@@ -408,8 +408,7 @@ BEHAVIOR:
             "type" to "object",
             "properties" to mapOf(
                 "functionId" to mapOf("type" to "string", "description" to "Function id to read.")
-            ),
-            "required" to listOf("functionId")
+            )
         )
     )
 
@@ -436,6 +435,28 @@ BEHAVIOR:
         )
     )
 
+    val updateFunctionTool = mapOf(
+        "name" to "update_function",
+        "description" to "Update one saved OOB Function from a structured patch, user correction, or RunLog evidence. Passing run_id without analysis/patch returns analysis_context and agent_prompt; saving RunLog evidence uses analysis plus an optional patch.",
+        "inputSchema" to mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "functionId" to mapOf("type" to "string", "description" to "Function id to update."),
+                "function_id" to mapOf("type" to "string", "description" to "Snake-case alias for functionId."),
+                "run_id" to mapOf("type" to "string", "description" to "Optional local RunLog id used as evidence for agent analysis."),
+                "runId" to mapOf("type" to "string", "description" to "Camel-case alias for run_id."),
+                "instruction" to mapOf("type" to "string", "description" to "Optional user correction or enhancement instruction."),
+                "mode" to mapOf("type" to "string", "description" to "enhance, repair, or annotate."),
+                "analysis" to mapOf("type" to "object", "description" to "Agent-authored RunLog evidence analysis to persist in Function metadata."),
+                "patch" to mapOf("type" to "object", "description" to "Optional structured Function patch generated from the analysis."),
+                "dryRun" to mapOf("type" to "boolean", "description" to "Preview changes without saving."),
+                "allowExecutionChange" to mapOf("type" to "boolean", "description" to "Allow repair operations that alter executable step targets."),
+                "allowStructuralChange" to mapOf("type" to "boolean", "description" to "Allow insert/delete step operations.")
+            ),
+            "required" to listOf("functionId")
+        )
+    )
+
     val oobFunctionGuardCheckTool = mapOf(
         "name" to "oob_function_guard_check",
         "description" to "Run preflight guard checks for one OOB reusable Function before replay.",
@@ -451,12 +472,28 @@ BEHAVIOR:
 
     val oobFunctionRunTool = mapOf(
         "name" to "oob_function_run",
-        "description" to "Run one OOB reusable Function directly after guard preflight; returns runner and per-step timing.",
+        "description" to "Run one OOB reusable Function after guard preflight. On local replay failure, returns fallback_context so an agent can handle the failed step and call this tool again with resume_from_step.",
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
                 "functionId" to mapOf("type" to "string", "description" to "Function id to run."),
+                "function_id" to mapOf("type" to "string", "description" to "Snake-case alias for functionId."),
                 "arguments" to mapOf("type" to "object", "description" to "Materialization arguments for the Function."),
+                "resume_from_step" to mapOf(
+                    "type" to "integer",
+                    "description" to "0-based step index to start from. Omit or set 0 for first run; set after agent fallback to resume remaining steps."
+                ),
+                "resumeFromStep" to mapOf("type" to "integer", "description" to "Camel-case alias for resume_from_step."),
+                "fallback_session_id" to mapOf(
+                    "type" to "string",
+                    "description" to "Optional id returned in fallback_context to link the replay/fallback/resume loop."
+                ),
+                "fallbackSessionId" to mapOf("type" to "string", "description" to "Camel-case alias for fallback_session_id."),
+                "fallback_attempt" to mapOf(
+                    "type" to "integer",
+                    "description" to "Optional attempt counter returned in fallback_context; prevents infinite fallback loops."
+                ),
+                "fallbackAttempt" to mapOf("type" to "integer", "description" to "Camel-case alias for fallback_attempt."),
                 "dryRun" to mapOf("type" to "boolean", "description" to "Only return guard decision without executing."),
                 "continueWithAgent" to mapOf("type" to "boolean", "description" to "Compatibility flag ignored by fixed replay; start VLM explicitly if continuation is needed."),
                 "executionMode" to mapOf("type" to "string", "description" to "foreground or background. Default: foreground."),
@@ -604,6 +641,7 @@ This is the MCP control entry for Project creation. It writes the normal Workben
             oobFunctionListTool,
             oobFunctionGetTool,
             oobFunctionRegisterTool,
+            updateFunctionTool,
             oobFunctionGuardCheckTool,
             oobFunctionRunTool,
             oobFunctionDeleteTool,

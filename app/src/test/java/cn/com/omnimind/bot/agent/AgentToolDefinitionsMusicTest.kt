@@ -148,6 +148,27 @@ class AgentToolDefinitionsMusicTest {
     }
 
     @Test
+    fun `update function exposes runlog analysis inputs`() {
+        val updateTool = OobFunctionSkillProfile.staticToolDefinitions(PromptLocale.ZH_CN)
+            .first { definition ->
+                ((definition["function"] as? JsonObject)
+                    ?.get("name")
+                    ?.jsonPrimitive
+                    ?.contentOrNull) == "update_function"
+            }
+        val function = updateTool["function"] as JsonObject
+        val parameters = function["parameters"] as JsonObject
+        val properties = parameters["properties"] as JsonObject
+
+        assertTrue(properties.containsKey("functionId"))
+        assertTrue(properties.containsKey("function_id"))
+        assertTrue(properties.containsKey("run_id"))
+        assertTrue(properties.containsKey("runId"))
+        assertTrue(properties.containsKey("analysis"))
+        assertTrue(properties.containsKey("patch"))
+    }
+
+    @Test
     fun `oob function run requires function id not run id`() {
         val runTool = OobFunctionSkillProfile.staticToolDefinitions(PromptLocale.ZH_CN)
             .first { definition ->
@@ -164,6 +185,9 @@ class AgentToolDefinitionsMusicTest {
 
         assertTrue(properties.containsKey("functionId"))
         assertTrue(properties.containsKey("function_id"))
+        assertTrue(properties.containsKey("resume_from_step"))
+        assertTrue(properties.containsKey("fallback_session_id"))
+        assertTrue(properties.containsKey("fallback_attempt"))
         assertFalse(properties.containsKey("run_id"))
         assertTrue(required.contains("functionId"))
         assertFalse(required.contains("run_id"))

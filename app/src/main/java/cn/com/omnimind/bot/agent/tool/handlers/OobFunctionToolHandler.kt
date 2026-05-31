@@ -207,6 +207,9 @@ class OobFunctionToolHandler(
         allowAgentFallback: Boolean = false,
         allowToolDelegationWithoutRouter: Boolean = false,
         callStack: List<String> = emptyList(),
+        resumeFromStep: Int = 0,
+        fallbackSessionId: String = "",
+        fallbackAttempt: Int = 0,
     ): Map<String, Any?> {
         val runStartedAtMs = System.currentTimeMillis()
         val timing = FunctionRunnerTiming(runStartedAtMs)
@@ -239,11 +242,18 @@ class OobFunctionToolHandler(
             callStack
         }
         val steps = timing.measure("materialized_steps_ms") { materializedSteps(materializedSpec) }
+        val normalizedResumeFromStep = resumeFromStep.coerceIn(0, steps.size)
+        val activeSteps = if (normalizedResumeFromStep > 0) {
+            steps.drop(normalizedResumeFromStep)
+        } else {
+            steps
+        }
         val pendingActionStack = timing.measure("pending_action_stack_build_ms") {
             PendingActionStack.fromSteps(
-                steps = steps,
+                steps = activeSteps,
                 functionSpec = materializedSpec,
                 originalSpec = spec,
+                startIndex = normalizedResumeFromStep,
             )
         }
         val preflightFailure = timing.measure("accessibility_preflight_ms") {
@@ -252,7 +262,7 @@ class OobFunctionToolHandler(
                 spec = spec,
                 auditRunId = auditRunId,
                 startedAtMs = runStartedAtMs,
-                steps = steps,
+                steps = activeSteps,
             )
         }
         preflightFailure?.let {
@@ -543,7 +553,9 @@ class OobFunctionToolHandler(
 
         val resultBuildStartedAt = System.nanoTime()
         val successCount = stepResults.count { it["success"] != false }
-        val allSuccess = stepResults.size == steps.size && stepResults.none { it["success"] == false }
+        val allSuccess = stepResults.size == activeSteps.size && stepResults.none { it["success"] == false }
+        val failedStepIndex = stepResults.firstOrNull { it["success"] == false }
+            ?.get("index")
         val description = spec["description"]?.toString().orEmpty()
         val resultPayload = linkedMapOf<String, Any?>(
             "success" to allSuccess,
@@ -560,11 +572,17 @@ class OobFunctionToolHandler(
             },
             "replay_mode" to if (RunLogReplayPolicy.fixedReplayOnly) "fixed_replay" else "omniflow_loop",
             "step_count" to steps.size,
+            "active_step_count" to activeSteps.size,
             "success_step_count" to successCount,
+            "completed_step_count" to (normalizedResumeFromStep + successCount).coerceAtMost(steps.size),
+            "resume_from_step" to normalizedResumeFromStep,
+            "fallback_session_id" to fallbackSessionId.takeIf { it.isNotBlank() },
+            "fallback_attempt" to fallbackAttempt.takeIf { it > 0 },
             "model_used" to false,
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
             "fallback_available" to (allowAgentFallback && modelRequired),
+            "failed_step_index" to failedStepIndex,
             "pending_action_stack" to linkedMapOf(
                 "source_alignment_enabled" to pendingActionStack.sourceAlignmentEnabled,
                 "skipped_by_source_alignment_count" to skippedBySourceAlignmentCount,

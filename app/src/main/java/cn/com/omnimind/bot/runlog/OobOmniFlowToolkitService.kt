@@ -526,7 +526,25 @@ class OobOmniFlowToolkitService(
 
     fun updateFunction(args: Map<String, Any?>?): Map<String, Any?> {
         val request = args ?: emptyMap()
-        val functionId = firstNonBlank(request["functionId"], request["function_id"])
+        val runId = firstNonBlank(request["runId"], request["run_id"])
+        val runLogTimeline = if (runId.isNotEmpty()) {
+            val timeline = InternalRunLogStore.timelinePayload(context, runId)
+            if (timeline["success"] != true) {
+                return errorPayload(
+                    code = "RUN_LOG_NOT_FOUND",
+                    message = "RunLog not found: $runId"
+                )
+            }
+            timeline
+        } else {
+            emptyMap()
+        }
+        val functionId = firstNonBlank(
+            request["functionId"],
+            request["function_id"],
+            runLogTimeline["registered_function_id"],
+            mapArg(runLogTimeline["registered_function_spec"])["function_id"],
+        )
         if (functionId.isEmpty()) {
             return errorPayload(
                 code = "FUNCTION_ID_EMPTY",
@@ -549,10 +567,38 @@ class OobOmniFlowToolkitService(
             request["user_instruction"],
             request["userInstruction"],
         )
+        val analysis = mapArg(request["analysis"])
+            .ifEmpty { mapArg(request["evidence_analysis"]) }
+            .ifEmpty { mapArg(request["evidenceAnalysis"]) }
         val patch = mapArg(request["patch"])
             .ifEmpty { mapArg(request["functionPatch"]) }
             .ifEmpty { mapArg(request["function_patch"]) }
             .ifEmpty { mapArg(request["updates"]) }
+            .ifEmpty { mapArg(analysis["recommended_patch"]) }
+            .ifEmpty { mapArg(analysis["recommendedPatch"]) }
+        if (runId.isNotEmpty() && analysis.isEmpty() && patch.isEmpty()) {
+            val analysisContext = buildRunLogAnalysisContext(
+                functionId = functionId,
+                functionSpec = original,
+                runLogTimeline = runLogTimeline,
+                instruction = instruction,
+            )
+            return linkedMapOf<String, Any?>(
+                "success" to true,
+                "function_id" to functionId,
+                "run_id" to runId,
+                "mode" to requestedMode,
+                "changed" to false,
+                "saved" to false,
+                "dry_run" to dryRun,
+                "requires_confirmation" to false,
+                "needs_agent_analysis" to true,
+                "analysis_context" to analysisContext,
+                "agent_prompt" to buildRunLogAnalysisAgentPrompt(analysisContext),
+                "message" to "已读取 Function 和 RunLog，等待 agent 分析后再保存。",
+                "source" to "oob_native_omniflow_toolkit"
+            )
+        }
         val updated = mutableJsonMap(original)
         val changes = mutableListOf<Map<String, Any?>>()
         val explicitOps = patchOperations(patch)
@@ -573,6 +619,13 @@ class OobOmniFlowToolkitService(
 
         if (patch.isNotEmpty()) {
             applyFunctionMetadataPatch(updated, patch, changes)
+        }
+        if (analysis.isNotEmpty()) {
+            changes += applyRunLogEvidenceAnalysis(
+                spec = updated,
+                runId = runId,
+                analysis = analysis,
+            )
         }
 
         val allCandidates = mutableListOf<Map<String, Any?>>()
@@ -697,6 +750,117 @@ class OobOmniFlowToolkitService(
                 save["error_message"]?.toString() ?: "Function 更新保存失败。"
             },
             "source" to "oob_native_omniflow_toolkit"
+        )
+    }
+
+    private fun buildRunLogAnalysisContext(
+        functionId: String,
+        functionSpec: Map<String, Any?>,
+        runLogTimeline: Map<String, Any?>,
+        instruction: String,
+    ): Map<String, Any?> {
+        val execution = mapArg(functionSpec["execution"])
+        return linkedMapOf(
+            "schema_version" to "oob.function_runlog_analysis_context.v1",
+            "function_id" to functionId,
+            "user_instruction" to instruction.takeIf { it.isNotBlank() },
+            "function" to linkedMapOf(
+                "function_id" to firstNonBlank(functionSpec["function_id"], functionId),
+                "name" to firstNonBlank(functionSpec["name"]),
+                "description" to firstNonBlank(functionSpec["description"]),
+                "parameters" to listArg(functionSpec["parameters"]),
+                "steps" to listArg(execution["steps"]),
+                "metadata" to mapArg(functionSpec["metadata"]),
+            ),
+            "runlog" to linkedMapOf(
+                "run_id" to firstNonBlank(runLogTimeline["run_id"]),
+                "goal" to firstNonBlank(runLogTimeline["goal"]),
+                "run_success" to (runLogTimeline["run_success"] == true),
+                "run_status" to firstNonBlank(runLogTimeline["run_status"]),
+                "done_reason" to firstNonBlank(runLogTimeline["done_reason"]),
+                "error_message" to firstNonBlank(runLogTimeline["error_message"]),
+                "step_count" to runLogTimeline["step_count"],
+                "duration_ms" to runLogTimeline["duration_ms"],
+                "diagnostics" to mapArg(runLogTimeline["diagnostics"]).takeIf { it.isNotEmpty() },
+                "cards" to listArg(runLogTimeline["cards"]),
+            ).filterValues { it != null },
+        ).filterValues { it != null }
+    }
+
+    private fun buildRunLogAnalysisAgentPrompt(context: Map<String, Any?>): String {
+        val functionId = firstNonBlank(context["function_id"])
+        val runLog = mapArg(context["runlog"])
+        val runId = firstNonBlank(runLog["run_id"])
+        return """
+            Analyze this OOB Function with the provided RunLog evidence, then call update_function again with analysis and the smallest safe patch.
+
+            Required workflow:
+            1. Compare function.steps with runlog.cards.
+            2. Mark every useful action as required_action, optional_checker, noise, duplicate, failed_action, or success_evidence.
+            3. Identify why the RunLog succeeded or failed.
+            4. Produce a structured analysis object in this exact shape:
+            {
+              "summary": "这次 RunLog 说明 Function 为什么成功/失败",
+              "step_findings": [
+                {
+                  "function_step_index": 1,
+                  "runlog_card_index": 3,
+                  "label": "点击外卖入口",
+                  "role": "required_action | optional_checker | noise | duplicate | failed_action | success_evidence",
+                  "reason": "为什么这样判断"
+                }
+              ],
+              "failure_reason": {
+                "code": "wrong_target | target_missing | ad_interruption | repeated_input | unstable_coordinate | unknown",
+                "message": "具体原因"
+              },
+              "recommended_patch": {
+                "ops": []
+              }
+            }
+            5. Call update_function with functionId="$functionId", run_id="$runId", analysis=<that object>, and patch=<recommended_patch> only when the evidence is clear.
+
+            Constraints:
+            - If unsure, do not change the main path; return a suggested patch or an empty recommended_patch.ops.
+            - Ads, skip buttons, close popups, and other transient interruptions are optional_checker evidence, not mandatory steps.
+            - wait, pure perception wrappers, failed cards, and repeated input are noise unless they explain a concrete failure.
+            - Successful RunLogs may improve description, step title/summary, selector hints, and evidence metadata.
+            - Failed RunLogs may only change a step when there is clear evidence.
+        """.trimIndent()
+    }
+
+    private fun applyRunLogEvidenceAnalysis(
+        spec: MutableMap<String, Any?>,
+        runId: String,
+        analysis: Map<String, Any?>,
+    ): List<Map<String, Any?>> {
+        val metadata = mutableJsonMap(mapArg(spec["metadata"]))
+        val existingEvidence = mutableJsonMap(mapArg(metadata["oob_function_evidence"]))
+        val sourceRunIds = listArg(existingEvidence["source_run_ids"])
+            .mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .toMutableList()
+        if (runId.isNotBlank() && sourceRunIds.none { it == runId }) {
+            sourceRunIds += runId
+        }
+        val evidence = linkedMapOf<String, Any?>().apply {
+            putAll(existingEvidence)
+            put("schema_version", "oob.function_evidence.v1")
+            put("source", "update_function.runlog_analysis")
+            put("latest_run_id", runId.takeIf { it.isNotBlank() })
+            put("source_run_ids", sourceRunIds)
+            put("latest_analysis", mutableJsonValue(analysis))
+            put("updated_at_ms", System.currentTimeMillis())
+        }.filterValues { it != null }
+        if (existingEvidence == evidence) return emptyList()
+        metadata["oob_function_evidence"] = evidence
+        spec["metadata"] = metadata
+        return listOf(
+            changeMap(
+                part = "metadata",
+                field = "oob_function_evidence",
+                old = existingEvidence.takeIf { it.isNotEmpty() },
+                new = evidence,
+            )
         )
     }
 
@@ -2476,6 +2640,20 @@ class OobOmniFlowToolkitService(
         val arguments = mapArg(request["arguments"])
         val dryRun = boolArg(request["dryRun"]) || boolArg(request["dry_run"])
         val confirmed = boolArg(request["confirmed"]) || boolArg(request["userConfirmed"])
+        val resumeFromStep = intArg(
+            request["resume_from_step"],
+            request["resumeFromStep"],
+            defaultValue = 0
+        ).coerceAtLeast(0)
+        val fallbackSessionId = firstNonBlank(
+            request["fallback_session_id"],
+            request["fallbackSessionId"]
+        )
+        val fallbackAttempt = intArg(
+            request["fallback_attempt"],
+            request["fallbackAttempt"],
+            defaultValue = 0
+        ).coerceAtLeast(0)
         val executionMode = firstNonBlank(request["executionMode"], request["execution_mode"])
             .ifBlank { "foreground" }
 
@@ -2515,10 +2693,22 @@ class OobOmniFlowToolkitService(
             executeFunction(
                 functionId = functionId,
                 arguments = arguments,
-                allowAgentFallback = false
+                allowAgentFallback = true,
+                resumeFromStep = resumeFromStep,
+                fallbackSessionId = fallbackSessionId,
+                fallbackAttempt = fallbackAttempt
             )
         }
         runPayload = attachFunctionCallTiming(runPayload, callTiming)
+        val fallbackMetadata = buildRunFunctionFallbackMetadata(
+            functionId = functionId,
+            arguments = arguments,
+            runPayload = runPayload,
+            guard = guard,
+            requestedResumeFromStep = resumeFromStep,
+            fallbackSessionId = fallbackSessionId,
+            fallbackAttempt = fallbackAttempt,
+        )
         OobReusableFunctionStore.recordRun(
             context = context,
             functionId = functionId,
@@ -2560,7 +2750,14 @@ class OobOmniFlowToolkitService(
             "duration_ms" to durationMs,
             "runner_duration_ms" to durationMs,
             "timing" to timing,
-            "needs_agent" to (runPayload["model_required"] == true),
+            "needs_agent" to (runPayload["model_required"] == true || fallbackMetadata.isNotEmpty()),
+            "fallback_available" to fallbackMetadata["fallback_available"],
+            "fallback_session_id" to fallbackMetadata["fallback_session_id"],
+            "resume_from_step" to fallbackMetadata["resume_from_step"],
+            "fallback_attempt" to fallbackMetadata["fallback_attempt"],
+            "fallback_unavailable_reason" to fallbackMetadata["fallback_unavailable_reason"],
+            "fallback_context" to fallbackMetadata["fallback_context"],
+            "agent_prompt" to fallbackMetadata["agent_prompt"],
             "needs_confirmation" to false,
             "error_message" to runPayload["error_message"],
             "guard" to guard,
@@ -2638,10 +2835,195 @@ class OobOmniFlowToolkitService(
         )
     }
 
+    private fun buildRunFunctionFallbackMetadata(
+        functionId: String,
+        arguments: Map<String, Any?>,
+        runPayload: Map<String, Any?>,
+        guard: Map<String, Any?>,
+        requestedResumeFromStep: Int,
+        fallbackSessionId: String,
+        fallbackAttempt: Int,
+    ): Map<String, Any?> {
+        if (runPayload["success"] == true) return emptyMap()
+        val stepResults = listArg(runPayload["step_results"])
+        val failedStep = stepResults
+            .mapNotNull { mapArg(it).takeIf { result -> result["success"] == false } }
+            .firstOrNull()
+            ?: return emptyMap()
+        val failedStepIndex = intArg(
+            failedStep["index"],
+            runPayload["failed_step_index"],
+            runPayload["blocked_step_index"],
+            defaultValue = requestedResumeFromStep
+        ).coerceAtLeast(0)
+        val fallbackEligible = failedStep["fallback_available"] == true ||
+            failedStep["needs_agent"] == true ||
+            runPayload["model_required"] == true
+        if (!fallbackEligible) return emptyMap()
+
+        val nextAttempt = fallbackAttempt + 1
+        val attemptLimitReached = fallbackAttempt >= MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP
+        val sessionId = fallbackSessionId.ifBlank {
+            "oob_fallback_${functionId.ifBlank { "unknown" }}_${System.currentTimeMillis()}"
+        }
+        val remainingSteps = materializedStepSummariesFrom(functionId, arguments, failedStepIndex)
+        val recovery = mapArg(failedStep["recovery"])
+        val agentPrompt = buildRunFunctionAgentFallbackPrompt(
+            functionId = functionId,
+            arguments = arguments,
+            failedStep = failedStep,
+            remainingSteps = remainingSteps,
+            resumeFromStep = failedStepIndex,
+            sessionId = sessionId,
+            nextAttempt = nextAttempt,
+            attemptLimitReached = attemptLimitReached,
+        )
+        val fallbackContext = linkedMapOf<String, Any?>(
+            "schema_version" to "oob.function_fallback_context.v1",
+            "function_id" to functionId,
+            "arguments" to arguments,
+            "guard_decision" to guard["decision"],
+            "risk_level" to guard["risk_level"],
+            "fallback_session_id" to sessionId,
+            "resume_from_step" to failedStepIndex,
+            "fallback_attempt" to nextAttempt,
+            "max_attempts_per_step" to MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP,
+            "failed_step" to summarizeStepResult(failedStep),
+            "executed_steps" to stepResults.mapNotNull { raw ->
+                summarizeStepResult(mapArg(raw)).takeIf { it.isNotEmpty() }
+            },
+            "remaining_steps" to remainingSteps,
+            "recovery" to recovery.takeIf { it.isNotEmpty() },
+            "return_instruction" to linkedMapOf(
+                "tool" to "oob_function_run",
+                "args" to linkedMapOf(
+                    "function_id" to functionId,
+                    "arguments" to arguments,
+                    "resume_from_step" to failedStepIndex,
+                    "fallback_session_id" to sessionId,
+                    "fallback_attempt" to nextAttempt,
+                )
+            ),
+            "agent_rule" to "先在当前页面完成 failed_step；完成后用 return_instruction 从 resume_from_step 继续本地重放。"
+        ).filterValues { it != null }
+
+        return linkedMapOf<String, Any?>(
+            "fallback_available" to !attemptLimitReached,
+            "fallback_session_id" to sessionId,
+            "resume_from_step" to failedStepIndex,
+            "fallback_attempt" to nextAttempt,
+            "fallback_context" to fallbackContext,
+            "agent_prompt" to agentPrompt,
+            "fallback_unavailable_reason" to "repeated_failure_same_step".takeIf { attemptLimitReached },
+        ).filterValues { it != null }
+    }
+
+    private fun summarizeStepResult(step: Map<String, Any?>): Map<String, Any?> =
+        linkedMapOf<String, Any?>(
+            "index" to step["index"],
+            "step_id" to step["step_id"],
+            "title" to step["title"],
+            "tool" to step["tool"],
+            "executor" to step["executor"],
+            "blocked_executor" to step["blocked_executor"],
+            "success" to step["success"],
+            "needs_agent" to step["needs_agent"],
+            "fallback_available" to step["fallback_available"],
+            "error_code" to step["error_code"],
+            "summary" to step["summary"],
+            "prompt" to step["prompt"],
+        ).filterValues { it != null }
+
+    private fun materializedStepSummariesFrom(
+        functionId: String,
+        arguments: Map<String, Any?>,
+        startIndex: Int,
+    ): List<Map<String, Any?>> {
+        val spec = replayService.getFunctionSpec(functionId) ?: return emptyList()
+        val materialized = runCatching { OobReusableFunctionStore.materialize(spec, arguments) }
+            .getOrElse { return emptyList() }
+        return materializedSteps(materialized)
+            .drop(startIndex.coerceAtLeast(0))
+            .mapIndexed { offset, step ->
+                val index = startIndex + offset
+                linkedMapOf<String, Any?>(
+                    "index" to index,
+                    "step_id" to firstNonBlank(step["id"], step["step_id"], step["stepId"])
+                        .ifBlank { "step_${index + 1}" },
+                    "title" to firstNonBlank(step["title"]),
+                    "tool" to firstNonBlank(step["tool"], step["callable_tool"], step["omniflow_action"]),
+                    "executor" to firstNonBlank(step["executor"]),
+                    "action" to firstNonBlank(step["omniflow_action"], step["local_action"], step["action"]),
+                    "args" to mapArg(step["args"]).takeIf { it.isNotEmpty() },
+                ).filterValues { it != null }
+            }
+    }
+
+    private fun buildRunFunctionAgentFallbackPrompt(
+        functionId: String,
+        arguments: Map<String, Any?>,
+        failedStep: Map<String, Any?>,
+        remainingSteps: List<Map<String, Any?>>,
+        resumeFromStep: Int,
+        sessionId: String,
+        nextAttempt: Int,
+        attemptLimitReached: Boolean,
+    ): String {
+        val title = firstNonBlank(failedStep["title"], failedStep["step_id"], "step_${resumeFromStep + 1}")
+        val tool = firstNonBlank(failedStep["tool"])
+        val summary = firstNonBlank(failedStep["summary"], failedStep["prompt"])
+        val recovery = mapArg(failedStep["recovery"])
+        val currentPackage = firstNonBlank(recovery["current_package"], recovery["package_name"])
+        val currentActivity = firstNonBlank(recovery["current_activity"], recovery["activity_name"])
+        val currentXml = firstNonBlank(recovery["current_xml"], recovery["xml"], recovery["page"])
+            .take(4000)
+        val remainingText = remainingSteps.take(8).joinToString("\n") { step ->
+            "- #${step["index"]}: ${firstNonBlank(step["title"], step["tool"])}"
+        }.ifBlank { "- 无可用步骤摘要" }
+        val argumentsText = if (arguments.isNotEmpty()) {
+            "\n  \"arguments\": $arguments,"
+        } else {
+            ""
+        }
+        val retryText = if (attemptLimitReached) {
+            "\n注意：同一步已经达到 fallback 尝试上限，不要继续循环调用。"
+        } else {
+            ""
+        }
+        return """
+            oob_function_run 本地重放失败，需要你接管当前步骤。
+            function_id: $functionId
+            fallback_session_id: $sessionId
+            failed_step_index: $resumeFromStep
+            failed_step: $title
+            tool: $tool
+            reason: $summary
+            fallback_attempt: $nextAttempt
+            当前包名: $currentPackage
+            当前 Activity: $currentActivity
+            当前页面 XML（截断）:
+            $currentXml
+
+            你需要先在当前页面完成 failed_step 对应的真实操作。完成后调用：
+            oob_function_run({
+              "function_id": "$functionId",$argumentsText
+              "resume_from_step": $resumeFromStep,
+              "fallback_session_id": "$sessionId",
+              "fallback_attempt": $nextAttempt
+            })
+
+            后续本地步骤：
+            $remainingText$retryText
+        """.trimIndent()
+    }
+
     private suspend fun executeFunction(
         functionId: String,
         arguments: Map<String, Any?>,
         allowAgentFallback: Boolean,
+        resumeFromStep: Int = 0,
+        fallbackSessionId: String = "",
+        fallbackAttempt: Int = 0,
     ): Map<String, Any?> = withContext(Dispatchers.Default) {
         val timing = FunctionExecutionTiming()
         val spec = timing.measure("load_function_spec_ms") {
@@ -2680,7 +3062,10 @@ class OobOmniFlowToolkitService(
                     spec = spec,
                     materializedSpec = materialized,
                     allowAgentFallback = allowAgentFallback,
-                    allowToolDelegationWithoutRouter = false
+                    allowToolDelegationWithoutRouter = false,
+                    resumeFromStep = resumeFromStep,
+                    fallbackSessionId = fallbackSessionId,
+                    fallbackAttempt = fallbackAttempt
                 )
             }
         }.getOrElse { error ->
@@ -3627,6 +4012,7 @@ class OobOmniFlowToolkitService(
         private const val DIRECT_HIT_SCORE = 0.999
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
+        private const val MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP = 2
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",

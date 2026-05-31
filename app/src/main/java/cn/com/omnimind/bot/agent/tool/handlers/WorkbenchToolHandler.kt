@@ -165,7 +165,9 @@ class WorkbenchToolHandler(
         val changed = payload["changed"] == true
         val saved = payload["saved"] == true
         val requiresConfirmation = payload["requires_confirmation"] == true
+        val needsAgentAnalysis = payload["needs_agent_analysis"] == true
         val summary = when {
+            needsAgentAnalysis -> "需要 agent 分析 RunLog 证据：$functionId"
             requiresConfirmation -> "需要确认要更新的步骤：$functionId"
             success && saved -> "已更新复用指令 $functionId"
             success && changed -> "已生成复用指令更新预览 $functionId"
@@ -207,6 +209,9 @@ class WorkbenchToolHandler(
             ?: 0
         val summary = if (success) {
             "复用指令 $functionId 执行完成，$stepCount 步"
+        } else if (payload["fallback_context"] != null) {
+            val resumeFromStep = payload["resume_from_step"]?.toString()?.trim().orEmpty()
+            "复用指令 $functionId 需要 agent 接管；完成失败步骤后用 resume_from_step=$resumeFromStep 继续"
         } else {
             payload["error_message"]?.toString()
                 ?: payload["reason"]?.toString()
