@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
@@ -130,13 +131,13 @@ class OobFunctionRunResultBuilder {
         payload: Map<String, Any?>,
         timing: Map<String, Any?>,
     ): Map<String, Any?> {
-        val existingTiming = stringMap(payload["timing"])
+        val existingTiming = mapArg(payload["timing"])
         val mergedTiming = linkedMapOf<String, Any?>().apply {
             putAll(existingTiming)
             putAll(timing)
             val phaseMs = linkedMapOf<String, Any?>().apply {
-                putAll(stringMap(existingTiming["phase_ms"]))
-                putAll(stringMap(timing["phase_ms"]))
+                putAll(mapArg(existingTiming["phase_ms"]))
+                putAll(mapArg(timing["phase_ms"]))
             }
             if (phaseMs.isNotEmpty()) put("phase_ms", phaseMs)
         }
@@ -198,8 +199,4 @@ class OobFunctionRunResultBuilder {
             ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
     }
 
-    private fun stringMap(value: Any?): Map<String, Any?> {
-        val map = value as? Map<*, *> ?: return emptyMap()
-        return map.entries.associate { (key, item) -> key.toString() to item }
-    }
 }
