@@ -764,12 +764,15 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
         tooltip: _codexRunSettingsTooltip(),
         position: PopupMenuPosition.over,
         offset: const Offset(0, -8),
-        color: context.isDarkTheme ? palette.surfaceElevated : Colors.white,
-        elevation: 10,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        color: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        menuPadding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         constraints: const BoxConstraints(
-          minWidth: 220,
-          maxWidth: 284,
+          minWidth: 192,
+          maxWidth: 232,
           maxHeight: 380,
         ),
         onOpened: () {
@@ -801,62 +804,31 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
                 ? _kDefaultCodexReasoningEfforts
                 : settings.reasoningEffortOptions,
           );
-          final items = <PopupMenuEntry<_CodexRunSettingsMenuAction>>[
-            _codexRunSettingsHeader(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Model'
-                  : '模型',
+          final disabledModelLabel = settings.isLoadingModels
+              ? (english ? 'Loading...' : '正在获取模型...')
+              : (settings.modelListError?.trim().isNotEmpty ?? false)
+              ? (english ? 'Load failed' : '模型获取失败')
+              : (english ? 'No models available' : '未获取到可用模型');
+          return <PopupMenuEntry<_CodexRunSettingsMenuAction>>[
+            _CodexRunSettingsGlassMenuEntry(
+              width: 220,
+              modelHeader: english ? 'Model' : '模型',
+              reasoningHeader: english ? 'Reasoning' : '推理强度',
+              modelOptions: modelOptions,
+              disabledModelLabel: disabledModelLabel,
+              effortOptions: [
+                for (final option in effortOptions)
+                  _CodexRunSettingsOptionData(
+                    value: option,
+                    label: _codexReasoningEffortLabel(option),
+                  ),
+              ],
+              selectedModelId: modelId,
+              selectedEffort: effort,
+              selectedColor: selectedColor,
+              textColor: menuTextColor,
             ),
           ];
-          if (modelOptions.isEmpty) {
-            items.add(
-              _codexRunSettingsDisabledItem(
-                settings.isLoadingModels
-                    ? (english ? 'Loading...' : '正在获取模型...')
-                    : (settings.modelListError?.trim().isNotEmpty ?? false)
-                    ? (english ? 'Load failed' : '模型获取失败')
-                    : (english ? 'No models available' : '未获取到可用模型'),
-              ),
-            );
-          } else {
-            for (final option in modelOptions) {
-              items.add(
-                _codexRunSettingsOptionItem(
-                  key: ValueKey(
-                    'chat-input-codex-run-settings-model-option-$option',
-                  ),
-                  action: _CodexRunSettingsMenuAction.model(option),
-                  label: option,
-                  selected: option == modelId,
-                  selectedColor: selectedColor,
-                  textColor: menuTextColor,
-                ),
-              );
-            }
-          }
-          items.add(const PopupMenuDivider(height: 6));
-          items.add(
-            _codexRunSettingsHeader(
-              Localizations.localeOf(context).languageCode == 'en'
-                  ? 'Reasoning'
-                  : '推理强度',
-            ),
-          );
-          for (final option in effortOptions) {
-            items.add(
-              _codexRunSettingsOptionItem(
-                key: ValueKey(
-                  'chat-input-codex-run-settings-effort-option-$option',
-                ),
-                action: _CodexRunSettingsMenuAction.effort(option),
-                label: _codexReasoningEffortLabel(option),
-                selected: option == effort,
-                selectedColor: selectedColor,
-                textColor: menuTextColor,
-              ),
-            );
-          }
-          return items;
         },
         child: Tooltip(
           message: [
@@ -899,85 +871,6 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  PopupMenuItem<_CodexRunSettingsMenuAction> _codexRunSettingsHeader(
-    String label,
-  ) {
-    final palette = context.omniPalette;
-    return PopupMenuItem<_CodexRunSettingsMenuAction>(
-      enabled: false,
-      height: 24,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: context.isDarkTheme
-              ? palette.textSecondary
-              : const Color(0xFF6B778C),
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          height: 1.1,
-        ),
-      ),
-    );
-  }
-
-  PopupMenuItem<_CodexRunSettingsMenuAction> _codexRunSettingsDisabledItem(
-    String label,
-  ) {
-    final palette = context.omniPalette;
-    return PopupMenuItem<_CodexRunSettingsMenuAction>(
-      enabled: false,
-      height: 30,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: palette.textTertiary,
-          fontSize: 12,
-          height: 1.1,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  PopupMenuItem<_CodexRunSettingsMenuAction> _codexRunSettingsOptionItem({
-    required Key key,
-    required _CodexRunSettingsMenuAction action,
-    required String label,
-    required bool selected,
-    required Color selectedColor,
-    required Color textColor,
-  }) {
-    return PopupMenuItem<_CodexRunSettingsMenuAction>(
-      key: key,
-      value: action,
-      height: 30,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.1,
-                color: textColor,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          AnimatedOpacity(
-            duration: _buttonAnimationDuration,
-            opacity: selected ? 1 : 0,
-            child: Icon(Icons.check_rounded, size: 15, color: selectedColor),
-          ),
-        ],
       ),
     );
   }
@@ -1059,62 +952,34 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
       tooltip: _codexPermissionTooltip(),
       position: PopupMenuPosition.over,
       offset: const Offset(0, -8),
-      color: context.isDarkTheme ? palette.surfaceElevated : Colors.white,
-      elevation: 10,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      constraints: const BoxConstraints(minWidth: 184),
+      color: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      menuPadding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      constraints: const BoxConstraints(minWidth: 188, maxWidth: 204),
       onSelected: widget.onCodexPermissionModeChanged,
       itemBuilder: (context) {
-        return CodexPermissionMode.values
-            .map((mode) {
-              final isSelected = mode == selected;
-              return PopupMenuItem<CodexPermissionMode>(
-                key: ValueKey(
-                  'chat-input-codex-permission-option-${mode.name}',
+        return <PopupMenuEntry<CodexPermissionMode>>[
+          _CodexPermissionGlassMenuEntry(
+            width: 196,
+            selected: selected,
+            selectedColor: selectedColor,
+            inactiveColor: inactiveColor,
+            textColor: context.isDarkTheme
+                ? palette.textPrimary
+                : const Color(0xFF232D3D),
+            options: [
+              for (final mode in CodexPermissionMode.values)
+                _CodexPermissionOptionData(
+                  mode: mode,
+                  label: _codexPermissionLabel(mode),
+                  iconAsset: _codexPermissionIconAsset(mode),
                 ),
-                value: mode,
-                height: 42,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildCodexPermissionIcon(
-                      mode,
-                      size: 18,
-                      color: isSelected ? selectedColor : inactiveColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _codexPermissionLabel(mode),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.2,
-                          color: context.isDarkTheme
-                              ? palette.textPrimary
-                              : const Color(0xFF232D3D),
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    AnimatedOpacity(
-                      duration: _buttonAnimationDuration,
-                      opacity: isSelected ? 1 : 0,
-                      child: Icon(
-                        Icons.check_rounded,
-                        size: 18,
-                        color: selectedColor,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            })
-            .toList(growable: false);
+            ],
+          ),
+        ];
       },
       child: AnimatedContainer(
         duration: _buttonAnimationDuration,
@@ -1393,6 +1258,424 @@ mixin _ChatInputAreaComposerMixin on _ChatInputAreaStateBase {
           child: SizedBox(key: ValueKey<String>(iconKey), child: icon),
         ),
         onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+class _CodexPermissionOptionData {
+  const _CodexPermissionOptionData({
+    required this.mode,
+    required this.label,
+    required this.iconAsset,
+  });
+
+  final CodexPermissionMode mode;
+  final String label;
+  final String iconAsset;
+}
+
+class _CodexPermissionGlassMenuEntry
+    extends PopupMenuEntry<CodexPermissionMode> {
+  const _CodexPermissionGlassMenuEntry({
+    required this.width,
+    required this.options,
+    required this.selected,
+    required this.selectedColor,
+    required this.inactiveColor,
+    required this.textColor,
+  });
+
+  static const double _rowHeight = 42;
+  static const double _verticalPadding = 16;
+
+  final double width;
+  final List<_CodexPermissionOptionData> options;
+  final CodexPermissionMode selected;
+  final Color selectedColor;
+  final Color inactiveColor;
+  final Color textColor;
+
+  @override
+  double get height => _verticalPadding + options.length * _rowHeight;
+
+  @override
+  bool represents(CodexPermissionMode? value) => value == selected;
+
+  @override
+  State<_CodexPermissionGlassMenuEntry> createState() =>
+      _CodexPermissionGlassMenuEntryState();
+}
+
+class _CodexPermissionGlassMenuEntryState
+    extends State<_CodexPermissionGlassMenuEntry> {
+  static const Duration _selectionDuration = Duration(milliseconds: 160);
+
+  void _select(CodexPermissionMode mode) {
+    Navigator.of(context).pop(mode);
+  }
+
+  Widget _buildIcon(_CodexPermissionOptionData option, bool selected) {
+    return SvgPicture.asset(
+      option.iconAsset,
+      width: 18,
+      height: 18,
+      colorFilter: ColorFilter.mode(
+        selected ? widget.selectedColor : widget.inactiveColor,
+        BlendMode.srcIn,
+      ),
+    );
+  }
+
+  Widget _buildRow(_CodexPermissionOptionData option) {
+    final isSelected = option.mode == widget.selected;
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final selectedBackground = isDark
+        ? Color.alphaBlend(
+            widget.selectedColor.withValues(alpha: 0.18),
+            palette.surfaceSecondary.withValues(alpha: 0.52),
+          )
+        : widget.selectedColor.withValues(alpha: 0.10);
+    final idleBackground = isDark
+        ? palette.surfaceSecondary.withValues(alpha: 0.34)
+        : Colors.white.withValues(alpha: 0.26);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+      child: InkWell(
+        key: ValueKey('chat-input-codex-permission-option-${option.mode.name}'),
+        onTap: () => _select(option.mode),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: _selectionDuration,
+          curve: Curves.easeOutCubic,
+          constraints: const BoxConstraints(
+            minHeight: _CodexPermissionGlassMenuEntry._rowHeight,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: isSelected ? selectedBackground : idleBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? widget.selectedColor.withValues(alpha: isDark ? 0.30 : 0.20)
+                  : (isDark
+                        ? palette.borderSubtle.withValues(alpha: 0.48)
+                        : Colors.white.withValues(alpha: 0.42)),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildIcon(option, isSelected),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.15,
+                    color: widget.textColor,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedOpacity(
+                duration: _selectionDuration,
+                opacity: isSelected ? 1 : 0,
+                child: Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: widget.selectedColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      child: OmniGlassPanel(
+        width: widget.width,
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final option in widget.options) _buildRow(option),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CodexRunSettingsOptionData {
+  const _CodexRunSettingsOptionData({required this.value, required this.label});
+
+  final String value;
+  final String label;
+}
+
+class _CodexRunSettingsGlassMenuEntry
+    extends PopupMenuEntry<_CodexRunSettingsMenuAction> {
+  const _CodexRunSettingsGlassMenuEntry({
+    required this.width,
+    required this.modelHeader,
+    required this.reasoningHeader,
+    required this.modelOptions,
+    required this.disabledModelLabel,
+    required this.effortOptions,
+    required this.selectedModelId,
+    required this.selectedEffort,
+    required this.selectedColor,
+    required this.textColor,
+  });
+
+  static const double _maxHeight = 380;
+  static const double _headerHeight = 28;
+  static const double _rowHeight = 34;
+  static const double _dividerHeight = 9;
+  static const double _verticalPadding = 16;
+
+  final double width;
+  final String modelHeader;
+  final String reasoningHeader;
+  final List<String> modelOptions;
+  final String disabledModelLabel;
+  final List<_CodexRunSettingsOptionData> effortOptions;
+  final String selectedModelId;
+  final String selectedEffort;
+  final Color selectedColor;
+  final Color textColor;
+
+  @override
+  double get height {
+    final modelRowCount = modelOptions.isEmpty ? 1 : modelOptions.length;
+    final rawHeight =
+        _verticalPadding +
+        (_headerHeight * 2) +
+        _dividerHeight +
+        ((modelRowCount + effortOptions.length) * _rowHeight);
+    return math.min(_maxHeight, rawHeight).toDouble();
+  }
+
+  @override
+  bool represents(_CodexRunSettingsMenuAction? value) => false;
+
+  @override
+  State<_CodexRunSettingsGlassMenuEntry> createState() =>
+      _CodexRunSettingsGlassMenuEntryState();
+}
+
+class _CodexRunSettingsGlassMenuEntryState
+    extends State<_CodexRunSettingsGlassMenuEntry> {
+  static const Duration _checkAnimationDuration = Duration(milliseconds: 160);
+
+  void _select(_CodexRunSettingsMenuAction action) {
+    Navigator.of(context).pop(action);
+  }
+
+  Widget _buildHeader(String label) {
+    final palette = context.omniPalette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 9, 14, 5),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: context.isDarkTheme
+              ? palette.textSecondary
+              : const Color(0xFF66758E),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1.1,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDisabledItem(String label) {
+    final palette = context.omniPalette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+      child: Container(
+        constraints: const BoxConstraints(
+          minHeight: _CodexRunSettingsGlassMenuEntry._rowHeight,
+        ),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.isDarkTheme
+              ? palette.surfaceSecondary.withValues(alpha: 0.34)
+              : Colors.white.withValues(alpha: 0.26),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: palette.textTertiary,
+            fontSize: 12,
+            height: 1.1,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOption({
+    required String keySuffix,
+    required String label,
+    required bool selected,
+    required _CodexRunSettingsMenuAction action,
+  }) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final selectedBackground = isDark
+        ? Color.alphaBlend(
+            widget.selectedColor.withValues(alpha: 0.18),
+            palette.surfaceSecondary.withValues(alpha: 0.52),
+          )
+        : widget.selectedColor.withValues(alpha: 0.10);
+    final idleBackground = isDark
+        ? palette.surfaceSecondary.withValues(alpha: 0.34)
+        : Colors.white.withValues(alpha: 0.26);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+      child: InkWell(
+        key: ValueKey('chat-input-codex-run-settings-option-$keySuffix'),
+        onTap: () => _select(action),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: _checkAnimationDuration,
+          curve: Curves.easeOutCubic,
+          constraints: const BoxConstraints(
+            minHeight: _CodexRunSettingsGlassMenuEntry._rowHeight,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? selectedBackground : idleBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? widget.selectedColor.withValues(alpha: isDark ? 0.30 : 0.20)
+                  : (isDark
+                        ? palette.borderSubtle.withValues(alpha: 0.48)
+                        : Colors.white.withValues(alpha: 0.42)),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.1,
+                    color: selected
+                        ? (isDark ? palette.textPrimary : widget.textColor)
+                        : widget.textColor,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedOpacity(
+                duration: _checkAnimationDuration,
+                opacity: selected ? 1 : 0,
+                child: Icon(
+                  Icons.check_rounded,
+                  size: 15,
+                  color: widget.selectedColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    final palette = context.omniPalette;
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.fromLTRB(14, 6, 14, 2),
+      color: context.isDarkTheme
+          ? palette.borderSubtle.withValues(alpha: 0.56)
+          : Colors.white.withValues(alpha: 0.64),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      child: OmniGlassPanel(
+        width: widget.width,
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: _CodexRunSettingsGlassMenuEntry._maxHeight,
+            ),
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHeader(widget.modelHeader),
+                    if (widget.modelOptions.isEmpty)
+                      _buildDisabledItem(widget.disabledModelLabel)
+                    else
+                      for (final option in widget.modelOptions)
+                        _buildOption(
+                          keySuffix: 'model-$option',
+                          label: option,
+                          selected: option == widget.selectedModelId,
+                          action: _CodexRunSettingsMenuAction.model(option),
+                        ),
+                    _buildDivider(),
+                    _buildHeader(widget.reasoningHeader),
+                    for (final option in widget.effortOptions)
+                      _buildOption(
+                        keySuffix: 'effort-${option.value}',
+                        label: option.label,
+                        selected: option.value == widget.selectedEffort,
+                        action: _CodexRunSettingsMenuAction.effort(
+                          option.value,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -74,21 +74,14 @@ mixin _ChatPageTerminalEnvMixin on _ChatPageStateBase {
       estimatedMenuHeight: popupMaxHeight,
       reservedBottom: MediaQuery.of(context).viewInsets.bottom,
     );
-    final palette = context.omniPalette;
-    final isDark = context.isDarkTheme;
     await showMenu<String>(
       context: context,
-      color: isDark ? palette.surfacePrimary : Colors.white,
-      elevation: isDark ? 0 : 8,
-      shadowColor: isDark ? palette.shadowColor : null,
+      color: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
+      menuPadding: EdgeInsets.zero,
       constraints: BoxConstraints(minWidth: popupWidth, maxWidth: popupWidth),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: isDark
-            ? BorderSide(color: palette.borderSubtle)
-            : BorderSide.none,
-      ),
       position: position,
       items: [
         _TerminalEnvironmentEditorPopupEntry(
@@ -280,14 +273,18 @@ class _TerminalEnvironmentEditorPopupEntryState
         fontWeight: FontWeight.w500,
       ),
       filled: true,
-      fillColor: isDark ? palette.surfaceSecondary : Colors.white,
+      fillColor: isDark
+          ? palette.surfaceSecondary.withValues(alpha: 0.62)
+          : Colors.white.withValues(alpha: 0.48),
       border: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(12)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(Radius.circular(12)),
         borderSide: BorderSide(
-          color: isDark ? palette.borderSubtle : const Color(0xFFE2EAF4),
+          color: isDark
+              ? palette.borderSubtle.withValues(alpha: 0.72)
+              : Colors.white.withValues(alpha: 0.70),
         ),
       ),
       focusedBorder: OutlineInputBorder(
@@ -347,9 +344,15 @@ class _TerminalEnvironmentEditorPopupEntryState
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark ? palette.surfaceSecondary : const Color(0xFFF8FAFD),
+          color: isDark
+              ? palette.surfaceSecondary.withValues(alpha: 0.58)
+              : Colors.white.withValues(alpha: 0.38),
           borderRadius: BorderRadius.circular(12),
-          border: isDark ? Border.all(color: palette.borderSubtle) : null,
+          border: Border.all(
+            color: isDark
+                ? palette.borderSubtle.withValues(alpha: 0.62)
+                : Colors.white.withValues(alpha: 0.58),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,9 +420,15 @@ class _TerminalEnvironmentEditorPopupEntryState
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark ? palette.surfaceSecondary : const Color(0xFFF8FAFD),
+          color: isDark
+              ? palette.surfaceSecondary.withValues(alpha: 0.58)
+              : Colors.white.withValues(alpha: 0.38),
           borderRadius: BorderRadius.circular(12),
-          border: isDark ? Border.all(color: palette.borderSubtle) : null,
+          border: Border.all(
+            color: isDark
+                ? palette.borderSubtle.withValues(alpha: 0.62)
+                : Colors.white.withValues(alpha: 0.58),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -594,85 +603,92 @@ class _TerminalEnvironmentEditorPopupEntryState
             .toDouble();
     return SizedBox(
       width: widget.width,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: dynamicMaxHeight),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    size: 16,
-                    color: isDark
-                        ? palette.textSecondary
-                        : const Color(0xFF617390),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '终端环境变量',
-                      style: TextStyle(
-                        fontSize: 13,
+      child: OmniGlassPanel(
+        width: widget.width,
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: dynamicMaxHeight),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 16,
                         color: isDark
-                            ? palette.textPrimary
-                            : const Color(0xFF1F2937),
-                        fontWeight: FontWeight.w700,
+                            ? palette.textSecondary
+                            : const Color(0xFF617390),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '终端环境变量',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? palette.textPrimary
+                                : const Color(0xFF1F2937),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${_variables.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark
+                              ? palette.textTertiary
+                              : const Color(0xFF8FA1BC),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_variables.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Text(
+                      '还没有环境变量',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? palette.textTertiary
+                            : const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: Scrollbar(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        itemCount: _variables.length,
+                        itemBuilder: (context, index) {
+                          return _buildVariableRow(_variables[index]);
+                        },
                       ),
                     ),
                   ),
-                  Text(
-                    '${_variables.length}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark
-                          ? palette.textTertiary
-                          : const Color(0xFF8FA1BC),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_variables.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Text(
-                  '还没有环境变量',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
+                if (!_isEditing) ...[
+                  Divider(
+                    height: 1,
                     color: isDark
-                        ? palette.textTertiary
-                        : const Color(0xFF94A3B8),
-                    fontWeight: FontWeight.w500,
+                        ? palette.borderSubtle.withValues(alpha: 0.62)
+                        : Colors.white.withValues(alpha: 0.62),
                   ),
-                ),
-              )
-            else
-              Flexible(
-                child: Scrollbar(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    itemCount: _variables.length,
-                    itemBuilder: (context, index) {
-                      return _buildVariableRow(_variables[index]);
-                    },
-                  ),
-                ),
-              ),
-            if (!_isEditing) ...[
-              Divider(
-                height: 1,
-                color: isDark
-                    ? palette.borderSubtle
-                    : const Color(0xFFE5EDF8),
-              ),
-              _buildAddForm(),
-            ],
-          ],
+                  _buildAddForm(),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

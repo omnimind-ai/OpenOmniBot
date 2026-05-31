@@ -78,6 +78,7 @@ import 'widgets/chat_browser_overlay.dart';
 import 'widgets/chat_tool_activity_strip.dart';
 import 'package:ui/widgets/app_update_dialog.dart';
 import 'package:ui/widgets/app_background_widgets.dart';
+import 'package:ui/widgets/omni_glass.dart';
 
 part 'chat_page_browser.dart';
 part 'chat_page_lifecycle.dart';

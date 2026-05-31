@@ -2462,6 +2462,11 @@ class _UserMessageQuickMenuEntryState
     required String label,
     required VoidCallback onTap,
   }) {
+    final palette = context.omniPalette;
+    final isDark = context.isDarkTheme;
+    final foregroundColor = isDark
+        ? palette.textPrimary
+        : const Color(0xFF172033);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -2469,15 +2474,14 @@ class _UserMessageQuickMenuEntryState
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: Colors.black),
+            Icon(icon, size: 18, color: foregroundColor),
             const SizedBox(width: 10),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                color: Colors.black,
+                color: foregroundColor,
                 fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
               ),
             ),
           ],
@@ -2488,57 +2492,47 @@ class _UserMessageQuickMenuEntryState
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final dividerColor = context.isDarkTheme
+        ? palette.borderSubtle.withValues(alpha: 0.58)
+        : Colors.white.withValues(alpha: 0.62);
     return SizedBox(
       width: widget.width,
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          margin: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: OmniGlassPanel(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0x14000000), width: 1),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x26000000),
-                blurRadius: 18,
-                offset: Offset(0, 10),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildAction(
+                    icon: Icons.content_copy_rounded,
+                    label: LegacyTextLocalizer.isEnglish ? 'Copy' : '复制',
+                    onTap: () => _select(_UserMessageQuickAction.copy),
+                  ),
+                  if (widget.showEditAction) ...[
+                    Divider(height: 1, thickness: 1, color: dividerColor),
+                    _buildAction(
+                      icon: Icons.edit_outlined,
+                      label: LegacyTextLocalizer.isEnglish ? 'Edit' : '编辑',
+                      onTap: () => _select(_UserMessageQuickAction.edit),
+                    ),
+                  ],
+                  if (widget.showRetryAction) ...[
+                    Divider(height: 1, thickness: 1, color: dividerColor),
+                    _buildAction(
+                      icon: Icons.refresh_rounded,
+                      label: LegacyTextLocalizer.isEnglish ? 'Retry' : '重试这条消息',
+                      onTap: () => _select(_UserMessageQuickAction.retry),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildAction(
-                icon: Icons.content_copy_rounded,
-                label: LegacyTextLocalizer.isEnglish ? 'Copy' : '复制',
-                onTap: () => _select(_UserMessageQuickAction.copy),
-              ),
-              if (widget.showEditAction) ...[
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0x14000000),
-                ),
-                _buildAction(
-                  icon: Icons.edit_outlined,
-                  label: LegacyTextLocalizer.isEnglish ? 'Edit' : '编辑',
-                  onTap: () => _select(_UserMessageQuickAction.edit),
-                ),
-              ],
-              if (widget.showRetryAction) ...[
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0x14000000),
-                ),
-                _buildAction(
-                  icon: Icons.refresh_rounded,
-                  label: LegacyTextLocalizer.isEnglish ? 'Retry' : '重试这条消息',
-                  onTap: () => _select(_UserMessageQuickAction.retry),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
