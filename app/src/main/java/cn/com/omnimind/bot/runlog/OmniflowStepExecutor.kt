@@ -582,6 +582,8 @@ object OmniflowStepExecutor {
             checkerPermissionDialog(rule, state, replayAction)
         OmniflowCheckerRule.COND_PACKAGE_MISMATCH ->
             checkerPackageMismatch(rule, state, replayAction)
+        OmniflowCheckerRule.COND_AD_BLOCKING ->
+            checkerAdBlocking(rule, state, replayAction)
         OmniflowCheckerRule.COND_OVERLAY_BLOCKING ->
             checkerOverlayBlocking(rule, state, replayAction)
         OmniflowCheckerRule.COND_KEYBOARD_OBSCURING ->
@@ -664,6 +666,29 @@ object OmniflowStepExecutor {
             "action" to OmniflowCheckerRule.ACTION_OPEN_APP,
             "expected_package" to expectedPkg,
             "current_package" to currentPkg,
+        )
+    }
+
+    private suspend fun checkerAdBlocking(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? {
+        if (targetLooksLikeDismiss(replayAction.args)) return null
+        val page = state.page ?: return null
+        val candidate = adBlockingDismissCandidate(page) ?: return null
+        if (actionTargetHitsNode(replayAction.action, replayAction.args, candidate)) return null
+        OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return linkedMapOf(
+            "phase" to "before_action",
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "condition" to OmniflowCheckerRule.COND_AD_BLOCKING,
+            "action" to OmniflowCheckerRule.ACTION_DISMISS,
+            "x" to candidate.centerX,
+            "y" to candidate.centerY,
+            "target_element" to summarizeNode(candidate),
         )
     }
 
@@ -813,6 +838,25 @@ object OmniflowStepExecutor {
         "observation_xml" to snapshot.xml.takeIf { it.isNotBlank() },
     ).filterValues { it != null }
 
+    private fun adBlockingDismissCandidate(page: PageModel): UiNode? {
+        val hasExplicitAdCue = page.nodes.any(::hasExplicitAdCue)
+        val hasFullScreenAdSurface = hasLikelyFullScreenAdSurface(page)
+        return page.nodes
+            .asSequence()
+            .filter { it.visible && it.enabled && it.area > 1f && it.interactive }
+            .mapNotNull { node ->
+                val score = adDismissCandidateScore(
+                    node = node,
+                    rootBounds = page.rootBounds,
+                    hasExplicitAdCue = hasExplicitAdCue,
+                    hasFullScreenAdSurface = hasFullScreenAdSurface,
+                )
+                if (score >= MIN_AD_DISMISS_SCORE) node to score else null
+            }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
     private fun blockingOverlayDismissCandidate(page: PageModel): UiNode? {
         val hasOverlayCue = page.nodes.any(::hasAdOrModalCue)
         return page.nodes
@@ -824,6 +868,49 @@ object OmniflowStepExecutor {
             }
             .maxByOrNull { it.second }
             ?.first
+    }
+
+    private fun adDismissCandidateScore(
+        node: UiNode,
+        rootBounds: Rect,
+        hasExplicitAdCue: Boolean,
+        hasFullScreenAdSurface: Boolean,
+    ): Float {
+        val label = nodeLabelText(node)
+        val resource = node.resourceId.lowercase()
+        val topRight = isTopRightSmallControl(node, rootBounds)
+        val small = node.area / rootBounds.area.coerceAtLeast(1f) <= 0.08f
+        val explicitAdDismiss = AD_DISMISS_CONTAINS_LABELS.any { label.contains(it) }
+        val skipDismiss = AD_SKIP_EXACT_LABELS.any { label == it || label.startsWith("$it ") } ||
+            SKIP_COUNTDOWN_REGEX.containsMatchIn(label)
+        val closeDismiss = AD_CLOSE_EXACT_LABELS.any { label == it }
+        val adResourceDismiss = hasAdDismissResourceCue(resource)
+        val genericDismissResource = DISMISS_RESOURCE_TAILS.any {
+            node.resourceTail == it || node.resourceTail.contains(it)
+        }
+        if (!explicitAdDismiss && !skipDismiss && !closeDismiss && !adResourceDismiss && !genericDismissResource) {
+            return 0f
+        }
+        if (!explicitAdDismiss &&
+            !hasExplicitAdCue &&
+            !adResourceDismiss &&
+            !(skipDismiss && (topRight || hasFullScreenAdSurface))
+        ) {
+            return 0f
+        }
+
+        var score = 0f
+        if (explicitAdDismiss) score += 560f
+        if (SKIP_COUNTDOWN_REGEX.containsMatchIn(label)) score += 520f
+        if (skipDismiss) score += 380f
+        if (closeDismiss) score += 260f
+        if (adResourceDismiss) score += 460f
+        if (genericDismissResource) score += 180f
+        if (hasExplicitAdCue) score += 240f
+        if (hasFullScreenAdSurface) score += 130f
+        if (small) score += 130f
+        if (topRight) score += 150f
+        return score
     }
 
     private fun dismissCandidateScore(
@@ -861,6 +948,16 @@ object OmniflowStepExecutor {
         return labelScore + resourceScore + overlayScore + smallButtonScore + topRightScore
     }
 
+    private fun hasExplicitAdCue(node: UiNode): Boolean {
+        val text = nodeLabelText(node)
+        val classText = node.className.lowercase()
+        val resource = node.resourceId.lowercase()
+        return AD_LABEL_TERMS.any { term ->
+            text.contains(term) || classText.contains(term) || resource.contains(term)
+        } || AD_RESOURCE_TOKEN_REGEX.containsMatchIn(resource) ||
+            AD_RESOURCE_CUE_TERMS.any { resource.contains(it) }
+    }
+
     private fun hasAdOrModalCue(node: UiNode): Boolean {
         val text = nodeLabelText(node)
         val classText = node.className.lowercase()
@@ -870,6 +967,27 @@ object OmniflowStepExecutor {
         }
     }
 
+    private fun hasLikelyFullScreenAdSurface(page: PageModel): Boolean {
+        val rootArea = page.rootBounds.area.coerceAtLeast(1f)
+        return page.nodes.any { node ->
+            node.visible &&
+                node.area / rootArea >= 0.72f &&
+                FULLSCREEN_AD_SURFACE_TERMS.any { term ->
+                    node.className.contains(term, ignoreCase = true) ||
+                        node.resourceId.contains(term, ignoreCase = true)
+                }
+        }
+    }
+
+    private fun hasAdDismissResourceCue(resource: String): Boolean =
+        AD_DISMISS_RESOURCE_TERMS.any { resource.contains(it) } ||
+            AD_RESOURCE_TOKEN_REGEX.containsMatchIn(resource)
+
+    private fun isTopRightSmallControl(node: UiNode, rootBounds: Rect): Boolean =
+        node.centerX >= rootBounds.left + rootBounds.width * 0.58f &&
+            node.centerY <= rootBounds.top + rootBounds.height * 0.26f &&
+            node.area / rootBounds.area.coerceAtLeast(1f) <= 0.10f
+
     private fun targetLooksLikeDismiss(args: Map<String, Any?>): Boolean {
         val target = listOf(
             stringArg(args, "target_description", "targetDescription"),
@@ -877,7 +995,32 @@ object OmniflowStepExecutor {
             stringArg(args, "selector"),
         ).filterNotNull().joinToString(" ").lowercase()
         return DISMISS_EXACT_LABELS.any { target == it } ||
-            DISMISS_CONTAINS_LABELS.any { target.contains(it) }
+            DISMISS_CONTAINS_LABELS.any { target.contains(it) } ||
+            AD_DISMISS_CONTAINS_LABELS.any { target.contains(it) } ||
+            AD_SKIP_EXACT_LABELS.any { target == it || target.startsWith("$it ") } ||
+            SKIP_COUNTDOWN_REGEX.containsMatchIn(target)
+    }
+
+    private fun actionTargetHitsNode(
+        action: String,
+        args: Map<String, Any?>,
+        node: UiNode,
+    ): Boolean {
+        if (action !in OobActionCodec.coordinateActions) return false
+        val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
+        val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
+        if (x != null && y != null) {
+            return node.bounds.expanded(ACTION_TARGET_HIT_MARGIN_PX).contains(x, y)
+        }
+        val x1 = numberArg(args, "x1")?.toFloat()
+        val y1 = numberArg(args, "y1")?.toFloat()
+        val x2 = numberArg(args, "x2")?.toFloat()
+        val y2 = numberArg(args, "y2")?.toFloat()
+        val expanded = node.bounds.expanded(ACTION_TARGET_HIT_MARGIN_PX)
+        return listOfNotNull(
+            x1?.let { px -> y1?.let { py -> px to py } },
+            x2?.let { px -> y2?.let { py -> px to py } },
+        ).any { (px, py) -> expanded.contains(px, py) }
     }
 
     private fun keyboardTop(page: PageModel): Float? {
@@ -960,6 +1103,13 @@ object OmniflowStepExecutor {
         fun clampX(x: Float): Float = min(max(x, left), right)
 
         fun clampY(y: Float): Float = min(max(y, top), bottom)
+
+        fun expanded(margin: Float): Rect = Rect(
+            left = left - margin,
+            top = top - margin,
+            right = right + margin,
+            bottom = bottom + margin,
+        )
     }
 
     private data class UiNode(
@@ -1833,8 +1983,10 @@ object OmniflowStepExecutor {
     private const val MIN_ANCHOR_SIMILARITY = 0.45f
     private const val MIN_ANCHOR_MATCH_SCORE = 0.12f
     private const val MIN_DIRECT_FALLBACK_SIMILARITY = 0.86f
+    private const val MIN_AD_DISMISS_SCORE = 760f
     private const val MIN_DISMISS_OVERLAY_SCORE = 760f
     private const val KEYBOARD_OBSCURE_MARGIN_PX = 16f
+    private const val ACTION_TARGET_HIT_MARGIN_PX = 24f
     private const val OPEN_APP_STABILITY_ATTEMPTS = 5
     private const val OPEN_APP_STABILITY_DELAY_MS = 350L
     private const val OPEN_APP_RELAUNCH_ATTEMPT_INDEX = 1
@@ -1871,6 +2023,64 @@ object OmniflowStepExecutor {
         "赞助",
         "弹窗",
     )
+    private val AD_LABEL_TERMS = setOf(
+        "advert",
+        "sponsored",
+        "sponsor",
+        "promotion",
+        "interstitial",
+        "splash ad",
+        "广告",
+        "推广",
+        "赞助",
+        "开屏",
+        "插屏",
+    )
+    private val AD_RESOURCE_CUE_TERMS = setOf(
+        "advert",
+        "splash",
+        "interstitial",
+        "reward",
+        "rewarded",
+        "ksad",
+        "gdt",
+        "tt_splash",
+        "admob",
+        "bytedance",
+        "pangle",
+    )
+    private val AD_DISMISS_RESOURCE_TERMS = setOf(
+        "skip_ad",
+        "ad_skip",
+        "close_ad",
+        "ad_close",
+        "btn_skip",
+        "skip_btn",
+        "splash_skip",
+        "tt_splash_skip",
+        "ksad_skip",
+        "gdt_skip",
+    )
+    private val AD_SKIP_EXACT_LABELS = setOf(
+        "skip",
+        "跳过",
+    )
+    private val AD_CLOSE_EXACT_LABELS = setOf(
+        "close",
+        "dismiss",
+        "x",
+        "×",
+        "关闭",
+    )
+    private val AD_DISMISS_CONTAINS_LABELS = setOf(
+        "close ad",
+        "close ads",
+        "skip ad",
+        "skip ads",
+        "dismiss ad",
+        "关闭广告",
+        "跳过广告",
+    )
     private val DISMISS_EXACT_LABELS = setOf(
         "close",
         "dismiss",
@@ -1904,6 +2114,17 @@ object OmniflowStepExecutor {
         "ad_close",
         "close_ad",
     )
+    private val FULLSCREEN_AD_SURFACE_TERMS = setOf(
+        "webview",
+        "image",
+        "frame",
+        "layout",
+        "splash",
+        "interstitial",
+        "ad",
+    )
+    private val AD_RESOURCE_TOKEN_REGEX = Regex("""(^|[/:_.-])ads?($|[/:_.-])""")
+    private val SKIP_COUNTDOWN_REGEX = Regex("""(跳过|skip)\s*\d+\s*(s|sec|秒)?""", RegexOption.IGNORE_CASE)
     private val KEYBOARD_TERMS = setOf(
         "keyboard",
         "inputmethod",

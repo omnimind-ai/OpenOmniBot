@@ -37,6 +37,8 @@ data class OmniflowCheckerRule(
         const val COND_PACKAGE_MISMATCH = "package_mismatch"
         /** A dismissible blocking overlay covers the target. */
         const val COND_OVERLAY_BLOCKING = "overlay_blocking"
+        /** A dismissible ad/splash/interstitial blocks the current Function step. */
+        const val COND_AD_BLOCKING = "ad_blocking"
         /** Soft keyboard overlaps the action target. */
         const val COND_KEYBOARD_OBSCURING = "keyboard_obscuring"
         /** An Android system permission request dialog is visible. */
@@ -62,6 +64,12 @@ data class OmniflowCheckerRule(
                 id = "auto_grant_permission",
                 condition = COND_PERMISSION_DIALOG,
                 action = ACTION_ALLOW,
+                phase = PHASE_PRE_TRANSFER,
+            ),
+            OmniflowCheckerRule(
+                id = "dismiss_ad_blocking",
+                condition = COND_AD_BLOCKING,
+                action = ACTION_DISMISS,
                 phase = PHASE_PRE_TRANSFER,
             ),
             OmniflowCheckerRule(

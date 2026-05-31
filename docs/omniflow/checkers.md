@@ -6,6 +6,7 @@ main path.
 ## Supported Rules
 
 ```text
+ad_blocking + dismiss + pre_transfer
 overlay_blocking + dismiss + pre_transfer
 permission_dialog + allow + pre_transfer
 keyboard_obscuring + hide_keyboard + pre_action
@@ -24,6 +25,20 @@ Examples:
   "params": {}
 }
 ```
+
+`ad_blocking` is a built-in global checker. It identifies ads from the current
+accessibility XML by combining signals, not by one keyword alone:
+
+- explicit ad words in text/resource/class: `广告`, `推广`, `sponsored`,
+  `advert`, `splash`, `interstitial`
+- dismiss controls: `跳过`, `跳过 3`, `skip`, `close ad`, `关闭广告`
+- ad SDK/resource hints: `skip_ad`, `close_ad`, `tt_splash_skip`, `ksad_skip`,
+  `gdt_skip`
+- geometry: small enabled clickable control near the top-right of a splash or
+  full-screen surface
+
+Plain `关闭`/`x` is not enough unless the page also has an ad cue. This keeps
+normal dialogs from being dismissed accidentally.
 
 ## Conversion Rule
 

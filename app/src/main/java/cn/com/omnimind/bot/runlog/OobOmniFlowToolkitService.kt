@@ -1087,12 +1087,19 @@ class OobOmniFlowToolkitService(
             "blocking_overlay",
             "popup_blocking",
             "popup",
-            "ad_popup",
-            "ad",
             "banner",
             "coupon",
             "obstruction",
             "conditional_obstruction" -> OmniflowCheckerRule.COND_OVERLAY_BLOCKING
+            "ad_blocking",
+            "blocking_ad",
+            "ad_popup",
+            "ad",
+            "ads",
+            "splash_ad",
+            "interstitial_ad",
+            "skip_ad",
+            "advertising" -> OmniflowCheckerRule.COND_AD_BLOCKING
             "permission_dialog",
             "permission",
             "permission_prompt",
@@ -1130,6 +1137,7 @@ class OobOmniFlowToolkitService(
             "start_app" -> OmniflowCheckerRule.ACTION_OPEN_APP
             "click" -> when (condition) {
                 OmniflowCheckerRule.COND_OVERLAY_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
+                OmniflowCheckerRule.COND_AD_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
                 OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
                 else -> ""
             }
@@ -1155,6 +1163,8 @@ class OobOmniFlowToolkitService(
     private fun isSupportedCheckerPair(condition: String, action: String): Boolean =
         (condition == OmniflowCheckerRule.COND_OVERLAY_BLOCKING &&
             action == OmniflowCheckerRule.ACTION_DISMISS) ||
+            (condition == OmniflowCheckerRule.COND_AD_BLOCKING &&
+                action == OmniflowCheckerRule.ACTION_DISMISS) ||
             (condition == OmniflowCheckerRule.COND_PERMISSION_DIALOG &&
                 action == OmniflowCheckerRule.ACTION_ALLOW) ||
             (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING &&

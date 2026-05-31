@@ -726,6 +726,64 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `global checker skips splash ad before recorded click`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SKIP_AD_XML, afterXml = SOURCE_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_skip_ad",
+                stepTitle = "click behind splash ad",
+            )
+
+            assertEquals(true, result["success"])
+            val controlEffects = result["control_effects"] as? List<*> ?: error("missing control effects")
+            val effect = controlEffects.single() as Map<*, *>
+            assertEquals("dismiss_ad_blocking", effect["controller"])
+            assertEquals("ad_blocking", effect["condition"])
+            assertEquals("dismiss", effect["action"])
+            assertEquals(2, backend.clickPoints.size)
+            assertEquals(950f, backend.clickPoints.first().first, 0.01f)
+            assertEquals(96f, backend.clickPoints.first().second, 0.01f)
+            assertEquals(120f, backend.clickPoints.last().first, 0.01f)
+            assertEquals(240f, backend.clickPoints.last().second, 0.01f)
+        }
+    }
+
+    @Test
+    fun `global checker does not wrap explicit skip ad action`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SKIP_AD_XML, afterXml = SOURCE_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf(
+                        "x" to 120,
+                        "y" to 240,
+                        "target_description" to "跳过 3",
+                    ),
+                ),
+                stepId = "step_explicit_skip_ad",
+                stepTitle = "skip splash ad",
+            )
+
+            assertEquals(true, result["success"])
+            assertFalse(result.containsKey("control_effects"))
+            assertEquals(1, backend.clickPoints.size)
+            assertEquals(120f, backend.clickPoints.single().first, 0.01f)
+            assertEquals(240f, backend.clickPoints.single().second, 0.01f)
+        }
+    }
+
+    @Test
     fun `omniflow loop hides keyboard before covered recorded click`() = runBlocking {
         val backend = FakeBackend(beforeXml = KEYBOARD_XML, afterXml = KEYBOARD_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
@@ -881,6 +939,8 @@ class OmniflowStepExecutorTest {
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[200,200][1000,1000]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" class=\"android.webkit.WebView\" resource-id=\"app:id/webview\"/></hierarchy>"
         private const val AD_OVERLAY_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/><node bounds=\"[80,260][1000,1540]\" enabled=\"true\" visible-to-user=\"true\" text=\"Sponsored ad\" class=\"android.app.Dialog\" resource-id=\"ad:id/dialog\"><node bounds=\"[900,300][980,380]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" content-desc=\"Close ad\" class=\"android.widget.ImageButton\" resource-id=\"ad:id/close_ad\"/></node></hierarchy>"
+        private const val SKIP_AD_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1920]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.widget.FrameLayout\" resource-id=\"app:id/splash_container\"><node bounds=\"[870,64][1030,128]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"跳过 3\" class=\"android.widget.TextView\" resource-id=\"app:id/skip_btn\"/></node></hierarchy>"
         private const val KEYBOARD_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1280]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.widget.FrameLayout\" resource-id=\"app:id/content\"/><node bounds=\"[0,1320][1080,1920]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.inputmethodservice.KeyboardView\" package=\"com.google.android.inputmethod.latin\" resource-id=\"com.google.android.inputmethod.latin:id/keyboard_view\"/></hierarchy>"
         private const val SCROLL_SOURCE_XML =
