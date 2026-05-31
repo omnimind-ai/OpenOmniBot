@@ -204,6 +204,14 @@ belong in UI documentation.
 - strip Function/call-tool metadata from forwarded argument payloads
 - keep recorded argument-shape compatibility outside the runtime replay loop
 
+`OobFunctionStepClassifier` owns replay step-shape classification:
+
+- identify legacy/noise steps that replay should skip
+- resolve the canonical OmniFlow execution tool for a step
+- decide whether a step is locally executable as graph/function/call_tool
+- extract replayable agent tools from recorded agent fallback steps
+- keep these routing predicates out of the main replay loop
+
 `OobFunctionRunResultBuilder` owns replay result payloads:
 
 - build stable per-step failure records for guard, delegation, and replay errors
@@ -256,6 +264,7 @@ Agent/MCP tool surface
               -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
               -> OobFunctionCallRequestResolver # replay/call_tool args
+              -> OobFunctionStepClassifier # replay step-shape routing
               -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
@@ -315,6 +324,9 @@ Keep these pieces separate:
   fallback prompts, and optional VLM fallback calls
 - `OobFunctionCallRequestResolver`: replay step args, `call_tool` target
   resolution, nested Function argument extraction, and metadata stripping
+- `OobFunctionStepClassifier`: legacy skip detection, OmniFlow execution-tool
+  resolution, local graph/function/call_tool classification, and replayable
+  agent-tool extraction
 - `OobFunctionRunResultBuilder`: stable run payload schema, failure step
   records, and runner timing/phase accounting
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,

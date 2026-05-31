@@ -25,6 +25,8 @@ class OobFunctionToolHandler(
         OobFunctionNestedCallCardPresenter(helper),
     private val callRequestResolver: OobFunctionCallRequestResolver =
         OobFunctionCallRequestResolver(),
+    private val stepClassifier: OobFunctionStepClassifier =
+        OobFunctionStepClassifier(callRequestResolver),
     private val runResultBuilder: OobFunctionRunResultBuilder =
         OobFunctionRunResultBuilder(),
 ) : ToolHandler {
@@ -50,9 +52,9 @@ class OobFunctionToolHandler(
     fun canRunFullyWithOmniflow(materializedSpec: Map<String, Any?>): Boolean {
         val steps = materializedSteps(materializedSpec)
         return steps.isNotEmpty() && steps.all { step ->
-            isSkippedLegacyStep(step) ||
+            stepClassifier.isSkippedLegacyStep(step) ||
                 OmniflowStepExecutor.isOmniflowStep(step) ||
-                isOmniflowExecutionStep(step)
+                stepClassifier.isOmniflowExecutionStep(step) { getSpec(it) != null }
         }
     }
 
@@ -332,7 +334,7 @@ class OobFunctionToolHandler(
                 .ifEmpty { "agent" }
             val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: step["tool"]?.toString()?.trim().orEmpty()
-            val omniflowExecutionTool = omniflowExecutionToolForStep(step, callableTool)
+            val omniflowExecutionTool = stepClassifier.omniflowExecutionToolForStep(step, callableTool)
             if (RunLogReplayPolicy.shouldSkipTool(callableTool) ||
                 RunLogReplayPolicy.shouldSkipTool(omniflowExecutionTool) ||
                 RunLogReplayPolicy.shouldSkipTool(OmniflowStepExecutor.actionNameForStep(step))
@@ -508,8 +510,8 @@ class OobFunctionToolHandler(
                 }
 
                 else -> {
-                    val agentTool = replayableAgentTool(step, callableTool)
-                    if (!requiresAgentPlanning(step) &&
+                    val agentTool = stepClassifier.replayableAgentTool(step, callableTool)
+                    if (!stepClassifier.requiresAgentPlanning(step) &&
                         agentTool.isNotEmpty() && router != null && env != null
                     ) {
                         delegatedToolUsed = true
@@ -615,28 +617,6 @@ class OobFunctionToolHandler(
                 frontendSession?.finish(frontendFinishMessage)
             }
         }
-    }
-
-    private fun requiresAgentPlanning(step: Map<String, Any?>): Boolean {
-        val reason = (step["agent_call"] as? Map<*, *>)?.get("reason")?.toString()
-            ?: step["reason"]?.toString()
-            ?: ""
-        return RunLogReplayPolicy.requiresAgentPlanningReason(reason)
-    }
-
-    private fun replayableAgentTool(step: Map<String, Any?>, callableTool: String): String {
-        val agentCall = step["agent_call"] as? Map<*, *>
-        val agentArgs = agentCall?.get("args") as? Map<*, *>
-        val candidates = listOf(
-            agentArgs?.get("original_tool"),
-            step["tool"],
-            callableTool,
-            agentCall?.get("tool")
-        )
-        return candidates.asSequence()
-            .map { it?.toString()?.trim().orEmpty() }
-            .firstOrNull { it.isNotEmpty() && it != "oob.agent.run" }
-            .orEmpty()
     }
 
     private suspend fun executeToolStep(
@@ -845,7 +825,7 @@ class OobFunctionToolHandler(
         suspend fun emitStarted() {
             callback?.onToolCardEvent(
                 "tool_started",
-                functionToolCardPayload(
+                nestedCallCardPresenter.payload(
                     cardId = cardId,
                     toolName = cardToolName,
                     stepTitle = stepTitle,
@@ -868,7 +848,7 @@ class OobFunctionToolHandler(
             val finishedAtMs = System.currentTimeMillis()
             callback?.onToolCardEvent(
                 "tool_completed",
-                functionToolCardPayload(
+                nestedCallCardPresenter.payload(
                     cardId = cardId,
                     toolName = cardToolName,
                     stepTitle = stepTitle,
@@ -962,97 +942,6 @@ class OobFunctionToolHandler(
         ).filterValues { it != null })
     }
 
-    private fun functionToolCardPayload(
-        cardId: String,
-        toolName: String,
-        stepTitle: String,
-        functionId: String,
-        callableTool: String,
-        nestedArguments: Map<String, Any?>,
-        status: String,
-        success: Boolean?,
-        summary: String,
-        progress: String,
-        startedAtMs: Long,
-        finishedAtMs: Long?,
-        result: Map<String, Any?>?,
-    ): Map<String, Any?> = nestedCallCardPresenter.payload(
-        cardId = cardId,
-        toolName = toolName,
-        stepTitle = stepTitle,
-        functionId = functionId,
-        callableTool = callableTool,
-        nestedArguments = nestedArguments,
-        status = status,
-        success = success,
-        summary = summary,
-        progress = progress,
-        startedAtMs = startedAtMs,
-        finishedAtMs = finishedAtMs,
-        result = result,
-    )
-
-    private fun isOmniflowExecutionStep(step: Map<String, Any?>): Boolean {
-        val tool = omniflowExecutionToolForStep(step, executionToolName(step))
-        return when {
-            RunLogReplayPolicy.isOmniflowGraphTool(tool) -> true
-            RunLogReplayPolicy.isOmniflowFunctionTool(tool) -> true
-            RunLogReplayPolicy.isOmniflowToolCallTool(tool) -> {
-                val args = callRequestResolver.stepArgs(step)
-                firstNonBlank(
-                    callRequestResolver.functionId(args, step),
-                    callRequestResolver.targetTool(args, step).takeIf {
-                        it.isNotEmpty() && getSpec(it) != null
-                    },
-                ).isNotEmpty()
-            }
-            else -> false
-        }
-    }
-
-    private fun isSkippedLegacyStep(step: Map<String, Any?>): Boolean {
-        val names = listOf(
-            executionToolName(step),
-            OmniflowStepExecutor.actionNameForStep(step),
-            step["source_tool"]?.toString().orEmpty(),
-        )
-        return names.any { name ->
-            name.isNotBlank() && RunLogReplayPolicy.shouldSkipTool(name)
-        }
-    }
-
-    private fun executionToolName(step: Map<String, Any?>): String =
-        firstNonBlank(
-            step["callable_tool"],
-            step["tool"],
-            step["omniflow_action"],
-            step["local_action"],
-            step["type"],
-        )
-
-    private fun omniflowExecutionToolForStep(
-        step: Map<String, Any?>,
-        callableTool: String,
-    ): String {
-        val agentCall = stringMap(step["agent_call"])
-        val agentArgs = stringMap(agentCall["args"])
-        val candidates = listOf(
-            callableTool,
-            step["tool"],
-            step["callable_tool"],
-            step["omniflow_action"],
-            step["local_action"],
-            step["type"],
-            agentArgs["original_tool"],
-            agentCall["original_tool"],
-        )
-        return candidates.asSequence()
-            .map { it?.toString()?.trim().orEmpty() }
-            .map { RunLogReplayPolicy.normalizeToolName(it) }
-            .firstOrNull { it.isNotEmpty() && RunLogReplayPolicy.isOmniflowExecutionTool(it) }
-            .orEmpty()
-    }
-
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
         return OobFunctionSchemaBuilder.materializedSteps(materializedSpec)
     }
@@ -1081,7 +970,7 @@ class OobFunctionToolHandler(
         steps: List<Map<String, Any?>>,
     ): Map<String, Any?>? {
         val indexedStep = steps.withIndex().firstOrNull { (_, step) ->
-            !isSkippedLegacyStep(step) && OmniflowStepExecutor.requiresAccessibility(step)
+            !stepClassifier.isSkippedLegacyStep(step) && OmniflowStepExecutor.requiresAccessibility(step)
         } ?: return null
         if (OmniflowActionRuntime.backend.isReady()) return null
 
@@ -1124,11 +1013,6 @@ class OobFunctionToolHandler(
             if (text.isNotEmpty()) return text
         }
         return ""
-    }
-
-    private fun stringMap(value: Any?): Map<String, Any?> {
-        val map = value as? Map<*, *> ?: return emptyMap()
-        return map.entries.associate { (key, item) -> key.toString() to item }
     }
 
     private companion object {
