@@ -25,9 +25,7 @@ object RunLogReusableFunctionCompiler {
                         .firstOrNull(::hasRecordedReplayStep),
                 )
             }
-        val replaySteps = dropDuplicateTextInputSteps(rawSteps)
-            .let(::collapseConsecutiveTextInputSteps)
-            .let(::dropRedundantClickBeforeInputText)
+        val replaySteps = RunLogReplayStepNoiseNormalizer.normalize(rawSteps)
         val stepsWithStart = prepareInitialOpenAppStep(
             prependInitialOpenAppStepIfNeeded(replayableCards, replaySteps)
         )
@@ -117,160 +115,6 @@ object RunLogReusableFunctionCompiler {
     }
 
     /**
-     * Collapses consecutive input_text steps on the same target into the last one.
-     *
-     * Accessibility text-change events fire on every keystroke, producing one
-     * input_text card per character. Only the final value matters for replay.
-     * This pass keeps the last step in each same-target run, preserving its
-     * accumulated text while dropping the intermediate keystroke steps.
-     */
-    private fun collapseConsecutiveTextInputSteps(
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.size < 2) return steps
-        val output = mutableListOf<Map<String, Any?>>()
-        var i = 0
-        while (i < steps.size) {
-            val step = steps[i]
-            if (replayActionForStep(step) !in INPUT_TEXT_ACTIONS) {
-                output += step
-                i++
-                continue
-            }
-            // Advance while subsequent steps are input_text on the SAME target.
-            // Blank signature = unknown target: treat as different target and stop.
-            var last = step
-            val lastSig = textInputTargetSignature(last)
-            if (lastSig.isBlank()) {
-                // Can't confirm target — keep this step as-is, no collapsing.
-                output += last
-                i++
-                continue
-            }
-            while (i + 1 < steps.size) {
-                val next = steps[i + 1]
-                if (replayActionForStep(next) !in INPUT_TEXT_ACTIONS) break
-                val nextSig = textInputTargetSignature(next)
-                if (nextSig.isBlank() || nextSig != lastSig) break
-                last = next
-                i++
-            }
-            output += last
-            i++
-        }
-        return output
-    }
-
-    /**
-     * Drops a click step that immediately precedes an input_text step on the same target.
-     *
-     * Chat apps and form flows commonly record a tap on the input field followed by
-     * a type action. The click is redundant at replay time — input_text already
-     * focuses the field — and often fails because the chat list shifts the element
-     * position between record and replay.
-     */
-    private fun dropRedundantClickBeforeInputText(
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.size < 2) return steps
-        val output = mutableListOf<Map<String, Any?>>()
-        var i = 0
-        while (i < steps.size) {
-            val step = steps[i]
-            val next = steps.getOrNull(i + 1)
-            if (next != null &&
-                replayActionForStep(step) == "click" &&
-                replayActionForStep(next) in INPUT_TEXT_ACTIONS &&
-                clickAndInputShareTarget(step, next)
-            ) {
-                i++
-                continue
-            }
-            output += step
-            i++
-        }
-        return output
-    }
-
-    private fun clickAndInputShareTarget(
-        clickStep: Map<String, Any?>,
-        inputStep: Map<String, Any?>,
-    ): Boolean {
-        val clickArgs = asMap(clickStep["args"])
-        val inputArgs = asMap(inputStep["args"])
-
-        val clickResId = firstNonBlank(
-            clickArgs["node_resource_id"],
-            clickArgs["nodeResourceId"],
-            clickArgs["resource_id"],
-        )
-        val inputResId = firstNonBlank(
-            inputArgs["node_resource_id"],
-            inputArgs["nodeResourceId"],
-            inputArgs["resource_id"],
-        )
-        if (clickResId.isNotBlank() && clickResId == inputResId) return true
-
-        val clickBounds = firstNonBlank(clickArgs["bounds"])
-        val inputBounds = firstNonBlank(inputArgs["bounds"])
-        if (clickBounds.isNotBlank() && clickBounds == inputBounds) return true
-
-        val cx = firstNonBlank(clickArgs["x"], clickArgs["center_x"], clickArgs["centerX"]).toFloatOrNull()
-        val cy = firstNonBlank(clickArgs["y"], clickArgs["center_y"], clickArgs["centerY"]).toFloatOrNull()
-        val ix = firstNonBlank(inputArgs["x"], inputArgs["center_x"], inputArgs["centerX"]).toFloatOrNull()
-        val iy = firstNonBlank(inputArgs["y"], inputArgs["center_y"], inputArgs["centerY"]).toFloatOrNull()
-        if (cx != null && cy != null && ix != null && iy != null) {
-            return Math.abs(cx - ix) < 80f && Math.abs(cy - iy) < 80f
-        }
-
-        return false
-    }
-
-    /**
-     * Drops repeated text-input steps emitted by noisy accessibility text events.
-     *
-     * @param steps Already canonicalized replay steps in source order.
-     * @return A step list where consecutive duplicate text input on the same
-     * target is represented once.
-     */
-    private fun dropDuplicateTextInputSteps(
-        steps: List<Map<String, Any?>>,
-    ): List<Map<String, Any?>> {
-        if (steps.size < 2) return steps
-        val output = mutableListOf<Map<String, Any?>>()
-        steps.forEach { step ->
-            val previous = output.lastOrNull()
-            if (previous != null && isDuplicateTextInputStep(previous, step)) {
-                return@forEach
-            }
-            output += step
-        }
-        return output
-    }
-
-    /**
-     * Checks whether two adjacent steps describe the same final text value.
-     *
-     * @param previous Earlier kept step.
-     * @param current Candidate step immediately after [previous].
-     * @return True when both are input-text actions with identical text and a
-     * compatible target signature.
-     */
-    private fun isDuplicateTextInputStep(
-        previous: Map<String, Any?>,
-        current: Map<String, Any?>,
-    ): Boolean {
-        if (replayActionForStep(previous) !in INPUT_TEXT_ACTIONS) return false
-        if (replayActionForStep(current) !in INPUT_TEXT_ACTIONS) return false
-        val previousText = textInputValue(previous)
-        val currentText = textInputValue(current)
-        if (previousText.isBlank() || previousText != currentText) return false
-        val previousTarget = textInputTargetSignature(previous)
-        val currentTarget = textInputTargetSignature(current)
-        return previousTarget.isNotBlank() && previousTarget == currentTarget
-    }
-
-    /**
      * Resolves the canonical replay action carried by a compiled step.
      *
      * @param step Compiled execution step.
@@ -279,41 +123,6 @@ object RunLogReusableFunctionCompiler {
      */
     private fun replayActionForStep(step: Map<String, Any?>): String {
         return OobActionCodec.actionNameForStep(step)
-    }
-
-    /**
-     * Reads the text payload from a compiled input step.
-     *
-     * @param step Compiled execution step with an args map.
-     * @return The final text value that replay would input.
-     */
-    private fun textInputValue(step: Map<String, Any?>): String {
-        val args = OobActionCodec.argsForStep(step)
-        return firstNonBlank(args["text"], args["content"], args["value"])
-    }
-
-    /**
-     * Builds a stable target signature for de-duplicating adjacent input steps.
-     *
-     * @param step Compiled execution step with args/source_context metadata.
-     * @return A compact target signature, or blank when the target is unknown.
-     */
-    private fun textInputTargetSignature(step: Map<String, Any?>): String {
-        val args = OobActionCodec.argsForStep(step)
-        val sourceContext = OobActionCodec.sourceContextForStep(step)
-        val action = OobActionCodec.sourceActionForStep(step)
-        return firstNonBlank(
-            args["node_resource_id"],
-            action["node_resource_id"],
-            args["selector"],
-            action["selector"],
-            args["bounds"],
-            action["bounds"],
-            args["target_description"],
-            args["targetDescription"],
-            action["target_description"],
-            action["targetDescription"],
-        )
     }
 
     private fun prependInitialOpenAppStepIfNeeded(

@@ -21,6 +21,7 @@ belong in UI documentation.
 
 - read finished `InternalRunLogRecord` entries
 - compile records through `RunLogReusableFunctionCompiler`
+- rely on `RunLogReplayStepNoiseNormalizer` for compiled-step noise cleanup
 - apply explicit name/id/description overrides
 - mirror source RunLogs into the workspace
 - delegate all Function persistence to `OobFunctionRepository`
@@ -218,6 +219,8 @@ Agent/MCP tool surface
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
+          -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
+              -> RunLogReplayStepNoiseNormalizer # compiled step noise cleanup
 
 Flutter method channel
   -> AssistsCoreManager
@@ -249,6 +252,8 @@ Keep these pieces separate:
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
 - `OobFunctionCallTiming`: Function call timing payload construction
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
+- `RunLogReplayStepNoiseNormalizer`: repeated input and redundant compiled-step
+  cleanup after card-to-step conversion
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
 - `OobFunctionFrontendSessionController`: top-level replay overlay lifecycle
