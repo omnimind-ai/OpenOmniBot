@@ -6,7 +6,6 @@ import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentToolDefinitions
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
-import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -61,8 +60,8 @@ object OobFunctionSkillProfile {
             return emptyList()
         }
         return runCatching {
-            OobRunLogReplayService(context)
-                .listFunctionSpecs(MAX_DYNAMIC_FUNCTION_TOOLS)
+            OobFunctionRepository(context)
+                .listSpecs(MAX_DYNAMIC_FUNCTION_TOOLS)
                 .mapNotNull { spec -> toDynamicFunctionToolDefinition(spec, locale) }
         }.onFailure {
             OmniLog.w("OobFunctionSkillProfile", "load dynamic Function tools failed: ${it.message}")
@@ -81,7 +80,7 @@ object OobFunctionSkillProfile {
             return ""
         }
         val candidates = runCatching {
-            OobRunLogReplayService(context).listFunctionSpecs(limit.coerceIn(1, MAX_PROMPT_FUNCTION_CANDIDATES))
+            OobFunctionRepository(context).listSpecs(limit.coerceIn(1, MAX_PROMPT_FUNCTION_CANDIDATES))
         }.onFailure {
             OmniLog.w("OobFunctionSkillProfile", "load prompt Function candidates failed: ${it.message}")
         }.getOrDefault(emptyList())

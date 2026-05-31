@@ -132,15 +132,16 @@ class OobFunctionRepository(
     fun get(functionId: String): Map<String, Any?>? {
         val normalized = functionId.trim()
         if (normalized.isEmpty()) return null
+        OobReusableFunctionStore.get(context, normalized)?.let { registrySpec ->
+            return sanitizeMap(registrySpec)
+        }
         val workspaceSpec = workspaceFunctionStore.get(normalized)
         if (workspaceSpec != null) {
-            if (OobReusableFunctionStore.get(context, normalized) == null) {
-                runCatching { OobReusableFunctionStore.register(context, workspaceSpec) }
-                    .onFailure { OmniLog.w(TAG, "sync workspace function failed: ${it.message}") }
-            }
+            runCatching { OobReusableFunctionStore.register(context, workspaceSpec) }
+                .onFailure { OmniLog.w(TAG, "sync workspace function failed: ${it.message}") }
             return sanitizeMap(workspaceSpec)
         }
-        return OobReusableFunctionStore.get(context, normalized)?.let(::sanitizeMap)
+        return null
     }
 
     fun delete(functionId: String): Map<String, Any?> {

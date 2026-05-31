@@ -36,11 +36,12 @@ import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.runlog.OmniflowActionBackend
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
-import cn.com.omnimind.bot.runlog.OobRunLogReplayService
+import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -58,9 +59,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class WorkbenchToolHandlerOobFunctionToolsTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+
     @Test
     fun `agent workbench handler registers simple oob functions without full spec`() = runBlocking {
         val context = TempFilesContext()
@@ -109,7 +115,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                 registerPayload["registration_input_mode"]?.jsonPrimitive?.contentOrNull,
             )
 
-            val stored = OobRunLogReplayService(context).getFunctionSpec(functionId)
+            val stored = OobFunctionRepository(context).get(functionId)
             assertNotNull(stored)
             assertEquals("oob.reusable_function.v1", stored?.get("schema_version"))
             val execution = stored?.get("execution") as? Map<*, *>
@@ -168,7 +174,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                 ),
             )
             assertContextSuccess(register)
-            assertNotNull(OobRunLogReplayService(context).getFunctionSpec(functionId))
+            assertNotNull(OobFunctionRepository(context).get(functionId))
 
             val list = handler.execute(
                 toolCall = toolCall("oob_function_list"),
@@ -200,7 +206,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                 ),
             )
             assertContextSuccess(delete)
-            assertEquals(null, OobRunLogReplayService(context).getFunctionSpec(functionId))
+            assertEquals(null, OobFunctionRepository(context).get(functionId))
         } finally {
             context.root.deleteRecursively()
         }
@@ -661,7 +667,8 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
 
     private fun assertContextSuccess(result: ToolExecutionResult) {
         assertTrue(result is ToolExecutionResult.ContextResult)
-        assertEquals(true, (result as ToolExecutionResult.ContextResult).success)
+        val contextResult = result as ToolExecutionResult.ContextResult
+        assertEquals(contextResult.rawResultJson, true, contextResult.success)
     }
 
     private fun payloadObject(result: ToolExecutionResult): JsonObject {

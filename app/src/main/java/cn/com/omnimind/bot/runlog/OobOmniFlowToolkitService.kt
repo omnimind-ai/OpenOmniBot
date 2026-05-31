@@ -7,6 +7,7 @@ import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
+import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,6 +35,7 @@ class OobOmniFlowToolkitService(
     )
 ) {
     private val replayService = OobRunLogReplayService(context, workspaceFunctionStore)
+    private val functionRepository = OobFunctionRepository(context, workspaceFunctionStore)
     private val explorer = OobOmniFlowExplorer(context)
     private val json = Json {
         ignoreUnknownKeys = true
@@ -464,14 +466,14 @@ class OobOmniFlowToolkitService(
     }
 
     fun listFunctions(args: Map<String, Any?>?): Map<String, Any?> =
-        replayService.listFunctions(
+        functionRepository.list(
             limit = intArg(args?.get("limit"), defaultValue = 100),
             offset = intArg(args?.get("offset"), defaultValue = 0)
         )
 
     fun getFunction(args: Map<String, Any?>?): Map<String, Any?> {
         val functionId = firstNonBlank(args?.get("functionId"), args?.get("function_id"))
-        val spec = replayService.getFunctionSpec(functionId)
+        val spec = functionRepository.get(functionId)
         if (spec == null) {
             return errorPayload(
                 code = "OOB_FUNCTION_NOT_FOUND",
@@ -491,7 +493,7 @@ class OobOmniFlowToolkitService(
 
     fun deleteFunction(args: Map<String, Any?>?): Map<String, Any?> {
         val functionId = firstNonBlank(args?.get("functionId"), args?.get("function_id"))
-        return replayService.deleteFunction(functionId)
+        return functionRepository.delete(functionId)
     }
 
     fun clearFunctions(args: Map<String, Any?>?): Map<String, Any?> {
@@ -505,7 +507,7 @@ class OobOmniFlowToolkitService(
                 message = "Set confirm=true to clear all registered OOB Functions"
             )
         }
-        return replayService.clearFunctions()
+        return functionRepository.clear()
     }
 
     fun registerFunction(args: Map<String, Any?>?): Map<String, Any?> {
@@ -518,7 +520,7 @@ class OobOmniFlowToolkitService(
             )
         }
         val mode = if (hasExplicitFunctionSpec(request)) "function_spec" else "simple"
-        return replayService.registerFunctionSpec(functionSpec) + linkedMapOf(
+        return functionRepository.register(functionSpec) + linkedMapOf(
             "registration_input_mode" to mode,
             "simple_schema_supported" to true,
         )
@@ -551,7 +553,7 @@ class OobOmniFlowToolkitService(
                 message = "update_function requires function_id"
             )
         }
-        val original = replayService.getFunctionSpec(functionId)
+        val original = functionRepository.get(functionId)
             ?: return errorPayload(
                 code = "OOB_FUNCTION_NOT_FOUND",
                 message = "OOB reusable function not found: $functionId",
@@ -732,7 +734,7 @@ class OobOmniFlowToolkitService(
             )
         }
 
-        val save = replayService.registerFunctionSpec(updated)
+        val save = functionRepository.register(updated)
         val saved = save["success"] == true
         return linkedMapOf<String, Any?>(
             "success" to saved,
@@ -2609,7 +2611,7 @@ class OobOmniFlowToolkitService(
     fun guardCheck(args: Map<String, Any?>?): Map<String, Any?> {
         val request = args ?: emptyMap()
         val functionId = firstNonBlank(request["functionId"], request["function_id"])
-        val spec = replayService.getFunctionSpec(functionId)
+        val spec = functionRepository.get(functionId)
             ?: return errorPayload(
                 code = "OOB_FUNCTION_NOT_FOUND",
                 message = "OOB reusable function not found: $functionId",
@@ -2851,7 +2853,7 @@ class OobOmniFlowToolkitService(
                 message = "RunLog has no replayable steps"
             )
         workspaceFunctionStore.mirrorRunLog(record)
-        return replayService.registerFunctionSpec(spec) + linkedMapOf(
+        return functionRepository.register(spec) + linkedMapOf(
             "run_id" to record.runId,
             "function_spec" to spec
         )
@@ -2961,7 +2963,7 @@ class OobOmniFlowToolkitService(
         arguments: Map<String, Any?>,
         startIndex: Int,
     ): List<Map<String, Any?>> {
-        val spec = replayService.getFunctionSpec(functionId) ?: return emptyList()
+        val spec = functionRepository.get(functionId) ?: return emptyList()
         val materialized = runCatching { OobReusableFunctionStore.materialize(spec, arguments) }
             .getOrElse { return emptyList() }
         return materializedSteps(materialized)
@@ -3049,7 +3051,7 @@ class OobOmniFlowToolkitService(
     ): Map<String, Any?> = withContext(Dispatchers.Default) {
         val timing = FunctionExecutionTiming()
         val spec = timing.measure("load_function_spec_ms") {
-            replayService.getFunctionSpec(functionId)
+            functionRepository.get(functionId)
         }
             ?: return@withContext errorPayload(
                 code = "OOB_FUNCTION_NOT_FOUND",
@@ -3114,7 +3116,7 @@ class OobOmniFlowToolkitService(
             OobUdegNodeStore.functionSummaries(nodeMatch.node).forEach { functionSummary ->
                 val functionId = firstNonBlank(functionSummary["function_id"])
                 if (functionId.isBlank()) return@forEach
-                val spec = replayService.getFunctionSpec(functionId) ?: return@forEach
+                val spec = functionRepository.get(functionId) ?: return@forEach
                 val textScore = scoreNodeFunctionText(
                     spec = spec,
                     function = functionSummary,

@@ -98,6 +98,7 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
+import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
@@ -3241,7 +3242,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 else -> emptyMap()
             }
             val payload = runCatching {
-                OobRunLogReplayService(context).registerFunctionSpec(functionSpec)
+                OobFunctionRepository(context).register(functionSpec)
             }.getOrElse { error ->
                 linkedMapOf(
                     "success" to false,
@@ -3900,7 +3901,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             val functionId = (
                 args["functionId"] ?: args["function_id"] ?: call.argument<String>("functionId")
             )?.toString()?.trim().orEmpty()
-            val payload = OobRunLogReplayService(context).getFunctionSpec(functionId)
+            val payload = OobFunctionRepository(context).get(functionId)
             withContext(Dispatchers.Main) {
                 result.success(payload)
             }
@@ -3913,12 +3914,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             val offset = call.argument<Number>("offset")?.toInt() ?: 0
             val autoRegister = call.argument<Boolean>("autoRegister") ?: true
             val payload = withContext(Dispatchers.IO) {
-                val service = OobRunLogReplayService(context)
                 if (autoRegister) {
-                    runCatching { service.autoRegisterRecentRunLogs(limit = 50) }
+                    runCatching { OobRunLogReplayService(context).autoRegisterRecentRunLogs(limit = 50) }
                         .onFailure { OmniLog.w(TAG, "list OOB functions auto-register failed: ${it.message}") }
                 }
-                service.listFunctions(limit = limit, offset = offset)
+                OobFunctionRepository(context).list(limit = limit, offset = offset)
             }
             withContext(Dispatchers.Main) {
                 result.success(payload)
@@ -3941,7 +3941,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     "error_message" to "functionId is empty"
                 )
             } else {
-                OobRunLogReplayService(context).deleteFunction(functionId)
+                OobFunctionRepository(context).delete(functionId)
             }
             withContext(Dispatchers.Main) {
                 result.success(payload)
@@ -3978,8 +3978,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             val workspaceFunctionStore = cn.com.omnimind.bot.workbench.WorkspaceFunctionStore(
                 AgentWorkspaceManager.rootDirectory(context)
             )
-            val replayService = OobRunLogReplayService(context, workspaceFunctionStore)
-            val spec = replayService.getFunctionSpec(functionId)
+            val functionRepository = OobFunctionRepository(context, workspaceFunctionStore)
+            val spec = functionRepository.get(functionId)
             if (spec == null) {
                 withContext(Dispatchers.Main) {
                     result.success(

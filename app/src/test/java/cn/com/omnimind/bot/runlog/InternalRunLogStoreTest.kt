@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
+import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import java.io.File
 import java.nio.file.Files
@@ -249,10 +250,10 @@ class InternalRunLogStoreTest {
                 doneReason = "finished"
             )
 
-            val result = OobRunLogReplayService(
+            val result = OobFunctionRepository(
                 context = context,
                 workspaceFunctionStore = WorkspaceFunctionStore(File(context.root, "workspace"))
-            ).registerFunctionSpec(
+            ).register(
                 linkedMapOf(
                     "schema_version" to "oob.reusable_function.v1",
                     "function_id" to functionId,

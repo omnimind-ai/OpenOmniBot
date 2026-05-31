@@ -41,6 +41,8 @@ record. Do not read only the snapshot when correctness matters.
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - Replay runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
 - Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
+- RunLog conversion facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobRunLogReplayService.kt`
+- Agent/MCP Function facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowToolkitService.kt`
 - Function backend ownership: `app/src/main/assets/omniflow/function/README.md`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Flutter timeline: `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`

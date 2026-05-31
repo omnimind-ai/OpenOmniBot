@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
-import cn.com.omnimind.bot.runlog.OobRunLogReplayService
+import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import java.io.File
 import java.nio.file.Files
@@ -83,7 +83,7 @@ class AgentToolRegistryOobFunctionTest {
         val context = TempFilesContext()
         try {
             val functionId = "oob_profile_callable_function"
-            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            val register = OobFunctionRepository(context).register(functionSpec(functionId))
             assertEquals(true, register["success"])
 
             val registry = AgentToolRegistry(
@@ -129,12 +129,12 @@ class AgentToolRegistryOobFunctionTest {
     fun `function management profile includes more than legacy fifty registered functions`() {
         val context = TempFilesContext()
         try {
-            val service = OobRunLogReplayService(context)
+            val repository = OobFunctionRepository(context)
             val functionIds = (1..55).map { index ->
                 "oob_bulk_function_$index"
             }
             functionIds.forEach { functionId ->
-                val register = service.registerFunctionSpec(functionSpec(functionId))
+                val register = repository.register(functionSpec(functionId))
                 assertEquals(true, register["success"])
             }
 
@@ -187,7 +187,7 @@ class AgentToolRegistryOobFunctionTest {
         val context = TempFilesContext()
         try {
             val functionId = "oob_registered_text_input"
-            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            val register = OobFunctionRepository(context).register(functionSpec(functionId))
             assertEquals(true, register["success"])
             assertEquals(true, register["oob_function_as_tool_enabled"])
 
@@ -211,7 +211,7 @@ class AgentToolRegistryOobFunctionTest {
                 .putBoolean("oob_function_as_tool_enabled", true)
                 .apply()
             val functionId = "oob_legacy_bare_disabled"
-            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            val register = OobFunctionRepository(context).register(functionSpec(functionId))
             assertEquals(true, register["success"])
             assertEquals(true, register["oob_function_as_tool_enabled"])
 
@@ -232,7 +232,7 @@ class AgentToolRegistryOobFunctionTest {
         try {
             val functionId = "oob_explicitly_disabled"
             AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, false)
-            val register = OobRunLogReplayService(context).registerFunctionSpec(functionSpec(functionId))
+            val register = OobFunctionRepository(context).register(functionSpec(functionId))
             assertEquals(true, register["success"])
             assertEquals(false, register["oob_function_as_tool_enabled"])
 
@@ -253,7 +253,7 @@ class AgentToolRegistryOobFunctionTest {
         try {
             val functionId = "oob_registered_text_input"
             val spec = functionSpec(functionId)
-            val register = OobRunLogReplayService(context).registerFunctionSpec(spec)
+            val register = OobFunctionRepository(context).register(spec)
             assertEquals(true, register["success"])
             AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 
@@ -293,7 +293,7 @@ class AgentToolRegistryOobFunctionTest {
             )
 
             val stored = requireNotNull(
-                OobRunLogReplayService(context).getFunctionSpec(functionId)
+                OobFunctionRepository(context).get(functionId)
             )
             val materialized = OobReusableFunctionStore.materialize(
                 stored,
@@ -312,8 +312,8 @@ class AgentToolRegistryOobFunctionTest {
     fun `register normalizes invalid oob function id before exposing as agent tool`() {
         val context = TempFilesContext()
         try {
-            val register = OobRunLogReplayService(context)
-                .registerFunctionSpec(functionSpec("bad id.with.dot"))
+            val register = OobFunctionRepository(context)
+                .register(functionSpec("bad id.with.dot"))
             assertEquals(true, register["success"])
             assertEquals("bad_id_with_dot", register["function_id"])
             assertEquals("bad_id_with_dot", register["created_function_id"])
@@ -321,7 +321,7 @@ class AgentToolRegistryOobFunctionTest {
             AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 
             val stored = requireNotNull(
-                OobRunLogReplayService(context).getFunctionSpec("bad_id_with_dot")
+                OobFunctionRepository(context).get("bad_id_with_dot")
             )
             assertEquals("bad_id_with_dot", stored["function_id"])
 
@@ -364,8 +364,8 @@ class AgentToolRegistryOobFunctionTest {
         val context = TempFilesContext()
         try {
             val functionId = "oob_duplicate_dynamic"
-            val register = OobRunLogReplayService(context)
-                .registerFunctionSpec(functionSpec(functionId))
+            val register = OobFunctionRepository(context)
+                .register(functionSpec(functionId))
             assertEquals(true, register["success"])
             AgentToolFeatureStore.setOobFunctionAsToolEnabled(context, true)
 

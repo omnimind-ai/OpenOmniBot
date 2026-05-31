@@ -10,6 +10,9 @@ belong in UI documentation.
 
 - register, list, get, delete, and clear Functions
 - keep workspace JSON and `OobReusableFunctionStore` in sync
+- prefer the local registry when both registry and workspace copies exist,
+  because runtime updates are committed there first and workspace JSON is the
+  portable mirror
 - update UDEG Function references
 - bind registered Functions back to source RunLogs
 - clear Function-as-tool exposure when the last Function is removed
@@ -26,8 +29,17 @@ belong in UI documentation.
 
 - parse public tool arguments
 - expose recall, run, guard, register, update, delete, and clear
+- route all Function storage operations through `OobFunctionRepository`
 - package RunLog evidence for `update_function`
 - apply agent-provided Function patches
+
+`AssistsCoreManager` owns method-channel wiring only:
+
+- call `OobFunctionRepository` for Function register/list/get/delete and direct
+  UI run lookup
+- call `OobRunLogReplayService` only for RunLog conversion and recent RunLog
+  auto-registration
+- never implement Function persistence or indexing rules inline
 
 Do not add new Function CRUD paths directly into `AssistsCoreManager`,
 `OobOmniFlowToolkitService`, or `OobRunLogReplayService`. Add them to
@@ -43,13 +55,18 @@ Agent/MCP tool surface
       -> OobRunLogReplayService      # RunLog -> Function conversion
       -> OobFunctionToolHandler      # execution entry
       -> OobUdegNodeStore            # page/node recall index
+
+Flutter method channel
+  -> AssistsCoreManager
+      -> OobFunctionRepository       # Function CRUD and direct run lookup
+      -> OobRunLogReplayService      # conversion and auto-register only
 ```
 
 `OobRunLogReplayService` still exposes compatibility methods such as
 `registerFunctionSpec`, `listFunctionSpecs`, and `getFunctionSpec`. These are
-thin delegates kept so existing callers do not need to move at the same time.
-New code should depend on `OobFunctionRepository` when it needs storage and on
-`OobRunLogReplayService` only when it needs RunLog conversion.
+thin delegates kept for legacy compatibility. Production code should depend on
+`OobFunctionRepository` when it needs storage and on `OobRunLogReplayService`
+only when it needs RunLog conversion.
 
 ## What Not To Merge
 
@@ -90,6 +107,7 @@ After backend Function changes, run focused tests:
   --tests 'cn.com.omnimind.bot.agent.AgentSystemPromptTest' \
   --tests 'cn.com.omnimind.bot.mcp.McpToolDefinitionsTest' \
   --tests 'cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompilerTest' \
-  --tests 'cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandlerOmniFlowExecutionTest'
+  --tests 'cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandlerOmniFlowExecutionTest' \
+  --tests 'cn.com.omnimind.bot.agent.tool.handlers.WorkbenchToolHandlerOobFunctionToolsTest' \
+  --tests 'cn.com.omnimind.bot.runlog.InternalRunLogStoreTest'
 ```
-
