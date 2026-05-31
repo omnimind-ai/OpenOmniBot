@@ -39,6 +39,7 @@ record. Do not read only the snapshot when correctness matters.
 - Reusable Function storage owner: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRepository.kt`
 - Function spec normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSpecBuilder.kt`
 - Function update/evidence service: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionUpdateService.kt`
+- Function RunLog evidence packager: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunLogEvidencePackager.kt`
 - Function checker metadata normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionCheckerPatchService.kt`
 - Function target repair source matcher: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionTargetSourceMatcher.kt`
 - Function recall policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRecallService.kt`

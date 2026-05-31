@@ -46,13 +46,23 @@ belong in UI documentation.
 
 `OobFunctionUpdateService` owns the `update_function` contract:
 
-- package Function + RunLog evidence for agent analysis
 - persist agent analysis in Function metadata
 - apply safe metadata, target-repair, insert-step, and delete-step patches
+- delegate Function + RunLog evidence context and agent prompt packaging to
+  `OobFunctionRunLogEvidencePackager`
 - delegate checker rule and optional checker candidate normalization to
   `OobFunctionCheckerPatchService`
 - delegate source XML target matching for repair patches to
   `OobFunctionTargetSourceMatcher`
+
+`OobFunctionRunLogEvidencePackager` owns update evidence packaging:
+
+- build the read-only Function + RunLog analysis context for `update_function`
+- generate the built-in agent prompt that tells the agent how to mark required
+  actions, optional checkers, noise, duplicate steps, failed actions, and
+  success evidence
+- keep evidence-analysis prompt contracts outside Function mutation code
+- never save Functions or apply patches
 
 `OobFunctionCheckerPatchService` owns checker metadata patching:
 
@@ -171,6 +181,7 @@ Agent/MCP tool surface
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
+          -> OobFunctionRunLogEvidencePackager # Function + RunLog agent context
           -> OobFunctionCheckerPatchService # checker metadata normalization
           -> OobFunctionTargetSourceMatcher # source XML repair matching
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
@@ -204,7 +215,9 @@ Keep these pieces separate:
 
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
-- `OobFunctionUpdateService`: RunLog evidence packaging and Function patching
+- `OobFunctionUpdateService`: Function patching and evidence analysis persistence
+- `OobFunctionRunLogEvidencePackager`: Function + RunLog evidence context and
+  agent prompt packaging
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
 - `OobFunctionTargetSourceMatcher`: source XML parsing and node scoring for
