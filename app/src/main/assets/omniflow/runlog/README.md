@@ -50,6 +50,7 @@ record. Do not read only the snapshot when correctness matters.
 - Replay source alignment controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionSourceAlignmentController.kt`
 - Replay agent fallback controller: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionAgentFallbackController.kt`
 - Replay call/tool argument resolver: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionCallRequestResolver.kt`
+- Replay run result builder: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionRunResultBuilder.kt`
 - Nested Function card presenter: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionNestedCallCardPresenter.kt`
 - Pre-replay entry package guard: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionEntryPackageGuard.kt`
 - Graph/UTG replay path runner: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionGraphStepRunner.kt`

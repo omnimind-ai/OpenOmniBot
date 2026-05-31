@@ -126,6 +126,13 @@ belong in UI documentation.
 - strip Function/call-tool metadata from forwarded argument payloads
 - keep recorded argument-shape compatibility outside the runtime replay loop
 
+`OobFunctionRunResultBuilder` owns replay result payloads:
+
+- build stable per-step failure records for guard, delegation, and replay errors
+- build failed and completed Function run payloads
+- merge runner timing and phase timings into existing failure payloads
+- keep output schema and timing accounting outside the runtime replay loop
+
 `OobFunctionNestedCallCardPresenter` owns nested Function tool-card payloads:
 
 - create stable card ids for nested Function calls
@@ -164,6 +171,7 @@ Agent/MCP tool surface
               -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
               -> OobFunctionCallRequestResolver # replay/call_tool args
+              -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
@@ -202,6 +210,8 @@ Keep these pieces separate:
   fallback prompts, and optional VLM fallback calls
 - `OobFunctionCallRequestResolver`: replay step args, `call_tool` target
   resolution, nested Function argument extraction, and metadata stripping
+- `OobFunctionRunResultBuilder`: stable run payload schema, failure step
+  records, and runner timing/phase accounting
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,
   summaries, args payloads, and result preview payloads
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
