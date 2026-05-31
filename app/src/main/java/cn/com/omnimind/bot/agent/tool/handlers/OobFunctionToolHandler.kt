@@ -1,7 +1,5 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
-import cn.com.omnimind.assists.OmniFlowUiSession
-import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.ManualToolStopCancellationException
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
@@ -11,13 +9,7 @@ import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.PendingActionStack
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
-import cn.com.omnimind.uikit.loader.ScreenMaskLoader
-import cn.com.omnimind.uikit.loader.cat.DraggableBallInstance
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class OobFunctionToolHandler(
@@ -25,6 +17,8 @@ class OobFunctionToolHandler(
     private val helper: SharedHelper,
     private val graphStepRunner: OobFunctionGraphStepRunner = OobFunctionGraphStepRunner(),
     private val entryPackageGuard: OobFunctionEntryPackageGuard = OobFunctionEntryPackageGuard(),
+    private val frontendSessionController: OobFunctionFrontendSessionController =
+        OobFunctionFrontendSessionController(helper),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -280,12 +274,13 @@ class OobFunctionToolHandler(
             return withRunnerTiming(it, timing.finish())
         }
 
-        val frontendSession = startOmniFlowFrontendIfNeeded(
+        val frontendSession = frontendSessionController.start(
             functionId = normalizedFunctionId.ifBlank { functionId },
             spec = spec,
             stepCount = activeSteps.size,
             toolHandle = toolHandle,
             callStack = callStack,
+            fallbackRunIdProvider = { nextRunId(System.currentTimeMillis()) },
         )
         var frontendFinished = false
         var frontendFinishMessage = helper.localized("任务已完成")
@@ -1739,122 +1734,10 @@ class OobFunctionToolHandler(
         val functionId: String,
     )
 
-    private data class OmniFlowFrontendSession(
-        val runId: String,
-        val taskId: String,
-        val stopRequested: AtomicBoolean,
-        val label: String,
-    ) {
-        fun throwIfStopRequested() {
-            if (stopRequested.get()) {
-                throw ManualToolStopCancellationException("OmniFlow execution stopped manually")
-            }
-        }
-    }
-
     private data class StackAlignmentResult(
         val skippedResults: List<Map<String, Any?>> = emptyList(),
         val failureResult: Map<String, Any?>? = null,
     )
-
-    private suspend fun startOmniFlowFrontendIfNeeded(
-        functionId: String,
-        spec: Map<String, Any?>,
-        stepCount: Int,
-        toolHandle: cn.com.omnimind.bot.agent.AgentToolExecutionHandle?,
-        callStack: List<String>,
-    ): OmniFlowFrontendSession? {
-        if (stepCount <= 0 || callStack.isNotEmpty()) return null
-        if (!canUseMainDispatcher()) return null
-        val runId = toolHandle?.runId
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: nextRunId(System.currentTimeMillis())
-        val taskId = "${runId}_omniflow_ui"
-        val stopRequested = AtomicBoolean(false)
-        val label = omniflowFrontendLabel(functionId, spec)
-        OmniFlowUiSession.registerRun(
-            runId = runId,
-            onStopRequested = { stopRequested.set(true) },
-            onCompleteRequested = { stopRequested.set(true) }
-        )
-        OmniFlowUiSession.beginTask(runId, taskId)
-        runCatching {
-            withContext(Dispatchers.Main) {
-                ScreenMaskLoader.loadGoneViewScreenMask()
-                DraggableBallInstance.loadBall()
-                DraggableBallInstance.setDoing(
-                    message = helper.localized("OmniFlow 准备执行"),
-                    isShowTakeOver = false,
-                    subMessage = helper.localized(label),
-                    isShowStop = false,
-                    isTouchable = false
-                )
-            }
-        }.onFailure {
-            OmniLog.w(TAG, "start OmniFlow frontend failed: ${it.message}")
-        }
-        return OmniFlowFrontendSession(
-            runId = runId,
-            taskId = taskId,
-            stopRequested = stopRequested,
-            label = label,
-        )
-    }
-
-    private suspend fun OmniFlowFrontendSession.update(progress: String) {
-        throwIfStopRequested()
-        val message = helper.localized(
-            "OmniFlow：${progress.trim().ifBlank { label }.take(48)}"
-        )
-        runCatching {
-            withContext(Dispatchers.Main) {
-                ScreenMaskLoader.loadGoneViewScreenMask()
-                DraggableBallInstance.setDoing(
-                    message = message,
-                    isShowTakeOver = false,
-                    subMessage = helper.localized("本地执行中"),
-                    isShowStop = false,
-                    isTouchable = false
-                )
-            }
-        }.onFailure {
-            OmniLog.w(TAG, "update OmniFlow frontend failed: ${it.message}")
-        }
-        throwIfStopRequested()
-    }
-
-    private suspend fun OmniFlowFrontendSession.finish(message: String) {
-        OmniFlowUiSession.endTask(taskId)
-        val end = OmniFlowUiSession.endRun(runId)
-        if (!end.wasActive) return
-        runCatching {
-            withContext(NonCancellable + Dispatchers.Main) {
-                ScreenMaskLoader.loadGoneViewScreenMask()
-                DraggableBallInstance.finishDoingTask(message)
-            }
-        }.onFailure {
-            OmniLog.w(TAG, "finish OmniFlow frontend failed: ${it.message}")
-        }
-    }
-
-    private suspend fun canUseMainDispatcher(): Boolean =
-        runCatching {
-            withContext(Dispatchers.Main.immediate) { true }
-        }.getOrDefault(false)
-
-    private fun omniflowFrontendLabel(
-        functionId: String,
-        spec: Map<String, Any?>,
-    ): String {
-        val name = firstNonBlank(
-            spec["name"],
-            spec["title"],
-            spec["description"],
-            functionId,
-        )
-        return name.replace(Regex("\\s+"), " ").take(32).ifBlank { "复用指令" }
-    }
 
     private companion object {
         const val TAG = "OobFunctionToolHandler"

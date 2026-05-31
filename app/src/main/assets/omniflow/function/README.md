@@ -97,6 +97,13 @@ belong in UI documentation.
 - launch the expected package when the foreground app drifted before replay
 - keep package recovery outside the main step loop
 
+`OobFunctionFrontendSessionController` owns transient replay UI state:
+
+- start, update, and finish the local OmniFlow execution overlay
+- wire user stop/complete requests into the replay loop
+- keep main-thread UI calls outside the deterministic step executor
+- skip nested Function calls so only the top-level replay owns the overlay
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -124,6 +131,7 @@ Agent/MCP tool surface
       -> OobFunctionRunPolicy        # guard and fallback handoff
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
+              -> OobFunctionFrontendSessionController # replay overlay/session
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
@@ -153,6 +161,8 @@ Keep these pieces separate:
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
+- `OobFunctionFrontendSessionController`: top-level replay overlay lifecycle
+  and stop signal handling
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
