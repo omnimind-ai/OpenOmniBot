@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
@@ -9,13 +11,13 @@ import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
  */
 class OobFunctionCallRequestResolver {
     fun stepArgs(step: Map<String, Any?>): Map<String, Any?> {
-        val directArgs = stringMap(step["args"])
-        val agentCall = stringMap(step["agent_call"])
-        val agentArgs = stringMap(agentCall["args"])
-        val originalArgs = stringMap(directArgs["original_args"])
-            .ifEmpty { stringMap(directArgs["originalArgs"]) }
-            .ifEmpty { stringMap(agentArgs["original_args"]) }
-            .ifEmpty { stringMap(agentArgs["originalArgs"]) }
+        val directArgs = mapArg(step["args"])
+        val agentCall = mapArg(step["agent_call"])
+        val agentArgs = mapArg(agentCall["args"])
+        val originalArgs = mapArg(directArgs["original_args"])
+            .ifEmpty { mapArg(directArgs["originalArgs"]) }
+            .ifEmpty { mapArg(agentArgs["original_args"]) }
+            .ifEmpty { mapArg(agentArgs["originalArgs"]) }
         val topLevelArgs = buildMap {
             for (key in EXECUTION_ARG_KEYS) {
                 if (step.containsKey(key)) put(key, step[key])
@@ -96,25 +98,12 @@ class OobFunctionCallRequestResolver {
     }
 
     private fun nestedArguments(args: Map<String, Any?>): Map<String, Any?> =
-        stringMap(args["arguments"])
-            .ifEmpty { stringMap(args["args"]) }
-            .ifEmpty { stringMap(args["input"]) }
+        mapArg(args["arguments"])
+            .ifEmpty { mapArg(args["args"]) }
+            .ifEmpty { mapArg(args["input"]) }
 
     private fun Map<String, Any?>.hasExecutionArgs(): Boolean =
         EXECUTION_ARG_KEYS.any { key -> this[key] != null }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun stringMap(value: Any?): Map<String, Any?> {
-        val map = value as? Map<*, *> ?: return emptyMap()
-        return map.entries.associate { (key, item) -> key.toString() to item }
-    }
 
     data class Request(
         val targetTool: String,

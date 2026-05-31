@@ -151,7 +151,8 @@ belong in UI documentation.
 
 - normalize public tool payload maps/lists into stable Kotlin value shapes
 - build mutable JSON-compatible maps and lists for Function patch/update services
-- provide shared scalar coercion helpers used by Function register/update/run/recall code
+- provide shared scalar coercion helpers used by Function register/update/run/recall
+  and replay-handler argument compatibility code
 - stay policy-free; Function behavior rules belong in the service using the
   coerced values
 
@@ -445,8 +446,11 @@ tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 
 When changing Function register/update/run/recall payload handling, use
 `OobFunctionJson` for mechanical payload coercion instead of adding another
-private `mapArg`/`firstNonBlank`/`mutableJsonMap` copy. Keep it limited to
-shape conversion; new rules should live in the owning update service.
+private `mapArg`/`listArg`/`firstNonBlank`/`mutableJsonMap` copy. Runtime
+replay helpers may also use it for argument-shape compatibility, but execution
+policy must remain in the replay service that owns the decision. Keep it
+limited to shape conversion; new rules should live in the owning update
+service or replay component.
 
 ## Verification
 

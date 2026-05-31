@@ -1,6 +1,8 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 
@@ -62,19 +64,6 @@ class OobFunctionEntryPackageGuard {
             "callable_tool" to "open_app",
             "args" to linkedMapOf("package_name" to packageName, "reset_task" to false),
         )
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
-    private fun mapArg(value: Any?): Map<String, Any?> {
-        val map = value as? Map<*, *> ?: return emptyMap()
-        return map.entries.associate { (key, item) -> key.toString() to item }
-    }
 
     private companion object {
         const val TAG = "OobFunctionEntryPackageGuard"
