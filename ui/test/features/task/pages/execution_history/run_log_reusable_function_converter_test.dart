@@ -107,14 +107,10 @@ void main() {
     const actions = [
       'click',
       'long_press',
-      'scroll',
       'input_text',
       'swipe',
       'open_app',
-      'press_home',
-      'press_back',
       'press_key',
-      'hot_key',
       'finished',
     ];
 

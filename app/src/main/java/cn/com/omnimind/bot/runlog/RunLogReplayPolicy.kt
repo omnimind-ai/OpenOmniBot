@@ -5,63 +5,19 @@ package cn.com.omnimind.bot.runlog
  *
  * This is not a dispatcher or service layer. Keep execution in
  * [OmniflowStepExecutor], registration in [OobRunLogReplayService], and tool
- * routing in OobFunctionToolHandler. The lists here intentionally bridge OOB's
- * legacy local action names with OmniFlow's exported canonical action names.
+ * routing in OobFunctionToolHandler. Canonical action parsing lives in
+ * [OobActionCodec]; this policy only owns non-action tool categories.
  */
 object RunLogReplayPolicy {
     const val schemaVersion: String = "oob.runlog_replay_policy.v1"
     const val fixedReplayOnly: Boolean = false
     const val fixedReplayRunner: String = "oob_omniflow_loop"
 
-    val omniflowActions: Set<String> = setOf(
-        "click",
-        "long_press",
-        "scroll",
-        "input_text",
-        "swipe",
-        "open_app",
-        "press_home",
-        "press_back",
-        "press_key",
-        "hot_key",
-        "finished",
-    )
+    val omniflowActions: Set<String> = OobActionCodec.executableActions
 
-    val omniflowActionAliases: Map<String, String> = mapOf(
-        "tap" to "click",
-        "click_at" to "click",
-        "click_element" to "click",
-        "clickelement" to "click",
-        "longclick" to "long_press",
-        "long_click" to "long_press",
-        "longpress" to "long_press",
-        "type" to "input_text",
-        "type_text" to "input_text",
-        "set_text" to "input_text",
-        "settext" to "input_text",
-        "inputtext" to "input_text",
-        "scroll_down" to "swipe",
-        "scroll_up" to "swipe",
-        "scroll_left" to "swipe",
-        "scroll_right" to "swipe",
-        "back" to "press_back",
-        "pressback" to "press_back",
-        "press_back_button" to "press_back",
-        "home" to "press_home",
-        "presshome" to "press_home",
-        "press_home_button" to "press_home",
-        "presskey" to "press_key",
-        "key_event" to "press_key",
-        "keyevent" to "press_key",
-        "openapp" to "open_app",
-        "launch_app" to "open_app",
-        "launchapp" to "open_app",
-        "finish" to "finished",
-        "done" to "finished",
-        "complete" to "finished",
-    )
+    val omniflowActionAliases: Map<String, String> = OobActionCodec.actionAliases
 
-    val coordinateActions: Set<String> = setOf("click", "long_press", "input_text", "scroll", "swipe")
+    val coordinateActions: Set<String> = OobActionCodec.coordinateActions
 
     val perceptionTools: Set<String> = setOf(
         "vlm_task",
@@ -135,13 +91,11 @@ object RunLogReplayPolicy {
 
     fun normalizeToolName(toolName: String): String = toolName.trim().lowercase()
 
-    fun omniflowActionForToolName(toolName: String): String? {
-        val normalized = normalizeToolName(toolName)
-        return normalized.takeIf { it in omniflowActions } ?: omniflowActionAliases[normalized]
-    }
+    fun omniflowActionForToolName(toolName: String): String? =
+        OobActionCodec.canonicalActionForName(toolName)
 
     fun isCoordinateAction(toolName: String): Boolean =
-        omniflowActionForToolName(toolName) in coordinateActions
+        OobActionCodec.canonicalActionForName(toolName) in coordinateActions
 
     fun isPerceptionTool(toolName: String): Boolean =
         normalizeToolName(toolName) in perceptionTools

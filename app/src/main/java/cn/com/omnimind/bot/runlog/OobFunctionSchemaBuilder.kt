@@ -78,13 +78,7 @@ object OobFunctionSchemaBuilder {
 
     fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> =
         materializedSteps(spec).mapIndexed { index, step ->
-            val tool = firstNonBlank(
-                step["omniflow_action"],
-                step["local_action"],
-                step["callable_tool"],
-                step["tool"],
-                step["type"],
-            )
+            val tool = OobActionCodec.actionNameForStep(step)
             linkedMapOf(
                 "index" to index,
                 "id" to firstNonBlank(step["id"], "step_${index + 1}"),
@@ -101,9 +95,14 @@ object OobFunctionSchemaBuilder {
     ): Map<String, Any?>? {
         val rawType = firstNonBlank(action["type"], action["name"], action["tool"])
         if (rawType.isEmpty()) return null
-        val normalizedType = RunLogReplayPolicy.omniflowActionForToolName(rawType)
-            ?: RunLogReplayPolicy.normalizeToolName(rawType)
-        val params = mapArg(action["params"])
+        val normalizedType = OobActionCodec.canonicalActionForName(rawType)
+            ?: OobActionCodec.normalizeName(rawType)
+        val params = OobActionCodec.argsForStep(
+            mapOf(
+                "tool" to rawType,
+                "args" to mapArg(action["params"]),
+            )
+        )
         val target = mapArg(action["target"])
         val sourceContext = mapArg(params["source_context"])
             .ifEmpty { mapArg(action["source_context"]) }
@@ -121,7 +120,7 @@ object OobFunctionSchemaBuilder {
                         title = title,
                         args = linkedMapOf(
                             "node_id" to firstNonBlank(target["nodeId"], target["node_id"]),
-                        ).filterValues { it != null && it.toString().isNotBlank() },
+                        ).filterValues { it.isNotBlank() },
                     )
                 } else {
                     localActionStep(
@@ -160,7 +159,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            "type", "input_text" -> localActionStep(
+            OobActionCodec.ACTION_INPUT_TEXT -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -194,7 +193,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            "scroll", "swipe" -> localActionStep(
+            OobActionCodec.ACTION_SWIPE -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -223,28 +222,13 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            "press_home" -> localActionStep(stepId, index, title, "press_key", mapOf("key" to "home"), emptyMap())
-            "press_back" -> localActionStep(stepId, index, title, "press_key", mapOf("key" to "back"), emptyMap())
-            "hot_key", "press_key" -> localActionStep(
+            OobActionCodec.ACTION_PRESS_KEY -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
                 action = "press_key",
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("key", action["key"], params["key"], action["hotkey"], params["hotkey"])
-                },
-                sourceContext = emptyMap(),
-            )
-            "wait" -> localActionStep(
-                stepId = stepId,
-                index = index,
-                title = title,
-                action = "wait",
-                args = linkedMapOf<String, Any?>().apply {
-                    putFirstPresent("time_ms", action["timeMs"], action["time_ms"], params["timeMs"], params["time_ms"])
-                    putFirstPresent("time_s", action["time_s"], params["time_s"], params["seconds"])
-                    putFirstPresent("selector", params["selector"], action["selector"])
-                    putFirstPresent("url", params["url"], action["url"])
                 },
                 sourceContext = emptyMap(),
             )
@@ -333,7 +317,7 @@ object OobFunctionSchemaBuilder {
         "callable_tool" to action,
         "args" to args.filterValues { it != null },
         "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-        "coordinate_hook" to if (action in RunLogReplayPolicy.coordinateActions && sourceContext.isNotEmpty()) {
+        "coordinate_hook" to if (action in OobActionCodec.coordinateActions && sourceContext.isNotEmpty()) {
             "omniflow"
         } else {
             null

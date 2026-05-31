@@ -18,6 +18,11 @@ Ship this directory as the external OmniFlow kit:
 - `skills/guiagent-omniflow/SKILL.md`: the primary instruction file for GUI agents.
 - `MCP_CONTRACT.md`: direct MCP tool/resource/prompt contract.
 - `FUNCTION_SPEC.md`: reusable Function schema and executor rules.
+- `canonical-actions.md`: OOB Function action vocabulary and legacy alias migration.
+- `update-function.md`: `update_function` patch contract and repair/enhance flow.
+- `checkers.md`: runtime checker rule cookbook and whitelist.
+- `cleanup-rules.md`: deterministic RunLog cleanup and merge rules.
+- `oob-function-architecture.md`: RunLog/OOB Function/UDEG runtime ownership map.
 - `GUI_AGENT_PLAYBOOK.md`: step-by-step execution playbook and fallback paths.
 - `ACCEPTANCE.md`: verification checklist for a host app or external agent.
 - `PYTHON_SDK.md`: directly callable Python library usage.
@@ -114,7 +119,8 @@ block
 
 Default policy:
 
-- `allow`: local UI actions such as click, type, open app, wait, home/back.
+- `allow`: canonical local UI actions such as click, input_text, swipe,
+  open_app, press_key, and finished. Legacy names are accepted only at ingestion.
 - `needs_agent`: browser, web search, memory, VLM-only, runlog lookup, workbench query/list.
 - `needs_confirmation`: shell exec, settings writes, package force-stop, permission changes.
 - `block`: reboot, shutdown, fastboot, block-device writes, filesystem format, protected system partition writes.
@@ -138,6 +144,8 @@ Default policy:
 - Native Function store: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
 - Workspace Function store: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Native compiler/policy/executor: `app/src/main/java/cn/com/omnimind/bot/runlog/`
+- Canonical action parser: `app/src/main/java/cn/com/omnimind/bot/runlog/OobActionCodec.kt`
+- Shared step role classifier: `app/src/main/java/cn/com/omnimind/bot/runlog/OobStepRoleClassifier.kt`
 - Agent Function runner adapter: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolHandler.kt`
 - Flutter RunLog UI/converter: `ui/lib/features/task/run_log/` and `ui/lib/features/task/pages/execution_history/`
 - Existing RunLog contract: `app/src/main/assets/omniflow/runlog/references/runlog-contract.md`

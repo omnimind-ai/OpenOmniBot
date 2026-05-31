@@ -137,15 +137,21 @@ object RunLogReusableFunctionCompiler {
                 i++
                 continue
             }
-            // Advance while subsequent steps are input_text on the same target.
+            // Advance while subsequent steps are input_text on the SAME target.
+            // Blank signature = unknown target: treat as different target and stop.
             var last = step
+            val lastSig = textInputTargetSignature(last)
+            if (lastSig.isBlank()) {
+                // Can't confirm target — keep this step as-is, no collapsing.
+                output += last
+                i++
+                continue
+            }
             while (i + 1 < steps.size) {
                 val next = steps[i + 1]
                 if (replayActionForStep(next) !in INPUT_TEXT_ACTIONS) break
-                if (!textInputTargetSignature(next).let { sig ->
-                        sig.isNotBlank() && sig == textInputTargetSignature(last)
-                    }
-                ) break
+                val nextSig = textInputTargetSignature(next)
+                if (nextSig.isBlank() || nextSig != lastSig) break
                 last = next
                 i++
             }
@@ -272,14 +278,7 @@ object RunLogReusableFunctionCompiler {
      * that need to compare non-OmniFlow steps.
      */
     private fun replayActionForStep(step: Map<String, Any?>): String {
-        val rawAction = firstNonBlank(
-            step["omniflow_action"],
-            step["local_action"],
-            step["tool"],
-            step["callable_tool"],
-        )
-        return RunLogReplayPolicy.omniflowActionForToolName(rawAction)
-            ?: RunLogReplayPolicy.normalizeToolName(rawAction)
+        return OobActionCodec.actionNameForStep(step)
     }
 
     /**
@@ -289,7 +288,7 @@ object RunLogReusableFunctionCompiler {
      * @return The final text value that replay would input.
      */
     private fun textInputValue(step: Map<String, Any?>): String {
-        val args = asMap(step["args"])
+        val args = OobActionCodec.argsForStep(step)
         return firstNonBlank(args["text"], args["content"], args["value"])
     }
 
@@ -300,9 +299,9 @@ object RunLogReusableFunctionCompiler {
      * @return A compact target signature, or blank when the target is unknown.
      */
     private fun textInputTargetSignature(step: Map<String, Any?>): String {
-        val args = asMap(step["args"])
-        val sourceContext = asMap(step["source_context"])
-        val action = asMap(sourceContext["action"])
+        val args = OobActionCodec.argsForStep(step)
+        val sourceContext = OobActionCodec.sourceContextForStep(step)
+        val action = OobActionCodec.sourceActionForStep(step)
         return firstNonBlank(
             args["node_resource_id"],
             action["node_resource_id"],
@@ -322,16 +321,7 @@ object RunLogReusableFunctionCompiler {
         steps: List<Map<String, Any?>>,
     ): List<Map<String, Any?>> {
         if (steps.isEmpty()) return steps
-        val firstAction = RunLogReplayPolicy.omniflowActionForToolName(
-            firstNonBlank(
-                steps.first()["omniflow_action"],
-                steps.first()["local_action"],
-                steps.first()["tool"],
-                steps.first()["callable_tool"],
-            )
-        ) ?: RunLogReplayPolicy.normalizeToolName(
-            firstNonBlank(steps.first()["tool"], steps.first()["callable_tool"])
-        )
+        val firstAction = replayActionForStep(steps.first())
         if (firstAction == "open_app") return steps
 
         val packageName = initialReplayPackage(steps, replayableCards) ?: return steps
@@ -360,16 +350,7 @@ object RunLogReusableFunctionCompiler {
     ): List<Map<String, Any?>> {
         if (steps.isEmpty()) return steps
         val first = steps.first()
-        val firstAction = RunLogReplayPolicy.omniflowActionForToolName(
-            firstNonBlank(
-                first["omniflow_action"],
-                first["local_action"],
-                first["tool"],
-                first["callable_tool"],
-            )
-        ) ?: RunLogReplayPolicy.normalizeToolName(
-            firstNonBlank(first["tool"], first["callable_tool"])
-        )
+        val firstAction = replayActionForStep(first)
         if (firstAction != "open_app") return steps
         val args = jsonSafeMap(first["args"])
         val packageName = firstNonBlank(args["package_name"], args["packageName"])
@@ -536,11 +517,9 @@ object RunLogReusableFunctionCompiler {
         val parameters = mutableListOf<Map<String, Any?>>()
         val usedNames = mutableSetOf<String>()
         steps.forEachIndexed { index, step ->
-            val tool = RunLogReplayPolicy.omniflowActionForToolName(
-                firstNonBlank(step["omniflow_action"], step["local_action"], step["tool"], step["callable_tool"])
-            ) ?: RunLogReplayPolicy.normalizeToolName(firstNonBlank(step["tool"], step["callable_tool"]))
+            val tool = replayActionForStep(step)
             if (tool !in INPUT_TEXT_ACTIONS) return@forEachIndexed
-            val args = asMap(step["args"])
+            val args = OobActionCodec.argsForStep(step)
             val inputKey = INPUT_TEXT_ARG_KEYS.firstOrNull { key ->
                 args[key]?.toString()?.trim()?.isNotEmpty() == true
             } ?: return@forEachIndexed
@@ -649,15 +628,8 @@ object RunLogReusableFunctionCompiler {
         index: Int,
         parameterTemplates: Map<Pair<Int, String>, String>,
     ): Map<String, Any?>? {
-        val args = asMap(step["args"])
-        val rawTool = firstNonBlank(
-            step["omniflow_action"],
-            step["local_action"],
-            step["tool"],
-            step["callable_tool"],
-        )
-        val action = RunLogReplayPolicy.omniflowActionForToolName(rawTool)
-            ?: RunLogReplayPolicy.normalizeToolName(rawTool)
+        val args = OobActionCodec.argsForStep(step)
+        val action = OobActionCodec.actionNameForStep(step)
         val description = firstNonBlank(step["title"], step["summary"]).takeIf { it.isNotBlank() }
         val sourceContext = asMap(step["source_context"]).ifEmpty { asMap(args["source_context"]) }
         return when {
@@ -673,7 +645,7 @@ object RunLogReusableFunctionCompiler {
                 description = description,
                 sourceContext = sourceContext,
             )
-            action == "type" || action == "input_text" -> nullableMap(
+            action == OobActionCodec.ACTION_INPUT_TEXT -> nullableMap(
                 "type" to "input_text",
                 "text" to inputTextValue(args, index, parameterTemplates),
                 "target" to coordinateTarget(args).takeIf {
@@ -705,7 +677,7 @@ object RunLogReusableFunctionCompiler {
                 ).takeIf { it.isNotEmpty() },
                 "description" to description,
             )
-            action == "scroll" || action == "swipe" -> {
+            action == OobActionCodec.ACTION_SWIPE -> {
                 val target = coordinateTarget(args)
                 nullableMap(
                     "type" to "swipe",
@@ -726,17 +698,7 @@ object RunLogReusableFunctionCompiler {
                 "packageName" to firstNonBlank(args["package_name"], args["packageName"]),
                 "description" to description,
             )
-            action == "press_home" -> nullableMap(
-                "type" to "press_key",
-                "key" to "home",
-                "description" to description,
-            )
-            action == "press_back" -> nullableMap(
-                "type" to "press_key",
-                "key" to "back",
-                "description" to description,
-            )
-            action == "hot_key" || action == "press_key" -> nullableMap(
+            action == OobActionCodec.ACTION_PRESS_KEY -> nullableMap(
                 "type" to "press_key",
                 "key" to firstNonBlank(args["key"], args["hotkey"], args["hot_key"]),
                 "description" to description,
@@ -789,7 +751,7 @@ object RunLogReusableFunctionCompiler {
             )
             else -> nullableMap(
                 "type" to "external_tool",
-                "toolName" to firstNonBlank(step["callable_tool"], step["tool"], rawTool),
+                "toolName" to firstNonBlank(step["callable_tool"], step["tool"], step["action"], action),
                 "arguments" to args,
                 "description" to description,
             )
@@ -901,7 +863,7 @@ object RunLogReusableFunctionCompiler {
 
     private fun hasRecordedReplayStep(card: Map<String, Any?>): Boolean {
         val toolName = toolNameForCard(card)
-        if (RunLogReplayPolicy.omniflowActionForToolName(toolName) != null) {
+        if (OobActionCodec.canonicalActionForName(toolName) != null) {
             return true
         }
         if (RunLogReplayPolicy.normalizeToolName(toolName) != "android_privileged_action") {
@@ -991,7 +953,7 @@ object RunLogReusableFunctionCompiler {
         return if (normalizedToolName == "android_privileged_action") {
             androidPrivilegedReplayAction(args)
         } else {
-            RunLogReplayPolicy.omniflowActionForToolName(toolName)
+            OobActionCodec.canonicalActionForName(toolName)
         }
     }
 
@@ -1107,15 +1069,21 @@ object RunLogReusableFunctionCompiler {
                     utg = utg,
                 )
             }
-            RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName) != null -> {
+            OobActionCodec.canonicalActionForName(normalizedToolName) != null -> {
                 val replayAction = requireNotNull(
-                    RunLogReplayPolicy.omniflowActionForToolName(normalizedToolName)
+                    OobActionCodec.canonicalActionForName(normalizedToolName)
+                )
+                val replayArgs = OobActionCodec.argsForStep(
+                    mapOf(
+                        "tool" to toolName,
+                        "args" to args,
+                    )
                 )
                 omniflowStep(
-                    title = cleanStepTitle(title, replayAction, args),
+                    title = cleanStepTitle(title, replayAction, replayArgs),
                     replayAction = replayAction,
                     sourceToolName = normalizedToolName,
-                    args = args,
+                    args = replayArgs,
                     sourceContext = sourceContext,
                     utg = utg,
                 )
@@ -1200,8 +1168,8 @@ object RunLogReusableFunctionCompiler {
         toolName: String,
         args: Map<String, Any?>,
     ): String {
-        val action = RunLogReplayPolicy.omniflowActionForToolName(toolName)
-            ?: RunLogReplayPolicy.normalizeToolName(toolName)
+        val action = OobActionCodec.canonicalActionForName(toolName)
+            ?: OobActionCodec.normalizeName(toolName)
         val target = firstNonBlank(
             args["target_description"],
             args["targetDescription"],
@@ -1224,12 +1192,12 @@ object RunLogReusableFunctionCompiler {
                     if (x.isNotBlank() && y.isNotBlank()) "$action: ($x, $y)" else action
                 }
             }
-            "type", "input_text" -> if (target.isNotBlank()) "$action: $target" else action
-            "scroll", "swipe" -> {
+            "input_text" -> if (target.isNotBlank()) "$action: $target" else action
+            "swipe" -> {
                 val direction = firstNonBlank(args["direction"], args["scroll_direction"])
                 if (direction.isNotBlank()) "$action: $direction" else action
             }
-            "press_key", "hot_key" -> {
+            "press_key" -> {
                 val key = firstNonBlank(args["key"], args["hotkey"], args["hot_key"])
                 if (key.isNotBlank()) "$action: $key" else action
             }
@@ -1455,7 +1423,7 @@ object RunLogReusableFunctionCompiler {
                 if (normalizedToolName == "android_privileged_action") {
                     androidPrivilegedReplayAction(args)
                 } else {
-                    RunLogReplayPolicy.omniflowActionForToolName(rawToolName)
+                    OobActionCodec.canonicalActionForName(rawToolName)
                 } ?: rawToolName
                 )
         )
@@ -1566,7 +1534,7 @@ object RunLogReusableFunctionCompiler {
         }
 
     private fun androidPrivilegedReplayAction(args: Map<String, Any?>): String? {
-        return RunLogReplayPolicy.omniflowActionForToolName(
+        return OobActionCodec.canonicalActionForName(
             firstNonBlank(args["action"], args["omniflow_action"])
         )
     }
@@ -1579,7 +1547,12 @@ object RunLogReusableFunctionCompiler {
             flattened[key] = value
         }
         flattened.putAll(nestedArguments)
-        return flattened
+        return OobActionCodec.argsForStep(
+            mapOf(
+                "tool" to firstNonBlank(args["action"], args["omniflow_action"]),
+                "args" to flattened,
+            )
+        )
     }
 
     private fun deriveFunctionId(record: InternalRunLogRecord): String {
@@ -1665,7 +1638,7 @@ object RunLogReusableFunctionCompiler {
         }
     }
 
-    private val INPUT_TEXT_ACTIONS = setOf("type", "input_text")
+    private val INPUT_TEXT_ACTIONS = setOf(OobActionCodec.ACTION_INPUT_TEXT)
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
     private val EXECUTION_ARG_BINDING_REGEX = Regex("""^\$\.execution\.steps\[(\d+)]\.args\.([A-Za-z0-9_]+)$""")
     private val PACKAGE_NAME_PATTERN = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+""")

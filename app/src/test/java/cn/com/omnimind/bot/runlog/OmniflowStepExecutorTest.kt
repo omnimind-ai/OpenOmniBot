@@ -29,7 +29,7 @@ class OmniflowStepExecutorTest {
         )
 
         assertTrue(OmniflowStepExecutor.isOmniflowStep(step))
-        assertEquals("press_back", OmniflowStepExecutor.actionNameForStep(step))
+        assertEquals("press_key", OmniflowStepExecutor.actionNameForStep(step))
     }
 
     @Test

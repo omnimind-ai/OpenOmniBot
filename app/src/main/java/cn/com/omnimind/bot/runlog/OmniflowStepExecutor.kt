@@ -47,20 +47,12 @@ object OmniflowStepExecutor {
             step["modelFree"] == true ||
             step["model_free"]?.toString()?.equals("true", ignoreCase = true) == true
         val action = actionNameForStep(step)
-        return action in RunLogReplayPolicy.omniflowActions &&
+        return action in OobActionCodec.executableActions &&
             (executor == "omniflow" || modelFree)
     }
 
-    fun actionNameForStep(step: Map<String, Any?>): String {
-        val raw = firstNonBlank(
-            step["omniflow_action"],
-            step["local_action"],
-            step["tool"],
-            step["callable_tool"]
-        )
-        return RunLogReplayPolicy.omniflowActionForToolName(raw)
-            ?: RunLogReplayPolicy.normalizeToolName(raw)
-    }
+    fun actionNameForStep(step: Map<String, Any?>): String =
+        OobActionCodec.actionNameForStep(step)
 
     fun normalizeArgsMap(rawArgs: Any?): Map<String, Any?> =
         when (rawArgs) {
@@ -72,11 +64,11 @@ object OmniflowStepExecutor {
         isOmniflowStep(step) && actionRequiresAccessibility(actionNameForStep(step))
 
     fun actionRequiresAccessibility(action: String): Boolean {
-        val normalized = RunLogReplayPolicy.omniflowActionForToolName(action)
-            ?: RunLogReplayPolicy.normalizeToolName(action)
-        return normalized in RunLogReplayPolicy.omniflowActions &&
-            normalized != "open_app" &&
-            normalized != "finished"
+        val normalized = OobActionCodec.canonicalActionForName(action)
+            ?: OobActionCodec.normalizeName(action)
+        return normalized in OobActionCodec.executableActions &&
+            normalized != OobActionCodec.ACTION_OPEN_APP &&
+            normalized != OobActionCodec.ACTION_FINISHED
     }
 
     fun stringArg(args: Map<String, Any?>, vararg keys: String): String? {
@@ -98,7 +90,7 @@ object OmniflowStepExecutor {
     ): Map<String, Any?> {
         val timing = ReplayStepTiming()
         val action = actionNameForStep(step)
-        if (action !in RunLogReplayPolicy.omniflowActions) {
+        if (action !in OobActionCodec.executableActions) {
             throw IllegalArgumentException("Unsupported omniflow action: $action")
         }
         val backend = OmniflowActionRuntime.backend
@@ -106,9 +98,9 @@ object OmniflowStepExecutor {
             throw IllegalStateException("OmniFlow action backend is not ready")
         }
         val fixedReplay = RunLogReplayPolicy.fixedReplayOnly
-        val initialArgs = normalizeArgsMap(step["args"])
+        val initialArgs = OobActionCodec.argsForStep(step)
         val transferRequested = !fixedReplay &&
-            action in RunLogReplayPolicy.coordinateActions &&
+            action in OobActionCodec.coordinateActions &&
             shouldUseCoordinateHook(step)
         var currentState: ReplayState? = null
 
@@ -229,7 +221,7 @@ object OmniflowStepExecutor {
                     "long_press"
                 }
 
-                "scroll", "swipe" -> {
+                OobActionCodec.ACTION_SWIPE -> {
                     val swipe = swipeSpec(args, replayState("act_swipe"))
                     backend.scrollWithContext(
                         x = swipe.x,
@@ -242,7 +234,7 @@ object OmniflowStepExecutor {
                     action
                 }
 
-                "type", "input_text" -> {
+                OobActionCodec.ACTION_INPUT_TEXT -> {
                     val text = stringArg(args, "content", "text", "value")
                         ?: throw IllegalArgumentException("$action requires content")
                     backend.inputText(
@@ -281,13 +273,9 @@ object OmniflowStepExecutor {
                     "open_app"
                 }
 
-                "press_home", "press_back", "hot_key", "press_key" -> {
+                OobActionCodec.ACTION_PRESS_KEY -> {
                     val key = stringArg(args, "key", "hotkey", "hot_key")
-                        ?: when (action) {
-                            "press_home" -> "HOME"
-                            "press_back" -> "BACK"
-                            else -> throw IllegalArgumentException("$action requires key")
-                        }
+                        ?: throw IllegalArgumentException("$action requires key")
                     backend.pressHotKey(key)
                     action
                 }
@@ -371,13 +359,13 @@ object OmniflowStepExecutor {
         currentXmlOverride: String?,
     ): StepArgsResult {
         val rawArgs = step["args"]
-        val args = (rawArgs as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to v }
-            ?: return StepArgsResult(rawArgs)
+        val args = OobActionCodec.argsForStep(step)
+        if (rawArgs !is Map<*, *> && args.isEmpty()) return StepArgsResult(rawArgs)
         if (!shouldUseCoordinateHook(step)) {
             return StepArgsResult(args)
         }
         val tool = actionNameForStep(step)
-        if (tool !in RunLogReplayPolicy.coordinateActions) {
+        if (tool !in OobActionCodec.coordinateActions) {
             return StepArgsResult(args)
         }
         val sourceContext = (step["source_context"] as? Map<*, *>)
@@ -407,7 +395,7 @@ object OmniflowStepExecutor {
         }
         return when (tool) {
             "click", "long_press", "input_text" -> remapPointActionArgs(tool, args, sourceXml, currentXml)
-            "scroll", "swipe" -> remapScrollActionArgs(tool, args, sourceXml, currentXml)
+            OobActionCodec.ACTION_SWIPE -> remapScrollActionArgs(tool, args, sourceXml, currentXml)
             else -> StepArgsResult(args)
         }
     }
@@ -706,7 +694,7 @@ object OmniflowStepExecutor {
         replayAction: ReplayAction,
     ): Map<String, Any?>? {
         val action = replayAction.action
-        if (action !in setOf("click", "long_press", "scroll", "swipe")) return null
+        if (action !in setOf("click", "long_press", OobActionCodec.ACTION_SWIPE)) return null
         val page = state.page ?: return null
         val keyboardTop = keyboardTop(page) ?: return null
         if (!actionTargetIntersectsKeyboard(action, replayAction.args, keyboardTop)) return null
@@ -913,7 +901,7 @@ object OmniflowStepExecutor {
         keyboardTop: Float,
     ): Boolean {
         val threshold = keyboardTop - KEYBOARD_OBSCURE_MARGIN_PX
-        if (action == "scroll" || action == "swipe") {
+        if (action == OobActionCodec.ACTION_SWIPE) {
             val y1 = numberArg(args, "y1")?.toFloat()
             val y2 = numberArg(args, "y2")?.toFloat()
             return listOfNotNull(y1, y2).any { it >= threshold }

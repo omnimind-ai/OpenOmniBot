@@ -78,12 +78,12 @@
         "title": "Type demo query",
         "kind": "omniflow_action",
         "executor": "omniflow",
-        "omniflow_action": "type",
-        "local_action": "type",
+        "omniflow_action": "input_text",
+        "local_action": "input_text",
         "model_free": true,
         "scriptable": true,
-        "tool": "type",
-        "callable_tool": "type",
+        "tool": "input_text",
+        "callable_tool": "input_text",
         "args": {
           "text": "demo wifi"
         }

@@ -1647,7 +1647,7 @@ class OobOmniFlowToolkitService(
             val step = mapArg(rawStep)
             val tool = stepActionName(step)
             val actionMatches = action.isBlank() || action == tool ||
-                RunLogReplayPolicy.omniflowActionForToolName(action) == tool
+                OobActionCodec.canonicalActionForName(action) == tool
             if (explicitIndex >= 0 && explicitIndex != index) return@mapIndexedNotNull null
             if (!actionMatches && explicitIndex < 0) return@mapIndexedNotNull null
             val args = mapArg(step["args"])
@@ -1692,23 +1692,7 @@ class OobOmniFlowToolkitService(
         intArg(candidate["score"], defaultValue = 0)
 
     private fun stepActionName(step: Map<String, Any?>): String =
-        RunLogReplayPolicy.omniflowActionForToolName(
-            firstNonBlank(
-                step["omniflow_action"],
-                step["local_action"],
-                step["callable_tool"],
-                step["tool"],
-                step["type"],
-            )
-        ) ?: RunLogReplayPolicy.normalizeToolName(
-            firstNonBlank(
-                step["omniflow_action"],
-                step["local_action"],
-                step["callable_tool"],
-                step["tool"],
-                step["type"],
-            )
-        )
+        OobActionCodec.actionNameForStep(step)
 
     private fun containsLoose(haystack: String, needle: String): Boolean {
         if (needle.isBlank()) return false
@@ -2141,13 +2125,13 @@ class OobOmniFlowToolkitService(
             }
         }
         val normalizedTool = RunLogReplayPolicy.normalizeToolName(rawTool)
-        val action = RunLogReplayPolicy.omniflowActionForToolName(rawTool)
+        val action = OobActionCodec.canonicalActionForName(rawTool)
         val sourceContext = mapArg(raw["source_context"])
             .ifEmpty { mapArg(raw["sourceContext"]) }
             .ifEmpty { inheritedSourceContext }
         val title = firstNonBlank(raw["title"], raw["summary"], raw["description"])
             .ifBlank { simpleStepTitle(action ?: normalizedTool, raw, index) }
-        val stepArgs = normalizeSimpleStepArgs(raw, action ?: normalizedTool)
+        val stepArgs = normalizeSimpleStepArgs(raw, rawTool)
 
         val step = linkedMapOf<String, Any?>(
             "id" to firstNonBlank(raw["id"], raw["step_id"], "step_${index + 1}"),
@@ -2210,8 +2194,10 @@ class OobOmniFlowToolkitService(
 
     private fun normalizeSimpleStepArgs(
         raw: Map<String, Any?>,
-        action: String,
+        rawTool: String,
     ): Map<String, Any?> {
+        val action = OobActionCodec.canonicalActionForName(rawTool)
+            ?: OobActionCodec.normalizeName(rawTool)
         val args = linkedMapOf<String, Any?>()
         args.putAll(mapArg(raw["args"]))
         args.putAll(mapArg(raw["arguments"]).filterKeys { it !in args })
@@ -2238,7 +2224,7 @@ class OobOmniFlowToolkitService(
         if (nestedArguments.isNotEmpty() && !args.containsKey("arguments")) {
             args["arguments"] = nestedArguments
         }
-        if ((action == "input_text" || action == "type") &&
+        if (action == OobActionCodec.ACTION_INPUT_TEXT &&
             firstNonBlank(args["content"], args["text"], args["value"]).isBlank()
         ) {
             putIfPresent(args, "content", raw["input_text"], raw["inputText"])
@@ -2250,7 +2236,12 @@ class OobOmniFlowToolkitService(
         if (action == "finished" && args.isEmpty()) {
             args["content"] = firstNonBlank(raw["content"], raw["summary"], "Done")
         }
-        return args.filterValues { it != null }
+        return OobActionCodec.argsForStep(
+            mapOf(
+                "tool" to rawTool,
+                "args" to args.filterValues { it != null },
+            )
+        )
     }
 
     private fun canonicalSimpleCallToolArgs(
@@ -3130,7 +3121,7 @@ class OobOmniFlowToolkitService(
         val stepId = firstNonBlank(step["id"], step["step_id"])
         val tool = firstNonBlank(step["tool"], step["omniflow_action"], step["callable_tool"], step["type"])
         val normalizedTool = RunLogReplayPolicy.normalizeToolName(tool)
-        val action = RunLogReplayPolicy.omniflowActionForToolName(normalizedTool) ?: normalizedTool
+        val action = OobActionCodec.canonicalActionForName(normalizedTool) ?: normalizedTool
         val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
         val decision: String
         val risk: String

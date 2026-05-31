@@ -129,9 +129,8 @@ Result:
     {"index": 0, "type": "open_app", "duration_ms": 18},
     {"index": 1, "type": "click", "duration_ms": 20},
     {"index": 2, "type": "click", "duration_ms": 26},
-    {"index": 3, "type": "type", "duration_ms": 15},
+    {"index": 3, "type": "input_text", "duration_ms": 15},
     {"index": 4, "type": "click", "duration_ms": 23},
-    {"index": 5, "type": "wait", "duration_ms": 500},
     {"index": 6, "type": "click", "duration_ms": 29}
   ],
   "control": {

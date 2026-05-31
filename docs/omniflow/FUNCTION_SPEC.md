@@ -88,14 +88,18 @@ Deterministic local replay. Allowed actions:
 ```text
 click
 long_press
-scroll
-type
+input_text
+swipe
 open_app
-press_home
-press_back
-hot_key
-wait
+press_key
+finished
 ```
+
+Legacy names such as `tap`, `type`, `scroll`, `press_back`, `press_home`,
+`hot_key`, and `done` may be accepted at ingestion time, but newly written
+Function steps should use the canonical action vocabulary documented in
+`canonical-actions.md`. `wait` is not a main-path action; represent waits as
+checker delays or cleanup metadata.
 
 Coordinate actions may include:
 

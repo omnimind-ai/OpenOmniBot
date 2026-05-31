@@ -1334,7 +1334,7 @@ class OobUdegNodeStore(
                 diagnostics += linkedMapOf(
                     "step_index" to index,
                     "reason" to if (srcPage.isBlank()) "missing_src_ctx_page" else "missing_dst_ctx_page",
-                    "action_type" to normalizedActionType(step, sourceContext),
+                    "action_type" to OobActionCodec.actionNameForStep(step),
                 )
                 return@forEachIndexed
             }
@@ -1352,17 +1352,27 @@ class OobUdegNodeStore(
                 diagnostics += linkedMapOf(
                     "step_index" to index,
                     "reason" to "invalid_boundary_page",
-                    "action_type" to normalizedActionType(step, sourceContext),
+                    "action_type" to OobActionCodec.actionNameForStep(step),
                 )
                 return@forEachIndexed
             }
 
-            val actionType = normalizedActionType(step, sourceContext)
-            val args = mapArg(step["args"])
+            val actionType = OobActionCodec.actionNameForStep(step)
+            val args = OobActionCodec.argsForStep(step)
             val sourceAction = mapArg(sourceContext["action"])
-            val actionSummary = actionArgsSummary(actionType, args, sourceAction)
-            val role = annotatedActionRole(functionSpec, step, index)
-                ?: defaultActionRole(actionType, actionSummary)
+            val actionSummary = OobActionCodec.actionArgsSummary(
+                actionType = actionType,
+                args = args,
+                sourceAction = sourceAction,
+                maxValueChars = MAX_ACTION_SUMMARY_VALUE_CHARS,
+            )
+            val role = OobStepRoleClassifier.classify(
+                functionSpec = functionSpec,
+                step = step,
+                stepIndex = index,
+                actionType = actionType,
+                actionSummary = actionSummary,
+            ).role
             val edgeId = actionEdgeId(
                 functionId = functionId,
                 sourceRunId = sourceRunId,
@@ -1546,69 +1556,6 @@ class OobUdegNodeStore(
             context["observationXml"],
         )
 
-    private fun normalizedActionType(
-        step: Map<String, Any?>,
-        sourceContext: Map<String, Any?>,
-    ): String {
-        val sourceAction = mapArg(sourceContext["action"])
-        val raw = firstNonBlank(
-            step["omniflow_action"],
-            step["local_action"],
-            step["tool"],
-            step["callable_tool"],
-            step["type"],
-            sourceAction["tool"],
-        )
-        val normalized = RunLogReplayPolicy.omniflowActionForToolName(raw)
-            ?: RunLogReplayPolicy.normalizeToolName(raw)
-        return when (normalized) {
-            "type" -> "input_text"
-            "scroll" -> "swipe"
-            "hot_key" -> "press_key"
-            else -> normalized.ifBlank { "unknown" }
-        }
-    }
-
-    private fun actionArgsSummary(
-        actionType: String,
-        args: Map<String, Any?>,
-        sourceAction: Map<String, Any?>,
-    ): Map<String, Any?> {
-        val summary = linkedMapOf<String, Any?>()
-        summary.putFirstPresent("target_description", args["target_description"], args["targetDescription"], sourceAction["target_description"], sourceAction["targetDescription"])
-        summary.putFirstPresent("selector", args["selector"], sourceAction["selector"])
-        summary.putFirstPresent("node_resource_id", args["node_resource_id"], args["nodeResourceId"], args["resource_id"], args["resourceId"], sourceAction["node_resource_id"], sourceAction["nodeResourceId"], sourceAction["resource_id"], sourceAction["resourceId"])
-        summary.putFirstPresent("bounds", args["bounds"], sourceAction["bounds"])
-        summary.putFirstPresent("node_class", args["node_class"], args["nodeClass"], sourceAction["node_class"], sourceAction["nodeClass"])
-        summary.putFirstPresent("x", args["x"], sourceAction["x"])
-        summary.putFirstPresent("y", args["y"], sourceAction["y"])
-        summary.putFirstPresent("x1", args["x1"], sourceAction["x1"])
-        summary.putFirstPresent("y1", args["y1"], sourceAction["y1"])
-        summary.putFirstPresent("x2", args["x2"], sourceAction["x2"])
-        summary.putFirstPresent("y2", args["y2"], sourceAction["y2"])
-        summary.putFirstPresent("end_x", args["end_x"], args["endX"], sourceAction["end_x"], sourceAction["endX"])
-        summary.putFirstPresent("end_y", args["end_y"], args["endY"], sourceAction["end_y"], sourceAction["endY"])
-        summary.putFirstPresent("direction", args["direction"], args["scroll_direction"], sourceAction["direction"], sourceAction["scroll_direction"])
-        summary.putFirstPresent("distance", args["distance"], args["scroll_distance"], sourceAction["distance"], sourceAction["scroll_distance"])
-        summary.putFirstPresent("duration_ms", args["duration_ms"], args["durationMs"], sourceAction["duration_ms"], sourceAction["durationMs"])
-        summary.putFirstPresent("package_name", args["package_name"], args["packageName"], sourceAction["package_name"], sourceAction["packageName"])
-        summary.putFirstPresent("key", args["key"], args["hotkey"], args["hot_key"], sourceAction["key"], sourceAction["hotkey"], sourceAction["hot_key"])
-        summary.putFirstPresent("clear", args["clear"], sourceAction["clear"])
-        if (actionType == "input_text") {
-            val text = firstNonBlank(args["text"], args["content"], args["value"], sourceAction["text"], sourceAction["content"], sourceAction["value"])
-            if (text.isNotBlank()) {
-                summary["text_present"] = true
-                summary["text_length"] = text.length
-                summary["text_redacted"] = true
-            }
-        }
-        return summary.filterValues { value ->
-            value != null && value.toString().trim().isNotEmpty()
-        }.mapValues { (_, value) ->
-            if (value is String) value.take(MAX_ACTION_SUMMARY_VALUE_CHARS) else value
-        }
-    }
-
     private fun targetEvidence(actionSummary: Map<String, Any?>): Map<String, Any?> =
         linkedMapOf(
             "target_description" to actionSummary["target_description"],
@@ -1637,94 +1584,6 @@ class OobUdegNodeStore(
             "action" to action.filterKeys { it !in setOf("text", "content", "value") },
         )
     }
-
-    private fun defaultActionRole(actionType: String, actionSummary: Map<String, Any?>): String {
-        val key = firstNonBlank(actionSummary["key"]).lowercase(Locale.US)
-        return when {
-            actionType == "open_app" -> "navigation"
-            actionType == "press_back" || actionType == "press_home" -> "navigation"
-            actionType == "press_key" && key in setOf("back", "home") -> "navigation"
-            else -> "unknown"
-        }
-    }
-
-    private fun annotatedActionRole(
-        functionSpec: Map<String, Any?>,
-        step: Map<String, Any?>,
-        stepIndex: Int,
-    ): String? {
-        listOf(
-            mapArg(step["raw_action_edge"]),
-            mapArg(step["udeg_edge"]),
-            mapArg(step["cleanup_annotation"]),
-            mapArg(mapArg(step["metadata"])["raw_action_edge"]),
-        ).forEach { annotation ->
-            normalizeActionRole(
-                firstNonBlank(
-                    annotation["role"],
-                    annotation["raw_edge_role"],
-                    annotation["udeg_edge_role"],
-                    annotation["action_role"],
-                    annotation["cleanup_action"],
-                    annotation["cleanupAction"],
-                    annotation["usefulness"],
-                    annotation["category"],
-                    annotation["kind"],
-                )
-            )?.let { return it }
-        }
-
-        val agentReuse = mapArg(functionSpec["agent_reuse"])
-        val keyActions = listArg(agentReuse["key_actions"]) + listArg(agentReuse["keyActions"])
-        if (keyActions.any { matchesStepReference(it, step, stepIndex) }) return "semantic"
-        val checkerAssets = listArg(agentReuse["checker_assets"]) + listArg(agentReuse["checkerAssets"])
-        if (checkerAssets.any { matchesStepReference(it, step, stepIndex) }) return "checker_candidate"
-        val noiseActions = listArg(agentReuse["noise_actions"]) + listArg(agentReuse["noiseActions"])
-        if (noiseActions.any { matchesStepReference(it, step, stepIndex) }) return "noise"
-        return null
-    }
-
-    private fun matchesStepReference(rawReference: Any?, step: Map<String, Any?>, stepIndex: Int): Boolean {
-        when (rawReference) {
-            is Number -> return rawReference.toInt() == stepIndex
-            is String -> {
-                val value = rawReference.trim()
-                return value == stepIndex.toString() ||
-                    value == firstNonBlank(step["id"], step["step_id"], step["stepId"])
-            }
-        }
-        val reference = mapArg(rawReference)
-        if (reference.isEmpty()) return false
-        val index = intArg(reference["step_index"], reference["stepIndex"], reference["index"], defaultValue = -1)
-        if (index == stepIndex) return true
-        val stepId = firstNonBlank(reference["step_id"], reference["stepId"], reference["id"])
-        return stepId.isNotBlank() && stepId == firstNonBlank(step["id"], step["step_id"], step["stepId"])
-    }
-
-    private fun normalizeActionRole(rawRole: String): String? =
-        when (rawRole.trim().lowercase(Locale.US)) {
-            "navigation", "navigate", "route", "route_safe" -> "navigation"
-            "semantic", "key", "key_action", "key_function" -> "semantic"
-            "checker",
-            "checker_candidate",
-            "runtime_checker",
-            "optional_checker",
-            "conditional_checker",
-            "conditional_obstruction",
-            "popup_checker",
-            "ad_checker" -> "checker_candidate"
-            "noise",
-            "ignore",
-            "ignored",
-            "drop_candidate",
-            "merge_candidate",
-            "probably_useless",
-            "redundant_candidate",
-            "noop",
-            "no_op" -> "noise"
-            "unknown" -> "unknown"
-            else -> null
-        }
 
     private fun sourceRunId(functionSpec: Map<String, Any?>): String {
         val source = mapArg(functionSpec["source"])
@@ -1905,12 +1764,6 @@ class OobUdegNodeStore(
             }
         }
         return defaultValue
-    }
-
-    private fun MutableMap<String, Any?>.putFirstPresent(key: String, vararg values: Any?) {
-        values.firstOrNull { value ->
-            value != null && value.toString().trim().isNotEmpty()
-        }?.let { put(key, it) }
     }
 
     fun observePage(observedPage: ObservedPage): PageObservationResult? {
