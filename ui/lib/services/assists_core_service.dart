@@ -2730,6 +2730,7 @@ class AssistsMessageService {
   static Future<Map<String, dynamic>> startHumanTrajectoryLearning({
     String? name,
     String? description,
+    bool enableDebugScreenshots = false,
   }) async {
     final normalizedName = name?.trim() ?? '';
     final result = await assistCore
@@ -2737,6 +2738,7 @@ class AssistsMessageService {
           if (normalizedName.isNotEmpty) 'name': normalizedName,
           if (description != null && description.trim().isNotEmpty)
             'description': description.trim(),
+          'enableDebugScreenshots': enableDebugScreenshots,
         });
     return _jsonSafeDynamicMap(result);
   }

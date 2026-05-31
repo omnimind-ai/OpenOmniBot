@@ -2405,7 +2405,8 @@ class ChatInputWrapper extends StatelessWidget {
   final ValueChanged<CodexPermissionMode>? onCodexPermissionModeChanged;
   final FutureOr<void> Function()? onViewTrajectoriesTap;
   final FutureOr<void> Function()? onViewCurrentTrajectoryTap;
-  final FutureOr<void> Function()? onManualRecordingTap;
+  final FutureOr<void> Function(bool recordDebugScreenshots)?
+  onManualRecordingTap;
   final bool useIndependentSendButton;
   final bool translucent;
 

@@ -333,7 +333,7 @@ void main() {
                         onViewCurrentTrajectoryTap: () {
                           latestTapCount += 1;
                         },
-                        onManualRecordingTap: () {
+                        onManualRecordingTap: (_) {
                           recordTapCount += 1;
                         },
                       ),
@@ -370,6 +370,7 @@ void main() {
     expect(find.text('已有轨迹'), findsOneWidget);
     expect(find.text('当前轨迹'), findsOneWidget);
     expect(find.text('录制轨迹'), findsOneWidget);
+    expect(find.text('Save screenshots'), findsOneWidget);
 
     await tester.tap(find.text('当前轨迹'));
     await tester.pump();

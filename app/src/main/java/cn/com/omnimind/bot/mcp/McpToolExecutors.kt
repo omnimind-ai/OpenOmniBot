@@ -39,6 +39,21 @@ object McpToolExecutors {
         val needSummaryArg = args?.get("needSummary") as? Boolean
         val shouldSummary = shouldEnableSummary(goal, needSummaryArg)
         val startFromCurrent = boolArg(args, "startFromCurrent", "start_from_current", "skipGoHome", "skip_go_home")
+        val disableOmniFlowRecall = boolArgOrDefault(
+            args,
+            default = false,
+            "disableOmniFlowRecall",
+            "disable_omniflow_recall",
+            "disableRecall",
+            "disable_recall",
+        )
+        val explicitFunctionAutoExecute = hasAnyArg(
+            args,
+            "allowOmniFlowFunctionAutoExecute",
+            "allow_omniflow_function_auto_execute",
+            "autoExecuteFunction",
+            "auto_execute_function",
+        )
 
         val request = VlmTaskRequest(
             goal = goal,
@@ -48,16 +63,14 @@ object McpToolExecutors {
             packageName = if (startFromCurrent) null else firstString(args, "packageName", "package_name"),
             needSummary = shouldSummary,
             skipGoHome = startFromCurrent,
-            disableOmniFlowRecall = boolArgOrDefault(
+            disableOmniFlowRecall = disableOmniFlowRecall,
+            allowOmniFlowFunctionAutoExecute = boolArgOrDefault(
                 args,
-                default = false,
-                "disableOmniFlowRecall",
-                "disable_omniflow_recall",
-                "disableRecall",
-                "disable_recall",
-            ),
-            allowOmniFlowFunctionAutoExecute = boolArg(
-                args,
+                default = shouldInferFunctionAutoExecute(
+                    goal = goal,
+                    disableOmniFlowRecall = disableOmniFlowRecall,
+                    explicitFunctionAutoExecute = explicitFunctionAutoExecute
+                ),
                 "allowOmniFlowFunctionAutoExecute",
                 "allow_omniflow_function_auto_execute",
                 "autoExecuteFunction",
@@ -117,6 +130,33 @@ object McpToolExecutors {
             if (parsed != null) return parsed
         }
         return null
+    }
+
+    private fun hasAnyArg(args: Map<String, Any?>?, vararg keys: String): Boolean =
+        args != null && keys.any { key -> args.containsKey(key) }
+
+    private fun shouldInferFunctionAutoExecute(
+        goal: String,
+        disableOmniFlowRecall: Boolean,
+        explicitFunctionAutoExecute: Boolean
+    ): Boolean {
+        if (disableOmniFlowRecall || explicitFunctionAutoExecute) return false
+        val text = goal.lowercase()
+        return listOf(
+            "复用",
+            "function",
+            "omniflow",
+            "oob",
+            "按之前",
+            "之前那个",
+            "上次",
+            "已有",
+            "保存的",
+            "录制的",
+            "replay",
+            "reuse",
+            "saved function"
+        ).any { text.contains(it) }
     }
 
     private fun boolArg(args: Map<String, Any?>?, vararg keys: String): Boolean {

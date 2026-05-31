@@ -21,12 +21,23 @@ class ManualRecordingPolicyTest {
         assertFalse(source.contains("\"recording_backend\" to \"accessibility_event\""))
         assertTrue(source.contains("\"records_replayable_actions\" to false"))
         assertTrue(source.contains("\"a11_replay_actions_enabled\" to false"))
+        assertTrue(source.contains("\"a11_post_input_click_enabled\" to true"))
+        assertTrue(source.contains("private fun hasPostInputActionWindowLocked(nowMs: Long): Boolean"))
+        assertTrue(
+            Regex(
+                "AccessibilityEvent\\.TYPE_VIEW_CLICKED,\\s*" +
+                    "AccessibilityEvent\\.TYPE_VIEW_LONG_CLICKED -> \\{\\s*" +
+                    ".*if \\(hasPostInputActionWindowLocked\\(nowMs\\)\\) \\{\\s*" +
+                    "recordPostInputActionLocked\\(event, packageName, nowMs\\)\\s*" +
+                    "\\} else \\{\\s*" +
+                    "suppressA11OnlyActionEvent\\(event\\)",
+                RegexOption.DOT_MATCHES_ALL
+            ).containsMatchIn(source)
+        )
         assertTrue(
             Regex(
                 "AccessibilityEvent\\.TYPE_VIEW_SCROLLED,\\s*" +
-                    "AccessibilityEvent\\.TYPE_VIEW_CLICKED,\\s*" +
-                    "AccessibilityEvent\\.TYPE_VIEW_FOCUSED,\\s*" +
-                    "AccessibilityEvent\\.TYPE_VIEW_LONG_CLICKED -> suppressA11OnlyActionEvent\\(event\\)",
+                    "AccessibilityEvent\\.TYPE_VIEW_FOCUSED -> suppressA11OnlyActionEvent\\(event\\)",
                 RegexOption.DOT_MATCHES_ALL
             ).containsMatchIn(source)
         )
@@ -97,7 +108,7 @@ class ManualRecordingPolicyTest {
     }
 
     @Test
-    fun `ime opening clicks keep touch overlay pass through until keyboard closes`() {
+    fun `ime opening keeps keyboard pass through while app area stays recorded`() {
         val source = readSource(
             "uikit/src/main/java/cn/com/omnimind/uikit/loader/ManualTouchRecordLoader.kt"
         )
@@ -109,7 +120,10 @@ class ManualRecordingPolicyTest {
         assertTrue(source.contains("val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture) {"))
         assertFalse(source.contains("!expectsIme"))
         assertTrue(source.contains("scheduleImeVisibilityProbeLocked()"))
-        assertTrue(source.contains("unlockTouchLocked()"))
+        assertTrue(source.contains("overlayHeightForParamsLocked(touchable, displaySize.y)"))
+        assertTrue(source.contains("private fun imeTopLocked(): Int?"))
+        assertTrue(source.contains("window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD"))
+        assertTrue(source.contains("if (visible) {\n                            lockTouchLocked()"))
         assertTrue(source.contains("scheduleImeRelockLocked()"))
         assertFalse(source.contains("awaitImeVisible"))
         assertTrue(recorderSource.contains("if (xml.isNullOrBlank()) return false"))

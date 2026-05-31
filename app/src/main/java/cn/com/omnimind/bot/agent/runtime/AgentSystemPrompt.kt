@@ -14,6 +14,7 @@ object AgentSystemPrompt {
         memoryContext: WorkspaceMemoryPromptContext?,
         activeWorkbenchProjectContext: String?,
         workbenchDisplayLayoutContext: String?,
+        oobFunctionCandidateContext: String? = null,
         locale: PromptLocale = AppLocaleManager.currentPromptLocale(),
         toolExposurePolicy: AgentToolExposurePolicy = AgentToolExposurePolicy.DEFAULT,
     ): String {
@@ -184,6 +185,12 @@ object AgentSystemPrompt {
         } else {
             ""
         }
+        val oobFunctionCandidateSection = oobFunctionCandidateContext
+            ?.takeIf { it.isNotBlank() }
+            ?: when (locale) {
+                PromptLocale.ZH_CN -> "当前没有可注入的 OmniFlow Function 候选摘要；如用户明确要求复用，先用 `oob_function_list` 查找。"
+                PromptLocale.EN_US -> "No OmniFlow Function candidate summary is injected right now; if the user explicitly asks to reuse one, call `oob_function_list` first."
+            }
 
         val workbenchProjectOperationRules = if (workbenchProjectEnabled) {
             when (locale) {
@@ -326,6 +333,7 @@ object AgentSystemPrompt {
                 $memorySection
                 $workbenchProjectSection
                 $workbenchLayoutSection
+                $oobFunctionCandidateSection
                 $workbenchProjectOperationRules
             """.trimIndent()
             PromptLocale.EN_US -> """
@@ -394,6 +402,7 @@ object AgentSystemPrompt {
                 $memorySection
                 $workbenchProjectSection
                 $workbenchLayoutSection
+                $oobFunctionCandidateSection
                 $workbenchProjectOperationRules
             """.trimIndent()
         }

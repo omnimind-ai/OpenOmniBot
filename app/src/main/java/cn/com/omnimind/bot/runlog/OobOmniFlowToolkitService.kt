@@ -1153,6 +1153,8 @@ class OobOmniFlowToolkitService(
         if (!isOptionalCheckerAnnotation(annotation)) return null
         val text = checkerInferenceText(step, annotation)
         val condition = when {
+            containsAny(text, listOf("resolver", "chooser", "open with", "always open", "始终打开", "打开方式")) ->
+                OmniflowCheckerRule.COND_RESOLVER_DIALOG
             containsAny(text, listOf("keyboard", "ime", "键盘", "输入法")) ->
                 OmniflowCheckerRule.COND_KEYBOARD_OBSCURING
             containsAny(text, listOf("permission", "allow", "authorize", "grant", "权限", "授权", "允许")) ->
@@ -1268,6 +1270,13 @@ class OobOmniFlowToolkitService(
             "permission",
             "permission_prompt",
             "permission_nudge" -> OmniflowCheckerRule.COND_PERMISSION_DIALOG
+            "resolver_dialog",
+            "open_with_dialog",
+            "chooser_dialog",
+            "intent_resolver",
+            "intent_resolver_dialog",
+            "default_app_dialog",
+            "always_open_dialog" -> OmniflowCheckerRule.COND_RESOLVER_DIALOG
             "keyboard_obscuring",
             "keyboard",
             "ime_obscuring",
@@ -1293,6 +1302,13 @@ class OobOmniFlowToolkitService(
             "grant",
             "grant_permission",
             "click_allow" -> OmniflowCheckerRule.ACTION_ALLOW
+            "confirm_resolver_always",
+            "always_open",
+            "open_always",
+            "click_always_open",
+            "click_always",
+            "confirm_default",
+            "set_default" -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
             "hide_keyboard",
             "dismiss_keyboard",
             "close_keyboard" -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
@@ -1303,6 +1319,7 @@ class OobOmniFlowToolkitService(
                 OmniflowCheckerRule.COND_OVERLAY_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
                 OmniflowCheckerRule.COND_AD_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
                 OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
+                OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
                 else -> ""
             }
             else -> ""
@@ -1313,15 +1330,16 @@ class OobOmniFlowToolkitService(
         when (condition) {
             OmniflowCheckerRule.COND_KEYBOARD_OBSCURING -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
             OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
+            OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
             OmniflowCheckerRule.COND_PACKAGE_MISMATCH -> OmniflowCheckerRule.ACTION_OPEN_APP
             else -> OmniflowCheckerRule.ACTION_DISMISS
         }
 
     private fun checkerPhaseForCondition(condition: String): String =
-        if (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING) {
-            OmniflowCheckerRule.PHASE_PRE_ACTION
-        } else {
-            OmniflowCheckerRule.PHASE_PRE_TRANSFER
+        when (condition) {
+            OmniflowCheckerRule.COND_KEYBOARD_OBSCURING -> OmniflowCheckerRule.PHASE_PRE_ACTION
+            OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.PHASE_POST_ACTION
+            else -> OmniflowCheckerRule.PHASE_PRE_TRANSFER
         }
 
     private fun isSupportedCheckerPair(condition: String, action: String): Boolean =
@@ -1331,6 +1349,8 @@ class OobOmniFlowToolkitService(
                 action == OmniflowCheckerRule.ACTION_DISMISS) ||
             (condition == OmniflowCheckerRule.COND_PERMISSION_DIALOG &&
                 action == OmniflowCheckerRule.ACTION_ALLOW) ||
+            (condition == OmniflowCheckerRule.COND_RESOLVER_DIALOG &&
+                action == OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS) ||
             (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING &&
                 action == OmniflowCheckerRule.ACTION_HIDE_KEYBOARD) ||
             (condition == OmniflowCheckerRule.COND_PACKAGE_MISMATCH &&
@@ -2643,6 +2663,8 @@ class OobOmniFlowToolkitService(
         val resumeFromStep = intArg(
             request["resume_from_step"],
             request["resumeFromStep"],
+            request["start_step_index"],
+            request["startStepIndex"],
             defaultValue = 0
         ).coerceAtLeast(0)
         val fallbackSessionId = firstNonBlank(

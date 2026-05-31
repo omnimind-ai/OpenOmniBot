@@ -1217,14 +1217,19 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     if (attachments.isNotEmpty || !_isManualRecordingCommand(messageText)) {
       return false;
     }
-    await _startManualRecordingFlow(messageText);
+    await _startManualRecordingFlow(messageText, recordDebugScreenshots: false);
     return true;
   }
 
   @override
-  Future<void> _startManualRecordingFromShortcut() async {
+  Future<void> _startManualRecordingFromShortcut(
+    bool recordDebugScreenshots,
+  ) async {
     if (_isAiResponding) return;
-    await _startManualRecordingFlow('录制轨迹');
+    await _startManualRecordingFlow(
+      '录制轨迹',
+      recordDebugScreenshots: recordDebugScreenshots,
+    );
   }
 
   @override
@@ -1262,7 +1267,10 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     }
   }
 
-  Future<void> _startManualRecordingFlow(String messageText) async {
+  Future<void> _startManualRecordingFlow(
+    String messageText, {
+    required bool recordDebugScreenshots,
+  }) async {
     final canRecord = await ManualRecordingPermissionGuard.ensureAuthorized(
       context,
     );
@@ -1274,7 +1282,9 @@ mixin _ChatPageConversationFlowMixin on _ChatPageStateBase {
     showToast('开始手动录制。请执行操作，结束后点小万「完成学习」。');
     unawaited(AppStateService.exitApp());
     try {
-      final result = await AssistsMessageService.startHumanTrajectoryLearning();
+      final result = await AssistsMessageService.startHumanTrajectoryLearning(
+        enableDebugScreenshots: recordDebugScreenshots,
+      );
       if (!mounted) return;
       _insertManualRecordingResultMessage(messageIds.aiMessageId, result);
       final success = result['success'] == true;

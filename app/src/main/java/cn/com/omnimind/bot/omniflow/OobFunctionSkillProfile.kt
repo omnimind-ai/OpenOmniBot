@@ -24,6 +24,7 @@ object OobFunctionSkillProfile {
     const val PROFILE = "function_management"
     const val SKILL_ID = "oob-function-management"
     private const val MAX_DYNAMIC_FUNCTION_TOOLS = 500
+    private const val MAX_PROMPT_FUNCTION_CANDIDATES = 5
     private val MODEL_TOOL_NAME_REGEX = Regex("^[A-Za-z0-9_-]{1,64}$")
 
     val toolNames: Set<String> = setOf(
@@ -71,11 +72,86 @@ object OobFunctionSkillProfile {
     fun shouldKeepDynamicFunctionForProfile(profile: String?, toolType: String): Boolean =
         isProfile(profile) && toolType == "oob_function"
 
+    fun promptCandidateContext(
+        context: Context,
+        locale: PromptLocale,
+        limit: Int = MAX_PROMPT_FUNCTION_CANDIDATES,
+    ): String {
+        if (!AgentToolFeatureStore.isOobFunctionAsToolEnabled(context)) {
+            return ""
+        }
+        val candidates = runCatching {
+            OobRunLogReplayService(context).listFunctionSpecs(limit.coerceIn(1, MAX_PROMPT_FUNCTION_CANDIDATES))
+        }.onFailure {
+            OmniLog.w("OobFunctionSkillProfile", "load prompt Function candidates failed: ${it.message}")
+        }.getOrDefault(emptyList())
+        if (candidates.isEmpty()) return ""
+
+        return buildString {
+            when (locale) {
+                PromptLocale.ZH_CN -> {
+                    appendLine("当前可复用的 OmniFlow Functions（候选摘要，不是完整 spec）：")
+                    appendLine("- 如果用户目标与某个 Function 高置信匹配，优先 `oob_function_guard_check` -> `oob_function_run`，不要先裸跑 `vlm_task`。")
+                    appendLine("- 如果只是相似但不确定，先 guard 或 `oob_function_get` 查看；证据不足再用 `vlm_task`。")
+                }
+                PromptLocale.EN_US -> {
+                    appendLine("Reusable OmniFlow Functions available right now (candidate summaries, not full specs):")
+                    appendLine("- If the user goal clearly matches a Function, prefer `oob_function_guard_check` -> `oob_function_run` before raw `vlm_task`.")
+                    appendLine("- If the match is only tentative, inspect with guard or `oob_function_get`; use `vlm_task` when evidence is insufficient.")
+                }
+            }
+            candidates.forEachIndexed { index, spec ->
+                appendLine(formatPromptCandidate(index + 1, spec, locale))
+            }
+        }.trim()
+    }
+
     private fun normalizeProfile(profile: String?): String = profile
         ?.trim()
         ?.lowercase()
         ?.replace('-', '_')
         .orEmpty()
+
+    private fun formatPromptCandidate(
+        ordinal: Int,
+        spec: Map<String, Any?>,
+        locale: PromptLocale,
+    ): String {
+        val functionId = spec["function_id"]?.toString()?.trim().orEmpty()
+        val name = spec["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: functionId
+        val description = spec["description"]?.toString()?.trim()
+            ?.replace(Regex("\\s+"), " ")
+            ?.takeIf { it.isNotEmpty() }
+            ?: name
+        val metadata = spec["metadata"] as? Map<*, *>
+        val agentReuse = metadata?.get("agent_reuse") as? Map<*, *>
+        val reuseWhen = agentReuse?.get("reuse_when")?.toString()?.trim().orEmpty()
+        val successSignal = agentReuse?.get("success_signal")?.toString()?.trim().orEmpty()
+        val inputSchema = OobFunctionSchemaBuilder.inputSchema(spec)
+        val params = ((inputSchema["properties"] as? Map<*, *>)?.keys ?: emptySet<Any?>())
+            .mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .take(6)
+            .joinToString(", ")
+            .ifBlank {
+                when (locale) {
+                    PromptLocale.ZH_CN -> "无显式参数"
+                    PromptLocale.EN_US -> "no explicit params"
+                }
+            }
+        val clippedDescription = description.take(220)
+        return when (locale) {
+            PromptLocale.ZH_CN -> buildString {
+                append("- $ordinal. `$functionId` — $name：$clippedDescription；参数: $params")
+                if (reuseWhen.isNotEmpty()) append("；适用: ${reuseWhen.take(120)}")
+                if (successSignal.isNotEmpty()) append("；成功标志: ${successSignal.take(120)}")
+            }
+            PromptLocale.EN_US -> buildString {
+                append("- $ordinal. `$functionId` — $name: $clippedDescription; params: $params")
+                if (reuseWhen.isNotEmpty()) append("; use when: ${reuseWhen.take(120)}")
+                if (successSignal.isNotEmpty()) append("; success: ${successSignal.take(120)}")
+            }
+        }
+    }
 
     private fun toDynamicFunctionToolDefinition(
         spec: Map<String, Any?>,
@@ -243,7 +319,10 @@ object OobFunctionSkillProfile {
             put("name", "oob_function_run")
             put("displayName", "执行复用指令")
             put("toolType", "workbench")
-            put("description", "显式执行一个用户或 agent 已选择的 OOB 复用指令；失败时返回 fallback_context，agent 可接管失败步骤后用 resume_from_step 回来继续。")
+            put(
+                "description",
+                "执行一个已保存的 OOB/OmniFlow Function。用户目标与候选 Function 高置信匹配时，优先先调用 oob_function_guard_check 再调用本工具，不要先裸跑 vlm_task。失败时返回 fallback_context，agent 可接管失败步骤，然后用 resume_from_step/start_step_index 从失败或下一步恢复继续。"
+            )
             putJsonObject("parameters") {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -253,6 +332,14 @@ object OobFunctionSkillProfile {
                     putJsonObject("resume_from_step") {
                         put("type", "integer")
                         put("description", "0-based step index. Omit or set 0 for a fresh run; set to the failed/next step when resuming after agent fallback.")
+                    }
+                    putJsonObject("start_step_index") {
+                        put("type", "integer")
+                        put("description", "Alias for resume_from_step. Use this when the caller wants to start or resume from a specific Function step.")
+                    }
+                    putJsonObject("startStepIndex") {
+                        put("type", "integer")
+                        put("description", "Camel-case alias for start_step_index.")
                     }
                     putJsonObject("resumeFromStep") {
                         put("type", "integer")

@@ -12,6 +12,9 @@ full Function JSON by hand.
 Default mode is `enhance`: improve reuse clarity without silently changing
 execution.
 
+The output must make the Function callable by a future agent. Treat the
+Function description as capability documentation, not a short human label.
+
 Allowed changes:
 
 - Rewrite `name` and `description` so the Function reads like a reusable
@@ -25,6 +28,32 @@ Allowed changes:
   `key_actions`.
 - Mark deterministic noise, merge candidates, drop candidates, and optional
   checkers as metadata.
+
+Required reusable description structure:
+
+- `适用场景 / Use when`: what user goals should trigger this Function, including
+  app/page/context when known.
+- `会做什么 / Does`: the concrete visible operation sequence, for example
+  "opens Meituan, taps 外卖, selects the target address, submits search".
+- `运行参数 / Inputs`: user-provided values or inferred parameters. Say "no
+  explicit params" when there are none.
+- `成功标志 / Success signal`: what screen/result means the Function completed.
+- `不适用 / Avoid when`: cases where the Function should not be used, including
+  different app, missing login, ambiguous target, or flows requiring live
+  judgement.
+
+Every executable step must have agent-usable annotations:
+
+- `title`: short imperative label, e.g. `点击外卖入口`.
+- `summary` or `description`: what the action changes on screen.
+- `cleanup_annotation.action_purpose`: one stable phrase explaining why the
+  action exists, e.g. `进入外卖频道`, `填写收货地址`, `确认提交`.
+- If the step is a checker or popup handler, label it as optional checker in
+  metadata; do not describe it as a required path.
+
+Weak descriptions reduce future tool selection. If an enhancement only changes
+the name but does not explain when to call it, what it does, and how success is
+recognized, treat the enhancement as incomplete.
 
 Forbidden in `enhance` mode:
 

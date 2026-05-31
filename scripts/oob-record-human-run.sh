@@ -18,6 +18,7 @@ REQUIRE_RAW_TOUCH="${REQUIRE_RAW_TOUCH:-0}"
 EXPECTED_CLICKS=""
 EXPECTED_SWIPES=""
 DEBUG_OVERLAY_GESTURES="${DEBUG_OVERLAY_GESTURES:-0}"
+DEBUG_SCREENSHOTS="${DEBUG_SCREENSHOTS:-1}"
 
 usage() {
   cat <<'EOF'
@@ -38,6 +39,10 @@ the debug receiver to send synthetic overlay gestures through the same
 HumanTrajectoryLearningSession.recordOverlayGesture backend used by the product
 manual recording overlay, then verifies overlay_touch actions with before XML
 and finishes automatically.
+
+Debug screenshots are enabled by default for this script. Each recorded touch
+stores a private JPEG with the actual touch position marked. Pass
+--no-debug-screenshots when you need the faster XML-only path.
 EOF
 }
 
@@ -90,6 +95,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug-overlay-gestures)
       DEBUG_OVERLAY_GESTURES=1
+      shift
+      ;;
+    --debug-screenshots)
+      DEBUG_SCREENSHOTS=1
+      shift
+      ;;
+    --no-debug-screenshots)
+      DEBUG_SCREENSHOTS=0
       shift
       ;;
     -h|--help)
@@ -740,7 +753,8 @@ require_unlocked_device
   -n "$RECEIVER" \
   --es op start \
   --es description "$DESCRIPTION" \
-  --ez enableRawTouch "$([[ "$ENABLE_RAW_TOUCH" -eq 1 ]] && echo true || echo false)" >/dev/null
+  --ez enableRawTouch "$([[ "$ENABLE_RAW_TOUCH" -eq 1 ]] && echo true || echo false)" \
+  --ez debugScreenshots "$([[ "$DEBUG_SCREENSHOTS" -eq 1 ]] && echo true || echo false)" >/dev/null
 
 wait_for_file "$START_FILE" "$START_TMP"
 python3 - "$START_TMP" <<'PY'

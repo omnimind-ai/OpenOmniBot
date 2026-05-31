@@ -591,7 +591,7 @@ object AgentToolDefinitions {
             put("toolType", "builtin")
             put(
                 "description",
-                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。一次 vlm_task 调用代表一次完整设备执行流程；打开 App 是该完整流程的第一步，不要先单独调用 vlm_task 打开 App、再第二次调用 vlm_task 执行后续目标。内部点击/输入/滚动会作为 vlm_step 进度持续上报。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。默认裸跑在线 VLM：观察当前截图/XML，执行一个动作，再刷新状态继续；不会注入或自动执行复用指令。"
+                "使用视觉语言模型执行手机当前屏幕操作任务，只用于点击、滑动、输入、打开 App 或跨 App 自动化。一次 vlm_task 调用代表一次完整设备执行流程；打开 App 是该完整流程的第一步，不要先单独调用 vlm_task 打开 App、再第二次调用 vlm_task 执行后续目标。内部点击/输入/滚动会作为 vlm_step 进度持续上报。不要用于用户上传图片/截图/照片的识别、OCR、解释、总结或对比；这类图片已在多模态对话里，应该直接回答。该工具会阻塞等待到任务完成、需要用户输入、屏幕锁定或超时，再把终态结果返回给模型。若需要最终整理文本，必须设置 needSummary=true。默认 false 时召回的 OmniFlow Function 只作为 VLM 决策上下文；如果用户目标已高置信匹配保存的 Function，应优先直接调用 oob_function_guard_check -> oob_function_run。只有需要让 VLM 在执行前自动运行高置信 Function 命中时，才设置 allowOmniFlowFunctionAutoExecute=true。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -633,7 +633,7 @@ object AgentToolDefinitions {
                     putJsonObject("allowOmniFlowFunctionAutoExecute") {
                         put("type", "boolean")
                         put("default", false)
-                        put("description", "可选高级开关，默认 false。false 时召回 Function 只作为候选让在线 VLM 决策；只有用户明确要求严格命中即执行时才设为 true。")
+                        put("description", "可选高级开关，默认 false。false 时召回 Function 只作为候选让在线 VLM 决策；当用户明确要复用保存 Function，或你已经高置信判断当前目标应由 Function 接管但仍需要通过 vlm_task 入口执行时，设为 true。")
                     }
                 }
                 putJsonArray("required") {

@@ -196,7 +196,6 @@ object OmniflowStepExecutor {
             }
         }
         val actionTransferApplied = transferRequested && remapResult.meta["applied"] == true
-        val controlEffects = preTransferControls + preActionControls
         val summary = timing.measure("act_ms") {
             when (action) {
                 "click" -> {
@@ -285,6 +284,22 @@ object OmniflowStepExecutor {
                 else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
             }
         }
+        val postActionControls = timing.measure("checker_ms") {
+            val hasPostActionRules = checkerRules.any {
+                it.phase == OmniflowCheckerRule.PHASE_POST_ACTION && it.enabled
+            }
+            if (fixedReplay || (action != "open_app" && !hasPostActionRules)) {
+                emptyList()
+            } else {
+                runCheckerPhase(
+                    phase = OmniflowCheckerRule.PHASE_POST_ACTION,
+                    state = refreshReplayState("after_action"),
+                    replayAction = ReplayAction(step, action, args),
+                    extraRules = checkerRules,
+                )
+            }
+        }
+        val controlEffects = preTransferControls + preActionControls + postActionControls
         timing.measureOverhead("settle_ms") {
             delay(POST_STEP_DELAY_MS)
         }
@@ -526,13 +541,20 @@ object OmniflowStepExecutor {
     ): Map<String, Any?> {
         if (transfer.isEmpty() && controlEffects.isEmpty()) return emptyMap()
         return mapOf(
-            "phase" to "before_action",
+            "phase" to if (controlEffects.any { it["phase"] == OmniflowCheckerRule.PHASE_POST_ACTION }) {
+                "around_action"
+            } else {
+                "before_action"
+            },
             "effect" to "continue",
             "verified" to true,
             "action" to action,
             "action_transfer_applied" to transfer["applied"],
             "action_transfer_reason" to transfer["reason"],
             "control_effect_count" to controlEffects.size.takeIf { it > 0 },
+            "control_effect_phases" to controlEffects.mapNotNull { it["phase"]?.toString() }
+                .distinct()
+                .takeIf { it.isNotEmpty() },
             "controllers" to controlEffects.mapNotNull { it["controller"]?.toString() }
                 .takeIf { it.isNotEmpty() },
         ).filterValues { it != null }
@@ -558,10 +580,14 @@ object OmniflowStepExecutor {
         extraRules: List<OmniflowCheckerRule>,
     ): List<Map<String, Any?>> {
         val action = replayAction.action
-        if (action == "finished" || action == "open_app") return emptyList()
+        if (action == "finished") return emptyList()
+        if (action == "open_app" && phase != OmniflowCheckerRule.PHASE_POST_ACTION) {
+            return emptyList()
+        }
         val globalRules = when (phase) {
             OmniflowCheckerRule.PHASE_PRE_TRANSFER -> OmniflowCheckerRule.GLOBAL_PRE_TRANSFER
             OmniflowCheckerRule.PHASE_PRE_ACTION -> OmniflowCheckerRule.GLOBAL_PRE_ACTION
+            OmniflowCheckerRule.PHASE_POST_ACTION -> OmniflowCheckerRule.GLOBAL_POST_ACTION
             else -> emptyList()
         }
         val activeRules = globalRules + extraRules.filter { it.phase == phase && it.enabled }
@@ -578,6 +604,8 @@ object OmniflowStepExecutor {
         state: ReplayState,
         replayAction: ReplayAction,
     ): Map<String, Any?>? = when (rule.condition) {
+        OmniflowCheckerRule.COND_RESOLVER_DIALOG ->
+            checkerResolverDialog(rule, state, replayAction)
         OmniflowCheckerRule.COND_PERMISSION_DIALOG ->
             checkerPermissionDialog(rule, state, replayAction)
         OmniflowCheckerRule.COND_PACKAGE_MISMATCH ->
@@ -589,6 +617,73 @@ object OmniflowStepExecutor {
         OmniflowCheckerRule.COND_KEYBOARD_OBSCURING ->
             checkerKeyboardObscuring(rule, state, replayAction)
         else -> null
+    }
+
+    private suspend fun checkerResolverDialog(
+        rule: OmniflowCheckerRule,
+        state: ReplayState,
+        replayAction: ReplayAction,
+    ): Map<String, Any?>? {
+        if (targetLooksLikeResolverConfirm(replayAction.args)) return null
+        val page = state.page ?: return null
+        if (!looksLikeResolverDialog(page)) return null
+        if (recordedStepLooksLikeResolverDialog(replayAction.step)) return null
+
+        val immediateAlways = resolverAlwaysCandidate(page, requireEnabled = true)
+        if (immediateAlways != null) {
+            return clickResolverAlways(rule, immediateAlways, selectedApp = null)
+        }
+
+        val appChoice = resolverAppChoiceCandidate(page) ?: return null
+        OmniflowActionRuntime.backend.click(appChoice.centerX, appChoice.centerY)
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+
+        val refreshedPage = parsePageModel(readBackendSnapshot().xml)
+            ?.takeIf(::looksLikeResolverDialog)
+        val refreshedAlways = refreshedPage?.let {
+            resolverAlwaysCandidate(it, requireEnabled = true)
+        }
+        if (refreshedAlways != null) {
+            return clickResolverAlways(rule, refreshedAlways, selectedApp = appChoice)
+        }
+
+        return linkedMapOf(
+            "phase" to rule.phase,
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "condition" to OmniflowCheckerRule.COND_RESOLVER_DIALOG,
+            "action" to OmniflowCheckerRule.ACTION_SELECT_RESOLVER_APP,
+            "pending_action" to OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS,
+            "selected_app_text" to nodeLabelText(appChoice),
+            "x" to appChoice.centerX,
+            "y" to appChoice.centerY,
+            "target_element" to summarizeNode(appChoice),
+        )
+    }
+
+    private suspend fun clickResolverAlways(
+        rule: OmniflowCheckerRule,
+        candidate: UiNode,
+        selectedApp: UiNode?,
+    ): Map<String, Any?> {
+        OmniflowActionRuntime.backend.click(candidate.centerX, candidate.centerY)
+        delay(PRE_ACTION_CONTROL_DELAY_MS)
+        return linkedMapOf(
+            "phase" to rule.phase,
+            "effect" to "run_actions",
+            "controller" to rule.id,
+            "condition" to OmniflowCheckerRule.COND_RESOLVER_DIALOG,
+            "action" to OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS,
+            "button_text" to nodeLabelText(candidate),
+            "x" to candidate.centerX,
+            "y" to candidate.centerY,
+            "target_element" to summarizeNode(candidate),
+        ).apply {
+            selectedApp?.let {
+                put("preselected_app_text", nodeLabelText(it))
+                put("preselected_app_element", summarizeNode(it))
+            }
+        }
     }
 
     private suspend fun checkerPermissionDialog(
@@ -625,6 +720,114 @@ object OmniflowStepExecutor {
             }
             .maxByOrNull { it.second }
             ?.first
+    }
+
+    private fun resolverAlwaysCandidate(
+        page: PageModel,
+        requireEnabled: Boolean,
+    ): UiNode? {
+        return page.nodes
+            .asSequence()
+            .filter { it.visible && (!requireEnabled || it.enabled) && it.area > 1f }
+            .mapNotNull { node ->
+                val score = resolverAlwaysButtonScore(node)
+                if (score > 0f) node to score else null
+            }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    private fun resolverAppChoiceCandidate(page: PageModel): UiNode? {
+        return page.nodes
+            .asSequence()
+            .mapNotNull { node ->
+                val score = resolverAppChoiceScore(node, page)
+                if (score > 0f) node to score else null
+            }
+            .maxWithOrNull(
+                compareBy<Pair<UiNode, Float>> { it.second }
+                    .thenByDescending { -it.first.bounds.top }
+            )
+            ?.first
+    }
+
+    private fun looksLikeResolverDialog(page: PageModel): Boolean {
+        val hasResolverPackage = page.nodes.any { node ->
+            RESOLVER_PACKAGES.any { prefix -> node.packageName.startsWith(prefix) } ||
+                RESOLVER_PACKAGE_TERMS.any { term ->
+                    node.packageName.contains(term) || node.resourceId.contains(term)
+                }
+        }
+        val hasResolverTitle = page.nodes.any { node ->
+            val label = nodeLabelText(node).lowercase()
+            RESOLVER_TITLE_CONTAINS_LABELS.any { label.contains(it) }
+        }
+        val hasOnceButton = page.nodes.any { node ->
+            val label = nodeLabelText(node).lowercase()
+            RESOLVER_ONCE_LABELS.any { label == it || label.contains(it) }
+        }
+        val hasAlwaysButton = page.nodes.any { resolverAlwaysButtonScore(it) > 0f }
+        return hasAlwaysButton && (hasResolverPackage || hasResolverTitle || hasOnceButton)
+    }
+
+    private fun resolverAlwaysButtonScore(node: UiNode): Float {
+        val label = nodeLabelText(node).lowercase()
+        val resource = node.resourceTail.lowercase()
+        val exactLabel = RESOLVER_ALWAYS_EXACT_LABELS.any { label == it }
+        val containsLabel = RESOLVER_ALWAYS_CONTAINS_LABELS.any { label.contains(it) }
+        val resourceMatch = RESOLVER_ALWAYS_RESOURCE_TAILS.any { resource == it || resource.contains(it) }
+        if (!exactLabel && !containsLabel && !resourceMatch) return 0f
+
+        var score = 0f
+        if (exactLabel) score += 520f
+        if (containsLabel) score += 360f
+        if (resourceMatch) score += 280f
+        if (node.clickable) score += 90f
+        if (node.classSuffix == "button") score += 70f
+        return score
+    }
+
+    private fun resolverOnceButtonScore(node: UiNode): Float {
+        val label = nodeLabelText(node).lowercase()
+        val resource = node.resourceTail.lowercase()
+        val labelMatch = RESOLVER_ONCE_LABELS.any { label == it || label.contains(it) }
+        val resourceMatch = RESOLVER_ONCE_RESOURCE_TAILS.any {
+            resource == it || resource.contains(it)
+        }
+        if (!labelMatch && !resourceMatch) return 0f
+        var score = 0f
+        if (labelMatch) score += 260f
+        if (resourceMatch) score += 180f
+        if (node.clickable) score += 70f
+        if (node.classSuffix == "button") score += 50f
+        return score
+    }
+
+    private fun resolverAppChoiceScore(node: UiNode, page: PageModel): Float {
+        if (!node.visible || !node.enabled || node.area <= 1f || !node.interactive) return 0f
+        if (resolverAlwaysButtonScore(node) > 0f || resolverOnceButtonScore(node) > 0f) return 0f
+
+        val label = nodeLabelText(node).lowercase()
+        val resource = node.resourceTail.lowercase()
+        if (label.isNotBlank() && RESOLVER_TITLE_CONTAINS_LABELS.any { label.contains(it) }) return 0f
+        if (RESOLVER_NON_CHOICE_RESOURCE_TAILS.any { resource == it || resource.contains(it) }) return 0f
+
+        val rootArea = page.rootBounds.area.coerceAtLeast(1f)
+        val relativeArea = node.area / rootArea
+        if (relativeArea > 0.45f) return 0f
+
+        var score = 0f
+        if (node.clickable) score += 260f
+        if (node.focusable) score += 120f
+        if (label.isNotBlank()) score += 90f
+        if (RESOLVER_APP_CHOICE_RESOURCE_TAILS.any { resource == it || resource.contains(it) }) {
+            score += 140f
+        }
+        if (node.classSuffix in RESOLVER_APP_CHOICE_CLASS_SUFFIXES) score += 80f
+        if (node.bounds.centerY < page.rootBounds.bottom - page.rootBounds.height * 0.18f) {
+            score += 60f
+        }
+        return if (score >= 240f) score else 0f
     }
 
     private fun allowButtonScore(node: UiNode): Float {
@@ -999,6 +1202,23 @@ object OmniflowStepExecutor {
             AD_DISMISS_CONTAINS_LABELS.any { target.contains(it) } ||
             AD_SKIP_EXACT_LABELS.any { target == it || target.startsWith("$it ") } ||
             SKIP_COUNTDOWN_REGEX.containsMatchIn(target)
+    }
+
+    private fun targetLooksLikeResolverConfirm(args: Map<String, Any?>): Boolean {
+        val target = listOf(
+            stringArg(args, "target_description", "targetDescription"),
+            stringArg(args, "label"),
+            stringArg(args, "selector"),
+        ).filterNotNull().joinToString(" ").lowercase()
+        return RESOLVER_ALWAYS_EXACT_LABELS.any { target == it } ||
+            RESOLVER_ALWAYS_CONTAINS_LABELS.any { target.contains(it) }
+    }
+
+    private fun recordedStepLooksLikeResolverDialog(step: Map<String, Any?>): Boolean {
+        val srcCtx = (step["source_context"] as? Map<*, *>)?.get("src_ctx") as? Map<*, *>
+        val sourceXml = srcCtx?.get("page")?.toString()?.trim().orEmpty()
+        if (sourceXml.isBlank()) return false
+        return parsePageModel(sourceXml)?.let(::looksLikeResolverDialog) == true
     }
 
     private fun actionTargetHitsNode(
@@ -2134,6 +2354,96 @@ object OmniflowStepExecutor {
         "softinput",
         "软键盘",
         "键盘",
+    )
+
+    private val RESOLVER_PACKAGES = setOf(
+        "android",
+        "com.android.intentresolver",
+        "com.google.android.intentresolver",
+    )
+
+    private val RESOLVER_PACKAGE_TERMS = setOf(
+        "resolver",
+        "chooser",
+        "intentresolver",
+    )
+
+    private val RESOLVER_TITLE_CONTAINS_LABELS = setOf(
+        "打开方式",
+        "选择应用",
+        "选择要使用的应用",
+        "使用以下方式打开",
+        "默认打开",
+        "open with",
+        "complete action using",
+        "choose an app",
+        "choose app",
+    )
+
+    private val RESOLVER_ALWAYS_EXACT_LABELS = setOf(
+        "始终打开",
+        "始终",
+        "always",
+        "always open",
+        "open always",
+    )
+
+    private val RESOLVER_ALWAYS_CONTAINS_LABELS = setOf(
+        "始终打开",
+        "always open",
+        "open always",
+    )
+
+    private val RESOLVER_ONCE_LABELS = setOf(
+        "仅此一次",
+        "仅限一次",
+        "只此一次",
+        "just once",
+        "only once",
+        "once",
+    )
+
+    private val RESOLVER_ONCE_RESOURCE_TAILS = setOf(
+        "once",
+        "button_once",
+        "once_button",
+        "resolver_once",
+        "button_once_open",
+    )
+
+    private val RESOLVER_ALWAYS_RESOURCE_TAILS = setOf(
+        "always",
+        "button_always",
+        "always_button",
+        "resolver_always",
+        "button_always_open",
+        "always_open",
+    )
+
+    private val RESOLVER_APP_CHOICE_RESOURCE_TAILS = setOf(
+        "text1",
+        "text2",
+        "title",
+        "app_name",
+        "resolver_list",
+        "profile_button",
+    )
+
+    private val RESOLVER_NON_CHOICE_RESOURCE_TAILS = setOf(
+        "button_bar",
+        "button_once",
+        "button_always",
+        "always_button",
+        "once_button",
+        "resolver_button_bar",
+    )
+
+    private val RESOLVER_APP_CHOICE_CLASS_SUFFIXES = setOf(
+        "textview",
+        "linearlayout",
+        "relativelayout",
+        "framelayout",
+        "recyclerview",
     )
 
     private val PERMISSION_PACKAGES = setOf(

@@ -20,6 +20,7 @@ import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.assists.AssistsCore
 import cn.com.omnimind.assists.HumanTrajectoryLearningSession
+import cn.com.omnimind.assists.OmniFlowUiSession
 import cn.com.omnimind.assists.task.vlmserver.ManualVlmRecordedAction
 import cn.com.omnimind.assists.api.bean.TaskParams
 import cn.com.omnimind.assists.api.interfaces.OnMessagePushListener
@@ -59,6 +60,7 @@ import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.baselib.util.RuntimeLogStore
 import cn.com.omnimind.baselib.util.exception.PermissionException
+import cn.com.omnimind.bot.BuildConfig
 import cn.com.omnimind.bot.R
 import cn.com.omnimind.bot.activity.MainActivity
 import cn.com.omnimind.bot.ui.scheduled.ScheduledTaskReminderLoader
@@ -2384,6 +2386,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         mainJob.launch {
             try {
                 AgentVlmUiSession.requestStopActiveSession()
+                OmniFlowUiSession.requestStopActiveSession()
                 cancelActiveAgentRun(null, "cancelTask")
                 AssistsUtil.Core.cancelRunningTask()
                 AssistsUtil.Core.finishTask(context)
@@ -2409,7 +2412,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 val taskId = call.argument<String>("taskId")?.trim()?.takeIf { it.isNotEmpty() }
                 val stoppedVlmSession = taskId?.let {
                     AgentVlmUiSession.requestStopSession(it)
-                } ?: false
+                } ?: AgentVlmUiSession.requestStopActiveSession()
+                val stoppedOmniFlowSession = taskId?.let {
+                    OmniFlowUiSession.requestStopSession(it)
+                } ?: OmniFlowUiSession.requestStopActiveSession()
                 val cancelledAgentRun = taskId?.let {
                     cancelActiveAgentRun(it, "cancelRunningTask")
                 } ?: false
@@ -2418,7 +2424,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 } else {
                     AssistsUtil.Core.cancelRunningTask(taskId)
                 }
-                if (taskId != null && !stoppedVlmSession && !cancelledAgentRun && !stoppedNativeTask) {
+                if (
+                    taskId != null &&
+                    !stoppedVlmSession &&
+                    !stoppedOmniFlowSession &&
+                    !cancelledAgentRun &&
+                    !stoppedNativeTask
+                ) {
                     OmniLog.w(
                         TAG,
                         "cancelRunningTask target not found; ignoring stale targeted cancel: taskId=$taskId"
@@ -3292,6 +3304,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             val description = (
                 args["description"] ?: args["goal"] ?: call.argument<String>("description")
             )?.toString()?.trim().orEmpty()
+            val enableDebugScreenshots = BuildConfig.DEBUG && (
+                booleanMethodCallValue(args["enableDebugScreenshots"]) ||
+                    booleanMethodCallValue(args["debugScreenshots"]) ||
+                    booleanMethodCallValue(args["recordDebugScreenshots"])
+                )
             val learningResult = runCatching {
                 val sessionResult = withContext(Dispatchers.Default) {
                     if (!awaitHumanTrajectoryRecordingBackend()) {
@@ -3300,7 +3317,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     val startedSession = HumanTrajectoryLearningSession.start(
                         context = context,
                         name = name,
-                        description = description
+                        description = description,
+                        enableDebugScreenshots = enableDebugScreenshots
                     )
                     if (startedSession.isCompleted) {
                         startedSession.await()

@@ -33,11 +33,18 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
             .ifBlank { description.ifBlank { "人工录制轨迹" } }
         val enableRawTouch = intent?.getBooleanExtra("enableRawTouch", false) == true ||
             intent?.getBooleanExtra("rawTouch", false) == true
+        val enableDebugScreenshots = debugScreenshotsEnabled(intent)
 
         scope.launch {
             val payload = runCatching {
                 when (op) {
-                    "start" -> startRecording(appContext, name, description, enableRawTouch)
+                    "start" -> startRecording(
+                        appContext,
+                        name,
+                        description,
+                        enableRawTouch,
+                        enableDebugScreenshots
+                    )
                     "pause" -> pauseRecording()
                     "resume" -> resumeRecording()
                     "gesture", "overlay_gesture" -> recordOverlayGesture(intent)
@@ -69,7 +76,8 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
         context: Context,
         name: String,
         description: String,
-        enableRawTouch: Boolean
+        enableRawTouch: Boolean,
+        enableDebugScreenshots: Boolean
     ): Map<String, Any?> {
         if (activeResult != null || HumanTrajectoryLearningSession.isActive()) {
             return errorPayload("ALREADY_RECORDING", "A human recording session is already active")
@@ -80,7 +88,8 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
             context = context,
             name = name,
             description = description.ifBlank { name },
-            enableRawTouch = enableRawTouch
+            enableRawTouch = enableRawTouch,
+            enableDebugScreenshots = enableDebugScreenshots
         )
         activeResult = result
         activeStartedAtMs = startedAtMs
@@ -94,6 +103,7 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
             "name" to activeName,
             "description" to activeDescription,
             "raw_touch_enabled" to enableRawTouch,
+            "debug_screenshots_enabled" to enableDebugScreenshots,
             "started_at_ms" to startedAtMs,
             "status" to status,
             "source" to "oob_debug_human_run_recording"
@@ -300,6 +310,10 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
             "recording_backend" to status["recording_backend"],
             "raw_touch_enabled" to status["raw_touch_enabled"],
             "raw_touch_available" to status["raw_touch_available"],
+            "debug_screenshots_enabled" to status["debug_screenshots_enabled"],
+            "debug_screenshot_stored_count" to status["debug_screenshot_stored_count"],
+            "debug_screenshot_failed_count" to status["debug_screenshot_failed_count"],
+            "debug_screenshot_skipped_count" to status["debug_screenshot_skipped_count"],
             "status" to status,
             "source" to "oob_debug_human_run_recording"
         ).filterValues { it != null }
@@ -341,6 +355,17 @@ class DebugHumanRunRecordingReceiver : BroadcastReceiver() {
 
     private fun intExtra(intent: Intent?, key: String): Int? =
         stringExtra(intent, key)?.toIntOrNull()
+
+    private fun debugScreenshotsEnabled(intent: Intent?): Boolean {
+        if (intent?.getBooleanExtra("disableDebugScreenshots", false) == true ||
+            intent?.getBooleanExtra("skipScreenshots", false) == true
+        ) {
+            return false
+        }
+        val source = intent ?: return true
+        return source.getBooleanExtra("debugScreenshots", true) &&
+            source.getBooleanExtra("keepScreenshots", true)
+    }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =
         sqrt((x2 - x1).toDouble().pow(2.0) + (y2 - y1).toDouble().pow(2.0)).toFloat()

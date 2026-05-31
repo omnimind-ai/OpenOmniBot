@@ -32,10 +32,17 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
             ?: "debug_manual_trace"
         val enableRawTouch = intent?.getBooleanExtra("enableRawTouch", false) == true ||
             intent?.getBooleanExtra("rawTouch", false) == true
+        val enableDebugScreenshots = debugScreenshotsEnabled(intent)
 
         scope.launch {
             val result = runCatching {
-                runManualTrace(appContext, sessionLabel, durationMs, enableRawTouch)
+                runManualTrace(
+                    appContext,
+                    sessionLabel,
+                    durationMs,
+                    enableRawTouch,
+                    enableDebugScreenshots
+                )
             }.getOrElse { error ->
                 linkedMapOf<String, Any?>(
                     "success" to false,
@@ -56,6 +63,7 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
         sessionLabel: String,
         durationMs: Long,
         enableRawTouch: Boolean,
+        enableDebugScreenshots: Boolean,
     ): Map<String, Any?> {
         val timing = DebugTiming()
         timing.measure("wait_accessibility_ms") {
@@ -64,7 +72,8 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
         val recorder = ManualVlmTraceRecorder(
             context = context,
             sessionLabel = sessionLabel,
-            enableRawTouch = enableRawTouch
+            enableRawTouch = enableRawTouch,
+            enableDebugScreenshots = enableDebugScreenshots
         )
         val started = timing.measure("start_recorder_ms") {
             recorder.start()
@@ -79,6 +88,7 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
                     "started" to started,
                     "session_label" to sessionLabel,
                     "duration_ms" to durationMs,
+                    "debug_screenshots_enabled" to enableDebugScreenshots,
                     "started_at_ms" to System.currentTimeMillis(),
                 )
             )
@@ -91,6 +101,7 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
                 "error_message" to "OOB Accessibility service is required for manual trace recording",
                 "session_label" to sessionLabel,
                 "duration_ms" to durationMs,
+                "debug_screenshots_enabled" to enableDebugScreenshots,
                 "action_count" to 0,
                 "actions" to emptyList<Map<String, Any?>>(),
                 "token_usage_total" to 0,
@@ -158,6 +169,17 @@ class DebugManualTraceReceiver : BroadcastReceiver() {
             delay(200L)
         }
         error("OOB accessibility service is not bound")
+    }
+
+    private fun debugScreenshotsEnabled(intent: Intent?): Boolean {
+        if (intent?.getBooleanExtra("disableDebugScreenshots", false) == true ||
+            intent?.getBooleanExtra("skipScreenshots", false) == true
+        ) {
+            return false
+        }
+        val source = intent ?: return true
+        return source.getBooleanExtra("debugScreenshots", true) &&
+            source.getBooleanExtra("keepScreenshots", true)
     }
 
     private class DebugTiming {

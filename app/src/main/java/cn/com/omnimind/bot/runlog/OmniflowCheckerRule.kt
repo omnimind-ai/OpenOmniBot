@@ -8,7 +8,7 @@ package cn.com.omnimind.bot.runlog
  *
  * Three rule scopes compose in order — global rules run first, then
  * function-level rules, then node-level rules:
- *   - Global   : defined in [GLOBAL_PRE_TRANSFER] / [GLOBAL_PRE_ACTION]
+ *   - Global   : defined in [GLOBAL_PRE_TRANSFER] / [GLOBAL_PRE_ACTION] / [GLOBAL_POST_ACTION]
  *   - Function : loaded from Function spec metadata.checker_rules
  *   - Node     : loaded from UDEG node skill (future)
  *
@@ -31,6 +31,8 @@ data class OmniflowCheckerRule(
         const val PHASE_PRE_TRANSFER = "pre_transfer"
         /** Runs after transfer, immediately before action dispatch. */
         const val PHASE_PRE_ACTION = "pre_action"
+        /** Runs after action dispatch when the action itself may surface a system dialog. */
+        const val PHASE_POST_ACTION = "post_action"
 
         // ── Conditions ──────────────────────────────────────────────────────
         /** Foreground package ≠ step's source-context package. */
@@ -43,6 +45,8 @@ data class OmniflowCheckerRule(
         const val COND_KEYBOARD_OBSCURING = "keyboard_obscuring"
         /** An Android system permission request dialog is visible. */
         const val COND_PERMISSION_DIALOG = "permission_dialog"
+        /** Android's "Open with" / resolver default-app dialog is visible. */
+        const val COND_RESOLVER_DIALOG = "resolver_dialog"
 
         // ── Actions ─────────────────────────────────────────────────────────
         /** Launch the expected app (params: package_name overrides step inference). */
@@ -53,6 +57,10 @@ data class OmniflowCheckerRule(
         const val ACTION_HIDE_KEYBOARD = "hide_keyboard"
         /** Click the Allow button on an Android permission request dialog. */
         const val ACTION_ALLOW = "allow"
+        /** Click the "Always open" button on an Android resolver dialog. */
+        const val ACTION_CONFIRM_RESOLVER_ALWAYS = "confirm_resolver_always"
+        /** Select an app row in Android's resolver dialog before confirming. */
+        const val ACTION_SELECT_RESOLVER_APP = "select_resolver_app"
         /** Wait [params.delay_ms] ms before continuing. */
         const val ACTION_WAIT = "wait"
         /** Emit a handoff signal so the host agent resumes. */
@@ -60,6 +68,12 @@ data class OmniflowCheckerRule(
 
         // ── Built-in global rules ────────────────────────────────────────────
         val GLOBAL_PRE_TRANSFER: List<OmniflowCheckerRule> = listOf(
+            OmniflowCheckerRule(
+                id = "confirm_resolver_always",
+                condition = COND_RESOLVER_DIALOG,
+                action = ACTION_CONFIRM_RESOLVER_ALWAYS,
+                phase = PHASE_PRE_TRANSFER,
+            ),
             OmniflowCheckerRule(
                 id = "auto_grant_permission",
                 condition = COND_PERMISSION_DIALOG,
@@ -92,6 +106,15 @@ data class OmniflowCheckerRule(
                 condition = COND_KEYBOARD_OBSCURING,
                 action = ACTION_HIDE_KEYBOARD,
                 phase = PHASE_PRE_ACTION,
+            ),
+        )
+
+        val GLOBAL_POST_ACTION: List<OmniflowCheckerRule> = listOf(
+            OmniflowCheckerRule(
+                id = "confirm_resolver_always_after_open_app",
+                condition = COND_RESOLVER_DIALOG,
+                action = ACTION_CONFIRM_RESOLVER_ALWAYS,
+                phase = PHASE_POST_ACTION,
             ),
         )
 

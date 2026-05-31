@@ -23,7 +23,7 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
           icon: Icons.fiber_manual_record_rounded,
           label: context.l10n.chatInputRecordTrajectory,
           tooltip: context.l10n.chatInputRecordTrajectoryTooltip,
-          onTap: widget.onManualRecordingTap!,
+          onTap: () => widget.onManualRecordingTap!(_recordDebugScreenshots),
           requiresManualRecordingPermissions: true,
         ),
     ];
@@ -56,6 +56,10 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
           children: [
             if (showPermissionNotice) ...[
               _buildManualRecordingPermissionNotice(),
+              const SizedBox(height: 8),
+            ],
+            if (_showDebugScreenshotToggle) ...[
+              _buildDebugScreenshotToggle(),
               const SizedBox(height: 8),
             ],
             Row(
@@ -127,6 +131,64 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDebugScreenshotToggle() {
+    final palette = context.omniPalette;
+    final locale = Localizations.localeOf(context);
+    final accentColor = context.isDarkTheme
+        ? palette.accentPrimary
+        : const Color(0xFF2F65D9);
+    final label = AppTextLocalizer.choose(
+      zh: '保存截图',
+      en: 'Save screenshots',
+      locale: locale,
+    );
+    return Tooltip(
+      message: AppTextLocalizer.choose(
+        zh: '调试用：保存带点击位置标注的截图',
+        en: 'Debug: save screenshots marked with tap positions',
+        locale: locale,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          setState(() => _recordDebugScreenshots = !_recordDebugScreenshots);
+        },
+        child: SizedBox(
+          width: 258,
+          height: 34,
+          child: Row(
+            children: [
+              Checkbox(
+                value: _recordDebugScreenshots,
+                onChanged: (value) {
+                  setState(() => _recordDebugScreenshots = value ?? false);
+                },
+                activeColor: accentColor,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -238,7 +300,11 @@ mixin _ChatInputAreaPopupMixin on _ChatInputAreaStateBase {
     }
     setState(() => _isPopupVisible = false);
     widget.onPopupVisibilityChanged?.call(false);
-    unawaited(Future<void>.sync(widget.onManualRecordingTap!));
+    unawaited(
+      Future<void>.sync(
+        () => widget.onManualRecordingTap!(_recordDebugScreenshots),
+      ),
+    );
   }
 }
 

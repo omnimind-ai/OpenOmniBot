@@ -232,15 +232,23 @@ object DraggableBallInstance {
         isShowTakeOver: Boolean = true,
         subMessage: String? = null,
         isShowStop: Boolean = true,
-        preferApplicationOverlay: Boolean = false
+        preferApplicationOverlay: Boolean = false,
+        isTouchable: Boolean = true
     ) {
         resetTaskCompletionHintState()
         val instance = getLoadedInstance(preferApplicationOverlay) ?: return
         CancelClickLoader.cancelIntercepting()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
-        if (CatDialogStateData.viewState == CatDialogViewState.EMPTY) {
-            instance.catDialogShowInfoViewParams = instance.getParams(WindowFlag.SCREEN_LOCK_FLAG)
+        val windowFlag = if (isTouchable) {
+            WindowFlag.SCREEN_LOCK_FLAG
+        } else {
+            WindowFlag.SCREEN_UNLOCK_FLAG
+        }
+        if (CatDialogStateData.viewState == CatDialogViewState.EMPTY ||
+            instance.catDialogShowInfoViewParams.flags != windowFlag
+        ) {
+            instance.catDialogShowInfoViewParams = instance.getParams(windowFlag)
             val (x, y) = CatDialogStateData.getDoingTaskXY()
             val (w, h) = CatDialogStateData.getTaskDoingWH()
             instance.catDialogShowInfoViewParams.y = y
@@ -248,7 +256,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.width = w
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
-            if (instance.isAttachedToWindow) {
+            if (instance.catDialogShowInfoView.isAttachedToWindow) {
                 instance.catDialogShowInfoView.cancelAnimations()
                 instance.getWindowManager().removeView(instance.catDialogShowInfoView)
             }

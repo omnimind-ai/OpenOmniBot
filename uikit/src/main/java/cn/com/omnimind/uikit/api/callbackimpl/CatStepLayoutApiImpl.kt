@@ -3,6 +3,7 @@ package cn.com.omnimind.uikit.api.callbackimpl
 import cn.com.omnimind.assists.AgentVlmUiSession
 import cn.com.omnimind.assists.AssistsCore
 import cn.com.omnimind.assists.HumanTrajectoryLearningSession
+import cn.com.omnimind.assists.OmniFlowUiSession
 import cn.com.omnimind.assists.api.eventapi.ExecutingTaskType
 import cn.com.omnimind.baselib.util.VibrationUtil
 import cn.com.omnimind.uikit.UIKit
@@ -44,12 +45,17 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
             }
             return
         }
-        if (AgentVlmUiSession.requestCompleteActiveSession()) {
-            DraggableBallInstance.finishDoingTask("任务已完成")
-            UIKit.executionTaskEventApi?.vlmTask?.completeByUser()
+        if (UIKit.executionTaskEventApi?.vlmTask != null && completeActiveVlmUiSession()) {
+            return
+        }
+        if (OmniFlowUiSession.requestStopActiveSession()) {
+            DraggableBallInstance.finishDoingTask("任务已停止")
             if (!CompanionOverlaySettings.isEnabled()) {
                 CompanionOverlaySettings.dismissFloatingUi()
             }
+            return
+        }
+        if (completeActiveVlmUiSession()) {
             return
         }
         DraggableBallInstance.finishDoingTask("任务已完成")
@@ -91,5 +97,17 @@ class CatStepLayoutApiImpl : CatStepLayoutApi {
             DraggableBallInstance.pauseTask("用户已接管任务")
             UIKit.executionTaskEventApi?.vlmTask?.requestPause()
         }
+    }
+
+    private fun completeActiveVlmUiSession(): Boolean {
+        if (!AgentVlmUiSession.requestCompleteActiveSession()) {
+            return false
+        }
+        DraggableBallInstance.finishDoingTask("任务已完成")
+        UIKit.executionTaskEventApi?.vlmTask?.completeByUser()
+        if (!CompanionOverlaySettings.isEnabled()) {
+            CompanionOverlaySettings.dismissFloatingUi()
+        }
+        return true
     }
 }

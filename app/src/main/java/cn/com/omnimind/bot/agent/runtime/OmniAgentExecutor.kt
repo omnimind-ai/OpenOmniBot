@@ -102,6 +102,12 @@ class OmniAgentExecutor(
                     locale = promptLocale
                 )
             }
+            val oobFunctionCandidateContext = if (lightweightToolProfile) {
+                null
+            } else OobFunctionSkillProfile.promptCandidateContext(
+                context = context,
+                locale = promptLocale
+            ).takeIf { it.isNotBlank() }
             val ltmIndex = if (lightweightToolProfile) {
                 null
             } else runCatching {
@@ -158,6 +164,7 @@ class OmniAgentExecutor(
                 memoryContext = promptMemoryContext,
                 activeWorkbenchProjectContext = activeWorkbenchProjectContext,
                 workbenchDisplayLayoutContext = workbenchDisplayLayoutContext,
+                oobFunctionCandidateContext = oobFunctionCandidateContext,
                 locale = promptLocale,
                 prefetchedMemoryHits = prefetchedMemoryHits,
                 toolExposurePolicy = toolExposurePolicy,
@@ -256,6 +263,7 @@ class OmniAgentExecutor(
         memoryContext: WorkspaceMemoryPromptContext?,
         activeWorkbenchProjectContext: String?,
         workbenchDisplayLayoutContext: String?,
+        oobFunctionCandidateContext: String?,
         locale: cn.com.omnimind.baselib.i18n.PromptLocale,
         prefetchedMemoryHits: List<WorkspaceMemorySearchHit> = emptyList(),
         toolExposurePolicy: AgentToolExposurePolicy = AgentToolExposurePolicy.DEFAULT,
@@ -274,6 +282,7 @@ class OmniAgentExecutor(
             memoryContext = memoryContext,
             activeWorkbenchProjectContext = activeWorkbenchProjectContext,
             workbenchDisplayLayoutContext = workbenchDisplayLayoutContext,
+            oobFunctionCandidateContext = oobFunctionCandidateContext,
             locale = locale,
             toolExposurePolicy = toolExposurePolicy,
         )

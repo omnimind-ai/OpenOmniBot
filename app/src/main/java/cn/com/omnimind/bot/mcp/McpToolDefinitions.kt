@@ -26,6 +26,11 @@ Use cases:
 - Extract information from mobile applications
 - Perform multi-step operations across different apps
 
+OMNIFLOW FUNCTION REUSE:
+- If the user goal clearly matches a saved OOB/OmniFlow Function, prefer oob_function_guard_check then oob_function_run before raw VLM exploration.
+- Keep allowOmniFlowFunctionAutoExecute=false by default. Set it true only when the caller explicitly wants a high-confidence recalled Function to execute before live VLM, or when the goal says to reuse a saved/previous Function.
+- If the Function replay fails, use the returned fallback_context and resume later with oob_function_run resume_from_step/start_step_index.
+
 IMPORTANT FOR SUMMARY TASKS:
 - If the user's goal is to summarize, extract key points, or produce a report (e.g., "总结/汇总/整理/概括/提炼" or "summary/recap"),
   you MUST set needSummary=true to get the summary back in the tool result.
@@ -84,7 +89,7 @@ WORKFLOW:
                 "allowOmniFlowFunctionAutoExecute" to mapOf(
                     "type" to "boolean",
                     "default" to false,
-                    "description" to "Optional advanced flag. Default false: recalled Functions are only provided as choices/context for the live VLM agent. Set true only when the caller explicitly wants a strict direct Function hit to run before VLM."
+                    "description" to "Optional advanced flag. Default false: recalled Functions are only provided as choices/context for the live VLM agent. Set true when the user explicitly wants to reuse a saved/previous Function or when the caller has high-confidence that a recalled Function should run before live VLM."
                 )
             ),
             "required" to listOf("goal")
@@ -472,7 +477,7 @@ BEHAVIOR:
 
     val oobFunctionRunTool = mapOf(
         "name" to "oob_function_run",
-        "description" to "Run one OOB reusable Function after guard preflight. On local replay failure, returns fallback_context so an agent can handle the failed step and call this tool again with resume_from_step.",
+        "description" to "Run one saved OOB/OmniFlow reusable Function. When the user's goal clearly matches a saved Function, prefer oob_function_guard_check then this tool before raw vlm_task. On local replay failure, returns fallback_context so an agent can handle the failed step and call this tool again with resume_from_step/start_step_index.",
         "inputSchema" to mapOf(
             "type" to "object",
             "properties" to mapOf(
@@ -484,6 +489,8 @@ BEHAVIOR:
                     "description" to "0-based step index to start from. Omit or set 0 for first run; set after agent fallback to resume remaining steps."
                 ),
                 "resumeFromStep" to mapOf("type" to "integer", "description" to "Camel-case alias for resume_from_step."),
+                "start_step_index" to mapOf("type" to "integer", "description" to "Alias for resume_from_step. Use to start or resume from a specific Function step."),
+                "startStepIndex" to mapOf("type" to "integer", "description" to "Camel-case alias for start_step_index."),
                 "fallback_session_id" to mapOf(
                     "type" to "string",
                     "description" to "Optional id returned in fallback_context to link the replay/fallback/resume loop."

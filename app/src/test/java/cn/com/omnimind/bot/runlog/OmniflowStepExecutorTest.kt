@@ -426,6 +426,34 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `open app runs resolver checker after launch`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = RESOLVER_DIALOG_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "open_app",
+                    "args" to mapOf("package_name" to "com.example"),
+                ),
+                stepId = "step_open_app_resolver",
+                stepTitle = "open app with resolver",
+            )
+
+            assertEquals(true, result["success"])
+            assertEquals(listOf("com.example:false"), backend.launchRequests)
+            val controlEffects = result["control_effects"] as? List<*> ?: error("missing control effects")
+            val effect = controlEffects.single() as Map<*, *>
+            assertEquals("confirm_resolver_always_after_open_app", effect["controller"])
+            assertEquals("post_action", effect["phase"])
+            assertEquals("resolver_dialog", effect["condition"])
+            assertEquals("confirm_resolver_always", effect["action"])
+            assertEquals(1, backend.clickPoints.size)
+            assertEquals(810f, backend.clickPoints.single().first, 0.01f)
+            assertEquals(1690f, backend.clickPoints.single().second, 0.01f)
+        }
+    }
+
+    @Test
     fun `execute passes reset task flag to fresh open app launch`() = runBlocking {
         val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
@@ -758,6 +786,102 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
+    fun `global checker confirms resolver always open before recorded click`() = runBlocking {
+        val backend = FakeBackend(beforeXml = RESOLVER_DIALOG_XML, afterXml = SOURCE_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_resolver_always",
+                stepTitle = "click behind resolver",
+            )
+
+            assertEquals(true, result["success"])
+            val controlEffects = result["control_effects"] as? List<*> ?: error("missing control effects")
+            val effect = controlEffects.single() as Map<*, *>
+            assertEquals("confirm_resolver_always", effect["controller"])
+            assertEquals("resolver_dialog", effect["condition"])
+            assertEquals("confirm_resolver_always", effect["action"])
+            assertEquals(2, backend.clickPoints.size)
+            assertEquals(810f, backend.clickPoints.first().first, 0.01f)
+            assertEquals(1690f, backend.clickPoints.first().second, 0.01f)
+            assertEquals(120f, backend.clickPoints.last().first, 0.01f)
+            assertEquals(240f, backend.clickPoints.last().second, 0.01f)
+        }
+    }
+
+    @Test
+    fun `global checker selects resolver app before disabled always open`() = runBlocking {
+        val backend = FakeBackend(
+            beforeXml = RESOLVER_DIALOG_DISABLED_ALWAYS_XML,
+            afterXml = SOURCE_XML,
+            postActionXmls = listOf(RESOLVER_DIALOG_XML, SOURCE_XML, SOURCE_XML),
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "coordinate_hook" to "omniflow",
+                    "args" to mapOf("x" to 120, "y" to 240),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to SOURCE_XML),
+                    ),
+                ),
+                stepId = "step_resolver_select_then_always",
+                stepTitle = "click behind disabled resolver",
+            )
+
+            assertEquals(true, result["success"])
+            val controlEffects = result["control_effects"] as? List<*> ?: error("missing control effects")
+            val effect = controlEffects.single() as Map<*, *>
+            assertEquals("confirm_resolver_always", effect["controller"])
+            assertEquals("resolver_dialog", effect["condition"])
+            assertEquals("confirm_resolver_always", effect["action"])
+            assertEquals("浏览器 text1", effect["preselected_app_text"])
+            assertEquals(3, backend.clickPoints.size)
+            assertEquals(540f, backend.clickPoints[0].first, 0.01f)
+            assertEquals(1020f, backend.clickPoints[0].second, 0.01f)
+            assertEquals(810f, backend.clickPoints[1].first, 0.01f)
+            assertEquals(1690f, backend.clickPoints[1].second, 0.01f)
+            assertEquals(120f, backend.clickPoints[2].first, 0.01f)
+            assertEquals(240f, backend.clickPoints[2].second, 0.01f)
+        }
+    }
+
+    @Test
+    fun `global checker does not replace recorded resolver dialog step`() = runBlocking {
+        val backend = FakeBackend(beforeXml = RESOLVER_DIALOG_DISABLED_ALWAYS_XML, afterXml = RESOLVER_DIALOG_XML)
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val result = OmniflowStepExecutor.execute(
+                step = mapOf(
+                    "executor" to "omniflow",
+                    "omniflow_action" to "click",
+                    "args" to mapOf("x" to 540, "y" to 1020),
+                    "source_context" to mapOf(
+                        "src_ctx" to mapOf("page" to RESOLVER_DIALOG_DISABLED_ALWAYS_XML),
+                    ),
+                ),
+                stepId = "step_recorded_resolver_choice",
+                stepTitle = "recorded resolver choice",
+            )
+
+            assertEquals(true, result["success"])
+            assertFalse(result.containsKey("control_effects"))
+            assertEquals(1, backend.clickPoints.size)
+            assertEquals(540f, backend.clickPoints.single().first, 0.01f)
+            assertEquals(1020f, backend.clickPoints.single().second, 0.01f)
+        }
+    }
+
+    @Test
     fun `global checker does not wrap explicit skip ad action`() = runBlocking {
         val backend = FakeBackend(beforeXml = SKIP_AD_XML, afterXml = SOURCE_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
@@ -941,6 +1065,10 @@ class OmniflowStepExecutorTest {
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[100,200][300,280]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"Open\" class=\"android.widget.Button\" resource-id=\"app:id/open\"/><node bounds=\"[80,260][1000,1540]\" enabled=\"true\" visible-to-user=\"true\" text=\"Sponsored ad\" class=\"android.app.Dialog\" resource-id=\"ad:id/dialog\"><node bounds=\"[900,300][980,380]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" content-desc=\"Close ad\" class=\"android.widget.ImageButton\" resource-id=\"ad:id/close_ad\"/></node></hierarchy>"
         private const val SKIP_AD_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1920]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.widget.FrameLayout\" resource-id=\"app:id/splash_container\"><node bounds=\"[870,64][1030,128]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"跳过 3\" class=\"android.widget.TextView\" resource-id=\"app:id/skip_btn\"/></node></hierarchy>"
+        private const val RESOLVER_DIALOG_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[40,520][1040,1780]\" enabled=\"true\" visible-to-user=\"true\" class=\"com.android.internal.app.ResolverActivity\" package=\"android\" resource-id=\"android:id/resolver_list\"><node bounds=\"[80,570][1000,660]\" enabled=\"true\" visible-to-user=\"true\" text=\"打开方式\" class=\"android.widget.TextView\" resource-id=\"android:id/title\"/><node bounds=\"[80,720][1000,1320]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"浏览器\" class=\"android.widget.TextView\" resource-id=\"android:id/text1\"/><node bounds=\"[110,1620][500,1760]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"仅此一次\" class=\"android.widget.Button\" resource-id=\"android:id/button_once\"/><node bounds=\"[620,1620][1000,1760]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"始终打开\" class=\"android.widget.Button\" resource-id=\"android:id/button_always\"/></node></hierarchy>"
+        private const val RESOLVER_DIALOG_DISABLED_ALWAYS_XML =
+            "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[40,520][1040,1780]\" enabled=\"true\" visible-to-user=\"true\" class=\"com.android.internal.app.ResolverActivity\" package=\"android\" resource-id=\"android:id/resolver_list\"><node bounds=\"[80,570][1000,660]\" enabled=\"true\" visible-to-user=\"true\" text=\"打开方式\" class=\"android.widget.TextView\" resource-id=\"android:id/title\"/><node bounds=\"[80,720][1000,1320]\" clickable=\"true\" enabled=\"true\" visible-to-user=\"true\" text=\"浏览器\" class=\"android.widget.TextView\" resource-id=\"android:id/text1\"/><node bounds=\"[110,1620][500,1760]\" clickable=\"true\" enabled=\"false\" visible-to-user=\"true\" text=\"仅此一次\" class=\"android.widget.Button\" resource-id=\"android:id/button_once\"/><node bounds=\"[620,1620][1000,1760]\" clickable=\"true\" enabled=\"false\" visible-to-user=\"true\" text=\"始终打开\" class=\"android.widget.Button\" resource-id=\"android:id/button_always\"/></node></hierarchy>"
         private const val KEYBOARD_XML =
             "<hierarchy bounds=\"[0,0][1080,1920]\"><node bounds=\"[0,0][1080,1280]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.widget.FrameLayout\" resource-id=\"app:id/content\"/><node bounds=\"[0,1320][1080,1920]\" enabled=\"true\" visible-to-user=\"true\" class=\"android.inputmethodservice.KeyboardView\" package=\"com.google.android.inputmethod.latin\" resource-id=\"com.google.android.inputmethod.latin:id/keyboard_view\"/></hierarchy>"
         private const val SCROLL_SOURCE_XML =

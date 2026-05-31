@@ -2087,7 +2087,7 @@ abstract class _ChatPageStateBase extends State<ChatPage>
 
   Future<void> _sendMessage({String? text});
 
-  Future<void> _startManualRecordingFromShortcut();
+  Future<void> _startManualRecordingFromShortcut(bool recordDebugScreenshots);
 
   Future<void> _openRunLogListFromShortcut();
 

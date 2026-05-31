@@ -122,6 +122,10 @@ explicitly while transient UI issues are handled. The top control's
 control, persists XML, screenshot, PageVector observation, page analysis,
 decision context, node skill, and state manifest through `OobUdegNodeStore`,
 then appends a skipped `get_state` evidence card to the active RunLog.
+Debug builds may enable per-action marked screenshots for manual recording.
+Those screenshots are diagnostic-only private JPEG artifacts with the actual
+touch position annotated; normal product recording remains XML/touch based and
+does not store screenshots by default.
 Registered reusable-command steps can be edited from the command library and
 are saved back under the same `function_id`. Manual action cards retain
 `event_context` for conversion diagnostics. Replayable manual actions must come

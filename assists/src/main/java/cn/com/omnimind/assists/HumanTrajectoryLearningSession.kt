@@ -34,7 +34,11 @@ data class HumanTrajectoryLearningStatus(
     val rawTouchEnabled: Boolean = false,
     val rawTouchAvailable: Boolean = false,
     val overlayTouchRecordedCount: Int = 0,
-    val recordingBackend: String = "overlay_touch"
+    val recordingBackend: String = "overlay_touch",
+    val debugScreenshotsEnabled: Boolean = false,
+    val debugScreenshotStoredCount: Int = 0,
+    val debugScreenshotFailedCount: Int = 0,
+    val debugScreenshotSkippedCount: Int = 0
 ) {
     fun asMap(): Map<String, Any?> = linkedMapOf(
         "active" to active,
@@ -52,7 +56,11 @@ data class HumanTrajectoryLearningStatus(
         "raw_touch_enabled" to rawTouchEnabled,
         "raw_touch_available" to rawTouchAvailable,
         "overlay_touch_recorded_count" to overlayTouchRecordedCount,
-        "recording_backend" to recordingBackend
+        "recording_backend" to recordingBackend,
+        "debug_screenshots_enabled" to debugScreenshotsEnabled,
+        "debug_screenshot_stored_count" to debugScreenshotStoredCount,
+        "debug_screenshot_failed_count" to debugScreenshotFailedCount,
+        "debug_screenshot_skipped_count" to debugScreenshotSkippedCount
     ).filterValues { it != null }
 }
 
@@ -115,7 +123,11 @@ object HumanTrajectoryLearningSession {
             rawTouchEnabled = recorderSnapshot.rawTouchEnabled,
             rawTouchAvailable = recorderSnapshot.rawTouchAvailable,
             overlayTouchRecordedCount = recorderSnapshot.overlayTouchRecordedCount,
-            recordingBackend = recorderSnapshot.recordingBackend
+            recordingBackend = recorderSnapshot.recordingBackend,
+            debugScreenshotsEnabled = recorderSnapshot.debugScreenshotsEnabled,
+            debugScreenshotStoredCount = recorderSnapshot.debugScreenshotStoredCount,
+            debugScreenshotFailedCount = recorderSnapshot.debugScreenshotFailedCount,
+            debugScreenshotSkippedCount = recorderSnapshot.debugScreenshotSkippedCount
         )
     }
 
@@ -131,7 +143,8 @@ object HumanTrajectoryLearningSession {
         context: Context,
         name: String,
         description: String,
-        enableRawTouch: Boolean = false
+        enableRawTouch: Boolean = false,
+        enableDebugScreenshots: Boolean = false
     ): CompletableDeferred<HumanTrajectoryLearningResult> {
         val normalizedName = name.trim().ifEmpty { "人工学习轨迹" }
         val normalizedDescription = description.trim().ifEmpty { normalizedName }
@@ -142,7 +155,8 @@ object HumanTrajectoryLearningSession {
         val recorder = ManualVlmTraceRecorder(
             context = appContext,
             sessionLabel = "human_trajectory:$runId",
-            enableRawTouch = enableRawTouch
+            enableRawTouch = enableRawTouch,
+            enableDebugScreenshots = enableDebugScreenshots
         )
         synchronized(lock) {
             // Auto-cancel any stale session whose coroutine was cancelled without

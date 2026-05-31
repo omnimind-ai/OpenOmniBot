@@ -1809,13 +1809,21 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     if (!_isManualRecordingCommand(messageText)) {
       return false;
     }
-    await _startManualRecordingFlow(userMessageText: messageText);
+    await _startManualRecordingFlow(
+      userMessageText: messageText,
+      recordDebugScreenshots: false,
+    );
     return true;
   }
 
-  Future<void> _startManualRecordingFromShortcut() async {
+  Future<void> _startManualRecordingFromShortcut(
+    bool recordDebugScreenshots,
+  ) async {
     if (_isAiResponding) return;
-    await _startManualRecordingFlow(userMessageText: '录制轨迹');
+    await _startManualRecordingFlow(
+      userMessageText: '录制轨迹',
+      recordDebugScreenshots: recordDebugScreenshots,
+    );
   }
 
   Future<void> _openRunLogListFromShortcut() async {
@@ -1853,6 +1861,7 @@ class _ChatBotSheetState extends State<ChatBotSheet>
 
   Future<void> _startManualRecordingFlow({
     required String userMessageText,
+    required bool recordDebugScreenshots,
   }) async {
     final canRecord = await ManualRecordingPermissionGuard.ensureAuthorized(
       context,
@@ -1865,7 +1874,9 @@ class _ChatBotSheetState extends State<ChatBotSheet>
     showToast('开始手动录制。请执行操作，结束后点小万「完成学习」。');
     unawaited(ScreenDialogService.hideForManualRecording());
     try {
-      final result = await AssistsMessageService.startHumanTrajectoryLearning();
+      final result = await AssistsMessageService.startHumanTrajectoryLearning(
+        enableDebugScreenshots: recordDebugScreenshots,
+      );
       if (!mounted) return;
       unawaited(ScreenDialogService.restoreAfterManualRecording());
       _insertManualRecordingResultMessage(messageIds.aiMessageId, result);

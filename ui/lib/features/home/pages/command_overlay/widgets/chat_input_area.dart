@@ -87,7 +87,8 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback? onLongPressOpenClaw;
   final FutureOr<void> Function()? onViewTrajectoriesTap;
   final FutureOr<void> Function()? onViewCurrentTrajectoryTap;
-  final FutureOr<void> Function()? onManualRecordingTap;
+  final FutureOr<void> Function(bool recordDebugScreenshots)?
+  onManualRecordingTap;
   final FutureOr<void> Function()? onTerminalTap;
 
   /// 是否使用毛玻璃效果（command_overlay 使用毛玻璃，chatbotsheet 使用白色+阴影）
@@ -364,6 +365,7 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
 
   late ValueNotifier<_ComposerInteractionState> _composerStateNotifier;
   bool _isPopupVisible = false;
+  bool _recordDebugScreenshots = true;
   double _lastKeyboardInset = 0;
   ManualRecordingPermissionCheck? _manualRecordingPermissionCheck;
   bool _isCheckingManualRecordingPermissions = false;
@@ -373,6 +375,17 @@ abstract class _ChatInputAreaStateBase extends State<ChatInputArea>
 
   bool get isPopupVisible => _isPopupVisible;
   bool get _hasManualRecordingAction => widget.onManualRecordingTap != null;
+  bool get _showDebugScreenshotToggle =>
+      _debugScreenshotToggleAvailable && _hasManualRecordingAction;
+  bool get _debugScreenshotToggleAvailable {
+    var available = false;
+    assert(() {
+      available = true;
+      return true;
+    }());
+    return available;
+  }
+
   bool get _isManualRecordingPermissionBlocked {
     final permissionCheck = _manualRecordingPermissionCheck;
     return _hasManualRecordingAction &&

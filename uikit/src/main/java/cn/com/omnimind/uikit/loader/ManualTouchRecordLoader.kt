@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.graphics.PointF
+import android.graphics.Rect
 import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
@@ -46,6 +47,7 @@ object ManualTouchRecordLoader {
     private var overlayView: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private var currentTouchable: Boolean? = null
+    private var currentOverlayHeight: Int = 0
     private var displayWidth: Int = 0
     private var displayHeight: Int = 0
     private var imeVisibilityProbeJob: Job? = null
@@ -88,6 +90,7 @@ object ManualTouchRecordLoader {
             overlayParams = null
             windowManager = null
             currentTouchable = null
+            currentOverlayHeight = 0
             displayWidth = 0
             displayHeight = 0
             if (view != null && manager != null && view.isAttachedToWindow) {
@@ -108,6 +111,7 @@ object ManualTouchRecordLoader {
             overlayView = view
             overlayParams = params
             currentTouchable = true
+            currentOverlayHeight = params.height
             displayWidth = displaySize.x
             displayHeight = displaySize.y
             OmniLog.d(TAG, "manual touch recording overlay shown type=application")
@@ -159,7 +163,7 @@ object ManualTouchRecordLoader {
             format = PixelFormat.TRANSLUCENT
             val displaySize = realDisplaySize(context)
             width = displaySize.x
-            height = displaySize.y
+            height = overlayHeightForParamsLocked(touchable, displaySize.y)
             gravity = Gravity.TOP or Gravity.START
         }
     }
@@ -247,7 +251,7 @@ object ManualTouchRecordLoader {
                 if (gesture == null) {
                     val shouldContinue = withContext(Dispatchers.Main) {
                         var continueProcessing = false
-                        var shouldStayUnlockedForIme = false
+                        var shouldUseImeAwareCapture = false
                         var shouldShowInputStatus = false
                         synchronized(this@ManualTouchRecordLoader) {
                             if (pendingGestures.isNotEmpty()) {
@@ -256,8 +260,8 @@ object ManualTouchRecordLoader {
                                 isProcessing = false
                                 if (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
                                     if (isImeVisibleLocked()) {
-                                        unlockTouchLocked()
-                                        shouldStayUnlockedForIme = true
+                                        lockTouchLocked()
+                                        shouldUseImeAwareCapture = true
                                         shouldShowInputStatus = true
                                         scheduleImeRelockLocked()
                                     } else {
@@ -268,7 +272,7 @@ object ManualTouchRecordLoader {
                                 }
                             }
                         }
-                        if (shouldStayUnlockedForIme && shouldShowInputStatus) {
+                        if (shouldUseImeAwareCapture && shouldShowInputStatus) {
                             ManualRecordingControlOverlay.showTransientStatus("输入中", 1400L)
                         }
                         continueProcessing
@@ -405,7 +409,7 @@ object ManualTouchRecordLoader {
                     if (appeared &&
                         HumanTrajectoryLearningSession.isActive() &&
                         !HumanTrajectoryLearningSession.isPaused()) {
-                        unlockTouchLocked()
+                        lockTouchLocked()
                         shouldShowInputStatus = true
                         scheduleImeRelockLocked()
                     }
@@ -426,7 +430,11 @@ object ManualTouchRecordLoader {
             while (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
                 val imeVisible = withContext(Dispatchers.Main) {
                     synchronized(this@ManualTouchRecordLoader) {
-                        isImeVisibleLocked()
+                        val visible = isImeVisibleLocked()
+                        if (visible) {
+                            lockTouchLocked()
+                        }
+                        visible
                     }
                 }
                 if (!imeVisible) break
@@ -448,17 +456,36 @@ object ManualTouchRecordLoader {
         }
     }
 
-    private fun isImeVisibleLocked(): Boolean {
+    private fun isImeVisibleLocked(): Boolean = imeTopLocked() != null
+
+    private fun overlayHeightForParamsLocked(touchable: Boolean, fullHeight: Int): Int {
+        if (!touchable) return fullHeight
+        return imeTopLocked()?.coerceIn(1, fullHeight) ?: fullHeight
+    }
+
+    private fun imeTopLocked(): Int? {
+        val displayHeight = currentDisplaySize().y.takeIf { it > 0 } ?: return null
         // Primary: window insets — works for TYPE_APPLICATION_OVERLAY.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (overlayView?.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true) {
-                return true
+            val insets = overlayView?.rootWindowInsets
+            if (insets?.isVisible(WindowInsets.Type.ime()) == true) {
+                val bottomInset = insets.getInsets(WindowInsets.Type.ime()).bottom
+                if (bottomInset > 0) {
+                    return (displayHeight - bottomInset).coerceIn(1, displayHeight)
+                }
             }
         }
         // Fallback: scan accessibility windows when overlay insets are unavailable.
-        return AssistsService.instance?.windows?.any { window ->
-            window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
-        } == true
+        return AssistsService.instance?.windows
+            ?.asSequence()
+            ?.filter { window -> window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            ?.mapNotNull { window ->
+                val bounds = Rect()
+                runCatching { window.getBoundsInScreen(bounds) }.getOrNull()
+                bounds.takeUnless { it.isEmpty }
+            }
+            ?.map { bounds -> bounds.top.coerceIn(1, displayHeight) }
+            ?.minOrNull()
     }
 
     private fun lockTouchLocked() {
@@ -470,15 +497,18 @@ object ManualTouchRecordLoader {
     }
 
     private fun updateTouchableLocked(touchable: Boolean) {
-        if (currentTouchable == touchable) return
         val view = overlayView ?: return
         val manager = windowManager ?: return
         val context = view.context ?: return
         if (!view.isAttachedToWindow) return
         val params = buildParams(context, touchable)
+        if (currentTouchable == touchable && currentOverlayHeight == params.height) return
         overlayParams = params
         runCatching { manager.updateViewLayout(view, params) }
-            .onSuccess { currentTouchable = touchable }
+            .onSuccess {
+                currentTouchable = touchable
+                currentOverlayHeight = params.height
+            }
             .onFailure { OmniLog.w(TAG, "update touchable=$touchable failed: ${it.message}") }
     }
 
