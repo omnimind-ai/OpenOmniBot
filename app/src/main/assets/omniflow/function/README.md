@@ -48,6 +48,8 @@ belong in UI documentation.
 
 - persist agent analysis in Function metadata
 - apply safe metadata, target-repair, insert-step, and delete-step patches
+- delegate raw patch op and natural-language repair intent normalization to
+  `OobFunctionUpdateIntentParser`
 - delegate Function + RunLog evidence context and agent prompt packaging to
   `OobFunctionRunLogEvidencePackager`
 - delegate checker rule and optional checker candidate normalization to
@@ -63,6 +65,15 @@ belong in UI documentation.
   success evidence
 - keep evidence-analysis prompt contracts outside Function mutation code
 - never save Functions or apply patches
+
+`OobFunctionUpdateIntentParser` owns update intent normalization:
+
+- normalize patch fields like `ops`, `operations`, `repairs`, and
+  `replace_target` into explicit update operations
+- infer simple target-repair operations from user instructions such as
+  `应该点「外卖」而不是点「美食」`
+- classify replace-target and structural operations for update-mode decisions
+- never apply an operation or mutate a Function spec
 
 `OobFunctionCheckerPatchService` owns checker metadata patching:
 
@@ -181,6 +192,7 @@ Agent/MCP tool surface
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
       -> OobFunctionUpdateService    # update_function evidence and patches
+          -> OobFunctionUpdateIntentParser # patch/instruction -> update ops
           -> OobFunctionRunLogEvidencePackager # Function + RunLog agent context
           -> OobFunctionCheckerPatchService # checker metadata normalization
           -> OobFunctionTargetSourceMatcher # source XML repair matching
@@ -216,6 +228,8 @@ Keep these pieces separate:
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
 - `OobFunctionUpdateService`: Function patching and evidence analysis persistence
+- `OobFunctionUpdateIntentParser`: raw patch op and instruction intent
+  normalization
 - `OobFunctionRunLogEvidencePackager`: Function + RunLog evidence context and
   agent prompt packaging
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
