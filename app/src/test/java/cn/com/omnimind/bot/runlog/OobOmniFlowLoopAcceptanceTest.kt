@@ -251,6 +251,73 @@ class OobOmniFlowLoopAcceptanceTest {
     }
 
     @Test
+    fun `update function normalizes ad checker aliases into runtime rule`() = runBlocking {
+        val context = TempFilesContext()
+        try {
+            val toolkit = OobOmniFlowToolkitService(context, WorkspaceFunctionStore(context.root))
+            val functionId = "ad_checker_alias_update"
+            val register = toolkit.registerFunction(
+                mapOf(
+                    "functionId" to functionId,
+                    "name" to "跳过广告后点外卖",
+                    "description" to "用于验证 agent 生成的广告 checker 会落成运行时规则",
+                    "sourcePage" to mapOf(
+                        "xml" to TAKEOUT_XML,
+                        "packageName" to "com.example.food",
+                    ),
+                    "steps" to listOf(
+                        mapOf(
+                            "action" to "click",
+                            "title" to "点击外卖",
+                            "target_description" to "外卖",
+                            "x" to 790,
+                            "y" to 140,
+                        ),
+                    ),
+                )
+            )
+            assertEquals(true, register["success"])
+
+            val update = toolkit.updateFunction(
+                mapOf(
+                    "function_id" to functionId,
+                    "mode" to "enhance",
+                    "patch" to mapOf(
+                        "metadata" to mapOf(
+                            "checker_rules" to listOf(
+                                mapOf(
+                                    "id" to "skip_ad_if_present",
+                                    "condition" to "ad",
+                                    "action" to "click",
+                                    "enabled" to true,
+                                ),
+                            )
+                        ),
+                    ),
+                )
+            )
+
+            assertEquals(true, update["success"])
+            assertEquals(true, update["changed"])
+            assertEquals(true, update["saved"])
+
+            val stored = toolkit.getFunction(mapOf("function_id" to functionId))
+            val function = stored["function"] as Map<*, *>
+            val metadata = function["metadata"] as Map<*, *>
+            val checkerRules = metadata["checker_rules"] as List<*>
+            assertEquals(1, checkerRules.size)
+            val rule = checkerRules.single() as Map<*, *>
+            assertEquals("skip_ad_if_present", rule["id"])
+            assertEquals("ad_blocking", rule["condition"])
+            assertEquals("dismiss", rule["action"])
+            assertEquals("pre_transfer", rule["phase"])
+            assertEquals(true, rule["enabled"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `update function gates inserts and deletes as structural changes`() = runBlocking {
         val context = TempFilesContext()
         try {
