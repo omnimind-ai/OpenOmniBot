@@ -921,23 +921,10 @@ class OobOmniFlowExplorer(
                 .filter { it.length >= 2 }
         }
 
-        private fun firstNonBlank(vararg values: Any?): String {
-            for (value in values) {
-                val text = value?.toString()?.trim().orEmpty()
-                if (text.isNotEmpty()) return text
-            }
-            return ""
-        }
+        private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 
-        private fun intArg(vararg values: Any?, defaultValue: Int): Int {
-            values.forEach { value ->
-                when (value) {
-                    is Number -> return value.toInt()
-                    is String -> value.trim().toIntOrNull()?.let { return it }
-                }
-            }
-            return defaultValue
-        }
+        private fun intArg(vararg values: Any?, defaultValue: Int): Int =
+            OobActionCodec.intArg(*values, defaultValue = defaultValue)
 
         private fun longArg(vararg values: Any?, defaultValue: Long): Long {
             values.forEach { value ->
@@ -949,15 +936,7 @@ class OobOmniFlowExplorer(
             return defaultValue
         }
 
-        private fun boolArg(value: Any?): Boolean {
-            return when (value) {
-                is Boolean -> value
-                is String -> value.trim().equals("true", ignoreCase = true) ||
-                    value.trim() == "1"
-                is Number -> value.toInt() != 0
-                else -> false
-            }
-        }
+        private fun boolArg(value: Any?): Boolean = OobActionCodec.boolArg(value)
 
         private fun shortHash(value: String): String {
             val bytes = MessageDigest.getInstance("SHA-256")

@@ -169,11 +169,5 @@ object RunLogReplayStepNoiseNormalizer {
         )
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
+    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 }

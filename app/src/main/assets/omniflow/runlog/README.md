@@ -126,8 +126,14 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   startup cleanup, or future analysis code.
 - Keep generic RunLog action/value coercion in `OobActionCodec`. Tool facades
   such as `OobOmniFlowToolkitService` and small payload helpers such as
-  `OobFunctionCallTiming` should call it instead of adding private
-  `mapArg`/`listArg`/`firstNonBlank`/`boolArg` copies.
+  `OobFunctionCallTiming`, schema/parameterization helpers, explorer utilities,
+  and cleanup services should call it instead of adding private
+  `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`boolArg` copies when behavior is
+  equivalent.
+- Do not force-merge helpers with intentionally different compatibility
+  behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
+  and `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key
+  behavior.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
   in `RunLogReusableFunctionParameterizer`; do not put those rules back into

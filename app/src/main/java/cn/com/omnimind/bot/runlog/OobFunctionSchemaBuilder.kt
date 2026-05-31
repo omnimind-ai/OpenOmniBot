@@ -388,23 +388,9 @@ object OobFunctionSchemaBuilder {
             else -> "string"
         }
 
-    private fun mapArg(value: Any?): Map<String, Any?> {
-        return when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-    }
+    private fun mapArg(value: Any?): Map<String, Any?> = OobActionCodec.mapArg(value)
 
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
+    private fun listArg(value: Any?): List<Any?> = OobActionCodec.listArg(value)
 
     private fun boolArg(value: Any?): Boolean {
         return when (value) {
@@ -415,13 +401,7 @@ object OobFunctionSchemaBuilder {
         }
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
+    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 
     private fun MutableMap<String, Any?>.putFirstPresent(key: String, vararg values: Any?) {
         values.firstOrNull { value ->

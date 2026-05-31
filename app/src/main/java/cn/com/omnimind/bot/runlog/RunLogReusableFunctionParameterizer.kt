@@ -392,12 +392,7 @@ object RunLogReusableFunctionParameterizer {
         return value.entries.associate { (key, item) -> key.toString() to item }
     }
 
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
+    private fun listArg(value: Any?): List<Any?> = OobActionCodec.listArg(value)
 
     private fun firstPresent(vararg values: Any?): Any? {
         for (value in values) {
@@ -408,13 +403,7 @@ object RunLogReusableFunctionParameterizer {
         return null
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
+    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 
     private fun nullableMap(vararg pairs: Pair<String, Any?>): Map<String, Any?> {
         return linkedMapOf<String, Any?>().apply {
