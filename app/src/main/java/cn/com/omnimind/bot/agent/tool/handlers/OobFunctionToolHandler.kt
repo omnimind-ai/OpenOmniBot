@@ -38,6 +38,13 @@ class OobFunctionToolHandler(
             nestedCallCardPresenter,
             runResultBuilder
         ),
+    private val callToolStepExecutor: OobFunctionCallToolStepExecutor =
+        OobFunctionCallToolStepExecutor(
+            callRequestResolver,
+            toolDelegationExecutor,
+            agentFallbackController,
+            runResultBuilder
+        ),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -647,26 +654,26 @@ class OobFunctionToolHandler(
         allowAgentFallback: Boolean,
         allowToolDelegationWithoutRouter: Boolean,
         callStack: List<String>,
-    ): Map<String, Any?> {
-        val args = callRequestResolver.stepArgs(step)
-        val callTool = callRequestResolver.resolve(args, step) { getSpec(it) != null }
-        val targetTool = callTool.targetTool
-        val targetArgs = callTool.targetArgs
-        val functionId = callTool.functionId
-        if (functionId.isNotEmpty()) {
-            val functionStep = LinkedHashMap<String, Any?>().apply {
-                putAll(step)
-                put("args", LinkedHashMap<String, Any?>().apply {
-                    putAll(args)
-                    put("function_id", functionId)
-                    put("arguments", targetArgs)
-                })
-            }
-            return executeOmniflowFunctionStep(
+    ): Map<String, Any?> = callToolStepExecutor.execute(
+        step = step,
+        stepId = stepId,
+        stepTitle = stepTitle,
+        callableTool = callableTool,
+        callback = callback,
+        toolHandle = toolHandle,
+        env = env,
+        parentToolCallId = parentToolCallId,
+        toolName = toolName,
+        allowAgentFallback = allowAgentFallback,
+        allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
+        router = router,
+        canLoadFunction = { getSpec(it) != null },
+        executeNestedFunctionStep = { functionStep, nestedCallableTool ->
+            executeOmniflowFunctionStep(
                 step = functionStep,
                 stepId = stepId,
                 stepTitle = stepTitle,
-                callableTool = callableTool.ifEmpty { "call_tool" },
+                callableTool = nestedCallableTool,
                 callback = callback,
                 toolHandle = toolHandle,
                 env = env,
@@ -677,81 +684,7 @@ class OobFunctionToolHandler(
                 callStack = callStack,
             )
         }
-
-        if (targetTool.isEmpty()) {
-            return failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "call_tool" },
-                executor = "tool",
-                summary = "$stepTitle missing tool_name or function_id",
-                errorCode = "OOB_CALL_TOOL_TARGET_MISSING",
-            )
-        }
-        if (RunLogReplayPolicy.isOmniflowToolCallTool(targetTool)) {
-            return failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "call_tool" },
-                executor = "tool",
-                summary = "$stepTitle nested call_tool is not allowed",
-                errorCode = "OOB_CALL_TOOL_RECURSION",
-            )
-        }
-        if (router != null && env != null) {
-            val routerRef = router
-                ?: error("router became unavailable during call_tool delegation")
-            val delegatedStep = LinkedHashMap<String, Any?>().apply {
-                putAll(step)
-                put("tool", targetTool)
-                put("callable_tool", targetTool)
-                put("args", targetArgs)
-            }
-            return LinkedHashMap<String, Any?>().apply {
-                putAll(
-                    toolDelegationExecutor.execute(
-                        step = delegatedStep,
-                        stepId = stepId,
-                        stepTitle = stepTitle,
-                        callableTool = targetTool,
-                        env = env,
-                        callback = callback ?: cn.com.omnimind.bot.agent.NoOpAgentCallback,
-                        toolHandle = toolHandle ?: cn.com.omnimind.bot.agent.NoOpAgentRunControl
-                            .beginToolExecution(targetTool, "${parentToolCallId ?: toolName}_$stepId"),
-                        syntheticCallId = "${parentToolCallId ?: toolName}_$stepId",
-                        router = routerRef,
-                    )
-                )
-                put("delegated_from", callableTool.ifEmpty { "call_tool" })
-                put("delegated_tool_used", true)
-            }
-        }
-        if (allowAgentFallback && !allowToolDelegationWithoutRouter) {
-            return linkedMapOf(
-                "step_id" to stepId,
-                "tool" to targetTool,
-                "executor" to "agent",
-                "blocked_executor" to "tool",
-                "prompt" to agentFallbackController.prompt(
-                    LinkedHashMap<String, Any?>().apply {
-                        putAll(step)
-                        put("tool", targetTool)
-                        put("args", targetArgs)
-                    },
-                    stepTitle
-                ),
-                "success" to false,
-                "needs_agent" to true,
-                "fallback_available" to true,
-                "summary" to "call_tool requires agent runner: $stepTitle"
-            )
-        }
-        return failureStepResult(
-            stepId = stepId,
-            tool = targetTool,
-            executor = "tool",
-            summary = "Tool router unavailable for $targetTool",
-            errorCode = "OOB_CALL_TOOL_ROUTER_UNAVAILABLE",
-        )
-    }
+    )
 
     private suspend fun executeOmniflowFunctionStep(
         step: Map<String, Any?>,

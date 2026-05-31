@@ -227,6 +227,14 @@ belong in UI documentation.
 - map delegated tool results back into a stable per-step payload
 - never decide replay order, fallback policy, or whether a step should delegate
 
+`OobFunctionCallToolStepExecutor` owns `call_tool` replay steps:
+
+- resolve `call_tool` target Function/tool names and forwarded arguments
+- convert Function targets into nested reusable Function replay handoffs
+- delegate ordinary tool targets through `OobFunctionToolDelegationExecutor`
+- return agent fallback payloads when a live tool router is required
+- keep `call_tool` target policy outside the main replay loop
+
 `OobFunctionNestedFunctionExecutor` owns nested reusable Function execution:
 
 - resolve `function_id` and nested Function arguments from a replay step
@@ -290,6 +298,7 @@ Agent/MCP tool surface
               -> OobFunctionCallRequestResolver # replay/call_tool args
               -> OobFunctionStepClassifier # replay step-shape routing
               -> OobFunctionToolDelegationExecutor # live tool delegation bridge
+              -> OobFunctionCallToolStepExecutor # call_tool step resolution
               -> OobFunctionNestedFunctionExecutor # nested Function execution
               -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
@@ -356,6 +365,8 @@ Keep these pieces separate:
   agent-tool extraction
 - `OobFunctionToolDelegationExecutor`: mechanical bridge from replay steps to
   live `AgentToolExecutor` calls and back to per-step result payloads
+- `OobFunctionCallToolStepExecutor`: `call_tool` target resolution, Function
+  target handoff, ordinary tool delegation, and tool-router fallback payloads
 - `OobFunctionNestedFunctionExecutor`: nested Function id/argument resolution,
   nested materialization, recursive run handoff, and parent-step result shaping
 - `OobFunctionRunResultBuilder`: stable run payload schema, failure step

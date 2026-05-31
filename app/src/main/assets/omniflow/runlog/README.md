@@ -61,6 +61,7 @@ record. Do not read only the snapshot when correctness matters.
 - Replay call/tool argument resolver: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionCallRequestResolver.kt`
 - Replay step classifier: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionStepClassifier.kt`
 - Replay tool delegation executor: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionToolDelegationExecutor.kt`
+- `call_tool` step executor: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionCallToolStepExecutor.kt`
 - Nested Function executor: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionNestedFunctionExecutor.kt`
 - Replay run result builder: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionRunResultBuilder.kt`
 - Nested Function card presenter: `app/src/main/java/cn/com/omnimind/bot/agent/tool/handlers/OobFunctionNestedCallCardPresenter.kt`
