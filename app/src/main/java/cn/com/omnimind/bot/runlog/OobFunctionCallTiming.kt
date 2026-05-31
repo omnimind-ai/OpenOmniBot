@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.mapArg
+
 /**
  * Tracks phase timing for Function calls made through the OmniFlow toolkit.
  *
@@ -67,14 +69,4 @@ class OobFunctionCallTiming {
 
     private fun elapsedMs(startedAtNanos: Long): Long =
         ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
-
-    private fun mapArg(value: Any?): Map<String, Any?> =
-        when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
 }

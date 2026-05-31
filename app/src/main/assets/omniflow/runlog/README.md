@@ -125,7 +125,8 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   Do not duplicate `tool_call`/`header`/observation parsing across compiler,
   startup cleanup, or future analysis code.
 - Keep generic RunLog action/value coercion in `OobActionCodec`. Tool facades
-  such as `OobOmniFlowToolkitService` should call it instead of adding private
+  such as `OobOmniFlowToolkitService` and small payload helpers such as
+  `OobFunctionCallTiming` should call it instead of adding private
   `mapArg`/`listArg`/`firstNonBlank`/`boolArg` copies.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
