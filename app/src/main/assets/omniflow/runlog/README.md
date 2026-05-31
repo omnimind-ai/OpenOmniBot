@@ -52,6 +52,7 @@ record. Do not read only the snapshot when correctness matters.
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - RunLog replay step noise normalizer: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReplayStepNoiseNormalizer.kt`
 - RunLog reusable Function compiler: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReusableFunctionCompiler.kt`
+- RunLog card-to-step compiler: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReplayStepCompiler.kt`
 - RunLog card field/JSON accessors: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogCardAccessors.kt`
 - RunLog startup/launcher bridge cleaner: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogStartupBridgeCleaner.kt`
 - RunLog reusable Function parameterizer: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReusableFunctionParameterizer.kt`
@@ -116,6 +117,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   It owns repeated input collapse and redundant click-before-input removal;
   startup launch bridge cleanup belongs in `RunLogStartupBridgeCleaner`, and
   the compiler should only orchestrate card-to-step conversion.
+- Keep single-card action semantics in `RunLogReplayStepCompiler`. It owns
+  whether a card becomes `executor=omniflow`, `executor=tool`, or
+  `executor=agent`, plus step titles and source-context repair.
 - Keep RunLog card field extraction and JSON coercion in `RunLogCardAccessors`.
   Do not duplicate `tool_call`/`header`/observation parsing across compiler,
   startup cleanup, or future analysis code.
