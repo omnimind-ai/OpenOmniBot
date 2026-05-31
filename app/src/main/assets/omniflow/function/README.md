@@ -227,6 +227,15 @@ belong in UI documentation.
 - map delegated tool results back into a stable per-step payload
 - never decide replay order, fallback policy, or whether a step should delegate
 
+`OobFunctionNestedFunctionExecutor` owns nested reusable Function execution:
+
+- resolve `function_id` and nested Function arguments from a replay step
+- load, validate, and materialize the nested Function before recursive replay
+- emit nested Function tool-card start/completion payloads through
+  `OobFunctionNestedCallCardPresenter`
+- map the nested run result back into the parent step result payload
+- never decide parent replay order, recursion limits, or source alignment policy
+
 `OobFunctionRunResultBuilder` owns replay result payloads:
 
 - build stable per-step failure records for guard, delegation, and replay errors
@@ -281,6 +290,7 @@ Agent/MCP tool surface
               -> OobFunctionCallRequestResolver # replay/call_tool args
               -> OobFunctionStepClassifier # replay step-shape routing
               -> OobFunctionToolDelegationExecutor # live tool delegation bridge
+              -> OobFunctionNestedFunctionExecutor # nested Function execution
               -> OobFunctionRunResultBuilder # run result/timing payloads
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
@@ -346,6 +356,8 @@ Keep these pieces separate:
   agent-tool extraction
 - `OobFunctionToolDelegationExecutor`: mechanical bridge from replay steps to
   live `AgentToolExecutor` calls and back to per-step result payloads
+- `OobFunctionNestedFunctionExecutor`: nested Function id/argument resolution,
+  nested materialization, recursive run handoff, and parent-step result shaping
 - `OobFunctionRunResultBuilder`: stable run payload schema, failure step
   records, and runner timing/phase accounting
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,

@@ -32,6 +32,12 @@ class OobFunctionToolHandler(
         OobFunctionToolDelegationExecutor(helper),
     private val accessibilityPreflightGuard: OobFunctionAccessibilityPreflightGuard =
         OobFunctionAccessibilityPreflightGuard(stepClassifier, runResultBuilder),
+    private val nestedFunctionExecutor: OobFunctionNestedFunctionExecutor =
+        OobFunctionNestedFunctionExecutor(
+            callRequestResolver,
+            nestedCallCardPresenter,
+            runResultBuilder
+        ),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -760,140 +766,36 @@ class OobFunctionToolHandler(
         allowAgentFallback: Boolean,
         allowToolDelegationWithoutRouter: Boolean,
         callStack: List<String>,
-    ): Map<String, Any?> {
-        val args = callRequestResolver.stepArgs(step)
-        val functionId = firstNonBlank(
-            args["function_id"],
-            args["functionId"],
-            args["id"],
-            args["name"],
-            step["function_id"],
-            step["functionId"],
-        )
-        val nestedArguments = callRequestResolver.nestedFunctionArguments(args)
-        val cardToolName = "call_function"
-        val cardId = nestedCallCardPresenter.cardId(parentToolCallId, toolName, stepId)
-        val cardStartedAtMs = System.currentTimeMillis()
-
-        suspend fun emitStarted() {
-            callback?.onToolCardEvent(
-                "tool_started",
-                nestedCallCardPresenter.payload(
-                    cardId = cardId,
-                    toolName = cardToolName,
-                    stepTitle = stepTitle,
-                    functionId = functionId,
-                    callableTool = callableTool,
-                    nestedArguments = nestedArguments,
-                    status = "running",
-                    success = null,
-                    summary = nestedCallCardPresenter.runningSummary(functionId),
-                    progress = stepTitle,
-                    startedAtMs = cardStartedAtMs,
-                    finishedAtMs = null,
-                    result = null,
-                )
+    ): Map<String, Any?> = nestedFunctionExecutor.execute(
+        step = step,
+        stepId = stepId,
+        stepTitle = stepTitle,
+        callableTool = callableTool,
+        callback = callback,
+        toolHandle = toolHandle,
+        env = env,
+        parentToolCallId = parentToolCallId,
+        toolName = toolName,
+        allowAgentFallback = allowAgentFallback,
+        allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
+        callStack = callStack,
+        loadSpec = { getSpec(it) },
+        runNestedFunction = { request ->
+            runMaterializedFunction(
+                functionId = request.functionId,
+                spec = request.spec,
+                materializedSpec = request.materializedSpec,
+                callback = request.callback,
+                toolHandle = request.toolHandle,
+                env = request.env,
+                parentToolCallId = request.parentToolCallId,
+                toolName = request.toolName,
+                allowAgentFallback = request.allowAgentFallback,
+                allowToolDelegationWithoutRouter = request.allowToolDelegationWithoutRouter,
+                callStack = request.callStack,
             )
         }
-
-        suspend fun completeWithCard(result: Map<String, Any?>): Map<String, Any?> {
-            val success = result["success"] != false
-            val finishedAtMs = System.currentTimeMillis()
-            callback?.onToolCardEvent(
-                "tool_completed",
-                nestedCallCardPresenter.payload(
-                    cardId = cardId,
-                    toolName = cardToolName,
-                    stepTitle = stepTitle,
-                    functionId = functionId,
-                    callableTool = callableTool,
-                    nestedArguments = nestedArguments,
-                    status = if (success) "success" else "error",
-                    success = success,
-                    summary = result["summary"]?.toString()?.takeIf { it.isNotBlank() }
-                        ?: nestedCallCardPresenter.finishedSummary(functionId, success),
-                    progress = "",
-                    startedAtMs = cardStartedAtMs,
-                    finishedAtMs = finishedAtMs,
-                    result = result,
-                )
-            )
-            return result
-        }
-
-        emitStarted()
-        if (functionId.isEmpty()) {
-            return completeWithCard(failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "call_function" },
-                executor = "omniflow_function",
-                summary = "$stepTitle missing function_id",
-                errorCode = "OOB_FUNCTION_ID_MISSING",
-            ))
-        }
-        val nestedSpec = getSpec(functionId)
-            ?: return completeWithCard(failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "call_function" },
-                executor = "omniflow_function",
-                summary = "OOB reusable function not found: $functionId",
-                errorCode = "OOB_FUNCTION_NOT_FOUND",
-                extras = mapOf("nested_function_id" to functionId),
-            ))
-        val missing = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
-            .missingRequiredArguments(nestedSpec, nestedArguments)
-        if (missing.isNotEmpty()) {
-            return completeWithCard(failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "call_function" },
-                executor = "omniflow_function",
-                summary = "Missing required arguments: ${missing.joinToString(", ")}",
-                errorCode = "OOB_FUNCTION_ARGUMENTS_MISSING",
-                extras = mapOf(
-                    "nested_function_id" to functionId,
-                    "missing_required_arguments" to missing,
-                ),
-            ))
-        }
-        val materialized = cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
-            .materialize(nestedSpec, nestedArguments)
-        val nestedRun = runMaterializedFunction(
-            functionId = functionId,
-            spec = nestedSpec,
-            materializedSpec = materialized,
-            callback = callback,
-            toolHandle = toolHandle,
-            env = env,
-            parentToolCallId = "${parentToolCallId ?: toolName}_$stepId",
-            toolName = functionId,
-            allowAgentFallback = allowAgentFallback,
-            allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
-            callStack = callStack,
-        )
-        val success = nestedRun["success"] == true
-        return completeWithCard(linkedMapOf<String, Any?>(
-            "step_id" to stepId,
-            "tool" to callableTool.ifEmpty { "call_function" },
-            "executor" to "omniflow_function",
-            "model_free" to true,
-            "success" to success,
-            "nested_function_id" to functionId,
-            "nested_run_id" to nestedRun["run_id"],
-            "nested_runner" to nestedRun["runner"],
-            "nested_step_count" to nestedRun["step_count"],
-            "nested_success_step_count" to nestedRun["success_step_count"],
-            "nested_model_required" to nestedRun["model_required"],
-            "step_results" to nestedRun["step_results"],
-            "timing" to nestedRun["timing"],
-            "error_code" to nestedRun["error_code"],
-            "summary" to if (success) {
-                "$stepTitle completed via local OOB Function: $functionId"
-            } else {
-                nestedRun["error_message"]?.toString()?.takeIf { it.isNotBlank() }
-                    ?: "$stepTitle failed via local OOB Function: $functionId"
-            },
-        ).filterValues { it != null })
-    }
+    )
 
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {
         return OobFunctionSchemaBuilder.materializedSteps(materializedSpec)
@@ -914,14 +816,6 @@ class OobFunctionToolHandler(
         errorCode = errorCode,
         extras = extras,
     )
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
 
     private companion object {
         const val TAG = "OobFunctionToolHandler"
