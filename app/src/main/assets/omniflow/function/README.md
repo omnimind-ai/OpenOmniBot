@@ -119,6 +119,13 @@ belong in UI documentation.
 - run the optional `vlm_task` fallback for remappable UI-action failures
 - keep agent recovery text and VLM tool-call shaping outside the replay loop
 
+`OobFunctionCallRequestResolver` owns replay/tool-call argument compatibility:
+
+- extract executable args from current Function steps and older RunLog cards
+- resolve `call_tool` targets, nested Function ids, and delegated tool args
+- strip Function/call-tool metadata from forwarded argument payloads
+- keep recorded argument-shape compatibility outside the runtime replay loop
+
 `OobFunctionNestedCallCardPresenter` owns nested Function tool-card payloads:
 
 - create stable card ids for nested Function calls
@@ -156,6 +163,7 @@ Agent/MCP tool surface
               -> OobFunctionFrontendSessionController # replay overlay/session
               -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
+              -> OobFunctionCallRequestResolver # replay/call_tool args
               -> OobFunctionNestedCallCardPresenter # nested Function card payloads
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
@@ -192,6 +200,8 @@ Keep these pieces separate:
   policy, replay skip results, and alignment-miss failure payloads
 - `OobFunctionAgentFallbackController`: failed-step recovery snapshots,
   fallback prompts, and optional VLM fallback calls
+- `OobFunctionCallRequestResolver`: replay step args, `call_tool` target
+  resolution, nested Function argument extraction, and metadata stripping
 - `OobFunctionNestedCallCardPresenter`: nested Function tool-card ids,
   summaries, args payloads, and result preview payloads
 - `OobFunctionEntryPackageGuard`: pre-replay app/package restoration
