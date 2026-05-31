@@ -28,12 +28,35 @@ belong in UI documentation.
 
 `RunLogReusableFunctionCompiler` owns RunLog card-to-Function assembly:
 
-- filter replayable cards and perception wrappers according to replay policy
-- repair transient startup launch bridge artifacts before step indexing
-- convert RunLog cards into canonical execution steps with source context
+- filter successful replayable cards before conversion
+- coordinate startup bridge cleanup, single-card step compilation, step noise
+  cleanup, and parameterization
 - assemble top-level reusable Function fields and metadata
 - delegate deterministic parameter/action compatibility output to
   `RunLogReusableFunctionParameterizer`
+
+`RunLogReplayStepCompiler` owns single-card replay semantics:
+
+- convert one RunLog card into one canonical execution step or skip it
+- decide whether the emitted step uses `executor=omniflow`, `executor=tool`, or
+  `executor=agent`
+- generate concise step titles from recorded tool/action arguments
+- build source-context repair data for coordinate remapping
+- keep card action translation out of top-level Function assembly
+
+`RunLogStartupBridgeCleaner` owns startup/launcher bridge cleanup:
+
+- drop transient startup cards that only bridge from launcher to the target app
+- normalize injected first `open_app` steps when the RunLog already contains a
+  concrete launch action
+- keep launch cleanup separate from card action semantics and replay execution
+
+`RunLogCardAccessors` owns RunLog card field extraction:
+
+- coerce card fields, headers, tool calls, args, results, and observations into
+  stable Kotlin map values
+- centralize JSON-safe conversion helpers used by conversion and cleanup code
+- prevent duplicate ad hoc card parsing across compiler services
 
 `RunLogReusableFunctionParameterizer` owns reusable Function parameterization:
 
@@ -307,6 +330,9 @@ Agent/MCP tool surface
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
           -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
+              -> RunLogStartupBridgeCleaner # transient launch bridge cleanup
+              -> RunLogReplayStepCompiler # single-card action -> replay step
+                  -> RunLogCardAccessors # card field/JSON extraction helpers
               -> RunLogReplayStepNoiseNormalizer # compiled step noise cleanup
               -> RunLogReusableFunctionParameterizer # parameters/actions/bindings
 
@@ -344,7 +370,14 @@ Keep these pieces separate:
   compact recall payload shaping
 - `OobFunctionRunPolicy`: pre-run guard and failed-run agent fallback handoff
 - `OobFunctionCallTiming`: Function call timing payload construction
-- `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
+- `RunLogReusableFunctionCompiler`: offline RunLog-to-Function assembly and
+  conversion orchestration
+- `RunLogReplayStepCompiler`: single-card action semantics, executor selection,
+  step titles, and source-context repair
+- `RunLogStartupBridgeCleaner`: transient startup/launcher bridge cleanup before
+  final step indexing
+- `RunLogCardAccessors`: shared RunLog card field, tool-call, observation, and
+  JSON-safe extraction helpers
 - `RunLogReusableFunctionParameterizer`: deterministic runtime parameter
   inference, canonical JSON schema, legacy action compatibility, and binding
   metadata for compiled Function specs
@@ -401,11 +434,13 @@ tool facade. Do not add ad hoc guard, retry, or agent prompt helpers back into
 After backend Function changes, run focused tests:
 
 ```bash
-./gradlew --no-daemon :app:testDevelopStandardDebugUnitTest \
+./gradlew --no-daemon :app:compileDevelopStandardDebugKotlin -Pkotlin.incremental=false
+./gradlew --no-daemon :app:testDevelopStandardDebugUnitTest -Pkotlin.incremental=false \
   --tests 'cn.com.omnimind.bot.agent.AgentToolRegistryOobFunctionTest' \
   --tests 'cn.com.omnimind.bot.agent.AgentSystemPromptTest' \
   --tests 'cn.com.omnimind.bot.mcp.McpToolDefinitionsTest' \
   --tests 'cn.com.omnimind.bot.runlog.RunLogReusableFunctionCompilerTest' \
+  --tests 'cn.com.omnimind.bot.runlog.OobOmniFlowLoopAcceptanceTest' \
   --tests 'cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandlerOmniFlowExecutionTest' \
   --tests 'cn.com.omnimind.bot.agent.tool.handlers.WorkbenchToolHandlerOobFunctionToolsTest' \
   --tests 'cn.com.omnimind.bot.runlog.InternalRunLogStoreTest'
