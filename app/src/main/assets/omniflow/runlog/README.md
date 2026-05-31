@@ -37,6 +37,7 @@ record. Do not read only the snapshot when correctness matters.
 - Native storage: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/InternalRunLogStore.kt`
 - Shared replay policy: `app/src/main/assets/omniflow/runlog/replay_policy.json`
 - Reusable Function storage owner: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRepository.kt`
+- Function payload/value codec: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionJson.kt`
 - Function spec normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSpecBuilder.kt`
 - Function update/evidence service: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionUpdateService.kt`
 - Function metadata/evidence patch applier: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionMetadataPatchApplier.kt`
@@ -130,6 +131,12 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   and cleanup services should call it instead of adding private
   `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`boolArg` copies when behavior is
   equivalent.
+- Keep generic Function payload coercion in `OobFunctionJson`. Function
+  register/update/run/recall services, Function replay argument compatibility,
+  and Function run-result timing payload merge should use it instead of adding
+  local `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`boolArg` copies. It is a
+  mechanical JSON/value helper only; action aliases and RunLog-card semantics
+  stay in `OobActionCodec` and `RunLogCardAccessors`.
 - Do not force-merge helpers with intentionally different compatibility
   behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
   and `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key

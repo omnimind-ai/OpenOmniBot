@@ -452,6 +452,43 @@ policy must remain in the replay service that owns the decision. Keep it
 limited to shape conversion; new rules should live in the owning update
 service or replay component.
 
+## Helper Maintenance Audit
+
+Use these owner rules when removing duplicated helper code:
+
+- Function payload shape helpers belong in `OobFunctionJson`. This includes
+  generic map/list/string/int/bool coercion used by register, update, recall,
+  run payloads, timing merge payloads, and Function replay argument
+  compatibility. It must stay policy-free.
+- RunLog action/value helpers belong in `OobActionCodec`. This includes action
+  aliases, low-level action argument extraction, and generic coercion used while
+  converting RunLog cards or building RunLog-derived compatibility payloads.
+- RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
+  another local parser for `tool_call`, card headers, results, observations, or
+  card payload JSON.
+- Function update policy belongs in `OobFunctionUpdateService` and its patch
+  appliers. Do not move checker, evidence, audit, retarget, insert, delete, or
+  reindex rules into `OobFunctionJson`.
+- Runtime replay policy belongs in the replay components under
+  `OobFunctionToolHandler`. Do not move skip/fallback/delegation/source
+  alignment decisions into mechanical helper objects.
+
+Known helper exceptions that should not be force-merged without a semantic
+change:
+
+- `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields and
+  intentionally does not accept every runtime truthy alias.
+- `RunLogReusableFunctionParameterizer.asMap` preserves legacy map-key behavior
+  for compatibility metadata.
+- `OobFunctionCheckerPatchService.boolArgOrDefault` encodes checker-patch
+  default semantics; only merge it if `OobFunctionJson` grows an equivalent
+  default-aware helper with the same behavior.
+- `OobUdegNodeStore` keeps some graph-export sanitization helpers local because
+  they sanitize stored graph values, not just coerce Function payloads.
+- `OmniflowStepExecutor.firstNonBlank` and `OobPageVectorSet.firstNonBlank`
+  are low-risk local helpers in runtime/vector internals; merge them only when
+  touching the surrounding code for another reason.
+
 ## Verification
 
 After backend Function changes, run focused tests:
