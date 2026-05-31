@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 class OobFunctionToolHandler(
     private val context: android.content.Context,
     private val helper: SharedHelper,
+    private val graphStepRunner: OobFunctionGraphStepRunner = OobFunctionGraphStepRunner(),
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
 
@@ -399,7 +400,7 @@ class OobFunctionToolHandler(
                 }
 
                 RunLogReplayPolicy.isOmniflowGraphTool(omniflowExecutionTool) -> {
-                    executeOmniflowGraphStep(
+                    graphStepRunner.execute(
                         step = step,
                         stepId = stepId,
                         stepTitle = stepTitle,
@@ -410,7 +411,7 @@ class OobFunctionToolHandler(
 
                 OmniflowStepExecutor.isOmniflowStep(step) -> {
                     try {
-                        executeOmniflowStep(step, stepId, stepTitle, functionCheckerRules)
+                        OmniflowStepExecutor.execute(step, stepId, stepTitle, functionCheckerRules)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -1306,83 +1307,6 @@ class OobFunctionToolHandler(
         ).filterValues { it != null }
     }
 
-    private suspend fun executeOmniflowGraphStep(
-        step: Map<String, Any?>,
-        stepId: String,
-        stepTitle: String,
-        callableTool: String,
-        checkerRules: List<OmniflowCheckerRule> = emptyList(),
-    ): Map<String, Any?> {
-        val path = resolveGraphPath(step, callableTool)
-        if (path.isEmpty()) {
-            return failureStepResult(
-                stepId = stepId,
-                tool = callableTool.ifEmpty { "go_to_node" },
-                executor = "omniflow_graph",
-                summary = "$stepTitle has no executable UTG path",
-                errorCode = "OOB_UTG_PATH_EMPTY",
-            )
-        }
-
-        val primitiveResults = mutableListOf<Map<String, Any?>>()
-        for ((index, primitiveStep) in path.withIndex()) {
-            val pathStepId = "${stepId}_path_${index + 1}"
-            val pathTitle = primitiveStep["title"]?.toString()?.takeIf { it.isNotBlank() }
-                ?: "$stepTitle path ${index + 1}"
-            val startedAtMs = System.currentTimeMillis()
-            val result = try {
-                executeOmniflowStep(primitiveStep, pathStepId, pathTitle, checkerRules)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                failureStepResult(
-                    stepId = pathStepId,
-                    tool = OmniflowStepExecutor.actionNameForStep(primitiveStep),
-                    executor = "omniflow",
-                    summary = e.message ?: "UTG path action failed",
-                    errorCode = "OOB_UTG_ACTION_FAILED",
-                )
-            }
-            val finishedAtMs = System.currentTimeMillis()
-            primitiveResults += LinkedHashMap<String, Any?>().apply {
-                putAll(result)
-                putIfAbsent("index", index)
-                putIfAbsent("started_at_ms", startedAtMs)
-                putIfAbsent("finished_at_ms", finishedAtMs)
-                putIfAbsent("duration_ms", (finishedAtMs - startedAtMs).coerceAtLeast(0))
-            }
-            if (result["success"] == false) break
-        }
-
-        val success = primitiveResults.size == path.size &&
-            primitiveResults.none { it["success"] == false }
-        return linkedMapOf<String, Any?>(
-            "step_id" to stepId,
-            "tool" to callableTool.ifEmpty { "go_to_node" },
-            "executor" to "omniflow_graph",
-            "model_free" to true,
-            "success" to success,
-            "path_length" to path.size,
-            "success_path_step_count" to primitiveResults.count { it["success"] != false },
-            "step_results" to primitiveResults,
-            "summary" to if (success) {
-                "$stepTitle completed via local UTG path"
-            } else {
-                primitiveResults.lastOrNull()?.get("summary")?.toString()
-                    ?: "$stepTitle failed in local UTG path"
-            },
-        )
-    }
-
-    private suspend fun executeOmniflowStep(
-        step: Map<String, Any?>,
-        stepId: String,
-        stepTitle: String,
-        checkerRules: List<OmniflowCheckerRule> = emptyList(),
-    ): Map<String, Any?> {
-        return OmniflowStepExecutor.execute(step, stepId, stepTitle, checkerRules)
-    }
-
     private suspend fun ensureEntryPackageForeground(steps: List<Map<String, Any?>>) {
         val entryPackage = entryPackageForSteps(steps).takeIf { it.isNotBlank() } ?: return
         val currentPackage = runCatching {
@@ -1586,128 +1510,6 @@ class OobFunctionToolHandler(
                 if (key !in CALL_TOOL_META_KEYS) put(key, value)
             }
         }
-    }
-
-    private fun resolveGraphPath(
-        step: Map<String, Any?>,
-        callableTool: String,
-    ): List<Map<String, Any?>> {
-        val args = stepArgs(step)
-        val directPath = listArg(args["path"]).ifEmpty { listArg(step["path"]) }
-        val utg = stringMap(args["utg"])
-            .ifEmpty { stringMap(step["utg"]) }
-            .ifEmpty { stringMap(args["graph"]) }
-            .ifEmpty { stringMap(step["graph"]) }
-        val utgPathIds = listArg(utg["path"])
-        val utgEdges = listArg(utg["edges"])
-            .mapNotNull { stringMap(it).takeIf { edge -> edge.isNotEmpty() } }
-        val edges = listArg(args["edges"])
-            .ifEmpty { listArg(step["edges"]) }
-            .mapNotNull { stringMap(it).takeIf { edge -> edge.isNotEmpty() } }
-            .ifEmpty { utgEdges }
-
-        val rawPath = when {
-            directPath.isNotEmpty() -> directPath
-            edges.isNotEmpty() && RunLogReplayPolicy.normalizeToolName(callableTool) in
-                setOf("click_node", "node_click") -> selectClickNodeEdges(edges, args)
-            utgPathIds.isNotEmpty() && utgEdges.isNotEmpty() -> {
-                val edgeById = utgEdges.associateBy { firstNonBlank(it["edge_id"], it["edgeId"], it["id"]) }
-                utgPathIds.mapNotNull { rawId -> edgeById[rawId?.toString().orEmpty()] }
-            }
-            edges.isNotEmpty() -> selectGoToNodeEdges(edges, args)
-            else -> emptyList()
-        }
-        return rawPath.mapNotNull { raw ->
-            val edge = stringMap(raw)
-            edgeToOmniflowStep(edge)
-        }
-    }
-
-    private fun selectClickNodeEdges(
-        edges: List<Map<String, Any?>>,
-        args: Map<String, Any?>,
-    ): List<Map<String, Any?>> {
-        val edgeId = firstNonBlank(args["edge_id"], args["edgeId"])
-        val actionId = firstNonBlank(args["action_id"], args["actionId"])
-        val targetNodeId = firstNonBlank(args["node_id"], args["nodeId"], args["target_node_id"], args["targetNodeId"])
-        val selected = edges.firstOrNull { edge ->
-            (edgeId.isNotEmpty() && firstNonBlank(edge["edge_id"], edge["edgeId"], edge["id"]) == edgeId) ||
-                (actionId.isNotEmpty() && firstNonBlank(edge["action_id"], edge["actionId"]) == actionId) ||
-                (targetNodeId.isNotEmpty() && firstNonBlank(edge["to_node_id"], edge["toNodeId"], edge["node_id"], edge["nodeId"]) == targetNodeId)
-        } ?: edges.firstOrNull()
-        return selected?.let { listOf(it) }.orEmpty()
-    }
-
-    private fun selectGoToNodeEdges(
-        edges: List<Map<String, Any?>>,
-        args: Map<String, Any?>,
-    ): List<Map<String, Any?>> {
-        val targetNodeId = firstNonBlank(args["node_id"], args["nodeId"], args["target_node_id"], args["targetNodeId"])
-        if (targetNodeId.isEmpty()) return edges
-        val targetIndex = edges.indexOfFirst { edge ->
-            firstNonBlank(edge["to_node_id"], edge["toNodeId"], edge["node_id"], edge["nodeId"]) == targetNodeId
-        }
-        return if (targetIndex >= 0) edges.take(targetIndex + 1) else emptyList()
-    }
-
-    private fun edgeToOmniflowStep(edge: Map<String, Any?>): Map<String, Any?>? {
-        val action = firstNonBlank(
-            edge["action"],
-            edge["tool"],
-            edge["omniflow_action"],
-            edge["local_action"],
-            edge["type"],
-        )
-        val localAction = RunLogReplayPolicy.omniflowActionForToolName(action) ?: return null
-        val edgeArgs = linkedMapOf<String, Any?>()
-        edgeArgs.putAll(stringMap(edge["args"]))
-        for (key in listOf(
-            "x",
-            "y",
-            "x1",
-            "y1",
-            "x2",
-            "y2",
-            "direction",
-            "distance",
-            "distance_px",
-            "distancePx",
-            "duration",
-            "duration_ms",
-            "durationMs",
-            "content",
-            "text",
-            "value",
-            "package_name",
-            "packageName",
-            "key",
-            "hotkey",
-            "hot_key",
-            "target_description",
-            "targetDescription",
-            "node_resource_id",
-            "nodeResourceId",
-            "resource_id",
-            "resourceId",
-        )) {
-            if (edgeArgs[key] == null && edge.containsKey(key)) {
-                edgeArgs[key] = edge[key]
-            }
-        }
-        return linkedMapOf(
-            "title" to firstNonBlank(edge["title"], edge["summary"], edge["target_description"], edge["targetDescription"], localAction),
-            "kind" to "omniflow_action",
-            "executor" to "omniflow",
-            "omniflow_action" to localAction,
-            "local_action" to localAction,
-            "model_free" to true,
-            "scriptable" to true,
-            "tool" to localAction,
-            "callable_tool" to localAction,
-            "args" to edgeArgs,
-            "source_context" to stringMap(edge["source_context"]).takeIf { it.isNotEmpty() },
-            "coordinate_hook" to edge["coordinate_hook"],
-        ).filterValues { it != null }
     }
 
     private fun materializedSteps(materializedSpec: Map<String, Any?>): List<Map<String, Any?>> {

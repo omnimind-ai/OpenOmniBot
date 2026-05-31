@@ -83,6 +83,13 @@ belong in UI documentation.
 - pass resume/fallback controls into the replay handler
 - merge execution timing into the returned payload
 
+`OobFunctionGraphStepRunner` owns local graph/UTG execution inside replay:
+
+- select graph path edges for `go_to_node` and `click_node`
+- lower graph edges into primitive OmniFlow local-action steps
+- execute the primitive path with the same checker rules as normal replay
+- report path-level success, failure, and per-edge step results
+
 `AssistsCoreManager` owns method-channel wiring only:
 
 - call `OobFunctionRepository` for Function register/list/get/delete and direct
@@ -110,6 +117,7 @@ Agent/MCP tool surface
       -> OobFunctionRunPolicy        # guard and fallback handoff
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
+              -> OobFunctionGraphStepRunner # graph/UTG path lowering
       -> OobRunLogReplayService      # RunLog -> Function conversion
 
 Flutter method channel
@@ -137,6 +145,8 @@ Keep these pieces separate:
 - `RunLogReusableFunctionCompiler`: offline conversion rules from cards to steps
 - `OobFunctionRunner`: Function loading, materialization, and execution timing
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
+- `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
+  lowering inside runtime replay
 - `OobOmniFlowToolkitService`: public tool facade and response shaping
 - builtin skill prompts: agent instructions, not executable policy
 
