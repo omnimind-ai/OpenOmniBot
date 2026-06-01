@@ -191,7 +191,7 @@ class OobFunctionRunPolicy(
                 reason = "$action is handled by OOB native OmniFlow execution"
                 requiresRoot = false
             }
-            executor == "agent" || RunLogReplayPolicy.isAgentTool(action) -> {
+            executor == RunLogReplayPolicy.EXECUTOR_AGENT || RunLogReplayPolicy.isAgentTool(action) -> {
                 decision = "needs_agent"
                 risk = "medium"
                 reason = "$action requires live Agent planning"

@@ -13,6 +13,9 @@ object RunLogReplayPolicy {
     const val schemaVersion: String = "oob.runlog_replay_policy.v1"
     const val fixedReplayOnly: Boolean = false
     const val fixedReplayRunner: String = "oob_omniflow_loop"
+    const val EXECUTOR_OMNIFLOW: String = "omniflow"
+    const val EXECUTOR_AGENT: String = "agent"
+    const val EXECUTOR_TOOL: String = "tool"
 
     val omniflowActions: Set<String> = OobActionCodec.executableActions
 

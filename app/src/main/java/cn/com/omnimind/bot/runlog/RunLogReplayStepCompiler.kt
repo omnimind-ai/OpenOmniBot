@@ -92,7 +92,7 @@ internal object RunLogReplayStepCompiler {
                     "kind" to "agent_call",
                     "tool" to toolName,
                     "callable_tool" to "oob.agent.run",
-                    "executor" to "agent",
+                    "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
                     "scriptable" to false,
                     "args" to args,
                     "tool_binding" to linkedMapOf(
@@ -217,9 +217,9 @@ internal object RunLogReplayStepCompiler {
             canonicalArgs["oobFunctionId"],
         ).isNotEmpty()
         val executor = if (isGraphTool || isFunctionTool || hasFunctionId) {
-            "omniflow"
+            RunLogReplayPolicy.EXECUTOR_OMNIFLOW
         } else {
-            "tool"
+            RunLogReplayPolicy.EXECUTOR_TOOL
         }
         return nullableMap(
             "title" to title,
@@ -229,7 +229,7 @@ internal object RunLogReplayStepCompiler {
                 else -> "tool_call"
             },
             "executor" to executor,
-            "model_free" to true.takeIf { executor == "omniflow" },
+            "model_free" to true.takeIf { executor == RunLogReplayPolicy.EXECUTOR_OMNIFLOW },
             "scriptable" to true,
             "tool" to canonicalToolName,
             "callable_tool" to canonicalToolName,
@@ -284,7 +284,7 @@ internal object RunLogReplayStepCompiler {
         return nullableMap(
             "title" to title,
             "kind" to "omniflow_action",
-            "executor" to "omniflow",
+            "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
             "omniflow_action" to replayAction,
             "local_action" to replayAction,
             "model_free" to true,

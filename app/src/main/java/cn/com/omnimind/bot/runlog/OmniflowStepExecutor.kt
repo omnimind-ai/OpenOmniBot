@@ -48,7 +48,7 @@ object OmniflowStepExecutor {
             step["model_free"]?.toString()?.equals("true", ignoreCase = true) == true
         val action = actionNameForStep(step)
         return action in OobActionCodec.executableActions &&
-            (executor == "omniflow" || modelFree)
+            (executor == RunLogReplayPolicy.EXECUTOR_OMNIFLOW || modelFree)
     }
 
     fun actionNameForStep(step: Map<String, Any?>): String =

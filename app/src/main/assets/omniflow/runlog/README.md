@@ -102,6 +102,9 @@ record. Do not read only the snapshot when correctness matters.
 The executor lists live in `replay_policy.json` and are mirrored by Kotlin and
 Dart policy classes with parity tests. Update the JSON and both mirrors
 together.
+Kotlin executor string constants live in `RunLogReplayPolicy`; compiler,
+runtime, and guard code should use those constants instead of scattering
+literal `"omniflow"`, `"tool"`, or `"agent"` checks in core replay paths.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
