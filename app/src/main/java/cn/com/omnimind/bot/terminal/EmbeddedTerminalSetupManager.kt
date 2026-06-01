@@ -85,13 +85,25 @@ class EmbeddedTerminalSetupManager(
                 executorKey = "embedded-terminal-setup-inventory",
                 timeoutMs = 30_000L
             )
-            val parsed = EnvironmentSetupLogic.parseInventoryProbeOutput(
-                EmbeddedTerminalRuntime.trimTerminalOutput(
-                    EmbeddedTerminalRuntime.sanitizeTerminalNoise(
-                        result.output.ifBlank { result.rawOutputPreview }
-                    )
+            val cleanedOutput = EmbeddedTerminalRuntime.trimTerminalOutput(
+                EmbeddedTerminalRuntime.sanitizeTerminalNoise(
+                    result.output.ifBlank { result.rawOutputPreview }
                 )
             )
+            if (!result.isOk || result.exitCode != 0) {
+                val details = cleanedOutput
+                    .ifBlank { result.rawOutputPreview.trim() }
+                    .ifBlank { result.error.trim() }
+                    .takeLast(1000)
+                throw IllegalStateException(
+                    if (details.isNotBlank()) {
+                        "Alpine 终端启动失败，无法读取环境配置：$details"
+                    } else {
+                        "Alpine 终端启动失败，无法读取环境配置。"
+                    }
+                )
+            }
+            val parsed = EnvironmentSetupLogic.parseInventoryProbeOutput(cleanedOutput)
             packageDefinitions.associate { pkg ->
                 val probe = parsed[pkg.id]
                 pkg.id to PackageInventoryItem(

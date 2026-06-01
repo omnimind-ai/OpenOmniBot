@@ -511,9 +511,10 @@ class SpecialPermissionManager(private val context: Context) {
             } catch (e: Exception) {
                 OmniLog.e(TAG, "Error reading embedded terminal setup inventory", e)
                 withContext(Dispatchers.Main) {
+                    val message = e.message ?: "Failed to read embedded terminal setup inventory."
                     result.error(
                         "READ_SETUP_INVENTORY_FAILED",
-                        "Failed to read embedded terminal setup inventory.",
+                        message,
                         e.message
                     )
                 }

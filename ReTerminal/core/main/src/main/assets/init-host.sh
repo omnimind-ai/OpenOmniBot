@@ -24,11 +24,24 @@ if [ -n "$OMNIBOT_MT_STORAGE_HOST" ] && [ -d "$OMNIBOT_MT_STORAGE_HOST" ]; then
     mkdir -p "$ALPINE_DIR/mnt/mt" "$ALPINE_DIR/mt"
 fi
 
-[ ! -e "$PREFIX/local/bin/proot" ] && cp "$PREFIX/files/proot" "$PREFIX/local/bin"
+mkdir -p "$PREFIX/local/bin" "$PREFIX/local/lib"
+
+install_runtime_file() {
+    src="$1"
+    dest="$2"
+    mode="$3"
+    [ -e "$src" ] || return 0
+    tmp="${dest}.$$"
+    rm -f "$tmp"
+    cp "$src" "$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$dest"
+}
+
+install_runtime_file "$PREFIX/files/proot" "$PREFIX/local/bin/proot" 755
 
 for sofile in "$PREFIX/files/"*.so.2; do
+    [ -e "$sofile" ] || continue
     dest="$PREFIX/local/lib/$(basename "$sofile")"
-    [ ! -e "$dest" ] && cp "$sofile" "$dest"
+    install_runtime_file "$sofile" "$dest" 644
 done
 
 
