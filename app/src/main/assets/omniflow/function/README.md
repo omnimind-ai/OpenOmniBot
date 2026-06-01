@@ -87,6 +87,22 @@ belong in UI documentation.
   `OobOmniFlowToolkitService`
 - never implement Function storage, recall, update, guard, or replay policy
 
+`OobFunctionSkillProfile` owns the native Function-management skill profile:
+
+- expose the small static tool set used by `oob-function-management`
+- expose dynamic registered Functions as model tools when the feature flag is on
+- build compact prompt candidates for agent tool selection
+- never execute Functions or mutate Function specs
+
+`OobFunctionSchemaBuilder` owns model-tool schema projection:
+
+- convert reusable Function specs into JSON-schema shaped tool input contracts
+- derive dynamic Function tool ids and parameter names from canonical or legacy
+  Function fields
+- materialize legacy action specs into canonical execution-step shapes for
+  schema/tool compatibility only
+- never decide recall ranking, replay policy, or update patches
+
 `OobFunctionSpecBuilder` owns simple Function spec construction:
 
 - normalize simple register requests into canonical Function specs
@@ -200,6 +216,14 @@ belong in UI documentation.
 - measure guard and execution phases for Function calls
 - merge call-level timing into runner timing without changing run results
 - keep timing payload shape outside the public tool facade
+
+`OmniflowActionBackend`, `OmniflowCheckerRule`, and `OmniflowStepExecutor` own
+primitive local action execution:
+
+- dispatch canonical local UI actions to the accessibility-backed runtime
+- evaluate global, Function-level, and node-level checker rules around each step
+- perform source-context coordinate remapping and recovery snapshots
+- keep primitive execution separate from Function storage, recall, and update
 
 `OobFunctionGraphStepRunner` owns local graph/UTG execution inside replay:
 
@@ -316,6 +340,8 @@ operation.
 ```text
 Agent/MCP tool surface
   -> McpToolDefinitions / McpToolExecutors # external MCP schema/argument adapter
+  -> OobFunctionSkillProfile # Function-management profile and dynamic Function tools
+      -> OobFunctionSchemaBuilder # Function spec -> model tool schema
   -> OobOmniFlowToolkitService
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
@@ -350,6 +376,9 @@ Agent/MCP tool surface
               -> OobFunctionEntryPackageGuard # pre-replay app restoration
               -> OobFunctionAccessibilityPreflightGuard # permission preflight
               -> OobFunctionGraphStepRunner # graph/UTG path lowering
+              -> OmniflowStepExecutor # primitive local UI action execution
+                  -> OmniflowActionBackend # accessibility-backed action runtime
+                  -> OmniflowCheckerRule # global/function/node checker metadata
       -> OobRunLogReplayService      # RunLog -> Function conversion
           -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
               -> RunLogStartupBridgeCleaner # transient launch bridge cleanup
@@ -435,8 +464,15 @@ Keep these pieces separate:
   permission-blocked failed-run payloads before replay starts
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
+- `OmniflowActionBackend`, `OmniflowCheckerRule`, and
+  `OmniflowStepExecutor`: primitive local action dispatch, checker evaluation,
+  coordinate remapping, and recovery snapshots
 - `McpToolDefinitions` and `McpToolExecutors`: external MCP schema and argument
   alias adapter before dispatch into the Function/tool facade
+- `OobFunctionSkillProfile`: native Function-management skill profile,
+  dynamic Function tool exposure, and compact prompt candidates
+- `OobFunctionSchemaBuilder`: Function spec projection into model-tool schemas
+  and compatibility materialization for that projection
 - `OobOmniFlowToolkitService`: public tool facade and response shaping
 - builtin skill prompts: agent instructions, not executable policy
 

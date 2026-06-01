@@ -49,6 +49,8 @@ record. Do not read only the snapshot when correctness matters.
 - Function recall policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRecallService.kt`
 - Function guard/fallback policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunPolicy.kt`
 - Function call timing: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionCallTiming.kt`
+- Function-management skill profile: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSkillProfile.kt`
+- Dynamic Function tool schema builder: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionSchemaBuilder.kt`
 - MCP Function tool schema: `app/src/main/java/cn/com/omnimind/bot/mcp/McpToolDefinitions.kt`
 - MCP Function/tool call adapter: `app/src/main/java/cn/com/omnimind/bot/mcp/McpToolExecutors.kt`
 - SharedPreferences registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
@@ -80,6 +82,11 @@ record. Do not read only the snapshot when correctness matters.
   It only converts and auto-registers RunLogs; Function CRUD belongs in
   `OobFunctionRepository`.
 - Agent/MCP Function facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowToolkitService.kt`
+- Local UTG explorer: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowExplorer.kt`
+- Local action runtime backend: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowActionBackend.kt`
+- Local action step executor: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt`
+- Local checker rules: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowCheckerRule.kt`
+- Page/package inference helper: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogPagePackageInference.kt`
 - Function backend ownership: `app/src/main/assets/omniflow/function/README.md`
 - Workspace command save: `app/src/main/java/cn/com/omnimind/bot/workbench/WorkspaceFunctionStore.kt`
 - Flutter timeline: `ui/lib/features/task/pages/execution_history/run_log_timeline_page.dart`
@@ -171,6 +178,12 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   selection but is not an executable split.
 - OmniFlow graph/reusable-command tools convert to `kind=omniflow_graph` or
   `kind=omniflow_function`, `executor=omniflow`, and `model_free=true`.
+- `OobOmniFlowExplorer` is a local OOB utility that records explored UTG paths
+  as RunLogs. It should feed the same RunLog -> Function conversion path rather
+  than creating a second Function writer.
+- `RunLogPagePackageInference` owns package-name inference from recorded
+  activity/XML evidence. Keep this separate from card compilation and replay
+  execution so package heuristics do not leak into unrelated conversion rules.
 
 ## Replay Rules
 
