@@ -4,6 +4,7 @@ import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.vlm.VlmToolCoordinator
 import cn.com.omnimind.bot.vlm.VlmToolOutcome
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
@@ -469,10 +470,7 @@ object McpToolExecutors {
         args: Map<String, Any?>?
     ): Map<String, Any?> {
         val requestArgs = args ?: emptyMap()
-        val toolArgs = (requestArgs["arguments"] as? Map<*, *>)
-            ?.entries
-            ?.associate { it.key.toString() to it.value }
-            ?: emptyMap<String, Any?>()
+        val toolArgs = mapArg(requestArgs["arguments"])
         val toolName = firstNonBlank(
             requestArgs["toolName"],
             requestArgs["tool_name"],

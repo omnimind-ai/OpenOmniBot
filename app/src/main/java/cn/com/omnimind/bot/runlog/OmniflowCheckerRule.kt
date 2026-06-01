@@ -124,24 +124,22 @@ data class OmniflowCheckerRule(
             val id = map["id"]?.toString()?.trim().orEmpty().ifBlank { return null }
             val condition = map["condition"]?.toString()?.trim().orEmpty().ifBlank { return null }
             val action = map["action"]?.toString()?.trim().orEmpty().ifBlank { return null }
-            val params = (map["params"] as? Map<*, *>)
-                ?.entries?.associate { it.key.toString() to it.value }
-                ?: emptyMap()
+            val params = OobActionCodec.mapArg(map["params"])
             return OmniflowCheckerRule(
                 id = id,
                 condition = condition,
                 action = action,
                 params = params,
                 phase = map["phase"]?.toString()?.trim() ?: PHASE_PRE_TRANSFER,
-                enabled = map["enabled"] as? Boolean ?: true,
+                enabled = map["enabled"]?.let(OobActionCodec::boolArg) ?: true,
             )
         }
 
         /** Extracts checker rules from a Function spec's metadata.checker_rules list. */
         fun fromSpec(spec: Map<*, *>): List<OmniflowCheckerRule> {
-            val metadata = spec["metadata"] as? Map<*, *> ?: return emptyList()
-            val rules = metadata["checker_rules"] as? List<*> ?: return emptyList()
-            return rules.mapNotNull { (it as? Map<*, *>)?.let(::fromMap) }
+            val metadata = OobActionCodec.mapArg(spec["metadata"])
+            val rules = OobActionCodec.listArg(metadata["checker_rules"])
+            return rules.mapNotNull { OobActionCodec.mapArg(it).takeIf { rule -> rule.isNotEmpty() }?.let(::fromMap) }
         }
     }
 }

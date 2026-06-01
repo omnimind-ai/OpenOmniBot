@@ -55,10 +55,7 @@ object OmniflowStepExecutor {
         OobActionCodec.actionNameForStep(step)
 
     fun normalizeArgsMap(rawArgs: Any?): Map<String, Any?> =
-        when (rawArgs) {
-            is Map<*, *> -> rawArgs.entries.associate { (key, value) -> key.toString() to value }
-            else -> emptyMap()
-        }
+        OobActionCodec.mapArg(rawArgs)
 
     fun requiresAccessibility(step: Map<String, Any?>): Boolean =
         isOmniflowStep(step) && actionRequiresAccessibility(actionNameForStep(step))
