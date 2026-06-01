@@ -30,7 +30,7 @@ class OobFunctionToolHandler(
     private val runResultBuilder: OobFunctionRunResultBuilder =
         OobFunctionRunResultBuilder(),
     private val toolDelegationExecutor: OobFunctionToolDelegationExecutor =
-        OobFunctionToolDelegationExecutor(),
+        OobFunctionToolDelegationExecutor(runResultBuilder),
     private val accessibilityPreflightGuard: OobFunctionAccessibilityPreflightGuard =
         OobFunctionAccessibilityPreflightGuard(stepClassifier, runResultBuilder),
     private val nestedFunctionExecutor: OobFunctionNestedFunctionExecutor =

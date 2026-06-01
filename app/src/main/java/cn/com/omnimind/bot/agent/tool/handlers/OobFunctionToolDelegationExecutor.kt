@@ -20,7 +20,9 @@ import kotlinx.serialization.json.JsonObject
  * owns the mechanical bridge from a materialized Function step to a synthetic
  * tool call and back to a stable per-step result payload.
  */
-class OobFunctionToolDelegationExecutor {
+class OobFunctionToolDelegationExecutor(
+    private val runResultBuilder: OobFunctionRunResultBuilder = OobFunctionRunResultBuilder(),
+) {
     suspend fun execute(
         step: Map<String, Any?>,
         stepId: String,
@@ -55,26 +57,37 @@ class OobFunctionToolDelegationExecutor {
                 callback,
                 toolHandle
             )
-            linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to callableTool,
-                "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
-                "success" to (subResult !is ToolExecutionResult.Error),
-                "summary" to when (subResult) {
-                    is ToolExecutionResult.ContextResult -> subResult.summaryText
-                    is ToolExecutionResult.Error -> subResult.message
-                    else -> stepTitle
-                }
-            )
+            val summary = when (subResult) {
+                is ToolExecutionResult.ContextResult -> subResult.summaryText
+                is ToolExecutionResult.Error -> subResult.message
+                else -> stepTitle
+            }
+            if (subResult is ToolExecutionResult.Error) {
+                runResultBuilder.failureStep(
+                    stepId = stepId,
+                    tool = callableTool,
+                    executor = RunLogReplayPolicy.EXECUTOR_TOOL,
+                    summary = summary,
+                    errorCode = "OOB_TOOL_DELEGATION_FAILED",
+                )
+            } else {
+                linkedMapOf<String, Any?>(
+                    "step_id" to stepId,
+                    "tool" to callableTool,
+                    "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
+                    "success" to true,
+                    "summary" to summary,
+                )
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            linkedMapOf<String, Any?>(
-                "step_id" to stepId,
-                "tool" to callableTool,
-                "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
-                "success" to false,
-                "summary" to (e.message ?: "step failed")
+            runResultBuilder.failureStep(
+                stepId = stepId,
+                tool = callableTool,
+                executor = RunLogReplayPolicy.EXECUTOR_TOOL,
+                summary = e.message ?: "step failed",
+                errorCode = "OOB_TOOL_DELEGATION_FAILED",
             )
         }
     }

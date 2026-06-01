@@ -426,7 +426,8 @@ primitive local action execution:
 - remap a materialized Function step into delegated tool arguments
 - build the synthetic `AssistantToolCall` used by `AgentToolExecutor`
 - build the runtime descriptor for delegated replay steps
-- map delegated tool results back into a stable per-step payload
+- map delegated tool results back into a stable per-step payload, delegating
+  failed delegated-tool result shape to `OobFunctionRunResultBuilder`
 - never decide replay order, fallback policy, or whether a step should delegate
 
 `OobFunctionCallToolStepExecutor` owns `call_tool` replay steps:
@@ -594,7 +595,8 @@ Keep these pieces separate:
   resolution, local graph/function/call_tool classification, and replayable
   agent-tool extraction
 - `OobFunctionToolDelegationExecutor`: mechanical bridge from replay steps to
-  live `AgentToolExecutor` calls and back to per-step result payloads
+  live `AgentToolExecutor` calls and back to per-step result payloads, using
+  `OobFunctionRunResultBuilder` for delegated-tool failures
 - `OobFunctionCallToolStepExecutor`: `call_tool` target resolution, Function
   target handoff, ordinary tool delegation, and tool-router fallback payloads
 - `OobFunctionNestedFunctionExecutor`: nested Function id/argument resolution,
