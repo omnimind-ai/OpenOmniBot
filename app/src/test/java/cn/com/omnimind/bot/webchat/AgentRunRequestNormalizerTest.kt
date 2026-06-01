@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.webchat
 
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,6 +93,6 @@ class AgentRunRequestNormalizerTest {
             listOf(" oob_function_register ", "", null, "context_apps_query")
         )
 
-        assertEquals(listOf("oob_function_register", "context_apps_query"), normalized)
+        assertEquals(listOf(OobFunctionToolNames.FUNCTION_REGISTER, "context_apps_query"), normalized)
     }
 }

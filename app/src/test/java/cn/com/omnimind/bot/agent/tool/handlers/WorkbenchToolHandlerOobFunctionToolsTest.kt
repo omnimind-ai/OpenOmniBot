@@ -37,6 +37,7 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.runlog.OmniflowActionBackend
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
 import java.nio.file.Files
@@ -84,7 +85,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             val functionId = "agent_simple_open_settings"
 
             val register = handler.execute(
-                toolCall = toolCall("oob_function_register"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_REGISTER),
                 args = buildJsonObject {
                     put("functionId", JsonPrimitive(functionId))
                     put("name", JsonPrimitive("Open Settings"))
@@ -100,11 +101,11 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                         ),
                     )))
                 },
-                runtimeDescriptor = descriptor("oob_function_register"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_REGISTER),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_function_register",
+                    OobFunctionToolNames.FUNCTION_REGISTER,
                     "register-simple",
                 ),
             )
@@ -123,15 +124,15 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             assertEquals(false, execution["requires_agent_fallback"])
 
             val guard = handler.execute(
-                toolCall = toolCall("oob_function_guard_check"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_GUARD_CHECK),
                 args = buildJsonObject {
                     put("functionId", JsonPrimitive(functionId))
                 },
-                runtimeDescriptor = descriptor("oob_function_guard_check"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_GUARD_CHECK),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_function_guard_check",
+                    OobFunctionToolNames.FUNCTION_GUARD_CHECK,
                     "guard",
                 ),
             )
@@ -161,15 +162,15 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             val spec = functionSpec(functionId)
 
             val register = handler.execute(
-                toolCall = toolCall("oob_function_register"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_REGISTER),
                 args = buildJsonObject {
                     put("functionSpec", mapToJson(spec))
                 },
-                runtimeDescriptor = descriptor("oob_function_register"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_REGISTER),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_function_register",
+                    OobFunctionToolNames.FUNCTION_REGISTER,
                     "register",
                 ),
             )
@@ -177,12 +178,12 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             assertNotNull(OobFunctionRepository(context).get(functionId))
 
             val list = handler.execute(
-                toolCall = toolCall("oob_function_list"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_LIST),
                 args = buildJsonObject {},
-                runtimeDescriptor = descriptor("oob_function_list"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_LIST),
                 env = env,
                 callback = NoOpAgentCallback,
-                toolHandle = NoOpAgentRunControl.beginToolExecution("oob_function_list", "list"),
+                toolHandle = NoOpAgentRunControl.beginToolExecution(OobFunctionToolNames.FUNCTION_LIST, "list"),
             )
             val listPayload = payloadObject(list)
             assertEquals(true, listPayload["success"]?.jsonPrimitive?.booleanOrNull)
@@ -193,15 +194,15 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             )
 
             val delete = handler.execute(
-                toolCall = toolCall("oob_function_delete"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_DELETE),
                 args = buildJsonObject {
                     put("function_id", JsonPrimitive(functionId))
                 },
-                runtimeDescriptor = descriptor("oob_function_delete"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_DELETE),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_function_delete",
+                    OobFunctionToolNames.FUNCTION_DELETE,
                     "delete",
                 ),
             )
@@ -267,7 +268,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             )
 
             val convert = handler.execute(
-                toolCall = toolCall("oob_run_log_convert"),
+                toolCall = toolCall(OobFunctionToolNames.RUN_LOG_CONVERT),
                 args = buildJsonObject {
                     put("run_id", JsonPrimitive(runId))
                     put("register", JsonPrimitive(true))
@@ -275,11 +276,11 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                     put("name", JsonPrimitive("填写联系人姓名"))
                     put("description", JsonPrimitive("复用录制轨迹填写联系人姓名"))
                 },
-                runtimeDescriptor = descriptor("oob_run_log_convert"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.RUN_LOG_CONVERT),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_run_log_convert",
+                    OobFunctionToolNames.RUN_LOG_CONVERT,
                     "convert",
                 ),
             )
@@ -306,7 +307,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             assertEquals(functionId, timeline["registered_function_id"])
 
             val update = handler.execute(
-                toolCall = toolCall("update_function"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_UPDATE),
                 args = buildJsonObject {
                     put("functionId", JsonPrimitive(functionId))
                     put("patch", mapToJson(
@@ -328,11 +329,11 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                         )
                     ))
                 },
-                runtimeDescriptor = descriptor("update_function"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_UPDATE),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "update_function",
+                    OobFunctionToolNames.FUNCTION_UPDATE,
                     "enhance",
                 ),
             )
@@ -361,18 +362,18 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                 assertTrue(required.contains("contact_name"))
 
                 val run = handler.execute(
-                    toolCall = toolCall("oob_function_run"),
+                    toolCall = toolCall(OobFunctionToolNames.FUNCTION_RUN),
                     args = buildJsonObject {
                         put("functionId", JsonPrimitive(functionId))
                         put("arguments", buildJsonObject {
                             put("contact_name", JsonPrimitive("Bob"))
                         })
                     },
-                    runtimeDescriptor = descriptor("oob_function_run"),
+                    runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_RUN),
                     env = env,
                     callback = NoOpAgentCallback,
                     toolHandle = NoOpAgentRunControl.beginToolExecution(
-                        "oob_function_run",
+                        OobFunctionToolNames.FUNCTION_RUN,
                         "run",
                     ),
                 )
@@ -509,7 +510,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             )
 
             assertContextSuccess(handler.execute(
-                toolCall = toolCall("oob_run_log_convert"),
+                toolCall = toolCall(OobFunctionToolNames.RUN_LOG_CONVERT),
                 args = buildJsonObject {
                     put("run_id", JsonPrimitive(runId))
                     put("register", JsonPrimitive(true))
@@ -517,16 +518,16 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                     put("name", JsonPrimitive("填写联系人姓名"))
                     put("description", JsonPrimitive("复用录制轨迹填写联系人姓名"))
                 },
-                runtimeDescriptor = descriptor("oob_run_log_convert"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.RUN_LOG_CONVERT),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "oob_run_log_convert",
+                    OobFunctionToolNames.RUN_LOG_CONVERT,
                     "convert",
                 ),
             ))
             assertContextSuccess(handler.execute(
-                toolCall = toolCall("update_function"),
+                toolCall = toolCall(OobFunctionToolNames.FUNCTION_UPDATE),
                 args = buildJsonObject {
                     put("functionId", JsonPrimitive(functionId))
                     put("patch", mapToJson(
@@ -546,11 +547,11 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
                         )
                     ))
                 },
-                runtimeDescriptor = descriptor("update_function"),
+                runtimeDescriptor = descriptor(OobFunctionToolNames.FUNCTION_UPDATE),
                 env = env,
                 callback = NoOpAgentCallback,
                 toolHandle = NoOpAgentRunControl.beginToolExecution(
-                    "update_function",
+                    OobFunctionToolNames.FUNCTION_UPDATE,
                     "enhance",
                 ),
             ))
