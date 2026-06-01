@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -74,17 +75,17 @@ class AgentToolDefinitionsMusicTest {
         assertFalse(toolNames.contains("oob_command_list"))
         assertFalse(toolNames.contains("oob_command_delete"))
         assertFalse(toolNames.contains("oob_command_clear"))
-        assertFalse(toolNames.contains("oob_function_list"))
-        assertFalse(toolNames.contains("oob_function_get"))
-        assertFalse(toolNames.contains("oob_function_register"))
-        assertFalse(toolNames.contains("update_function"))
-        assertFalse(toolNames.contains("oob_function_guard_check"))
-        assertFalse(toolNames.contains("oob_function_run"))
-        assertFalse(toolNames.contains("oob_function_delete"))
-        assertFalse(toolNames.contains("oob_function_clear"))
-        assertFalse(toolNames.contains("oob_run_log_list"))
-        assertFalse(toolNames.contains("oob_run_log_get"))
-        assertFalse(toolNames.contains("oob_run_log_convert"))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_LIST))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_GET))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_REGISTER))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_UPDATE))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_GUARD_CHECK))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_RUN))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_DELETE))
+        assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_CLEAR))
+        assertFalse(toolNames.contains(OobFunctionToolNames.RUN_LOG_LIST))
+        assertFalse(toolNames.contains(OobFunctionToolNames.RUN_LOG_GET))
+        assertFalse(toolNames.contains(OobFunctionToolNames.RUN_LOG_CONVERT))
     }
 
     @Test
@@ -133,7 +134,7 @@ class AgentToolDefinitionsMusicTest {
                 ((definition["function"] as? JsonObject)
                     ?.get("name")
                     ?.jsonPrimitive
-                    ?.contentOrNull) == "oob_function_register"
+                    ?.contentOrNull) == OobFunctionToolNames.FUNCTION_REGISTER
             }
         val function = registerTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
@@ -154,7 +155,7 @@ class AgentToolDefinitionsMusicTest {
                 ((definition["function"] as? JsonObject)
                     ?.get("name")
                     ?.jsonPrimitive
-                    ?.contentOrNull) == "update_function"
+                    ?.contentOrNull) == OobFunctionToolNames.FUNCTION_UPDATE
             }
         val function = updateTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
@@ -175,7 +176,7 @@ class AgentToolDefinitionsMusicTest {
                 ((definition["function"] as? JsonObject)
                     ?.get("name")
                     ?.jsonPrimitive
-                    ?.contentOrNull) == "oob_function_run"
+                    ?.contentOrNull) == OobFunctionToolNames.FUNCTION_RUN
             }
         val function = runTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject

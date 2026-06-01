@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.OobReusableFunctionStore
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
 import java.io.File
 import java.nio.file.Files
@@ -35,15 +36,15 @@ class AgentToolRegistryOobFunctionTest {
             assertFalse(toolNames.contains("workbench_project_create"))
             assertFalse(toolNames.contains("workbench_project_list"))
             assertFalse(toolNames.contains("workbench_api_call"))
-            assertFalse(toolNames.contains("oob_function_list"))
-            assertFalse(toolNames.contains("oob_function_get"))
-            assertFalse(toolNames.contains("oob_function_register"))
-            assertFalse(toolNames.contains("update_function"))
-            assertFalse(toolNames.contains("oob_function_guard_check"))
-            assertFalse(toolNames.contains("oob_function_run"))
-            assertFalse(toolNames.contains("oob_function_delete"))
-            assertFalse(toolNames.contains("oob_function_clear"))
-            assertFalse(toolNames.contains("oob_run_log_list"))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_LIST))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_GET))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_REGISTER))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_UPDATE))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_GUARD_CHECK))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_RUN))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_DELETE))
+            assertFalse(toolNames.contains(OobFunctionToolNames.FUNCTION_CLEAR))
+            assertFalse(toolNames.contains(OobFunctionToolNames.RUN_LOG_LIST))
         } finally {
             context.root.deleteRecursively()
         }
@@ -66,13 +67,13 @@ class AgentToolRegistryOobFunctionTest {
                 AgentToolExposurePolicy.FUNCTION_MANAGEMENT_TOOLS,
                 toolNames,
             )
-            assertTrue(toolNames.contains("update_function"))
+            assertTrue(toolNames.contains(OobFunctionToolNames.FUNCTION_UPDATE))
             assertFalse(toolNames.contains("web_search"))
             assertFalse(toolNames.contains("terminal_execute"))
             assertFalse(toolNames.contains("workbench_project_create"))
-            assertTrue(toolNames.contains("oob_function_guard_check"))
-            assertTrue(toolNames.contains("oob_function_clear"))
-            assertTrue(toolNames.contains("oob_run_log_get"))
+            assertTrue(toolNames.contains(OobFunctionToolNames.FUNCTION_GUARD_CHECK))
+            assertTrue(toolNames.contains(OobFunctionToolNames.FUNCTION_CLEAR))
+            assertTrue(toolNames.contains(OobFunctionToolNames.RUN_LOG_GET))
         } finally {
             context.root.deleteRecursively()
         }
@@ -114,12 +115,12 @@ class AgentToolRegistryOobFunctionTest {
                 discoveredServers = emptyList(),
                 toolExposurePolicy = AgentToolExposurePolicy(
                     profile = AgentToolExposurePolicy.PROFILE_FUNCTION_MANAGEMENT,
-                    allowedTools = setOf("oob_function_register", "context_apps_query"),
+                    allowedTools = setOf(OobFunctionToolNames.FUNCTION_REGISTER, "context_apps_query"),
                 ),
             )
             val toolNames = registry.toolsForModel.map { it.function.name }.toSet()
 
-            assertEquals(setOf("context_apps_query", "oob_function_register"), toolNames)
+            assertEquals(setOf("context_apps_query", OobFunctionToolNames.FUNCTION_REGISTER), toolNames)
         } finally {
             context.root.deleteRecursively()
         }

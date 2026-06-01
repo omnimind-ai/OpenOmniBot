@@ -20,17 +20,17 @@ class McpToolDefinitionsTest {
         assertTrue(!names.contains("omniflow.call_function"))
         assertTrue(names.contains("omniflow.ingest_run_log"))
         assertTrue(names.contains("omniflow.explore_replay"))
-        assertTrue(names.contains("oob_function_list"))
-        assertTrue(names.contains("oob_function_get"))
-        assertTrue(names.contains("oob_function_register"))
-        assertTrue(names.contains("update_function"))
-        assertTrue(names.contains("oob_function_guard_check"))
-        assertTrue(names.contains("oob_function_run"))
-        assertTrue(names.contains("oob_function_delete"))
-        assertTrue(names.contains("oob_function_clear"))
-        assertTrue(names.contains("oob_run_log_list"))
-        assertTrue(names.contains("oob_run_log_get"))
-        assertTrue(names.contains("oob_run_log_convert"))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_LIST))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_GET))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_REGISTER))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_UPDATE))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_GUARD_CHECK))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_RUN))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_DELETE))
+        assertTrue(names.contains(OobFunctionToolNames.FUNCTION_CLEAR))
+        assertTrue(names.contains(OobFunctionToolNames.RUN_LOG_LIST))
+        assertTrue(names.contains(OobFunctionToolNames.RUN_LOG_GET))
+        assertTrue(names.contains(OobFunctionToolNames.RUN_LOG_CONVERT))
         assertTrue(names.contains("oob_project_create"))
         assertTrue(names.contains("oob_project_activate"))
         assertTrue(names.contains("oob_project_open"))
@@ -90,7 +90,7 @@ class McpToolDefinitionsTest {
     @Test
     fun oobFunctionRunToolExposesResumeControls() {
         val tool = McpToolDefinitions.fixedTools.single {
-            it["name"] == "oob_function_run"
+            it["name"] == OobFunctionToolNames.FUNCTION_RUN
         }
         val schema = tool["inputSchema"] as Map<*, *>
         val properties = schema["properties"] as Map<*, *>
@@ -107,7 +107,7 @@ class McpToolDefinitionsTest {
     @Test
     fun updateFunctionToolExposesRunLogAnalysisInputs() {
         val tool = McpToolDefinitions.fixedTools.single {
-            it["name"] == "update_function"
+            it["name"] == OobFunctionToolNames.FUNCTION_UPDATE
         }
         val schema = tool["inputSchema"] as Map<*, *>
         val properties = schema["properties"] as Map<*, *>
@@ -179,7 +179,7 @@ class McpToolDefinitionsTest {
     @Test
     fun oobFunctionRegisterToolExposesSimpleConversationSchema() {
         val tool = McpToolDefinitions.fixedTools.single {
-            it["name"] == "oob_function_register"
+            it["name"] == OobFunctionToolNames.FUNCTION_REGISTER
         }
         val schema = tool["inputSchema"] as Map<*, *>
         val properties = schema["properties"] as Map<*, *>
