@@ -400,7 +400,7 @@ object ManualRecordingControlOverlay {
         val context = overlayView?.context ?: UIKit.appContext ?: return
         // pauseActive() calls awaitOverlayRecordJobs() which blocks the calling thread.
         // Must run on the IO thread — calling it on the main thread deadlocks against
-        // the IO coroutine's onGestureDispatched withContext(Main) callback.
+        // the IO coroutine's replay callbacks that hop back to Main.
         recordingControlScope.launch {
             val wasPaused = HumanTrajectoryLearningSession.isPaused()
             val shouldResume = HumanTrajectoryLearningSession.isActive() &&

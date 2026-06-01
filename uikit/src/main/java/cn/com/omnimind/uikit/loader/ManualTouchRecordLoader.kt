@@ -8,6 +8,7 @@ import android.graphics.Point
 import android.graphics.PointF
 import android.graphics.Rect
 import android.os.Build
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -17,6 +18,7 @@ import android.view.WindowManager
 import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.assists.HumanTrajectoryLearningSession
 import cn.com.omnimind.assists.ManualOverlayTouchGesture
+import cn.com.omnimind.assists.ManualRecordingImeBypassSignal
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.uikit.UIKit
 import cn.com.omnimind.uikit.view.indicator.ClickIndicator
@@ -35,12 +37,15 @@ import kotlin.math.sqrt
 object ManualTouchRecordLoader {
     private const val TAG = "ManualTouchRecordLoader"
     private const val MIN_SWIPE_DISTANCE_DP = 24f
-    private const val OVERLAY_UNLOCK_REPLAY_DELAY_MS = 32L
-    private const val IME_VISIBILITY_PROBE_DELAY_MS = 120L
-    private const val IME_VISIBILITY_PROBE_TIMEOUT_MS = 700L
-    private const val IME_VISIBILITY_PROBE_POLL_MS = 70L
+    private const val IME_VISIBILITY_PROBE_DELAY_MS = 30L
+    private const val IME_VISIBILITY_PROBE_TIMEOUT_MS = 600L
+    private const val IME_VISIBILITY_PROBE_POLL_MS = 50L
     private const val IME_RELOCK_INITIAL_DELAY_MS = 400L
     private const val IME_RELOCK_POLL_MS = 300L
+    private const val IME_RELIABLE_TOP_MIN_RATIO = 0.25f
+    private const val IME_RELIABLE_TOP_MAX_RATIO = 0.92f
+    private const val IME_FALLBACK_TOP_RATIO = 0.58f
+    private const val IME_TOP_CACHE_TTL_MS = 12_000L
 
     private val recordScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var windowManager: WindowManager? = null
@@ -52,6 +57,9 @@ object ManualTouchRecordLoader {
     private var displayHeight: Int = 0
     private var imeVisibilityProbeJob: Job? = null
     private var imeBypassJob: Job? = null
+    private var replayRelockJob: Job? = null
+    private var lastReliableImeTop: Int? = null
+    private var lastReliableImeTopAtMs: Long = 0L
     private var startX = 0f
     private var startY = 0f
     private var endX = 0f
@@ -66,7 +74,13 @@ object ManualTouchRecordLoader {
         if (appContext == null) return false
         return synchronized(this) {
             if (overlayView?.isAttachedToWindow == true) {
-                lockTouchLocked()
+                ManualRecordingImeBypassSignal.setListener { onImeTextInputObserved() }
+                if (isImeVisibleLocked()) {
+                    enterImeBypassLocked()
+                    scheduleImeRelockLocked()
+                } else {
+                    lockTouchLocked()
+                }
                 return@synchronized true
             }
             if (tryShowLocked(appContext)) return@synchronized true
@@ -84,6 +98,9 @@ object ManualTouchRecordLoader {
             imeVisibilityProbeJob = null
             imeBypassJob?.cancel()
             imeBypassJob = null
+            replayRelockJob?.cancel()
+            replayRelockJob = null
+            ManualRecordingImeBypassSignal.clearListener()
             val view = overlayView
             val manager = windowManager
             overlayView = null
@@ -93,6 +110,8 @@ object ManualTouchRecordLoader {
             currentOverlayHeight = 0
             displayWidth = 0
             displayHeight = 0
+            lastReliableImeTop = null
+            lastReliableImeTopAtMs = 0L
             if (view != null && manager != null && view.isAttachedToWindow) {
                 runCatching { manager.removeView(view) }
                     .onFailure { OmniLog.w(TAG, "hide failed: ${it.message}") }
@@ -114,6 +133,11 @@ object ManualTouchRecordLoader {
             currentOverlayHeight = params.height
             displayWidth = displaySize.x
             displayHeight = displaySize.y
+            ManualRecordingImeBypassSignal.setListener { onImeTextInputObserved() }
+            if (isImeVisibleLocked()) {
+                enterImeBypassLocked()
+                scheduleImeRelockLocked()
+            }
             OmniLog.d(TAG, "manual touch recording overlay shown type=application")
             true
         }.getOrElse { error ->
@@ -152,10 +176,10 @@ object ManualTouchRecordLoader {
                 }
             }
             val touchFlag = if (touchable) {
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                } else {
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                }
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+            } else {
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -260,7 +284,7 @@ object ManualTouchRecordLoader {
                                 isProcessing = false
                                 if (HumanTrajectoryLearningSession.isActive() && !HumanTrajectoryLearningSession.isPaused()) {
                                     if (isImeVisibleLocked()) {
-                                        lockTouchLocked()
+                                        enterImeBypassLocked()
                                         shouldUseImeAwareCapture = true
                                         shouldShowInputStatus = true
                                         scheduleImeRelockLocked()
@@ -300,12 +324,8 @@ object ManualTouchRecordLoader {
     private suspend fun processQueuedGesture(gesture: ManualOverlayTouchGesture): Boolean {
         var sessionStillActive = withContext(Dispatchers.Main) {
             synchronized(this@ManualTouchRecordLoader) {
-                val active = HumanTrajectoryLearningSession.isActive() &&
+                HumanTrajectoryLearningSession.isActive() &&
                     !HumanTrajectoryLearningSession.isPaused()
-                if (active) {
-                    unlockTouchLocked()
-                }
-                active
             }
         }
         if (!sessionStillActive) return false
@@ -313,20 +333,55 @@ object ManualTouchRecordLoader {
         var executed = false
         var recorded = false
         runCatching {
-            delay(OVERLAY_UNLOCK_REPLAY_DELAY_MS)
-            val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture) {
-                withContext(Dispatchers.Main) {
-                    synchronized(this@ManualTouchRecordLoader) {
-                        if (overlayView?.isAttachedToWindow == true &&
-                            HumanTrajectoryLearningSession.isActive() &&
-                            !HumanTrajectoryLearningSession.isPaused()) {
-                            lockTouchLocked()
+            val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(
+                gesture = gesture,
+                onGestureReplayStarted = { mayOpenIme, passthroughMs ->
+                    withContext(Dispatchers.Main) {
+                        synchronized(this@ManualTouchRecordLoader) {
+                            if (overlayView?.isAttachedToWindow == true &&
+                                HumanTrajectoryLearningSession.isActive() &&
+                                !HumanTrajectoryLearningSession.isPaused()) {
+                                unlockTouchLocked()
+                                scheduleReplayRelockLocked(mayOpenIme, passthroughMs)
+                            }
+                        }
+                    }
+                },
+                onGestureReplayFinished = { mayOpenIme ->
+                    withContext(Dispatchers.Main) {
+                        synchronized(this@ManualTouchRecordLoader) {
+                            cancelReplayRelockLocked()
+                            if (overlayView?.isAttachedToWindow == true &&
+                                HumanTrajectoryLearningSession.isActive() &&
+                                !HumanTrajectoryLearningSession.isPaused()) {
+                                if (mayOpenIme) {
+                                    scheduleImeVisibilityProbeLocked(relockIfMissing = true)
+                                } else {
+                                    lockTouchLocked()
+                                    if (gesture.actionName == "click") {
+                                        scheduleImeVisibilityProbeLocked()
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
+            )
             executed = replayResult.executed
             recorded = replayResult.recorded
+            val replayMayOpenIme = replayResult.mayOpenIme
+            withContext(Dispatchers.Main) {
+                synchronized(this@ManualTouchRecordLoader) {
+                    if (overlayView?.isAttachedToWindow == true &&
+                        HumanTrajectoryLearningSession.isActive() &&
+                        !HumanTrajectoryLearningSession.isPaused() &&
+                        gesture.actionName == "click" &&
+                        executed &&
+                        replayMayOpenIme) {
+                        scheduleImeVisibilityProbeLocked(relockIfMissing = true)
+                    }
+                }
+            }
         }.onFailure { error ->
             OmniLog.w(TAG, "record overlay gesture failed: ${error.message}")
         }
@@ -344,9 +399,10 @@ object ManualTouchRecordLoader {
                 val active = HumanTrajectoryLearningSession.isActive() &&
                     !HumanTrajectoryLearningSession.isPaused()
                 if (active) {
-                    lockTouchLocked()
                     if (gesture.actionName == "click" && executed) {
-                        scheduleImeVisibilityProbeLocked()
+                        scheduleImeVisibilityProbeLocked(relockIfMissing = true)
+                    } else {
+                        lockTouchLocked()
                     }
                 }
                 active
@@ -354,6 +410,33 @@ object ManualTouchRecordLoader {
         }
         if (!sessionStillActive) return false
         return true
+    }
+
+    private fun scheduleReplayRelockLocked(mayOpenIme: Boolean, passthroughMs: Long) {
+        replayRelockJob?.cancel()
+        replayRelockJob = recordScope.launch {
+            delay(passthroughMs.coerceAtLeast(1L))
+            withContext(Dispatchers.Main) {
+                synchronized(this@ManualTouchRecordLoader) {
+                    replayRelockJob = null
+                    if (overlayView?.isAttachedToWindow == true &&
+                        HumanTrajectoryLearningSession.isActive() &&
+                        !HumanTrajectoryLearningSession.isPaused()) {
+                        if (mayOpenIme) {
+                            enterImeBypassLocked()
+                            scheduleImeVisibilityProbeLocked(relockIfMissing = true)
+                        } else {
+                            lockTouchLocked()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun cancelReplayRelockLocked() {
+        replayRelockJob?.cancel()
+        replayRelockJob = null
     }
 
     private fun showGestureFeedback(gesture: ManualOverlayTouchGesture) {
@@ -383,7 +466,7 @@ object ManualTouchRecordLoader {
         }
     }
 
-    private fun scheduleImeVisibilityProbeLocked() {
+    private fun scheduleImeVisibilityProbeLocked(relockIfMissing: Boolean = false) {
         if (imeBypassJob?.isActive == true || imeVisibilityProbeJob?.isActive == true) return
         imeVisibilityProbeJob = recordScope.launch {
             delay(IME_VISIBILITY_PROBE_DELAY_MS)
@@ -403,21 +486,30 @@ object ManualTouchRecordLoader {
             }
 
             var shouldShowInputStatus = false
+            var shouldShowContinueStatus = false
             withContext(Dispatchers.Main) {
                 synchronized(this@ManualTouchRecordLoader) {
                     imeVisibilityProbeJob = null
-                    if (appeared &&
-                        HumanTrajectoryLearningSession.isActive() &&
+                    if (HumanTrajectoryLearningSession.isActive() &&
                         !HumanTrajectoryLearningSession.isPaused()) {
-                        lockTouchLocked()
-                        shouldShowInputStatus = true
-                        scheduleImeRelockLocked()
+                        if (appeared) {
+                            enterImeBypassLocked()
+                            shouldShowInputStatus = true
+                            scheduleImeRelockLocked()
+                        } else if (relockIfMissing) {
+                            lockTouchLocked()
+                            shouldShowContinueStatus = true
+                        }
                     }
                 }
             }
             if (shouldShowInputStatus) {
                 withContext(Dispatchers.Main) {
                     ManualRecordingControlOverlay.showTransientStatus("输入中", 1400L)
+                }
+            } else if (shouldShowContinueStatus) {
+                withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.showTransientStatus("继续录制", 700L)
                 }
             }
         }
@@ -432,7 +524,7 @@ object ManualTouchRecordLoader {
                     synchronized(this@ManualTouchRecordLoader) {
                         val visible = isImeVisibleLocked()
                         if (visible) {
-                            lockTouchLocked()
+                            enterImeBypassLocked()
                         }
                         visible
                     }
@@ -471,21 +563,74 @@ object ManualTouchRecordLoader {
             if (insets?.isVisible(WindowInsets.Type.ime()) == true) {
                 val bottomInset = insets.getInsets(WindowInsets.Type.ime()).bottom
                 if (bottomInset > 0) {
-                    return (displayHeight - bottomInset).coerceIn(1, displayHeight)
+                    trustedImeTopLocked(displayHeight - bottomInset, displayHeight)?.let {
+                        return rememberReliableImeTopLocked(it)
+                    }
                 }
             }
         }
         // Fallback: scan accessibility windows when overlay insets are unavailable.
-        return AssistsService.instance?.windows
-            ?.asSequence()
-            ?.filter { window -> window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-            ?.mapNotNull { window ->
+        val windows = runCatching { AssistsService.instance?.windows.orEmpty() }
+            .getOrElse { error ->
+                OmniLog.w(TAG, "read accessibility windows for IME failed: ${error.message}")
+                return cachedReliableImeTopLocked(displayHeight)
+            }
+        val inputMethodBounds = windows
+            .asSequence()
+            .filter { window -> window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            .mapNotNull { window ->
                 val bounds = Rect()
                 runCatching { window.getBoundsInScreen(bounds) }.getOrNull()
                 bounds.takeUnless { it.isEmpty }
             }
-            ?.map { bounds -> bounds.top.coerceIn(1, displayHeight) }
-            ?.minOrNull()
+            .toList()
+        inputMethodBounds
+            .asSequence()
+            .mapNotNull { bounds -> trustedImeTopLocked(bounds.top, displayHeight) }
+            .minOrNull()
+            ?.let { return rememberReliableImeTopLocked(it) }
+
+        windows
+            .asSequence()
+            .filter { window -> window.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            .mapNotNull { window ->
+                val bounds = Rect()
+                runCatching { window.getBoundsInScreen(bounds) }.getOrNull()
+                bounds.takeUnless { it.isEmpty }
+            }
+            .mapNotNull { bounds -> trustedImeTopLocked(bounds.bottom, displayHeight) }
+            .minOrNull()
+            ?.let { return rememberReliableImeTopLocked(it) }
+
+        if (inputMethodBounds.isNotEmpty()) {
+            return cachedReliableImeTopLocked(displayHeight) ?: fallbackImeTop(displayHeight)
+        }
+        return null
+    }
+
+    private fun trustedImeTopLocked(top: Int, displayHeight: Int): Int? {
+        val minTop = (displayHeight * IME_RELIABLE_TOP_MIN_RATIO).toInt().coerceAtLeast(1)
+        val maxTop = (displayHeight * IME_RELIABLE_TOP_MAX_RATIO).toInt()
+            .coerceIn(minTop, displayHeight - 1)
+        val clamped = top.coerceIn(1, displayHeight - 1)
+        return clamped.takeIf { it in minTop..maxTop }
+    }
+
+    private fun rememberReliableImeTopLocked(top: Int): Int {
+        lastReliableImeTop = top
+        lastReliableImeTopAtMs = SystemClock.uptimeMillis()
+        return top
+    }
+
+    private fun cachedReliableImeTopLocked(displayHeight: Int): Int? {
+        val top = lastReliableImeTop ?: return null
+        val fresh = SystemClock.uptimeMillis() - lastReliableImeTopAtMs <= IME_TOP_CACHE_TTL_MS
+        return top.takeIf { fresh }?.coerceIn(1, displayHeight - 1)
+    }
+
+    private fun fallbackImeTop(displayHeight: Int): Int {
+        return (displayHeight * IME_FALLBACK_TOP_RATIO).toInt()
+            .coerceIn(1, displayHeight - 1)
     }
 
     private fun lockTouchLocked() {
@@ -494,6 +639,34 @@ object ManualTouchRecordLoader {
 
     private fun unlockTouchLocked() {
         updateTouchableLocked(touchable = false)
+    }
+
+    private fun enterImeBypassLocked() {
+        unlockTouchLocked()
+    }
+
+    private fun onImeTextInputObserved() {
+        recordScope.launch {
+            var shouldShowInputStatus = false
+            withContext(Dispatchers.Main) {
+                synchronized(this@ManualTouchRecordLoader) {
+                    if (overlayView?.isAttachedToWindow != true ||
+                        !HumanTrajectoryLearningSession.isActive() ||
+                        HumanTrajectoryLearningSession.isPaused()) {
+                        return@withContext
+                    }
+                    cancelReplayRelockLocked()
+                    enterImeBypassLocked()
+                    scheduleImeRelockLocked()
+                    shouldShowInputStatus = true
+                }
+            }
+            if (shouldShowInputStatus) {
+                withContext(Dispatchers.Main) {
+                    ManualRecordingControlOverlay.showTransientStatus("输入中", 1000L)
+                }
+            }
+        }
     }
 
     private fun updateTouchableLocked(touchable: Boolean) {
@@ -508,6 +681,10 @@ object ManualTouchRecordLoader {
             .onSuccess {
                 currentTouchable = touchable
                 currentOverlayHeight = params.height
+                OmniLog.d(
+                    TAG,
+                    "manual touch overlay updated touchable=$touchable height=${params.height}/$displayHeight"
+                )
             }
             .onFailure { OmniLog.w(TAG, "update touchable=$touchable failed: ${it.message}") }
     }

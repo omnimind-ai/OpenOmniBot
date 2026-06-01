@@ -311,13 +311,16 @@ touch position annotated; normal product recording remains XML/touch based and
 does not store screenshots by default.
 Registered reusable-command steps can be edited from the command library and
 are saved back under the same `function_id`. Manual action cards retain
-`event_context` for conversion diagnostics. Replayable manual actions must come
-from concrete input backends: `overlay_touch`, `overlay_touch_text_input`,
+`event_context` for conversion diagnostics. Replayable manual actions should
+prefer concrete input backends: `overlay_touch`, `overlay_touch_text_input`,
 `device_getevent`, or `device_getevent_text_input`. Accessibility events are
-evidence only and must not create replayable actions by themselves. Every
-manual action must have a before XML snapshot; if execution succeeds but the
-action cannot be recorded with its before XML, the recorder reports failure
-instead of writing a partial RunLog step.
+supporting evidence, not a general action backend: they may anchor IME text
+input or a submit-style post-input click only while keyboard routing prevents
+the overlay from observing the action. Manual actions should carry a before XML
+snapshot whenever one is available. Keyboard/IME bypass flows may instead keep
+coordinate evidence with screenshot/package context and
+`source_context_mode=coordinate_only_no_xml`; treat that as degraded repair
+evidence, not as a stable selector or a required Function main-path guarantee.
 
 RunLog save results, the command library page, and the memory-center embedded
 command list share the same reusable-command summary card. Keep the primary run

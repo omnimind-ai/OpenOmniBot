@@ -34,32 +34,34 @@ class ManualRecordingPolicyTest {
                 RegexOption.DOT_MATCHES_ALL
             ).containsMatchIn(source)
         )
-        assertTrue(
-            Regex(
-                "AccessibilityEvent\\.TYPE_VIEW_SCROLLED,\\s*" +
-                    "AccessibilityEvent\\.TYPE_VIEW_FOCUSED -> suppressA11OnlyActionEvent\\(event\\)",
-                RegexOption.DOT_MATCHES_ALL
-            ).containsMatchIn(source)
-        )
+        assertTrue(source.contains("AccessibilityEvent.TYPE_VIEW_FOCUSED -> {"))
+        assertTrue(source.contains("handleTextInputFocus(event, packageName)"))
+        assertTrue(source.contains("AccessibilityEvent.TYPE_VIEW_SCROLLED -> suppressA11OnlyActionEvent(event)"))
     }
 
     @Test
-    fun `a11 text input requires a real touch anchor`() {
+    fun `a11 text input uses explicit text anchors only`() {
         val source = readSource(
             "assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/ManualVlmTraceRecorder.kt"
         )
 
         assertTrue(source.contains("private data class TextInputAnchor("))
         assertTrue(source.contains("rememberTextInputAnchorFromRealTouch("))
-        assertTrue(source.contains("\"a11_text_input_requires_real_touch_anchor\" to true"))
+        assertTrue(source.contains("rememberTextInputAnchorFromFocus("))
+        assertTrue(source.contains("\"a11_text_input_anchor_policy\" to \"real_touch_or_text_focus\""))
         assertTrue(
             Regex(
-                "val anchor = textInputAnchor\\s*" +
+                "var anchor = textInputAnchor\\s*" +
+                    "if \\(anchor == null && source\\?\\.isTextEntryLike\\(\\) == true\\) \\{\\s*" +
+                    "rememberTextInputAnchorFromFocus\\(source, packageName\\)\\s*" +
+                    "anchor = textInputAnchor\\s*" +
+                    "\\}\\s*" +
                     "if \\(anchor == null\\) \\{\\s*" +
                     "suppressA11OnlyActionEvent\\(event\\)",
                 RegexOption.DOT_MATCHES_ALL
             ).containsMatchIn(source)
         )
+        assertFalse(source.contains("recordFocusedTextTarget("))
     }
 
     @Test
@@ -116,14 +118,20 @@ class ManualRecordingPolicyTest {
             "assists/src/main/java/cn/com/omnimind/assists/task/vlmserver/ManualVlmTraceRecorder.kt"
         )
 
-        assertTrue(recorderSource.contains("onGestureDispatched(mayOpenIme)"))
-        assertTrue(source.contains("val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture(gesture) {"))
+        assertTrue(recorderSource.contains("onGestureReplayStarted(mayOpenIme, replayPassthroughMs)"))
+        assertTrue(recorderSource.contains("onGestureReplayFinished(mayOpenIme)"))
+        assertTrue(source.contains("val replayResult = HumanTrajectoryLearningSession.recordOverlayGesture("))
+        assertTrue(source.contains("onGestureReplayStarted = { mayOpenIme, passthroughMs ->"))
+        assertTrue(source.contains("scheduleReplayRelockLocked(mayOpenIme, passthroughMs)"))
+        assertTrue(source.contains("onGestureReplayFinished = { mayOpenIme ->"))
         assertFalse(source.contains("!expectsIme"))
         assertTrue(source.contains("scheduleImeVisibilityProbeLocked()"))
         assertTrue(source.contains("overlayHeightForParamsLocked(touchable, displaySize.y)"))
         assertTrue(source.contains("private fun imeTopLocked(): Int?"))
         assertTrue(source.contains("window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD"))
-        assertTrue(source.contains("if (visible) {\n                            lockTouchLocked()"))
+        assertTrue(source.contains("private fun trustedImeTopLocked(top: Int, displayHeight: Int): Int?"))
+        assertTrue(source.contains("fallbackImeTop(displayHeight)"))
+        assertTrue(source.contains("if (visible) {\n                            enterImeBypassLocked()"))
         assertTrue(source.contains("scheduleImeRelockLocked()"))
         assertFalse(source.contains("awaitImeVisible"))
         assertTrue(recorderSource.contains("if (xml.isNullOrBlank()) return false"))
@@ -144,6 +152,12 @@ class ManualRecordingPolicyTest {
         assertTrue(source.contains("coordinateTextAnchorTarget("))
         assertTrue(source.contains("coordinate_text_anchor_unresolved"))
         assertTrue(source.contains("sourceTarget == null"))
+        val sessionSource = readSource(
+            "assists/src/main/java/cn/com/omnimind/assists/HumanTrajectoryLearningSession.kt"
+        )
+        assertTrue(sessionSource.contains("SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML"))
+        assertTrue(sessionSource.contains("\"source_context_mode\" to SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML.takeIf"))
+        assertTrue(sessionSource.contains("\"missing_source_xml\" to true.takeIf"))
     }
 
     @Test

@@ -14,6 +14,7 @@ import cn.com.omnimind.accessibility.service.AssistsService
 import cn.com.omnimind.accessibility.service.AssistsServiceListener
 import cn.com.omnimind.assists.ManualOverlayGestureReplayResult
 import cn.com.omnimind.assists.ManualOverlayTouchGesture
+import cn.com.omnimind.assists.ManualRecordingImeBypassSignal
 import cn.com.omnimind.assists.controller.accessibility.AccessibilityController
 import cn.com.omnimind.baselib.util.ImageQuality
 import cn.com.omnimind.baselib.util.OmniLog
@@ -27,6 +28,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -173,7 +175,8 @@ internal object ManualRecordingDiagnostics {
  * content for an input that was anchored by a real overlay/raw touch. A11-only
  * click, long-click, focus, and scroll events are intentionally not replayable
  * actions because they can be incomplete, except for the narrow post-input
- * bypass case where the IME made the overlay non-touchable.
+ * bypass case where keyboard/IME routing prevents the overlay from seeing a
+ * submit-style action.
  */
 class ManualVlmTraceRecorder(
     private val context: Context,
@@ -347,7 +350,8 @@ class ManualVlmTraceRecorder(
 
     suspend fun recordOverlayGesture(
         gesture: ManualOverlayTouchGesture,
-        onGestureDispatched: suspend (mayOpenIme: Boolean) -> Unit = {}
+        onGestureReplayStarted: suspend (mayOpenIme: Boolean, passthroughMs: Long) -> Unit = { _, _ -> },
+        onGestureReplayFinished: suspend (mayOpenIme: Boolean) -> Unit = {}
     ): ManualOverlayGestureReplayResult {
         val operationId = synchronized(recordingLock) {
             if (!isStarted || isPaused) return ManualOverlayGestureReplayResult(executed = false)
@@ -394,7 +398,14 @@ class ManualVlmTraceRecorder(
         synchronized(recordingLock) {
             overlayGestureActiveCount += 1
         }
+        val replayPassthroughMs = overlayReplayPassthroughMs(gesture)
         val dispatchOutcome = try {
+            try {
+                onGestureReplayStarted(mayOpenIme, replayPassthroughMs)
+                delay(OVERLAY_REPLAY_LAYOUT_SETTLE_MS)
+            } catch (error: Exception) {
+                OmniLog.w(TAG, "manual overlay replay-start callback failed: ${error.message}")
+            }
             runCatching { performOverlayGesture(gesture) }
                 .fold(
                     onSuccess = { OverlayDispatchOutcome.completed() },
@@ -409,13 +420,10 @@ class ManualVlmTraceRecorder(
                     }
                 )
         } finally {
-            // Normal gestures are before-only. Re-lock as soon as dispatch completes
-            // or times out. UIKit probes IME visibility asynchronously after clicks
-            // so XML-missing screens do not block typing.
             try {
-                onGestureDispatched(mayOpenIme)
+                onGestureReplayFinished(mayOpenIme)
             } catch (error: Exception) {
-                OmniLog.w(TAG, "manual overlay dispatch callback failed: ${error.message}")
+                OmniLog.w(TAG, "manual overlay replay-finish callback failed: ${error.message}")
             }
         }
 
@@ -477,6 +485,16 @@ class ManualVlmTraceRecorder(
             recorded = recorded,
             mayOpenIme = mayOpenIme
         )
+    }
+
+    private fun overlayReplayPassthroughMs(gesture: ManualOverlayTouchGesture): Long {
+        return when (gesture.actionName) {
+            "long_press" -> gesture.durationMs
+                .coerceAtLeast(OVERLAY_LONG_PRESS_MIN_DURATION_MS) + OVERLAY_REPLAY_PASSTHROUGH_GRACE_MS
+            "swipe" -> gesture.durationMs
+                .coerceAtLeast(OVERLAY_SWIPE_MIN_DURATION_MS) + OVERLAY_REPLAY_PASSTHROUGH_GRACE_MS
+            else -> OVERLAY_CLICK_REPLAY_PASSTHROUGH_MS
+        }
     }
 
     private fun overlayOperationId(
@@ -589,6 +607,7 @@ class ManualVlmTraceRecorder(
         }
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                ManualRecordingImeBypassSignal.notifyTextInputObserved()
                 recordTextChanged(event, packageName, lastXmlSnapshot, lastScreenshotSnapshot)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
@@ -597,9 +616,9 @@ class ManualVlmTraceRecorder(
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED,
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> {
-                // When text is pending, the overlay was NOT_TOUCHABLE (IME bypass mode).
+                // When text is pending, keyboard/IME routing can bypass the overlay.
                 // A click/long-press on a non-input element during this window (e.g. "搜索",
-                // "发送", submit button) bypasses the overlay and is only visible here via A11.
+                // "发送", submit button) may only be visible here via A11.
                 // Record it using the source node's screen bounds as coordinates.
                 val nowMs = System.currentTimeMillis()
                 if (hasPostInputActionWindowLocked(nowMs)) {
@@ -608,8 +627,11 @@ class ManualVlmTraceRecorder(
                     suppressA11OnlyActionEvent(event)
                 }
             }
-            AccessibilityEvent.TYPE_VIEW_SCROLLED,
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> suppressA11OnlyActionEvent(event)
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+                handleTextInputFocus(event, packageName)
+                suppressA11OnlyActionEvent(event)
+            }
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> suppressA11OnlyActionEvent(event)
             else -> Unit
         }
     }
@@ -639,6 +661,14 @@ class ManualVlmTraceRecorder(
         postInputClickWindow = null
     }
 
+    private fun handleTextInputFocus(event: AccessibilityEvent, packageName: String?) {
+        val source = sourceSnapshotFromEvent(event) ?: return
+        if (source.isTextEntryLike()) {
+            ManualRecordingImeBypassSignal.notifyTextInputObserved()
+            rememberTextInputAnchorFromFocus(source, packageName)
+        }
+    }
+
     private fun recordPostInputActionLocked(
         event: AccessibilityEvent,
         packageName: String?,
@@ -650,19 +680,18 @@ class ManualVlmTraceRecorder(
             suppressA11OnlyActionEvent(event)
             return
         }
-        val source = runCatching { event.source }.getOrNull()
-        val bounds = source?.let {
-            val r = Rect()
-            it.getBoundsInScreen(r)
-            r.takeUnless { b -> b.isEmpty }
-        }
+        val beforeXml = lastXmlSnapshot
+        val source = sourceSnapshotFromEvent(event)
+        val bounds = source?.bounds
         if (bounds == null) {
+            flushPendingText(beforeXml)
             postInputA11ActionSuppressedCount += 1
             suppressA11OnlyActionEvent(event)
             return
         }
         // Skip if this click is on the text input field itself (focus/selection noise).
         if (isPostInputSourceOnInputField(bounds, pendingInput, activeWindow)) {
+            flushPendingText(beforeXml)
             postInputA11ActionSuppressedCount += 1
             suppressA11OnlyActionEvent(event)
             return
@@ -670,27 +699,37 @@ class ManualVlmTraceRecorder(
         val x = bounds.centerX().toFloat()
         val y = bounds.centerY().toFloat()
         val label = firstNonBlank(
-            source.contentDescription?.toString(),
-            source.text?.toString(),
+            source.contentDescription,
+            source.text,
             source.viewIdResourceName?.substringAfterLast('/'),
-            source.className?.toString()
+            source.className
         ).ifBlank { "按钮" }
         val actionName = if (event.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) "long_press" else "click"
         val title = if (actionName == "long_press") "人工长按 $label" else "人工点击 $label"
-        val beforeXml = lastXmlSnapshot
         // Flush pending text before appending this action so ordering is preserved.
         flushPendingText(beforeXml)
         clearPostInputClickWindowLocked()
-        val resolvedPackageName = source.packageName?.toString() ?: packageName
+        val resolvedPackageName = source.packageName ?: packageName
+        val target = ManualEventTarget(
+            label = label,
+            bounds = bounds,
+            packageName = resolvedPackageName,
+            className = source.className,
+            resourceId = source.viewIdResourceName,
+            text = source.text,
+            contentDescription = source.contentDescription,
+            stableKey = source.stableKey(bounds),
+            resolution = "event_source_post_input"
+        )
         val params = linkedMapOf<String, Any?>(
             "target_description" to label,
             "x" to x,
             "y" to y,
             "bounds" to boundsString(bounds),
-            "node_class" to source.className?.toString(),
+            "node_class" to source.className,
             "node_resource_id" to source.viewIdResourceName,
-            "node_text" to source.text?.toString(),
-            "node_content_description" to source.contentDescription?.toString(),
+            "node_text" to source.text,
+            "node_content_description" to source.contentDescription,
             "recording_backend" to A11Y_POST_INPUT_BACKEND,
             "coordinate_space" to SCREEN_ABSOLUTE_COORDINATE_SPACE,
             "execution_mode" to A11Y_ANCHORED_EXECUTION_MODE
@@ -704,7 +743,8 @@ class ManualVlmTraceRecorder(
             afterXml = null,
             startedAtMs = nowMs,
             finishedAtMs = nowMs,
-            summary = title
+            summary = title,
+            eventContext = eventContextFor(event, target, source)
         ))
         postInputA11ActionRecordedCount += 1
     }
@@ -1126,29 +1166,39 @@ class ManualVlmTraceRecorder(
         beforeXml: String?,
         beforeScreenshot: ManualVlmScreenshotRef?
     ) {
-        val anchor = textInputAnchor
+        val source = sourceSnapshotFromEvent(event)
+        var anchor = textInputAnchor
+        if (anchor == null && source?.isTextEntryLike() == true) {
+            rememberTextInputAnchorFromFocus(source, packageName)
+            anchor = textInputAnchor
+        }
         if (anchor == null) {
             suppressA11OnlyActionEvent(event)
             return
         }
-        val node = runCatching { event.source }.getOrNull()
         val now = System.currentTimeMillis()
-        val text = event.text.joinToString("").ifBlank { node?.text?.toString().orEmpty() }
-        val safeText = if (node?.isPassword == true) REDACTED_TEXT else text
+        val text = event.text.joinToString("").ifBlank { source?.text.orEmpty() }
+        val safeText = if (source?.isPassword == true) {
+            REDACTED_TEXT
+        } else {
+            text
+        }
         if (safeText.isBlank()) return
-        val sourceTarget = node?.let { targetFromTextSourceNode(it, packageName) }
-        if (anchor.isCoordinateOnlyTextAnchor() &&
+        val sourceTarget = source?.toTextTarget(packageName)
+        val unresolvedCoordinateText = anchor.isCoordinateOnlyTextAnchor() &&
             (sourceTarget == null ||
                 (!sourceTarget.bounds.containsPoint(anchor.x, anchor.y) &&
                     !isTextInputClass(sourceTarget.className)))
-        ) {
-            suppressA11OnlyActionEvent(event)
-            return
-        }
+        val effectiveSourceTarget = if (unresolvedCoordinateText) null else sourceTarget
         val target = textReplayTargetFromAnchor(
             anchor = anchor,
-            sourceTarget = sourceTarget,
-            inputText = safeText
+            sourceTarget = effectiveSourceTarget,
+            inputText = safeText,
+            resolutionSuffix = if (unresolvedCoordinateText) {
+                "ime_text_event_unresolved"
+            } else {
+                "real_touch_text_anchor"
+            }
         )
         val bounds = target.bounds
         val key = target.stableKey
@@ -1175,7 +1225,7 @@ class ManualVlmTraceRecorder(
             beforeScreenshot = sameNodePending?.beforeScreenshot ?: anchor.beforeScreenshot ?: pendingBeforeScreenshot,
             startedAtMs = sameNodePending?.startedAtMs ?: anchor.startedAtMs,
             updatedAtMs = now,
-            eventContext = textInputEventContextFor(event, target, node, anchor)
+            eventContext = textInputEventContextFor(event, target, source, anchor)
         )
         clearPostInputClickWindowLocked()
         lastXmlSnapshot = beforeXml ?: lastXmlSnapshot
@@ -1185,13 +1235,18 @@ class ManualVlmTraceRecorder(
     private fun textReplayTargetFromAnchor(
         anchor: TextInputAnchor,
         sourceTarget: ManualEventTarget?,
-        inputText: String
+        inputText: String,
+        resolutionSuffix: String = "real_touch_text_anchor"
     ): ManualEventTarget {
         val anchorTarget = anchor.target
         val beforeLabel = anchorTarget.label.trim()
         val stableLabel = beforeLabel.takeIf {
             it.isNotBlank() && it != inputText && it != REDACTED_TEXT
-        } ?: sourceTarget?.label ?: anchorTarget.label
+        } ?: sourceTarget?.label ?: if (anchor.isCoordinateOnlyTextAnchor()) {
+            "输入框"
+        } else {
+            anchorTarget.label
+        }
         return anchorTarget.copy(
             label = stableLabel,
             packageName = anchorTarget.packageName ?: sourceTarget?.packageName,
@@ -1199,7 +1254,7 @@ class ManualVlmTraceRecorder(
             text = anchorTarget.text ?: sourceTarget?.text,
             contentDescription = anchorTarget.contentDescription ?: sourceTarget?.contentDescription,
             stableKey = anchorTarget.stableKey.ifBlank { sourceTarget?.stableKey.orEmpty() },
-            resolution = "${anchorTarget.resolution}+real_touch_text_anchor"
+            resolution = "${anchorTarget.resolution}+$resolutionSuffix"
         )
     }
 
@@ -1280,11 +1335,11 @@ class ManualVlmTraceRecorder(
     }
 
     private fun shouldIgnoreNode(node: AccessibilityNodeInfo): Boolean {
-        val packageName = node.packageName?.toString()
+        val packageName = node.safePackageName()
         return shouldIgnoreTarget(
             packageName = packageName,
             label = node.bestLabel(),
-            resourceId = node.viewIdResourceName
+            resourceId = node.safeViewIdResourceName()
         )
     }
 
@@ -1298,26 +1353,103 @@ class ManualVlmTraceRecorder(
         return OOB_CONTROL_HINTS.any { text.contains(it) }
     }
 
+    private fun sourceSnapshotFromEvent(event: AccessibilityEvent): AccessibilitySourceSnapshot? {
+        val source = runCatching { event.source }.getOrNull() ?: return null
+        return source.toSourceSnapshot()
+    }
+
+    private fun AccessibilityNodeInfo.toSourceSnapshot(): AccessibilitySourceSnapshot =
+        AccessibilitySourceSnapshot(
+            bounds = boundsInScreenOrNull()?.let { Rect(it) },
+            packageName = safePackageName(),
+            className = safeClassName(),
+            text = safeText(),
+            hintText = safeHintText(),
+            contentDescription = safeContentDescription(),
+            viewIdResourceName = safeViewIdResourceName(),
+            isPassword = runCatching { isPassword }.getOrDefault(false)
+        )
+
+    private fun AccessibilitySourceSnapshot.bestLabel(): String {
+        return firstNonBlank(
+            contentDescription,
+            text,
+            hintText,
+            viewIdResourceName?.substringAfterLast('/'),
+            className
+        ).take(MAX_LABEL_LENGTH)
+    }
+
+    private fun AccessibilitySourceSnapshot.isTextEntryLike(): Boolean {
+        return isPassword ||
+            isTextInputClass(className) ||
+            viewIdResourceName.orEmpty().contains("edit", ignoreCase = true) ||
+            viewIdResourceName.orEmpty().contains("input", ignoreCase = true)
+    }
+
+    private fun AccessibilitySourceSnapshot.stableKey(bounds: Rect?): String {
+        return firstNonBlank(viewIdResourceName, className) + "|" +
+            "${bounds?.left},${bounds?.top},${bounds?.right},${bounds?.bottom}"
+    }
+
+    private fun AccessibilitySourceSnapshot.toTextTarget(
+        fallbackPackageName: String?
+    ): ManualEventTarget? {
+        if (shouldIgnoreTarget(packageName, bestLabel(), viewIdResourceName)) return null
+        val safeBounds = bounds?.takeUnless { it.isEmpty } ?: return null
+        return ManualEventTarget(
+            label = bestLabel(),
+            bounds = Rect(safeBounds),
+            packageName = packageName ?: fallbackPackageName,
+            className = className,
+            resourceId = viewIdResourceName,
+            text = text,
+            contentDescription = contentDescription,
+            stableKey = stableKey(safeBounds),
+            resolution = "event_source_text"
+        )
+    }
+
     private fun AccessibilityNodeInfo.boundsInScreenOrNull(): Rect? {
         val rect = Rect()
-        getBoundsInScreen(rect)
-        return rect.takeUnless { it.isEmpty }
+        return runCatching {
+            getBoundsInScreen(rect)
+            rect.takeUnless { it.isEmpty }
+        }.getOrNull()
     }
 
     private fun AccessibilityNodeInfo.bestLabel(): String {
         return firstNonBlank(
-            contentDescription?.toString(),
-            text?.toString(),
-            hintText?.toString(),
-            viewIdResourceName?.substringAfterLast('/'),
-            className?.toString()
+            safeContentDescription(),
+            safeText(),
+            safeHintText(),
+            safeViewIdResourceName()?.substringAfterLast('/'),
+            safeClassName()
         ).take(MAX_LABEL_LENGTH)
     }
 
     private fun AccessibilityNodeInfo.stableKey(bounds: Rect?): String {
-        return firstNonBlank(viewIdResourceName, className?.toString()) + "|" +
+        return firstNonBlank(safeViewIdResourceName(), safeClassName()) + "|" +
             "${bounds?.left},${bounds?.top},${bounds?.right},${bounds?.bottom}"
     }
+
+    private fun AccessibilityNodeInfo.safePackageName(): String? =
+        runCatching { packageName?.toString() }.getOrNull()
+
+    private fun AccessibilityNodeInfo.safeClassName(): String? =
+        runCatching { className?.toString() }.getOrNull()
+
+    private fun AccessibilityNodeInfo.safeText(): String? =
+        runCatching { text?.toString() }.getOrNull()
+
+    private fun AccessibilityNodeInfo.safeHintText(): String? =
+        runCatching { hintText?.toString() }.getOrNull()
+
+    private fun AccessibilityNodeInfo.safeContentDescription(): String? =
+        runCatching { contentDescription?.toString() }.getOrNull()
+
+    private fun AccessibilityNodeInfo.safeViewIdResourceName(): String? =
+        runCatching { viewIdResourceName }.getOrNull()
 
     private fun targetFromSourceNode(
         node: AccessibilityNodeInfo,
@@ -1327,7 +1459,7 @@ class ManualVlmTraceRecorder(
         if (shouldIgnoreNode(targetNode)) return null
         val bounds = targetNode.boundsInScreenOrNull() ?: return null
         if (bounds.isEmpty) return null
-        val packageName = targetNode.packageName?.toString() ?: fallbackPackageName
+        val packageName = targetNode.safePackageName() ?: fallbackPackageName
         val resolution = if (targetNode === node) {
             "event_source"
         } else {
@@ -1337,11 +1469,11 @@ class ManualVlmTraceRecorder(
             label = targetNode.bestLabel().ifBlank { node.bestLabel() },
             bounds = bounds,
             packageName = packageName,
-            className = targetNode.className?.toString(),
-            resourceId = targetNode.viewIdResourceName,
-            text = targetNode.text?.toString() ?: node.text?.toString(),
-            contentDescription = targetNode.contentDescription?.toString()
-                ?: node.contentDescription?.toString(),
+            className = targetNode.safeClassName(),
+            resourceId = targetNode.safeViewIdResourceName(),
+            text = targetNode.safeText() ?: node.safeText(),
+            contentDescription = targetNode.safeContentDescription()
+                ?: node.safeContentDescription(),
             stableKey = targetNode.stableKey(bounds),
             resolution = resolution
         )
@@ -1354,15 +1486,15 @@ class ManualVlmTraceRecorder(
         if (!shouldIgnoreNode(node)) {
             val bounds = node.boundsInScreenOrNull()
             if (bounds != null && !bounds.isEmpty) {
-                val packageName = node.packageName?.toString() ?: fallbackPackageName
+                val packageName = node.safePackageName() ?: fallbackPackageName
                 return ManualEventTarget(
                     label = node.bestLabel(),
                     bounds = bounds,
                     packageName = packageName,
-                    className = node.className?.toString(),
-                    resourceId = node.viewIdResourceName,
-                    text = node.text?.toString(),
-                    contentDescription = node.contentDescription?.toString(),
+                    className = node.safeClassName(),
+                    resourceId = node.safeViewIdResourceName(),
+                    text = node.safeText(),
+                    contentDescription = node.safeContentDescription(),
                     stableKey = node.stableKey(bounds),
                     resolution = "event_source_text"
                 )
@@ -1379,12 +1511,16 @@ class ManualVlmTraceRecorder(
             if (
                 bounds != null &&
                 !bounds.isEmpty &&
-                candidate.isEnabled &&
-                (candidate.isClickable || candidate.isLongClickable || candidate.isScrollable)
+                runCatching { candidate.isEnabled }.getOrDefault(false) &&
+                (
+                    runCatching { candidate.isClickable }.getOrDefault(false) ||
+                        runCatching { candidate.isLongClickable }.getOrDefault(false) ||
+                        runCatching { candidate.isScrollable }.getOrDefault(false)
+                    )
             ) {
                 return candidate
             }
-            current = candidate.parent
+            current = runCatching { candidate.parent }.getOrNull()
         }
         return null
     }
@@ -1489,6 +1625,38 @@ class ManualVlmTraceRecorder(
         }
     }
 
+    private fun rememberTextInputAnchorFromFocus(
+        source: AccessibilitySourceSnapshot,
+        packageName: String?
+    ) {
+        val target = source.toTextTarget(packageName)
+            ?.copy(resolution = "a11y_focus_text_anchor")
+            ?: return
+        val nowMs = System.currentTimeMillis()
+        synchronized(recordingLock) {
+            val existing = textInputAnchor
+            if (existing != null && !existing.isCoordinateOnlyTextAnchor()) return@synchronized
+            textInputAnchor = TextInputAnchor(
+                id = existing?.id ?: listOf(
+                    A11Y_TEXT_FOCUS_BACKEND,
+                    nowMs,
+                    target.bounds.left,
+                    target.bounds.top,
+                    target.bounds.right,
+                    target.bounds.bottom
+                ).joinToString("|"),
+                backend = existing?.backend ?: A11Y_TEXT_FOCUS_BACKEND,
+                beforeXml = existing?.beforeXml ?: lastXmlSnapshot,
+                beforeScreenshot = existing?.beforeScreenshot ?: lastScreenshotSnapshot,
+                target = target,
+                x = target.bounds.centerX().toFloat(),
+                y = target.bounds.centerY().toFloat(),
+                startedAtMs = existing?.startedAtMs ?: nowMs,
+                finishedAtMs = nowMs
+            )
+        }
+    }
+
     private fun clearTextInputAnchor() {
         synchronized(recordingLock) {
             textInputAnchor = null
@@ -1534,6 +1702,7 @@ class ManualVlmTraceRecorder(
         return when (backend) {
             OVERLAY_TOUCH_BACKEND -> OVERLAY_TOUCH_TEXT_INPUT_BACKEND
             RAW_TOUCH_BACKEND -> RAW_TOUCH_TEXT_INPUT_BACKEND
+            A11Y_TEXT_FOCUS_BACKEND -> A11Y_TEXT_INPUT_BACKEND
             else -> REAL_TOUCH_TEXT_INPUT_BACKEND
         }
     }
@@ -1928,22 +2097,21 @@ class ManualVlmTraceRecorder(
     private fun eventContextFor(
         event: AccessibilityEvent,
         target: ManualEventTarget,
-        sourceNode: AccessibilityNodeInfo? = null,
+        sourceSnapshot: AccessibilitySourceSnapshot? = null,
         clickInference: Map<String, Any?> = emptyMap()
     ): Map<String, Any?> {
-        val source = sourceNode ?: runCatching { event.source }.getOrNull()
         return linkedMapOf<String, Any?>(
             "event_type" to eventTypeName(event.eventType),
             "event_package" to event.packageName?.toString(),
             "event_class" to event.className?.toString(),
             "event_text" to event.text.joinToString(" ").take(120).ifBlank { null },
             "event_time_ms" to event.eventTime,
-            "event_has_source" to (source != null),
-            "source_class" to source?.className?.toString(),
-            "source_view_id" to source?.viewIdResourceName,
-            "source_text" to source?.text?.toString()?.take(120),
-            "source_content_description" to source?.contentDescription?.toString()?.take(120),
-            "source_bounds" to source?.boundsInScreenOrNull()?.let(::boundsString),
+            "event_has_source" to (sourceSnapshot != null),
+            "source_class" to sourceSnapshot?.className,
+            "source_view_id" to sourceSnapshot?.viewIdResourceName,
+            "source_text" to sourceSnapshot?.text?.take(120),
+            "source_content_description" to sourceSnapshot?.contentDescription?.take(120),
+            "source_bounds" to sourceSnapshot?.bounds?.let(::boundsString),
             "scroll_x" to event.scrollX,
             "scroll_y" to event.scrollY,
             "scroll_delta_x" to event.scrollDeltaX,
@@ -2019,10 +2187,10 @@ class ManualVlmTraceRecorder(
     private fun textInputEventContextFor(
         event: AccessibilityEvent,
         target: ManualEventTarget,
-        sourceNode: AccessibilityNodeInfo?,
+        sourceSnapshot: AccessibilitySourceSnapshot?,
         anchor: TextInputAnchor
     ): Map<String, Any?> {
-        return eventContextFor(event, target, sourceNode) + linkedMapOf(
+        return eventContextFor(event, target, sourceSnapshot) + linkedMapOf(
             "input_anchor" to anchor.asMap()
         )
     }
@@ -2184,7 +2352,7 @@ class ManualVlmTraceRecorder(
                 "raw_touch_required" to false,
                 "a11_replay_actions_enabled" to false,
                 "a11_text_input_enabled" to true,
-                "a11_text_input_requires_real_touch_anchor" to true,
+                "a11_text_input_anchor_policy" to "real_touch_or_text_focus",
                 "a11_post_input_click_enabled" to true,
                 "action_count" to recordedActions.size,
                 "overlay_action_count" to overlayActions,
@@ -2268,6 +2436,17 @@ class ManualVlmTraceRecorder(
         val inputPackageName: String?,
         val openedAtMs: Long,
         val expiresAtMs: Long
+    )
+
+    private data class AccessibilitySourceSnapshot(
+        val bounds: Rect?,
+        val packageName: String?,
+        val className: String?,
+        val text: String?,
+        val hintText: String?,
+        val contentDescription: String?,
+        val viewIdResourceName: String?,
+        val isPassword: Boolean
     )
 
     private data class TextInputAnchor(
@@ -2362,6 +2541,8 @@ class ManualVlmTraceRecorder(
         private const val OVERLAY_TOUCH_BACKEND = "overlay_touch"
         private const val OVERLAY_TOUCH_TEXT_INPUT_BACKEND = "overlay_touch_text_input"
         private const val A11Y_POST_INPUT_BACKEND = "a11y_post_input"
+        private const val A11Y_TEXT_FOCUS_BACKEND = "a11y_text_focus"
+        private const val A11Y_TEXT_INPUT_BACKEND = "a11y_text_input"
         private const val SCREEN_ABSOLUTE_COORDINATE_SPACE = "screen_absolute_px"
         private const val SYNTHETIC_REPLAY_EXECUTION_MODE = "synthetic_replay"
         private const val A11Y_ANCHORED_EXECUTION_MODE = "a11y_event_anchored"
@@ -2373,6 +2554,9 @@ class ManualVlmTraceRecorder(
         private const val OVERLAY_SWIPE_MIN_DURATION_MS = 120L
         private const val OVERLAY_SWIPE_MIN_DISTANCE_PX = 16f
         private const val OVERLAY_CLICK_REPLAY_TIMEOUT_MS = 500L
+        private const val OVERLAY_REPLAY_LAYOUT_SETTLE_MS = 24L
+        private const val OVERLAY_CLICK_REPLAY_PASSTHROUGH_MS = 220L
+        private const val OVERLAY_REPLAY_PASSTHROUGH_GRACE_MS = 180L
         private const val DISPATCH_STATUS_COMPLETED = "dispatch_completed"
         private const val DISPATCH_STATUS_TIMEOUT = "dispatch_timeout"
         private const val DISPATCH_STATUS_CANCELLED = "dispatch_cancelled"

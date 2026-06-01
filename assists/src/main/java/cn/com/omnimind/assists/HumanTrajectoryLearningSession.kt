@@ -73,6 +73,7 @@ data class HumanTrajectoryLearningStatus(
  */
 object HumanTrajectoryLearningSession {
     private const val TAG = "HumanTrajectoryLearningSession"
+    private const val SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML = "coordinate_only_no_xml"
 
     private data class ActiveSession(
         val context: Context,
@@ -247,14 +248,21 @@ object HumanTrajectoryLearningSession {
 
     suspend fun recordOverlayGesture(
         gesture: ManualOverlayTouchGesture,
-        onGestureDispatched: suspend (mayOpenIme: Boolean) -> Unit = {}
+        onGestureReplayStarted: suspend (mayOpenIme: Boolean, passthroughMs: Long) -> Unit = { _, _ -> },
+        onGestureReplayFinished: suspend (mayOpenIme: Boolean) -> Unit = {}
     ): ManualOverlayGestureReplayResult {
         val session = synchronized(lock) { activeSession }
             ?: return ManualOverlayGestureReplayResult(executed = false)
         if (synchronized(lock) { activePaused }) {
             return ManualOverlayGestureReplayResult(executed = false)
         }
-        return runCatching { session.recorder.recordOverlayGesture(gesture, onGestureDispatched) }
+        return runCatching {
+            session.recorder.recordOverlayGesture(
+                gesture = gesture,
+                onGestureReplayStarted = onGestureReplayStarted,
+                onGestureReplayFinished = onGestureReplayFinished
+            )
+        }
             .getOrElse { error ->
                 OmniLog.w(TAG, "manual overlay gesture failed: ${error.message}")
                 ManualOverlayGestureReplayResult(executed = false)
@@ -262,11 +270,18 @@ object HumanTrajectoryLearningSession {
     }
 
     fun completeActive(): Boolean {
+        val completeStartedAtMs = System.currentTimeMillis()
         val session = synchronized(lock) {
             activePaused = false
             activeSession.also { activeSession = null }
         } ?: return false
-        val trace = runCatching { session.recorder.stop() }
+        var stopMs = 0L
+        val trace = runCatching {
+            val startedAtMs = System.currentTimeMillis()
+            session.recorder.stop().also {
+                stopMs = System.currentTimeMillis() - startedAtMs
+            }
+        }
             .getOrElse { error ->
                 InternalRunLogStore.finishRun(
                     context = session.context,
@@ -276,48 +291,86 @@ object HumanTrajectoryLearningSession {
                     errorMessage = error.message.orEmpty()
                 )
                 session.result.complete(
-                HumanTrajectoryLearningResult(
-                    success = false,
-                    runId = session.runId,
-                    name = session.name,
-                    description = session.description,
-                    actionCount = 0,
-                    summary = "",
-                    errorMessage = error.message.orEmpty(),
-                    actions = emptyList()
-                )
+                    HumanTrajectoryLearningResult(
+                        success = false,
+                        runId = session.runId,
+                        name = session.name,
+                        description = session.description,
+                        actionCount = 0,
+                        summary = "",
+                        errorMessage = error.message.orEmpty(),
+                        actions = emptyList()
+                    )
                 )
                 OmniLog.w(TAG, "human trajectory learning failed: ${error.message}")
                 return true
             }
 
-        val cards = trace.actions.mapIndexed { index, action ->
-            buildRunLogCard(session.runId, index + 1, action)
-        }
-        if (cards.isNotEmpty()) {
-            InternalRunLogStore.appendCards(session.context, session.runId, cards)
-        }
-        if (trace.diagnostics.isNotEmpty()) {
-            InternalRunLogStore.updateDiagnostics(
-                context = session.context,
-                runId = session.runId,
-                diagnostics = trace.diagnostics
-            )
+        var buildCardsMs = 0L
+        var appendCardsMs = 0L
+        var diagnosticsMs = 0L
+        var finishRunMs = 0L
+        val persisted = runCatching {
+            val buildStartedAtMs = System.currentTimeMillis()
+            val cards = trace.actions.mapIndexed { index, action ->
+                buildRunLogCard(session.runId, index + 1, action)
+            }
+            buildCardsMs = System.currentTimeMillis() - buildStartedAtMs
+            if (cards.isNotEmpty()) {
+                val appendStartedAtMs = System.currentTimeMillis()
+                InternalRunLogStore.appendCards(
+                    context = session.context,
+                    runId = session.runId,
+                    cards = cards,
+                    saveSnapshot = false
+                )
+                appendCardsMs = System.currentTimeMillis() - appendStartedAtMs
+            }
+            if (trace.diagnostics.isNotEmpty()) {
+                val diagnosticsStartedAtMs = System.currentTimeMillis()
+                InternalRunLogStore.updateDiagnostics(
+                    context = session.context,
+                    runId = session.runId,
+                    diagnostics = trace.diagnostics,
+                    saveSnapshot = false
+                )
+                diagnosticsMs = System.currentTimeMillis() - diagnosticsStartedAtMs
+            }
+            cards.size
         }
         val hasActions = trace.actions.isNotEmpty()
-        val success = hasActions
-        val doneReason = if (success) "user_completed" else "empty_recording"
+        val success = hasActions && persisted.isSuccess
+        val doneReason = when {
+            persisted.isFailure -> "runlog_persist_failed"
+            success -> "user_completed"
+            else -> "empty_recording"
+        }
         val errorMessage = when {
+            persisted.isFailure -> "RunLog 保存失败：${persisted.exceptionOrNull()?.message.orEmpty()}"
             !hasActions -> "未记录到可复用的人类操作"
             else -> null
         }
-        InternalRunLogStore.finishRun(
-            context = session.context,
-            runId = session.runId,
-            success = success,
-            doneReason = doneReason,
-            errorMessage = errorMessage
-        )
+        val finishStartedAtMs = System.currentTimeMillis()
+        runCatching {
+            InternalRunLogStore.finishRun(
+                context = session.context,
+                runId = session.runId,
+                success = success,
+                doneReason = doneReason,
+                errorMessage = errorMessage
+            )
+        }.onFailure { error ->
+            OmniLog.w(TAG, "finish human trajectory run failed: ${session.runId}, ${error.message}")
+        }
+        finishRunMs = System.currentTimeMillis() - finishStartedAtMs
+        val diagnostics = if (persisted.isFailure) {
+            trace.diagnostics + linkedMapOf(
+                "runlog_persist_error" to persisted.exceptionOrNull()?.message.orEmpty(),
+                "runlog_persist_error_type" to persisted.exceptionOrNull()?.javaClass?.name.orEmpty()
+            )
+        } else {
+            trace.diagnostics
+        }
         session.result.complete(
             HumanTrajectoryLearningResult(
                 success = success,
@@ -328,10 +381,26 @@ object HumanTrajectoryLearningSession {
                 summary = trace.summary,
                 errorMessage = errorMessage.orEmpty(),
                 actions = trace.actions,
-                diagnostics = trace.diagnostics
+                diagnostics = diagnostics
             )
         )
-        OmniLog.d(TAG, "human trajectory learning completed: ${session.runId} actions=${trace.actionCount}")
+        if (success) {
+            OmniLog.d(
+                TAG,
+                "human trajectory learning completed: ${session.runId} actions=${trace.actionCount} " +
+                    "cards=${persisted.getOrNull()} stop_ms=$stopMs build_cards_ms=$buildCardsMs " +
+                    "append_cards_ms=$appendCardsMs diagnostics_ms=$diagnosticsMs finish_run_ms=$finishRunMs " +
+                    "total_ms=${System.currentTimeMillis() - completeStartedAtMs}"
+            )
+        } else {
+            OmniLog.w(
+                TAG,
+                "human trajectory learning completed with failure: ${session.runId} actions=${trace.actionCount} " +
+                    "reason=$doneReason error=${errorMessage.orEmpty()} stop_ms=$stopMs build_cards_ms=$buildCardsMs " +
+                    "append_cards_ms=$appendCardsMs diagnostics_ms=$diagnosticsMs finish_run_ms=$finishRunMs " +
+                    "total_ms=${System.currentTimeMillis() - completeStartedAtMs}"
+            )
+        }
         return true
     }
 
@@ -409,8 +478,7 @@ object HumanTrajectoryLearningSession {
             "result" to linkedMapOf(
                 "message" to action.summary,
                 "summary" to action.summary,
-                "source" to "human_trajectory",
-                "source_context" to sourceContext.takeIf { it.isNotEmpty() }
+                "source" to "human_trajectory"
             ),
             "before" to linkedMapOf(
                 "observation_xml" to action.beforeXml,
@@ -429,7 +497,7 @@ object HumanTrajectoryLearningSession {
     }
 
     private fun sourceContextForAction(action: ManualVlmRecordedAction): Map<String, Any?> {
-        val beforeXml = action.beforeXml?.takeIf { it.isNotBlank() } ?: return emptyMap()
+        val beforeXml = action.beforeXml?.takeIf { it.isNotBlank() }
         val recordingBackend = action.params["recording_backend"]?.toString()
             ?.takeIf { it.isNotBlank() }
             ?: "unknown"
@@ -443,6 +511,7 @@ object HumanTrajectoryLearningSession {
             "screenshot_path" to action.afterScreenshot?.path,
             "package_name" to action.packageName
         ).filterValues { it != null && it.toString().isNotBlank() }
+        val coordinateOnlyWithoutXml = beforeXml.isNullOrBlank() && hasCoordinateEvidence(actionMap)
         return linkedMapOf(
             "src_ctx" to linkedMapOf(
                 "page" to beforeXml,
@@ -457,9 +526,25 @@ object HumanTrajectoryLearningSession {
                 "mode" to "manual_operation_recording",
                 "recording_backend" to recordingBackend,
                 "action_source" to recordingBackend,
+                "source_context_mode" to SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML.takeIf {
+                    coordinateOnlyWithoutXml
+                },
+                "missing_source_xml" to true.takeIf { coordinateOnlyWithoutXml },
                 "event_context" to action.eventContext.takeIf { it.isNotEmpty() }
             ).filterValues { it != null }
         ).filterValues { it != null }
     }
+
+    private fun hasCoordinateEvidence(action: Map<String, Any?>): Boolean {
+        val hasPoint = action["x"].isPresent() && action["y"].isPresent()
+        val hasSwipe = action["x1"].isPresent() &&
+            action["y1"].isPresent() &&
+            action["x2"].isPresent() &&
+            action["y2"].isPresent()
+        return hasPoint || hasSwipe
+    }
+
+    private fun Any?.isPresent(): Boolean =
+        this != null && this.toString().trim().isNotEmpty()
 
 }
