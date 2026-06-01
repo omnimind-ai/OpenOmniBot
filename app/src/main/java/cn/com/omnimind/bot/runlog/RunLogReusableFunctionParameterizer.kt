@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
 import cn.com.omnimind.bot.runlog.OobActionCodec.listArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.mapArg
 
 /**
  * Builds reusable Function parameters and canonical action specs from compiled replay steps.
@@ -160,7 +161,7 @@ object RunLogReusableFunctionParameterizer {
         val args = OobActionCodec.argsForStep(step)
         val action = OobActionCodec.actionNameForStep(step)
         val description = firstNonBlank(step["title"], step["summary"]).takeIf { it.isNotBlank() }
-        val sourceContext = asMap(step["source_context"]).ifEmpty { asMap(args["source_context"]) }
+        val sourceContext = mapArg(step["source_context"]).ifEmpty { mapArg(args["source_context"]) }
         return when {
             action == "click" -> canonicalPointAction(
                 type = "click",
@@ -255,7 +256,7 @@ object RunLogReusableFunctionParameterizer {
                         "node_id" to firstNonBlank(args["node_id"], args["nodeId"]),
                         "function_name" to functionId,
                         "function_id" to functionId,
-                        "arguments" to asMap(args["arguments"]).ifEmpty { asMap(args["args"]) },
+                        "arguments" to mapArg(args["arguments"]).ifEmpty { mapArg(args["args"]) },
                     ),
                     "description" to description,
                 )
@@ -388,11 +389,6 @@ object RunLogReusableFunctionParameterizer {
             suffix += 1
         }
         return "${normalized}_$suffix"
-    }
-
-    private fun asMap(value: Any?): Map<String, Any?> {
-        if (value !is Map<*, *>) return emptyMap()
-        return value.entries.associate { (key, item) -> key.toString() to item }
     }
 
     private fun firstPresent(vararg values: Any?): Any? {

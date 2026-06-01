@@ -170,7 +170,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   and cleanup services should call it instead of adding private
   `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg` copies when
   behavior is equivalent. Prefer direct calls or member imports from
-  `OobActionCodec`; do not add one-line local forwarding helpers.
+  `OobActionCodec`; do not add one-line local forwarding helpers. In
+  particular, schema projection and Function parameterization should not carry
+  private `boolArg`/`asMap` equivalents.
 - Keep generic Function payload coercion in `OobFunctionJson`. Function
   register/update/run/recall services, Function replay argument compatibility,
   and Function run-result timing payload merge should use it instead of adding

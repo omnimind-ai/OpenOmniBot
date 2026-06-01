@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.boolArg
 import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
 import cn.com.omnimind.bot.runlog.OobActionCodec.listArg
 import cn.com.omnimind.bot.runlog.OobActionCodec.mapArg
@@ -391,15 +392,6 @@ object OobFunctionSchemaBuilder {
             "array", "object" -> type.lowercase()
             else -> "string"
         }
-
-    private fun boolArg(value: Any?): Boolean {
-        return when (value) {
-            is Boolean -> value
-            is String -> value.trim().equals("true", ignoreCase = true)
-            is Number -> value.toInt() != 0
-            else -> false
-        }
-    }
 
     private fun MutableMap<String, Any?>.putFirstPresent(key: String, vararg values: Any?) {
         values.firstOrNull { value ->
