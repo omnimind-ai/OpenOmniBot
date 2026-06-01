@@ -50,7 +50,7 @@ data class OmniflowCheckerRule(
 
         // ── Actions ─────────────────────────────────────────────────────────
         /** Launch the expected app (params: package_name overrides step inference). */
-        const val ACTION_OPEN_APP = "open_app"
+        const val ACTION_OPEN_APP = OobActionCodec.ACTION_OPEN_APP
         /** Dismiss the blocking overlay by clicking its best dismiss candidate. */
         const val ACTION_DISMISS = "dismiss"
         /** Hide the soft keyboard. */

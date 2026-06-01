@@ -141,7 +141,7 @@ class OobFunctionSpecBuilder {
             if (firstNonBlank(raw["function_id"], raw["functionId"]).isNotBlank()) {
                 RunLogReplayPolicy.TOOL_CALL_TOOL
             } else {
-                "finished"
+                OobActionCodec.ACTION_FINISHED
             }
         }
         val normalizedTool = RunLogReplayPolicy.normalizeToolName(rawTool)
@@ -249,11 +249,11 @@ class OobFunctionSpecBuilder {
         ) {
             putIfPresent(args, "content", raw["input_text"], raw["inputText"])
         }
-        if (action == "open_app" && args["reset_task"] == null) {
+        if (action == OobActionCodec.ACTION_OPEN_APP && args["reset_task"] == null) {
             args["reset_task"] = true
             args["launch_mode"] = firstNonBlank(args["launch_mode"], "fresh_task")
         }
-        if (action == "finished" && args.isEmpty()) {
+        if (action == OobActionCodec.ACTION_FINISHED && args.isEmpty()) {
             args["content"] = firstNonBlank(raw["content"], raw["summary"], "Done")
         }
         return OobActionCodec.argsForStep(

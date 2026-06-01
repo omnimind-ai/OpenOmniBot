@@ -114,7 +114,7 @@ internal object RunLogStartupBridgeCleaner {
         if (steps.isEmpty()) return steps
         val first = steps.first()
         val firstAction = replayActionForStep(first)
-        if (firstAction != "open_app") return steps
+        if (firstAction != OobActionCodec.ACTION_OPEN_APP) return steps
         val args = asMap(first["args"])
         val packageName = firstNonBlank(args["package_name"], args["packageName"])
         if (!isLaunchableInitialPackageCandidate(packageName)) return steps

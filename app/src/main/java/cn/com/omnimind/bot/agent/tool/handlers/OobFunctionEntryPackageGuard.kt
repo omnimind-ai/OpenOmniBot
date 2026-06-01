@@ -21,7 +21,7 @@ class OobFunctionEntryPackageGuard {
         }.getOrDefault("")
         if (currentPackage.isBlank() || currentPackage == entryPackage) return
         val firstAction = OmniflowStepExecutor.actionNameForStep(steps.first())
-        if (firstAction == "open_app") return
+        if (firstAction == OobActionCodec.ACTION_OPEN_APP) return
 
         OmniLog.d(TAG, "global open_app: current=$currentPackage expected=$entryPackage")
         runCatching {
@@ -37,7 +37,7 @@ class OobFunctionEntryPackageGuard {
 
     private fun entryPackageForSteps(steps: List<Map<String, Any?>>): String {
         for (step in steps) {
-            if (OmniflowStepExecutor.actionNameForStep(step) == "open_app") {
+            if (OmniflowStepExecutor.actionNameForStep(step) == OobActionCodec.ACTION_OPEN_APP) {
                 val args = mapArg(step["args"])
                 val pkg = firstNonBlank(args["package_name"], args["packageName"])
                 if (pkg.isNotBlank()) return pkg
