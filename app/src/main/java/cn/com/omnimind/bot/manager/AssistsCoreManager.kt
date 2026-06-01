@@ -468,7 +468,7 @@ internal fun isOobReusableFunctionPendingAgentStep(step: Map<*, *>): Boolean {
     return step["needs_agent"] == true ||
         (step["fallback_available"] == true && step["executor"]?.toString() == "agent") ||
         step["blocked_executor"]?.toString() == "tool" ||
-        step["blocked_executor"]?.toString() == "omniflow"
+        step["blocked_executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_OMNIFLOW
 }
 
 internal fun buildOobReusableFunctionAgentFallbackPayload(
@@ -6650,7 +6650,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
             when {
                 done -> lines += "$num. [已完成] $title"
-                executor == "omniflow" -> {
+                executor == RunLogReplayPolicy.EXECUTOR_OMNIFLOW -> {
                     val action = step["omniflow_action"]?.toString()
                         ?: step["tool"]?.toString() ?: "?"
                     val args = step["args"]

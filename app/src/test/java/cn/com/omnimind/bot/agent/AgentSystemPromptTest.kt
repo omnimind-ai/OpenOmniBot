@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent
 
 import cn.com.omnimind.baselib.i18n.PromptLocale
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertFalse
@@ -130,7 +131,7 @@ class AgentSystemPromptTest {
 
         assertTrue(prompt.contains("oob-function-management"))
         assertTrue(prompt.contains("Register The Previous RunLog"))
-        assertTrue(prompt.contains("oob_run_log_convert"))
+        assertTrue(prompt.contains(OobFunctionToolNames.RUN_LOG_CONVERT))
         assertTrue(prompt.contains("function_management tool profile"))
         assertTrue(prompt.contains("Workspace 记忆上下文"))
         assertTrue(prompt.contains("已安装 skills"))
@@ -160,13 +161,14 @@ class AgentSystemPromptTest {
             memoryContext = null,
             activeWorkbenchProjectContext = null,
             workbenchDisplayLayoutContext = null,
-            oobFunctionCandidateContext = "当前可复用的 OmniFlow Functions：\n- 高置信匹配时用 `oob_function_run`\n- `order_food` 点外卖",
+            oobFunctionCandidateContext =
+                "当前可复用的 OmniFlow Functions：\n- 高置信匹配时用 `${OobFunctionToolNames.FUNCTION_RUN}`\n- `order_food` 点外卖",
             locale = PromptLocale.ZH_CN
         )
 
         assertTrue(prompt.contains("当前可复用的 OmniFlow Functions"))
         assertTrue(prompt.contains("order_food"))
-        assertTrue(prompt.contains("oob_function_run"))
+        assertTrue(prompt.contains(OobFunctionToolNames.FUNCTION_RUN))
     }
 
     @Test

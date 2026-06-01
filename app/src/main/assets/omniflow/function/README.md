@@ -611,7 +611,8 @@ Use these owner rules when removing duplicated helper code:
   constants instead of local string literals for `omniflow`, `tool`, or `agent`.
   This applies to generated step specs, result payloads that report the
   executor category, runtime comparisons, and deterministic replay markers such
-  as `coordinate_hook`. Diagnostic labels such as
+  as `coordinate_hook`. Replay-engine markers such as `omniflow_utg` belong in
+  the same policy object when runtime checks depend on them. Diagnostic labels such as
   `agent_tool`, `omniflow_graph`, `omniflow_function`, or
   `omniflow_vlm_fallback` are not executor categories and should stay local to
   the component that emits them.

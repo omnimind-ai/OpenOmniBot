@@ -19,6 +19,7 @@ object RunLogReplayPolicy {
     const val EXECUTOR_OMNIFLOW: String = "omniflow"
     const val EXECUTOR_AGENT: String = "agent"
     const val EXECUTOR_TOOL: String = "tool"
+    const val REPLAY_ENGINE_OMNIFLOW_UTG: String = "omniflow_utg"
     const val TOOL_AGENT_RUN: String = "oob.agent.run"
     const val TOOL_CALL_TOOL: String = "call_tool"
     const val TOOL_OOB_TOOL_CALL: String = "oob_tool_call"

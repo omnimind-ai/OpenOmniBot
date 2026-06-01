@@ -146,7 +146,7 @@ class McpToolDefinitionsTest {
     @Test
     fun vlmTaskToolExposesDirectAndroidWorldControls() {
         val tool = McpToolDefinitions.fixedTools.single {
-            it["name"] == "vlm_task"
+            it["name"] == AgentToolNames.VLM_TASK
         }
         val schema = tool["inputSchema"] as Map<*, *>
         val properties = schema["properties"] as Map<*, *>

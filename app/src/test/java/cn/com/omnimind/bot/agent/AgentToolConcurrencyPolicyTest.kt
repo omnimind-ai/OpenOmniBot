@@ -69,22 +69,22 @@ class AgentToolConcurrencyPolicyTest {
         val noAction = buildJsonObject { }
         assertEquals(
             ToolConcurrency.PARALLEL_SAFE,
-            AgentToolConcurrencyPolicy.classify("browser_use", readAction)
+            AgentToolConcurrencyPolicy.classify(AgentToolNames.BROWSER_USE, readAction)
         )
         assertEquals(
             ToolConcurrency.PARALLEL_SAFE,
             AgentToolConcurrencyPolicy.classify(
-                "browser_use",
+                AgentToolNames.BROWSER_USE,
                 buildJsonObject { put("action", "screenshot") }
             )
         )
         assertEquals(
             ToolConcurrency.SERIAL_BARRIER,
-            AgentToolConcurrencyPolicy.classify("browser_use", writeAction)
+            AgentToolConcurrencyPolicy.classify(AgentToolNames.BROWSER_USE, writeAction)
         )
         assertEquals(
             ToolConcurrency.SERIAL_BARRIER,
-            AgentToolConcurrencyPolicy.classify("browser_use", noAction)
+            AgentToolConcurrencyPolicy.classify(AgentToolNames.BROWSER_USE, noAction)
         )
     }
 

@@ -36,7 +36,7 @@ class SubagentProfileRegistryTest {
     fun `no profile exposes privileged or terminal tools`() {
         val forbidden = listOf(
             "terminal_execute",
-            "android_privileged_action",
+            AgentToolNames.ANDROID_PRIVILEGED_ACTION,
             "android_privileged_session_start",
             "android_privileged_session_exec",
             "android_privileged_session_read",
@@ -94,7 +94,7 @@ class SubagentProfileRegistryTest {
         assertTrue("file_list" in explorer.allowedTools)
         assertTrue("memory_search" in explorer.allowedTools)
         assertTrue("memory_load" in explorer.allowedTools)
-        assertTrue("browser_use" in explorer.allowedTools)
+        assertTrue(AgentToolNames.BROWSER_USE in explorer.allowedTools)
         // 不允许:写文件 / 写记忆
         assertFalse("file_write" in explorer.allowedTools)
         assertFalse("file_edit" in explorer.allowedTools)
@@ -112,9 +112,9 @@ class SubagentProfileRegistryTest {
         assertTrue("file_move" in general.allowedTools)
         assertTrue("memory_upsert_longterm" in general.allowedTools)
         assertTrue("memory_write_daily" in general.allowedTools)
-        assertTrue("vlm_task" in general.allowedTools)
+        assertTrue(AgentToolNames.VLM_TASK in general.allowedTools)
         assertTrue("music_playback_control" in general.allowedTools)
-        assertTrue("browser_use" in general.allowedTools)
+        assertTrue(AgentToolNames.BROWSER_USE in general.allowedTools)
     }
 
     @Test
@@ -122,7 +122,7 @@ class SubagentProfileRegistryTest {
         val general = SubagentProfileRegistry.get("general")
         assertFalse("subagent_dispatch" in general.allowedTools)
         assertFalse("terminal_execute" in general.allowedTools)
-        assertFalse("android_privileged_action" in general.allowedTools)
+        assertFalse(AgentToolNames.ANDROID_PRIVILEGED_ACTION in general.allowedTools)
         assertFalse("file_delete" in general.allowedTools)
         // 调度类:只读允许,写入不允许(留给主 Agent 显式审批)
         assertTrue("schedule_task_list" in general.allowedTools)
@@ -169,7 +169,7 @@ class SubagentProfileRegistryTest {
         // file_write 不再 forbidden(general 允许写),仅保留真正系统不变量
         assertTrue(SubagentProfileRegistry.isForbidden("subagent_dispatch"))
         assertTrue(SubagentProfileRegistry.isForbidden("terminal_execute"))
-        assertTrue(SubagentProfileRegistry.isForbidden("android_privileged_action"))
+        assertTrue(SubagentProfileRegistry.isForbidden(AgentToolNames.ANDROID_PRIVILEGED_ACTION))
         assertTrue(SubagentProfileRegistry.isForbidden("file_delete"))
         // file_write / file_edit / memory_search 现在不在 FORBIDDEN 里
         assertFalse(SubagentProfileRegistry.isForbidden("file_write"))

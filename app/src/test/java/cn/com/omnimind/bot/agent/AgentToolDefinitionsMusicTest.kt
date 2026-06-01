@@ -37,7 +37,7 @@ class AgentToolDefinitionsMusicTest {
                     ?.contentOrNull)
             }
 
-        assertTrue(toolNames.contains("web_search"))
+        assertTrue(toolNames.contains(AgentToolNames.WEB_SEARCH))
     }
 
     @Test
@@ -111,7 +111,7 @@ class AgentToolDefinitionsMusicTest {
                 ((definition["function"] as? JsonObject)
                     ?.get("name")
                     ?.jsonPrimitive
-                    ?.contentOrNull) == "vlm_task"
+                    ?.contentOrNull) == AgentToolNames.VLM_TASK
             }
         val function = vlmTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
@@ -220,7 +220,7 @@ class AgentToolDefinitionsMusicTest {
     @Test
     fun `english browser tool metadata is localized`() {
         val browserTool = AgentToolDefinitions.staticTools(PromptLocale.EN_US)
-            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "browser_use" }
+            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == AgentToolNames.BROWSER_USE }
         val function = browserTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
         val properties = parameters["properties"] as JsonObject
@@ -240,7 +240,7 @@ class AgentToolDefinitionsMusicTest {
     @Test
     fun `english web search metadata is localized`() {
         val webSearchTool = AgentToolDefinitions.staticTools(PromptLocale.EN_US)
-            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "web_search" }
+            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == AgentToolNames.WEB_SEARCH }
         val function = webSearchTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
         val properties = parameters["properties"] as JsonObject
@@ -257,7 +257,7 @@ class AgentToolDefinitionsMusicTest {
     @Test
     fun `browser get cookies keywords schema declares a concrete type`() {
         val browserTool = AgentToolDefinitions.staticTools(PromptLocale.ZH_CN)
-            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == "browser_use" }
+            .first { ((it["function"] as JsonObject)["name"]?.jsonPrimitive?.contentOrNull) == AgentToolNames.BROWSER_USE }
         val function = browserTool["function"] as JsonObject
         val parameters = function["parameters"] as JsonObject
         val properties = parameters["properties"] as JsonObject

@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.manager
 
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import cn.com.omnimind.bot.vlm.VlmToolOutcome
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
 import org.junit.Assert.assertEquals
@@ -188,7 +189,15 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
             )
         )
         assertTrue(isOobReusableFunctionPendingAgentStep(mapOf("blocked_executor" to "tool")))
-        assertTrue(isOobReusableFunctionPendingAgentStep(mapOf("blocked_executor" to "omniflow")))
-        assertFalse(isOobReusableFunctionPendingAgentStep(mapOf("executor" to "omniflow")))
+        assertTrue(
+            isOobReusableFunctionPendingAgentStep(
+                mapOf("blocked_executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW)
+            )
+        )
+        assertFalse(
+            isOobReusableFunctionPendingAgentStep(
+                mapOf("executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW)
+            )
+        )
     }
 }

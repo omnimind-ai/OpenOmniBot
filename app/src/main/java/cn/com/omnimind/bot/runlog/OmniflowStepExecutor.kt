@@ -428,7 +428,7 @@ object OmniflowStepExecutor {
         val replayEngine = step["replay_engine"]?.toString()?.trim()?.lowercase().orEmpty()
         return coordinateHook == RunLogReplayPolicy.EXECUTOR_OMNIFLOW ||
             step["omniflow"] == true ||
-            replayEngine == "omniflow_utg"
+            replayEngine == RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG
     }
 
     private fun numberArg(args: Map<String, Any?>, vararg keys: String): Number? {

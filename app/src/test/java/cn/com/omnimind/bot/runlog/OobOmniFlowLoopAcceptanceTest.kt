@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import java.io.File
@@ -140,7 +141,7 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val metadata = function["metadata"] as Map<*, *>
             val audit = metadata["oob_function_update"] as Map<*, *>
-            assertEquals("update_function", audit["tool"])
+            assertEquals(OobFunctionToolNames.FUNCTION_UPDATE, audit["tool"])
             assertEquals("repair", audit["mode"])
         } finally {
             context.root.deleteRecursively()
@@ -175,7 +176,7 @@ class OobOmniFlowLoopAcceptanceTest {
                 runId = runId,
                 goal = "打开外卖入口",
                 source = "test",
-                toolName = "oob_function_run",
+                toolName = OobFunctionToolNames.FUNCTION_RUN,
             )
             InternalRunLogStore.appendCard(
                 context = context,
@@ -238,7 +239,7 @@ class OobOmniFlowLoopAcceptanceTest {
                 runId = runId,
                 goal = "打开外卖入口",
                 source = "test",
-                toolName = "oob_function_run",
+                toolName = OobFunctionToolNames.FUNCTION_RUN,
             )
             InternalRunLogStore.appendCard(
                 context = context,
@@ -1405,7 +1406,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val failedStep = fallbackContext["failed_step"] as? Map<*, *>
             assertEquals("tap_takeout_with_agent", failedStep?.get("step_id"))
             val returnInstruction = fallbackContext["return_instruction"] as? Map<*, *>
-            assertEquals("oob_function_run", returnInstruction?.get("tool"))
+            assertEquals(OobFunctionToolNames.FUNCTION_RUN, returnInstruction?.get("tool"))
             val returnArgs = returnInstruction?.get("args") as? Map<*, *>
             assertEquals(0, (returnArgs?.get("resume_from_step") as Number).toInt())
 
