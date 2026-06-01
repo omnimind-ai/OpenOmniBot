@@ -4,6 +4,7 @@ import android.content.Context
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentToolDefinitions
+import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.agent.config.AgentToolFeatureStore
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import kotlinx.serialization.json.JsonObject
@@ -182,22 +183,6 @@ object OobFunctionSkillProfile {
                 put("parameters", parameters)
             })
         }, locale)
-    }
-
-    private fun mapToJsonElement(value: Any?): kotlinx.serialization.json.JsonElement {
-        return when (value) {
-            null -> kotlinx.serialization.json.JsonNull
-            is kotlinx.serialization.json.JsonElement -> value
-            is Map<*, *> -> kotlinx.serialization.json.JsonObject(
-                value.entries.associate { (key, item) ->
-                    key.toString() to mapToJsonElement(item)
-                }
-            )
-            is List<*> -> kotlinx.serialization.json.JsonArray(value.map { mapToJsonElement(it) })
-            is Boolean -> JsonPrimitive(value)
-            is Number -> JsonPrimitive(value)
-            else -> JsonPrimitive(value.toString())
-        }
     }
 
     private val oobFunctionListTool: JsonObject = buildJsonObject {

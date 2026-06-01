@@ -365,25 +365,9 @@ class AgentToolRegistry(
                         }
                     )
                 )
-                put("parameters", mapToJsonElement(tool.inputSchema))
+                put("parameters", AgentToolJson.mapToJsonElement(tool.inputSchema))
             })
         }, locale)
-    }
-
-    private fun mapToJsonElement(value: Any?): JsonElement {
-        return when (value) {
-            null -> JsonNull
-            is JsonElement -> value
-            is Map<*, *> -> JsonObject(
-                value.entries.associate { (key, item) ->
-                    key.toString() to mapToJsonElement(item)
-                }
-            )
-            is List<*> -> JsonArray(value.map { mapToJsonElement(it) })
-            is Boolean -> JsonPrimitive(value)
-            is Number -> JsonPrimitive(value)
-            else -> JsonPrimitive(value.toString())
-        }
     }
 
     private companion object {

@@ -94,6 +94,14 @@ belong in UI documentation.
 - build compact prompt candidates for agent tool selection
 - never execute Functions or mutate Function specs
 
+`AgentToolJson` owns agent-facing JSON projection helpers:
+
+- convert Kotlin maps/lists/scalars into `JsonElement` for tool definitions and
+  tool payloads
+- support dynamic Function tool definitions, remote MCP tool schemas, and
+  runtime tool result payloads
+- stay policy-free; schema meaning and Function behavior belong to the caller
+
 `OobFunctionSchemaBuilder` owns model-tool schema projection:
 
 - convert reusable Function specs into JSON-schema shaped tool input contracts
@@ -471,6 +479,8 @@ Keep these pieces separate:
   alias adapter before dispatch into the Function/tool facade
 - `OobFunctionSkillProfile`: native Function-management skill profile,
   dynamic Function tool exposure, and compact prompt candidates
+- `AgentToolJson`: agent-facing map/list/scalar to `JsonElement` projection for
+  tool definitions and payloads
 - `OobFunctionSchemaBuilder`: Function spec projection into model-tool schemas
   and compatibility materialization for that projection
 - `OobOmniFlowToolkitService`: public tool facade and response shaping
@@ -524,6 +534,9 @@ Use these owner rules when removing duplicated helper code:
 - Runtime replay policy belongs in the replay components under
   `OobFunctionToolHandler`. Do not move skip/fallback/delegation/source
   alignment decisions into mechanical helper objects.
+- Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when
+  building tool definitions or serializing generic tool payloads, instead of
+  adding another local `mapToJsonElement` copy.
 
 Known helper exceptions that should not be force-merged without a semantic
 change:
@@ -540,7 +553,8 @@ change:
 - `OobUdegNodeStore` keeps some graph timestamp and graph-export sanitization
   helpers local because they normalize stored graph values, not just coerce
   Function or RunLog payloads.
-- `McpToolExecutors.boolArg` and `McpToolExecutors.boolArgOrDefault` read
+- `McpToolExecutors.intArg`, `McpToolExecutors.longArg`,
+  `McpToolExecutors.boolArg`, and `McpToolExecutors.boolArgOrDefault` read
   multi-key MCP argument aliases and defaults; keep them local unless a shared
   MCP argument adapter with identical semantics exists.
 - `McpRoutes.mapArg` and `McpRoutes.listArg` support legacy/debug HTTP route

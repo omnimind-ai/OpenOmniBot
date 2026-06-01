@@ -5,6 +5,7 @@ import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
+import cn.com.omnimind.bot.agent.AgentToolJson
 import cn.com.omnimind.bot.agent.AgentWorkspaceDescriptor
 import cn.com.omnimind.bot.agent.ArtifactAction
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
@@ -472,19 +473,7 @@ class SharedHelper(
     }
 
     fun mapToJsonElement(value: Any?): JsonElement {
-        return when (value) {
-            null -> JsonNull
-            is JsonElement -> value
-            is Map<*, *> -> JsonObject(
-                value.entries.associate { (key, item) ->
-                    key.toString() to mapToJsonElement(item)
-                }
-            )
-            is List<*> -> JsonArray(value.map { mapToJsonElement(it) })
-            is Boolean -> JsonPrimitive(value)
-            is Number -> JsonPrimitive(value)
-            else -> JsonPrimitive(value.toString())
-        }
+        return AgentToolJson.mapToJsonElement(value)
     }
 
     fun parseIntegerArray(raw: JsonArray?): List<Int> {
