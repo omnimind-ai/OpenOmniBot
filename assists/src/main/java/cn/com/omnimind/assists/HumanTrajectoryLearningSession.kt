@@ -197,7 +197,8 @@ object HumanTrajectoryLearningSession {
                     runId = runId,
                     success = false,
                     doneReason = "recorder_unavailable",
-                    errorMessage = "无障碍服务未就绪，无法学习轨迹"
+                    errorMessage = "无障碍服务未就绪，无法学习轨迹",
+                    saveSnapshot = false
                 )
                 deferred.completeExceptionally(
                     IllegalStateException("无障碍服务未就绪，无法学习轨迹")
@@ -288,7 +289,8 @@ object HumanTrajectoryLearningSession {
                     runId = session.runId,
                     success = false,
                     doneReason = "recording_failed",
-                    errorMessage = error.message.orEmpty()
+                    errorMessage = error.message.orEmpty(),
+                    saveSnapshot = false
                 )
                 session.result.complete(
                     HumanTrajectoryLearningResult(
@@ -357,7 +359,8 @@ object HumanTrajectoryLearningSession {
                 runId = session.runId,
                 success = success,
                 doneReason = doneReason,
-                errorMessage = errorMessage
+                errorMessage = errorMessage,
+                saveSnapshot = false
             )
         }.onFailure { error ->
             OmniLog.w(TAG, "finish human trajectory run failed: ${session.runId}, ${error.message}")
@@ -415,7 +418,8 @@ object HumanTrajectoryLearningSession {
             runId = session.runId,
             success = false,
             doneReason = "cancelled",
-            errorMessage = message
+            errorMessage = message,
+            saveSnapshot = false
         )
         session.result.complete(
             HumanTrajectoryLearningResult(

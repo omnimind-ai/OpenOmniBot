@@ -10,6 +10,7 @@ import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -429,7 +430,7 @@ class InternalRunLogStoreTest {
     }
 
     @Test
-    fun `timeline recovers event only cards before final snapshot`() {
+    fun `timeline recovers event only cards and finish without final snapshot`() {
         val context = TempFilesContext()
         try {
             val runId = "run-event-only-cards-${System.nanoTime()}"
@@ -473,7 +474,8 @@ class InternalRunLogStoreTest {
                 context = context,
                 runId = runId,
                 success = true,
-                doneReason = "user_completed"
+                doneReason = "user_completed",
+                saveSnapshot = false
             )
 
             val finishedTimeline = InternalRunLogStore.timelinePayload(context, runId)
@@ -482,6 +484,12 @@ class InternalRunLogStoreTest {
             assertEquals(2, finishedCards.size)
             assertEquals("success", finishedTimeline["run_status"])
             assertEquals("overlay_touch", diagnostics["recording_backend"])
+            val eventLog = File(finishedTimeline["event_log_path"]?.toString().orEmpty())
+            val snapshotFile = File(eventLog.absolutePath.removeSuffix(".events.ndjson") + ".json")
+            val snapshotJson = snapshotFile.readText()
+            assertFalse(snapshotJson.contains("card-1"))
+            assertFalse(snapshotJson.contains("user_completed"))
+            assertTrue(eventLog.readText().contains("\"event_type\":\"run_finished\""))
         } finally {
             context.root.deleteRecursively()
         }

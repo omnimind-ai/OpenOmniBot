@@ -252,7 +252,8 @@ object InternalRunLogStore {
         runId: String,
         success: Boolean,
         doneReason: String,
-        errorMessage: String? = null
+        errorMessage: String? = null,
+        saveSnapshot: Boolean = true
     ) {
         val normalizedRunId = runId.trim()
         if (normalizedRunId.isEmpty()) return
@@ -270,16 +271,18 @@ object InternalRunLogStore {
                 "error_message" to errorMessage.orEmpty()
             )
         )
-        saveRunLocked(
-            context,
-            record.copy(
-                finishedAtMs = finishedAtMs,
-                success = success,
-                doneReason = doneReason,
-                errorMessage = errorMessage.orEmpty(),
-                eventSeq = eventSeq
+        if (saveSnapshot) {
+            saveRunLocked(
+                context,
+                record.copy(
+                    finishedAtMs = finishedAtMs,
+                    success = success,
+                    doneReason = doneReason,
+                    errorMessage = errorMessage.orEmpty(),
+                    eventSeq = eventSeq
+                )
             )
-        )
+        }
         pruneLocked(context)
     }
 

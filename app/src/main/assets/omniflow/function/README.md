@@ -66,6 +66,17 @@ helper with mixed semantics.
 - return conversion diagnostics such as card count and compiled step count
 - delegate all Function persistence to `OobFunctionRepository`
 
+`InternalRunLogStore` owns native RunLog persistence:
+
+- append every durable run mutation to the per-run event log
+- save JSON snapshots only as a read-performance/cache artifact, not as the
+  source of truth for terminal run status
+- rebuild timeline payloads by loading the latest snapshot and replaying later
+  events so event-only cards and finish events remain recoverable
+- keep `finishRun(saveSnapshot=false)` available for recording modes that must
+  avoid overwriting richer event-log evidence with a sparse terminal snapshot
+- keep conversion and Function compilation outside the storage layer
+
 `RunLogReusableFunctionCompiler` owns RunLog card-to-Function assembly:
 
 - filter successful replayable cards before conversion
