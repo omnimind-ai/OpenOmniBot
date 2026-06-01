@@ -372,17 +372,17 @@ object RunLogReusableFunctionParameterizer {
         return when {
             label.endsWith("_text") -> label
             label.isNotBlank() -> "${label}_text"
-            index == 0 -> "input_text"
-            else -> "input_text_${index + 1}"
+            index == 0 -> DEFAULT_INPUT_PARAMETER_NAME
+            else -> "${DEFAULT_INPUT_PARAMETER_NAME}_${index + 1}"
         }
     }
 
     private fun uniqueParameterName(baseName: String, usedNames: Set<String>): String {
         val normalized = baseName
-            .ifBlank { "input_text" }
+            .ifBlank { DEFAULT_INPUT_PARAMETER_NAME }
             .replace(Regex("_+"), "_")
             .trim('_')
-            .ifBlank { "input_text" }
+            .ifBlank { DEFAULT_INPUT_PARAMETER_NAME }
         if (normalized !in usedNames) return normalized
         var suffix = 2
         while ("${normalized}_$suffix" in usedNames) {
@@ -411,4 +411,5 @@ object RunLogReusableFunctionParameterizer {
     private val INPUT_TEXT_ACTIONS = setOf(OobActionCodec.ACTION_INPUT_TEXT)
     private val INPUT_TEXT_ARG_KEYS = listOf("text", "content", "value")
     private val EXECUTION_ARG_BINDING_REGEX = Regex("""^\$\.execution\.steps\[(\d+)]\.args\.([A-Za-z0-9_]+)$""")
+    private const val DEFAULT_INPUT_PARAMETER_NAME = "input_text"
 }

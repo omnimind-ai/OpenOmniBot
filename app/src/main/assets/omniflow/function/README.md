@@ -711,10 +711,13 @@ Use these owner rules when removing duplicated helper code:
 - Step role aliases belong in `OobStepRoleClassifier`. Checker patching may
   consume those roles, but should not maintain a separate optional-checker role
   alias table.
-- Checker action aliases belong in `OobFunctionCheckerPatchService`, but when
-  a checker patch references a real local action such as `click` or `open_app`,
-  it must canonicalize through `OobActionCodec` before mapping to checker-only
-  actions such as dismiss, allow, or reopen-app.
+- Checker condition/action/phase aliases belong in `OmniflowCheckerRule`.
+  `OobFunctionCheckerPatchService` may infer checker metadata from optional
+  cleanup annotations, but it must delegate explicit checker rule
+  normalization there instead of maintaining a second checker alias table.
+  When a checker patch references a real local action such as `click` or
+  `open_app`, it must canonicalize through `OobActionCodec` before mapping to
+  checker-only actions such as dismiss, allow, or reopen-app.
 - Function update policy belongs in `OobFunctionUpdateService` and its patch
   appliers. Do not move checker, evidence, audit, retarget, insert, delete, or
   reindex rules into `OobFunctionJson`.
