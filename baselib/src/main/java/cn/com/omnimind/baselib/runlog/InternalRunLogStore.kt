@@ -109,7 +109,12 @@ object InternalRunLogStore {
     }
 
     @Synchronized
-    fun appendCards(context: Context, runId: String, cards: List<Map<String, Any?>>) {
+    fun appendCards(
+        context: Context,
+        runId: String,
+        cards: List<Map<String, Any?>>,
+        saveSnapshot: Boolean = true
+    ) {
         val normalizedRunId = runId.trim()
         if (normalizedRunId.isEmpty() || cards.isEmpty()) return
         val record = readRunLocked(context, normalizedRunId)
@@ -121,12 +126,19 @@ object InternalRunLogStore {
             eventType = "cards_appended",
             payload = linkedMapOf("cards" to sanitizedCards)
         )
-        saveRunLocked(context, record.copy(cards = record.cards + sanitizedCards, eventSeq = eventSeq))
+        if (saveSnapshot) {
+            saveRunLocked(context, record.copy(cards = record.cards + sanitizedCards, eventSeq = eventSeq))
+        }
         pruneLocked(context)
     }
 
     @Synchronized
-    fun updateDiagnostics(context: Context, runId: String, diagnostics: Map<String, Any?>) {
+    fun updateDiagnostics(
+        context: Context,
+        runId: String,
+        diagnostics: Map<String, Any?>,
+        saveSnapshot: Boolean = true
+    ) {
         val normalizedRunId = runId.trim()
         if (normalizedRunId.isEmpty() || diagnostics.isEmpty()) return
         val record = readRunLocked(context, normalizedRunId)
@@ -139,7 +151,9 @@ object InternalRunLogStore {
             eventType = "diagnostics_updated",
             payload = linkedMapOf("diagnostics" to sanitizedDiagnostics)
         )
-        saveRunLocked(context, record.copy(diagnostics = mergedDiagnostics, eventSeq = eventSeq))
+        if (saveSnapshot) {
+            saveRunLocked(context, record.copy(diagnostics = mergedDiagnostics, eventSeq = eventSeq))
+        }
         pruneLocked(context)
     }
 
