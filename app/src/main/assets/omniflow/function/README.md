@@ -687,9 +687,11 @@ change:
 - `OobFunctionJson.boolArgOrDefault` owns default-aware Function boolean
   coercion for checker/update payloads. Do not add checker-local copies unless
   a patch needs intentionally different semantics.
-- `OobUdegNodeStore` keeps some graph timestamp and graph-export sanitization
-  helpers local because they normalize stored graph values, not just coerce
-  Function or RunLog payloads.
+- `OobUdegNodeStore` should use `OobActionCodec` for generic scalar coercion
+  such as graph indexes, timestamps, and booleans. It may keep graph-export
+  `mapArg`/`listArg`/`firstNonBlank` helpers local only where those helpers
+  sanitize stored UDEG graph values rather than merely coercing Function or
+  RunLog payloads.
 - `McpToolExecutors.intArg`, `McpToolExecutors.longArg`,
   `McpToolExecutors.boolArg`, and `McpToolExecutors.boolArgOrDefault` read
   multi-key MCP argument aliases and defaults; keep them local unless a shared

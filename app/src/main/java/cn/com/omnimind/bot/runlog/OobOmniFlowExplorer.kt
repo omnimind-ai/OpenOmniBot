@@ -472,8 +472,8 @@ class OobOmniFlowExplorer(
     }
 
     companion object {
-        const val ACTION_CLICK = "click"
-        const val ACTION_SCROLL = "scroll"
+        const val ACTION_CLICK = OobActionCodec.ACTION_CLICK
+        const val ACTION_SCROLL = OobActionCodec.ACTION_SWIPE
         private const val MIN_ACTION_AREA = 36 * 36
         private const val MAX_RESET_BACK_STEPS = 8
         private const val DEFAULT_SCROLL_DISTANCE_PX = 360f
@@ -730,7 +730,7 @@ class OobOmniFlowExplorer(
                             scrollDirection = "up",
                             scrollDistancePx = scrollDistance(bounds, rootBounds),
                             scrollDurationMs = DEFAULT_SCROLL_DURATION_MS,
-                            actionId = "utg_action_${shortHash("$stateSeed|scroll|$signature").take(16)}",
+                            actionId = "utg_action_${shortHash("$stateSeed|$ACTION_SCROLL|$signature").take(16)}",
                         )
                     )
                 }

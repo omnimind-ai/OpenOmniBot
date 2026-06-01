@@ -178,9 +178,10 @@ as the primary in-app path when `oob_function_*`, `oob_run_log_*`, and
 `update_function` are available.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
-  the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
-  `scroll`, `input_text`, `swipe`, `open_app`, `press_home`,
-  `press_back`, `press_key`, `hot_key`, and `finished`. Legacy `wait` cards are
+  the OOB local set: `click`, `long_press`, `input_text`, `swipe`, `open_app`,
+  `press_key`, and `finished`. Legacy aliases such as `scroll`, `press_home`,
+  `press_back`, and `hot_key` are normalized by `OobActionCodec` before replay.
+  Legacy `wait` cards are
   skipped because page settling is handled internally by the replay backend. OOB-native
   OmniFlow graph/function commands such as `go_to_node`, `click_node`, and
   `call_tool` with `function_id` also use this executor and are dispatched by
@@ -218,7 +219,7 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep generic RunLog action/value coercion in `OobActionCodec`. Tool facades
   such as `OobOmniFlowToolkitService` and small payload helpers such as
   `OobFunctionCallTiming`, schema/parameterization helpers, explorer utilities,
-  and cleanup services should call it instead of adding private
+  UDEG scalar readers, and cleanup services should call it instead of adding private
   `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg` copies when
   behavior is equivalent. Execution code such as `OmniflowStepExecutor` should
   follow the same rule for generic argument coercion. Prefer direct calls or

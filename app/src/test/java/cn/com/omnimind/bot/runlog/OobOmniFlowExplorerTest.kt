@@ -100,7 +100,7 @@ class OobOmniFlowExplorerTest {
     }
 
     @Test
-    fun `snapshot parser emits scroll action for scrollable node`() {
+    fun `snapshot parser emits canonical swipe action for scrollable node`() {
         val snapshot = requireNotNull(
             OobOmniFlowExplorer.parseSnapshot(SCROLL_XML, "com.example.feed")
         )
@@ -114,7 +114,7 @@ class OobOmniFlowExplorerTest {
     }
 
     @Test
-    fun `UTG scroll card compiles into omniflow replay step`() {
+    fun `UTG swipe card compiles into omniflow replay step`() {
         val before = requireNotNull(
             OobOmniFlowExplorer.parseSnapshot(SCROLL_XML, "com.example.feed")
         )
@@ -148,7 +148,7 @@ class OobOmniFlowExplorerTest {
         val args = step["args"] as Map<*, *>
 
         assertEquals("omniflow", step["executor"])
-        assertEquals("scroll", step["omniflow_action"])
+        assertEquals(OobActionCodec.ACTION_SWIPE, step["omniflow_action"])
         assertEquals("omniflow", step["coordinate_hook"])
         assertEquals("omniflow_utg", step["replay_engine"])
         assertEquals("up", args["direction"])

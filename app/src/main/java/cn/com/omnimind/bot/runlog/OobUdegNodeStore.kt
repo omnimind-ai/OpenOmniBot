@@ -188,7 +188,7 @@ class OobUdegNodeStore(
             "functions" to mergedFunctions,
             "edges" to udegEdgesForNode(existing).takeIf { it.isNotEmpty() },
             "raw_graph" to rawGraphSummary(existing).takeIf { it.isNotEmpty() },
-            "first_seen_at" to longArg(existing["first_seen_at"], defaultValue = System.currentTimeMillis()),
+            "first_seen_at" to OobActionCodec.longArg(existing["first_seen_at"], defaultValue = System.currentTimeMillis()),
             "last_seen_at" to mapArg(existing["_oob_registry"])["last_seen_at"],
             "updated_at" to System.currentTimeMillis(),
             "source" to "oob_native_udeg",
@@ -197,7 +197,7 @@ class OobUdegNodeStore(
         node["_oob_registry"] = registry.apply {
             put("node_kind", "page")
             put("function_count", mergedFunctions.size)
-            put("raw_action_edge_count", intArg(mapArg(node["raw_graph"])["outgoing_function_edge_count"], defaultValue = 0))
+            put("raw_action_edge_count", OobActionCodec.intArg(mapArg(node["raw_graph"])["outgoing_function_edge_count"], defaultValue = 0))
             put("last_function_id", normalizedFunctionId)
             put("updated_at", System.currentTimeMillis())
         }
@@ -308,7 +308,7 @@ class OobUdegNodeStore(
         return nodesById.values
             .sortedByDescending { node ->
                 val registry = mapArg(node["_oob_registry"])
-                longArg(node["updated_at"], node["last_seen_at"], registry["updated_at"], defaultValue = 0L)
+                OobActionCodec.longArg(node["updated_at"], node["last_seen_at"], registry["updated_at"], defaultValue = 0L)
             }
             .take(normalizedLimit)
     }
@@ -404,7 +404,7 @@ class OobUdegNodeStore(
                     "${firstNonBlank(edge["from_node_id"])}:${firstNonBlank(edge["function_id"])}" in storedCallKeys
             })
             .sortedWith(compareBy<Map<String, Any?>> { firstNonBlank(it["from_node_id"]) }
-                .thenBy { intArg(it["step_index"], defaultValue = Int.MAX_VALUE) }
+                .thenBy { OobActionCodec.intArg(it["step_index"], defaultValue = Int.MAX_VALUE) }
                 .thenBy { firstNonBlank(it["edge_id"]) })
         val rawActionEdges = edges
             .filter { firstNonBlank(it["kind"]) == "function" }
@@ -574,7 +574,7 @@ class OobUdegNodeStore(
         val artifactDir = File(udegSkillArtifactsRoot(), "$safePackage/$safeNodeId")
         val skillFile = File(artifactDir, "SKILL.md")
         val payloadFile = File(artifactDir, "skill.json")
-        val updatedAt = longArg(node["updated_at"], defaultValue = System.currentTimeMillis())
+        val updatedAt = OobActionCodec.longArg(node["updated_at"], defaultValue = System.currentTimeMillis())
         val artifact = linkedMapOf<String, Any?>(
             "schema_version" to NODE_SKILL_ARTIFACT_SCHEMA_VERSION,
             "kind" to "oob_udeg_node_skill_artifact",
@@ -715,7 +715,7 @@ class OobUdegNodeStore(
         val merged = existing
             .filterNot { firstNonBlank(it["node_id"]) == nodeId }
             .plus(artifact)
-            .sortedByDescending { longArg(it["updated_at"], defaultValue = 0L) }
+            .sortedByDescending { OobActionCodec.longArg(it["updated_at"], defaultValue = 0L) }
         root.mkdirs()
         indexFile.writeText(gson.toJson(merged))
     }
@@ -804,9 +804,9 @@ class OobUdegNodeStore(
             "node_id" to nodeId,
             "package_name" to firstNonBlank(node["package_name"]).takeIf { it.isNotBlank() },
             "activity_name" to firstNonBlank(node["activity_name"]).takeIf { it.isNotBlank() },
-            "first_seen_at" to longArg(node["first_seen_at"], registry["first_seen_at"], defaultValue = 0L).takeIf { it > 0L },
-            "last_seen_at" to longArg(node["last_seen_at"], registry["last_seen_at"], defaultValue = 0L).takeIf { it > 0L },
-            "updated_at" to longArg(node["updated_at"], registry["updated_at"], defaultValue = 0L).takeIf { it > 0L },
+            "first_seen_at" to OobActionCodec.longArg(node["first_seen_at"], registry["first_seen_at"], defaultValue = 0L).takeIf { it > 0L },
+            "last_seen_at" to OobActionCodec.longArg(node["last_seen_at"], registry["last_seen_at"], defaultValue = 0L).takeIf { it > 0L },
+            "updated_at" to OobActionCodec.longArg(node["updated_at"], registry["updated_at"], defaultValue = 0L).takeIf { it > 0L },
             "page_match" to linkedMapOf(
                 "schema_version" to vectorSet["schema_version"],
                 "node_id" to firstNonBlank(vectorSet["node_id"], nodeId).takeIf { it.isNotBlank() },
@@ -1054,7 +1054,7 @@ class OobUdegNodeStore(
                 "editable_text_stored" to false,
                 "screenshot_encoding" to "sha256",
             ),
-            "created_at" to longArg(previous["created_at"], defaultValue = now),
+            "created_at" to OobActionCodec.longArg(previous["created_at"], defaultValue = now),
             "updated_at" to now,
         )
     }
@@ -1247,26 +1247,6 @@ class OobUdegNodeStore(
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
-    }
-
-    private fun intArg(vararg values: Any?, defaultValue: Int): Int {
-        for (value in values) {
-            when (value) {
-                is Number -> return value.toInt()
-                is String -> value.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
-    }
-
-    private fun longArg(vararg values: Any?, defaultValue: Long): Long {
-        for (value in values) {
-            when (value) {
-                is Number -> return value.toLong()
-                is String -> value.trim().toLongOrNull()?.let { return it }
-            }
-        }
-        return defaultValue
     }
 
     private fun functionSummary(
@@ -1478,8 +1458,8 @@ class OobUdegNodeStore(
             "functions" to functions,
             "edges" to udegEdgesForNode(existing).takeIf { it.isNotEmpty() },
             "raw_graph" to rawGraphSummary(existing).takeIf { it.isNotEmpty() },
-            "first_seen_at" to longArg(existing["first_seen_at"], registry["first_seen_at"], defaultValue = now),
-            "last_seen_at" to longArg(existing["last_seen_at"], registry["last_seen_at"], defaultValue = now),
+            "first_seen_at" to OobActionCodec.longArg(existing["first_seen_at"], registry["first_seen_at"], defaultValue = now),
+            "last_seen_at" to OobActionCodec.longArg(existing["last_seen_at"], registry["last_seen_at"], defaultValue = now),
             "updated_at" to now,
             "source" to "oob_native_udeg",
         ).filterValues { it != null }.toMutableMap()
@@ -1636,7 +1616,7 @@ class OobUdegNodeStore(
             .filterNot { firstNonBlank(it["edge_id"]) == edgeId }
             .plus(normalizeUdegEdge(edge))
             .sortedWith(
-                compareBy<Map<String, Any?>> { intArg(it["step_index"], defaultValue = Int.MAX_VALUE) }
+                compareBy<Map<String, Any?>> { OobActionCodec.intArg(it["step_index"], defaultValue = Int.MAX_VALUE) }
                     .thenBy { firstNonBlank(it["edge_id"]) }
             )
             .take(MAX_NODE_EDGE_COUNT)
@@ -1705,7 +1685,7 @@ class OobUdegNodeStore(
             else -> rawKind.ifBlank { "function" }
         }
         val callable = if (edge.containsKey("callable")) {
-            boolArg(edge["callable"], defaultValue = kind == EDGE_KIND_CALL_FUNCTION)
+            OobActionCodec.boolArgOrDefault(edge["callable"], defaultValue = kind == EDGE_KIND_CALL_FUNCTION)
         } else {
             kind == EDGE_KIND_CALL_FUNCTION
         }
@@ -1751,21 +1731,6 @@ class OobUdegNodeStore(
             .mapNotNull { normalizeUdegEdge(mapArg(it)).takeIf(Map<String, Any?>::isNotEmpty) }
             .filter { firstNonBlank(it["edge_id"]).isNotBlank() }
 
-    private fun boolArg(vararg values: Any?, defaultValue: Boolean = false): Boolean {
-        values.forEach { value ->
-            when (value) {
-                is Boolean -> return value
-                is Number -> return value.toInt() != 0
-                is String -> {
-                    val normalized = value.trim().lowercase(Locale.US)
-                    if (normalized in setOf("true", "1", "yes")) return true
-                    if (normalized in setOf("false", "0", "no")) return false
-                }
-            }
-        }
-        return defaultValue
-    }
-
     fun observePage(observedPage: ObservedPage): PageObservationResult? {
         val pageVector = OobPageVectorSet.encode(
             xml = observedPage.pageXml,
@@ -1786,7 +1751,7 @@ class OobUdegNodeStore(
             existingMatch?.node ?: emptyMap()
         }
         val existingRegistry = mapArg(existing["_oob_registry"])
-        val existingFirstSeen = longArg(existing["first_seen_at"], existingRegistry["first_seen_at"], defaultValue = now)
+        val existingFirstSeen = OobActionCodec.longArg(existing["first_seen_at"], existingRegistry["first_seen_at"], defaultValue = now)
         val firstSeen = existing.isEmpty()
         val functions = functionSummaries(existing)
         val pageAnalysis = buildPageAnalysis(
@@ -1824,7 +1789,7 @@ class OobUdegNodeStore(
         ).filterValues { it != null }.toMutableMap()
 
         val registry = existingRegistry.toMutableMap()
-        val seenCount = intArg(registry["seen_count"], existing["seen_count"], defaultValue = 0) + 1
+        val seenCount = OobActionCodec.intArg(registry["seen_count"], existing["seen_count"], defaultValue = 0) + 1
         node["_oob_registry"] = registry.apply {
             put("node_kind", "page")
             put("function_count", functions.size)
