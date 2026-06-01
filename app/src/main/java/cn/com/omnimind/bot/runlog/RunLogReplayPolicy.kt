@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
+
 /**
  * Static replay classification shared by RunLog conversion and local replay.
  *
@@ -35,6 +37,14 @@ object RunLogReplayPolicy {
         "screen_capture",
     )
 
+    private val functionDataFlowTools: Set<String> = setOf(
+        OobFunctionToolNames.FUNCTION_LIST,
+        OobFunctionToolNames.FUNCTION_GET,
+        OobFunctionToolNames.FUNCTION_REGISTER,
+        OobFunctionToolNames.FUNCTION_UPDATE,
+        OobFunctionToolNames.FUNCTION_GUARD_CHECK,
+    ) + OobFunctionToolNames.runLogTools
+
     val dataFlowTools: Set<String> = setOf(
         "browser_use",
         "web_search",
@@ -45,15 +55,7 @@ object RunLogReplayPolicy {
         "omniflow.recall",
         "omniflow.ingest_run_log",
         "workbench_api_list",
-        "oob_function_list",
-        "oob_function_get",
-        "oob_function_register",
-        "update_function",
-        "oob_function_guard_check",
-        "oob_run_log_list",
-        "oob_run_log_get",
-        "oob_run_log_convert",
-    )
+    ) + functionDataFlowTools
 
     val omniflowGraphTools: Set<String> = setOf(
         TOOL_GO_TO_NODE,
@@ -67,7 +69,7 @@ object RunLogReplayPolicy {
     val omniflowFunctionTools: Set<String> = setOf(
         "omniflow.call_function",
         TOOL_CALL_FUNCTION,
-        "oob_function_run",
+        OobFunctionToolNames.FUNCTION_RUN,
         "run_function",
         "execute_function",
         "callfunction",

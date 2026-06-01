@@ -50,6 +50,7 @@ record. Do not read only the snapshot when correctness matters.
 - VLM Function recall guidance: `app/src/main/java/cn/com/omnimind/bot/vlm/VlmRecallGuidanceBuilder.kt`
 - VLM UDEG page context guidance: `app/src/main/java/cn/com/omnimind/bot/vlm/OobVlmPageContextProvider.kt`
 - Function guard/fallback policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunPolicy.kt`
+- Canonical in-app Function/RunLog tool names: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionToolNames.kt`
 - Function call timing: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionCallTiming.kt`
 - Function-management skill profile: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSkillProfile.kt`
 - Agent-facing tool JSON projection: `app/src/main/java/cn/com/omnimind/bot/agent/AgentToolJson.kt`
@@ -114,6 +115,10 @@ Canonical replay tool names such as `call_tool`, `oob_tool_call`,
 `RunLogReplayPolicy` when they are used by Function compilation, schema
 materialization, recall, or replay routing. UDEG edge-kind names and diagnostic
 counter keys remain graph-storage vocabulary owned by `OobUdegNodeStore`.
+Canonical in-app Function and RunLog lifecycle tool names such as
+`oob_function_run`, `update_function`, and `oob_run_log_convert` live in
+`OobFunctionToolNames`; `RunLogReplayPolicy` may classify those tools but should
+not duplicate their string definitions.
 Agent-facing docs should name the OOB Function tools first. Legacy
 `omniflow.recall`, `omniflow.call_tool`, `omniflow.call_function`,
 `omniflow.ingest_run_log`, and `omniflow.explore_replay` remain compatibility

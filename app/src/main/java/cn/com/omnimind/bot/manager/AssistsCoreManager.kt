@@ -98,9 +98,11 @@ import cn.com.omnimind.bot.agent.WorkspaceMemoryService
 import cn.com.omnimind.bot.agent.WorkspaceScheduledTaskScheduler
 import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import cn.com.omnimind.bot.localmodel.LocalModelFeature
 import cn.com.omnimind.bot.mcp.RemoteMcpConfigStore
 import cn.com.omnimind.bot.mcp.VlmTaskRequest
@@ -1716,11 +1718,12 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             "context_apps_query" -> AgentToolMeta("builtin", t("查询已安装应用", "Query Installed Apps"))
             "context_time_now" -> AgentToolMeta("builtin", t("查询当前时间", "Query Current Time"))
             "vlm_task" -> AgentToolMeta("vlm", t("视觉执行", "Visual Task"))
-            "call_function", "omniflow.call_function" -> AgentToolMeta(
+            RunLogReplayPolicy.TOOL_CALL_FUNCTION, "omniflow.call_function" -> AgentToolMeta(
                 "oob_function",
                 t("复用指令", "Reusable Command")
             )
-            "call_tool", "oob_tool_call" -> AgentToolMeta("builtin", t("工具调用", "Tool Call"))
+            RunLogReplayPolicy.TOOL_CALL_TOOL,
+            RunLogReplayPolicy.TOOL_OOB_TOOL_CALL -> AgentToolMeta("builtin", t("工具调用", "Tool Call"))
             "web_search" -> AgentToolMeta("research", t("网页搜索", "Web Search"))
             "browser_use" -> AgentToolMeta("browser", t("浏览器操作", "Browser Action"))
             "android_privileged_action" -> AgentToolMeta("privileged", t("安卓高级动作", "Android Privileged Action"))
@@ -2225,8 +2228,11 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             }
         }
         val normalizedToolName = toolName.trim().lowercase()
-        val isReplay = normalizedToolName == "oob_function_run" ||
-            (normalizedToolName in setOf("call_tool", "oob_tool_call") && hasFunctionIdArgument) ||
+        val isReplay = normalizedToolName == OobFunctionToolNames.FUNCTION_RUN ||
+            (normalizedToolName in setOf(
+                RunLogReplayPolicy.TOOL_CALL_TOOL,
+                RunLogReplayPolicy.TOOL_OOB_TOOL_CALL,
+            ) && hasFunctionIdArgument) ||
             evidence.any { value ->
                 value.contains("oob_omniflow_replay") ||
                     value.contains("oob_fixed_replay") ||
