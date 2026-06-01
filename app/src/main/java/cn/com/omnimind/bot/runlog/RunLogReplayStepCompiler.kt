@@ -99,7 +99,6 @@ internal object RunLogReplayStepCompiler {
                     "scriptable" to false,
                     "args" to args,
                     "tool_binding" to linkedMapOf(
-                        "kind" to "agent_replan",
                         "name" to toolName,
                         "callable_tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                     ),
@@ -113,7 +112,6 @@ internal object RunLogReplayStepCompiler {
                         "reason" to RunLogReplayPolicy.agentStepReason(normalizedToolName),
                     ),
                     "fallback" to linkedMapOf(
-                        "kind" to "agent_replan",
                         "tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                         "prompt" to fallbackPrompt,
                     ),

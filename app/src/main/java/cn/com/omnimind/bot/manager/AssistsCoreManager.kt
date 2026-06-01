@@ -467,11 +467,8 @@ internal const val OOB_REUSABLE_EXECUTION_STATUS_FAILED = "failed"
 private const val AGENT_STREAM_META_SCHEMA_VERSION = "oob.agent_event.v1"
 
 internal fun isOobReusableFunctionPendingAgentStep(step: Map<*, *>): Boolean {
-    return step["needs_agent"] == true ||
-        (step["fallback_available"] == true &&
-            step["executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_AGENT) ||
-        step["blocked_executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_TOOL ||
-        step["blocked_executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_OMNIFLOW
+    return (step["success"] == false && step["executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_AGENT) ||
+        step["model_required"] == true
 }
 
 internal fun buildOobReusableFunctionAgentFallbackPayload(
@@ -511,7 +508,6 @@ internal fun buildOobReusableFunctionAgentFallbackPayload(
         "success_step_count" to successStepCount,
         "arguments_applied" to true,
         "model_required" to (runPayload["model_required"] == true),
-        "fallback_available" to (runPayload["fallback_available"] == true),
         "timing" to timing
     ).filterValues { it != null }
 
@@ -584,7 +580,6 @@ internal fun buildOobReusableFunctionVlmFallbackPayload(
         "model_used" to true,
         "model_required" to false,
         "delegated_tool_used" to true,
-        "fallback_available" to (runPayload["fallback_available"] == true),
         "vlm_status" to outcome.status.name,
         "vlm_message" to outcome.message,
         "timing" to timing
@@ -648,7 +643,6 @@ internal fun buildOobReusableFunctionLocalPayload(
         "model_required" to (runPayload["model_required"] == true),
         "delegated_tool_used" to (runPayload["delegated_tool_used"] == true),
         "arguments_applied" to true,
-        "fallback_available" to (runPayload["fallback_available"] == true),
         "timing" to timing
     )
 
@@ -4056,7 +4050,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
 
             // Phase 1 for direct UI calls: execute the deterministic local prefix only.
             // Tool/data-flow/agent steps need the full Agent runtime, so the runner marks
-            // the first such step as needs_agent instead of failing a synthetic tool call.
+            // the first such step as an agent executor handoff instead of failing a synthetic tool call.
             val runPayload = providedLocalReplayResult ?: runCatching {
                     withContext(Dispatchers.Default) {
                         runner.runMaterializedFunction(
@@ -6275,10 +6269,6 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 "model_required",
                 raw["model_required"] ?: contextPayload["model_required"]
             )
-            putIfAbsent(
-                "fallback_available",
-                raw["fallback_available"] ?: contextPayload["fallback_available"]
-            )
             putIfAbsent("timing", raw["timing"] ?: contextPayload["timing"])
             putIfAbsent(
                 "step_count",
@@ -6390,8 +6380,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 startErrorCode = null,
                 startErrorMessage = null,
                 runPayload = runPayload + mapOf(
-                    "model_required" to true,
-                    "fallback_available" to true
+                    "model_required" to true
                 ),
                 stepResults = stepResults,
                 completedStepCount = completedStepCount,
@@ -6423,8 +6412,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                 startErrorCode = code,
                 startErrorMessage = error.message ?: "Agent fallback start failed",
                 runPayload = runPayload + mapOf(
-                    "model_required" to true,
-                    "fallback_available" to true
+                    "model_required" to true
                 ),
                 stepResults = stepResults,
                 completedStepCount = completedStepCount,

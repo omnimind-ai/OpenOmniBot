@@ -3,13 +3,10 @@ package cn.com.omnimind.bot.runlog
 import java.util.Locale
 
 /**
- * Offline step annotation classifier used by RunLog analysis, checker mining,
- * and UDEG metadata. Runtime replay decisions should use OobActionCodec or
- * replay policy instead of branching on these roles.
+ * Offline step annotation classifier used by checker mining and UDEG metadata.
+ * Main replay semantics are expressed by canonical actions and executors.
  */
 object OobStepRoleClassifier {
-    const val ROLE_NAVIGATION = "navigation"
-    const val ROLE_SEMANTIC = "semantic"
     const val ROLE_CHECKER_CANDIDATE = "checker_candidate"
     const val ROLE_NOISE = "noise"
     const val ROLE_UNKNOWN = "unknown"
@@ -64,7 +61,7 @@ object OobStepRoleClassifier {
             val keyActions = OobActionCodec.listArg(agentReuse["key_actions"]) +
                 OobActionCodec.listArg(agentReuse["keyActions"])
             if (keyActions.any { matchesStepReference(it, step, stepIndex) }) {
-                return ROLE_SEMANTIC
+                return ROLE_UNKNOWN
             }
             val checkerAssets = OobActionCodec.listArg(agentReuse["checker_assets"]) +
                 OobActionCodec.listArg(agentReuse["checkerAssets"])
@@ -80,17 +77,10 @@ object OobStepRoleClassifier {
         return null
     }
 
-    fun defaultRole(actionType: String, actionSummary: Map<String, Any?> = emptyMap()): String {
-        return when {
-            OobActionCodec.isRouteAction(actionType, actionSummary) -> ROLE_NAVIGATION
-            else -> ROLE_UNKNOWN
-        }
-    }
+    fun defaultRole(actionType: String, actionSummary: Map<String, Any?> = emptyMap()): String = ROLE_UNKNOWN
 
     fun normalizeRole(rawRole: String): String? =
         when (rawRole.trim().lowercase(Locale.US)) {
-            "navigation", "navigate", "route", "route_safe" -> ROLE_NAVIGATION
-            "semantic", "key", "key_action", "key_function", "main", "main_action" -> ROLE_SEMANTIC
             "checker",
             "checker_candidate",
             "runtime_checker",

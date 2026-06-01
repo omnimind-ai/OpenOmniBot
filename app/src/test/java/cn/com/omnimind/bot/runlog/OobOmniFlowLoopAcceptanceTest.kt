@@ -1394,8 +1394,6 @@ class OobOmniFlowLoopAcceptanceTest {
 
             val firstRun = toolkit.runFunction(mapOf("function_id" to functionId))
             assertEquals(false, firstRun["success"])
-            assertEquals(true, firstRun["needs_agent"])
-            assertEquals(true, firstRun["fallback_available"])
             assertEquals(0, (firstRun["resume_from_step"] as Number).toInt())
             assertEquals(1, (firstRun["fallback_attempt"] as Number).toInt())
             assertNotNull(firstRun["fallback_session_id"])
@@ -1435,10 +1433,9 @@ class OobOmniFlowLoopAcceptanceTest {
                 )
             )
             assertEquals(false, exhaustedRun["success"])
-            assertEquals(false, exhaustedRun["fallback_available"])
             assertEquals("repeated_failure_same_step", exhaustedRun["fallback_unavailable_reason"])
-            val exhaustedContext = exhaustedRun["fallback_context"] as? Map<*, *>
-            assertEquals(3, (exhaustedContext?.get("fallback_attempt") as Number).toInt())
+            assertEquals(false, exhaustedRun.containsKey("fallback_context"))
+            assertEquals(3, (exhaustedRun["fallback_attempt"] as Number).toInt())
         } finally {
             backendHandle.close()
             context.root.deleteRecursively()

@@ -106,7 +106,7 @@ class OobFunctionStructuralPatchApplier(
             .ifEmpty { mutableJsonMap(mapArg(args["selectorHints"])) }
         val updatedHints = linkedMapOf<String, Any?>().apply {
             putAll(selectorHints)
-            put("strategy", "semantic_text_first")
+            put("strategy", "text_first")
             put("prefer_text", mergeStringList(selectorHints["prefer_text"], desiredText))
             if (wrongText.isNotBlank()) {
                 put("avoid_text", mergeStringList(selectorHints["avoid_text"], wrongText))

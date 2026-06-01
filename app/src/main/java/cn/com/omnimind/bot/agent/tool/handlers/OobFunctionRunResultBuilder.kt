@@ -23,8 +23,6 @@ class OobFunctionRunResultBuilder {
         "executor" to executor,
         "model_free" to true,
         "success" to false,
-        "needs_agent" to false,
-        "fallback_available" to false,
         "error_code" to errorCode,
         "summary" to summary,
     ).apply {
@@ -34,7 +32,6 @@ class OobFunctionRunResultBuilder {
     fun agentFallbackStep(
         stepId: String,
         tool: String,
-        blockedExecutor: String? = null,
         prompt: String,
         summary: String,
         extras: Map<String, Any?> = emptyMap(),
@@ -42,11 +39,9 @@ class OobFunctionRunResultBuilder {
         "step_id" to stepId,
         "tool" to tool,
         "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
-        "blocked_executor" to blockedExecutor,
         "model_free" to true,
         "success" to false,
-        "needs_agent" to true,
-        "fallback_available" to true,
+        "model_required" to true,
         "prompt" to prompt,
         "summary" to summary,
     ).apply {
@@ -77,7 +72,6 @@ class OobFunctionRunResultBuilder {
             "model_used" to false,
             "model_required" to false,
             "delegated_tool_used" to false,
-            "fallback_available" to false,
             "error_code" to errorCode,
             "error_message" to errorMessage,
             "timing" to linkedMapOf(
@@ -137,7 +131,6 @@ class OobFunctionRunResultBuilder {
             "model_used" to false,
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
-            "fallback_available" to (allowAgentFallback && modelRequired),
             "failed_step_index" to failedStepIndex,
             "pending_action_stack" to linkedMapOf(
                 "source_alignment_enabled" to sourceAlignmentEnabled,

@@ -7,7 +7,7 @@ import org.junit.Test
 
 class PendingActionStackTest {
     @Test
-    fun `key action windows are driven by canonical actions not semantic roles`() {
+    fun `key action windows are driven by canonical actions`() {
         val stack = PendingActionStack.fromSteps(
             steps = listOf(
                 mapOf(
@@ -30,8 +30,6 @@ class PendingActionStackTest {
 
         assertEquals(2, window.size)
         assertFalse(window[0].isKeyAction)
-        assertEquals(OobStepRoleClassifier.ROLE_NAVIGATION, window[0].role)
         assertTrue(window[1].isKeyAction)
-        assertEquals(OobStepRoleClassifier.ROLE_UNKNOWN, window[1].role)
     }
 }

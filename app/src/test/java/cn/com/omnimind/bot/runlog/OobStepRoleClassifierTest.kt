@@ -7,7 +7,7 @@ import org.junit.Test
 
 class OobStepRoleClassifierTest {
     @Test
-    fun `classifies agent reuse references consistently`() {
+    fun `classifies checker and noise references consistently`() {
         val functionSpec = mapOf(
             "agent_reuse" to mapOf(
                 "key_actions" to listOf(mapOf("step_index" to 1)),
@@ -17,7 +17,7 @@ class OobStepRoleClassifierTest {
         )
 
         assertEquals(
-            OobStepRoleClassifier.ROLE_SEMANTIC,
+            OobStepRoleClassifier.ROLE_UNKNOWN,
             OobStepRoleClassifier.classify(functionSpec, mapOf("id" to "step_2"), 1).role,
         )
         assertEquals(
@@ -64,14 +64,14 @@ class OobStepRoleClassifierTest {
     }
 
     @Test
-    fun `defaults navigation role for canonical back key action`() {
+    fun `does not assign explanatory main path roles by default`() {
         val classification = OobStepRoleClassifier.classify(
             functionSpec = emptyMap(),
             step = mapOf("tool" to "press_back", "args" to emptyMap<String, Any?>()),
             stepIndex = 0,
         )
 
-        assertEquals(OobStepRoleClassifier.ROLE_NAVIGATION, classification.role)
+        assertEquals(OobStepRoleClassifier.ROLE_UNKNOWN, classification.role)
         assertFalse(classification.explicit)
     }
 }

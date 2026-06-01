@@ -109,7 +109,7 @@ class OobOmniFlowToolkitService(
         val fallback = false
         val fallbackReason = when {
             runPayload["error_code"] != null -> runPayload["error_code"]?.toString()
-            decision == "needs_agent" -> "agent_fallback_required"
+            decision == "agent_required" -> "agent_fallback_required"
             !success -> runPayload["error_message"]?.toString()?.ifBlank { "execution_failed" }
             else -> ""
         }.orEmpty()
@@ -496,8 +496,6 @@ class OobOmniFlowToolkitService(
             "duration_ms" to durationMs,
             "runner_duration_ms" to durationMs,
             "timing" to timing,
-            "needs_agent" to (runPayload["model_required"] == true || fallbackMetadata.isNotEmpty()),
-            "fallback_available" to fallbackMetadata["fallback_available"],
             "fallback_session_id" to fallbackMetadata["fallback_session_id"],
             "resume_from_step" to fallbackMetadata["resume_from_step"],
             "fallback_attempt" to fallbackMetadata["fallback_attempt"],

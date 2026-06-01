@@ -1517,7 +1517,7 @@ class OobUdegNodeStore(
             "step_count" to materializedSteps(functionSpec).size,
             "input_schema" to OobFunctionSchemaBuilder.inputSchema(functionSpec),
             "callable" to true,
-            "role" to OobStepRoleClassifier.ROLE_SEMANTIC,
+            "role" to "callable_function",
             "route_safe" to false,
             "created_at_ms" to now,
             "updated_at_ms" to now,

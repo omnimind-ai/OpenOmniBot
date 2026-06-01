@@ -93,7 +93,7 @@ class OobFunctionAgentFallbackController {
             linkedMapOf<String, Any?>(
                 "step_id" to stepId,
                 "tool" to AgentToolNames.VLM_TASK,
-                "executor" to "omniflow_vlm_fallback",
+                "executor" to cn.com.omnimind.bot.runlog.RunLogReplayPolicy.EXECUTOR_AGENT,
                 "success" to succeeded,
                 "omniflow_fail_reason" to failReason,
                 "recovery" to recovery,

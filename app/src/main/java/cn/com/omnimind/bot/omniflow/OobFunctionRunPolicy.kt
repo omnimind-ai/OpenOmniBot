@@ -43,7 +43,7 @@ class OobFunctionRunPolicy(
         val riskLevel = aggregateRisk(stepDecisions)
         val reason = when (decision) {
             DECISION_ALLOW -> "All steps are deterministic local replay or registered tool calls."
-            DECISION_NEEDS_AGENT -> "At least one step needs live Agent planning."
+            DECISION_AGENT_REQUIRED -> "At least one step requires live Agent planning."
             DECISION_NEEDS_CONFIRMATION -> "At least one step can affect device state outside local UI replay."
             DECISION_BLOCK -> "At least one step is blocked by OOB safety policy."
             else -> "Guard decision unavailable."
@@ -82,15 +82,22 @@ class OobFunctionRunPolicy(
             runPayload["blocked_step_index"],
             defaultValue = requestedResumeFromStep
         ).coerceAtLeast(0)
-        val fallbackEligible = failedStep["fallback_available"] == true ||
-            failedStep["needs_agent"] == true ||
-            runPayload["model_required"] == true
+        val fallbackEligible = runPayload["model_required"] == true ||
+            failedStep["model_required"] == true
         if (!fallbackEligible) return emptyMap()
 
         val nextAttempt = fallbackAttempt + 1
         val attemptLimitReached = fallbackAttempt >= MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP
         val sessionId = fallbackSessionId.ifBlank {
             "oob_fallback_${functionId.ifBlank { "unknown" }}_${System.currentTimeMillis()}"
+        }
+        if (attemptLimitReached) {
+            return linkedMapOf<String, Any?>(
+                "fallback_session_id" to sessionId,
+                "resume_from_step" to failedStepIndex,
+                "fallback_attempt" to nextAttempt,
+                "fallback_unavailable_reason" to "repeated_failure_same_step",
+            )
         }
         val remainingSteps = materializedStepSummariesFrom(functionId, arguments, failedStepIndex)
         val recovery = mapArg(failedStep["recovery"])
@@ -134,13 +141,11 @@ class OobFunctionRunPolicy(
         ).filterValues { it != null }
 
         return linkedMapOf<String, Any?>(
-            "fallback_available" to !attemptLimitReached,
             "fallback_session_id" to sessionId,
             "resume_from_step" to failedStepIndex,
             "fallback_attempt" to nextAttempt,
             "fallback_context" to fallbackContext,
             "agent_prompt" to agentPrompt,
-            "fallback_unavailable_reason" to "repeated_failure_same_step".takeIf { attemptLimitReached },
         ).filterValues { it != null }
     }
 
@@ -158,7 +163,7 @@ class OobFunctionRunPolicy(
             RunLogReplayPolicy.shouldSkipTool(tool) || RunLogReplayPolicy.shouldSkipTool(action) -> {
                 decision = DECISION_ALLOW
                 risk = RISK_LOW
-                reason = "$action is an observation-only or legacy non-semantic replay step"
+                reason = "$action is an observation-only replay step"
                 requiresRoot = false
             }
             action == OobActionCodec.ACTION_FINISHED -> {
@@ -192,13 +197,13 @@ class OobFunctionRunPolicy(
                 requiresRoot = false
             }
             executor == RunLogReplayPolicy.EXECUTOR_AGENT || RunLogReplayPolicy.isAgentTool(action) -> {
-                decision = DECISION_NEEDS_AGENT
+                decision = DECISION_AGENT_REQUIRED
                 risk = RISK_MEDIUM
                 reason = "$action requires live Agent planning"
                 requiresRoot = false
             }
             else -> {
-                decision = DECISION_NEEDS_AGENT
+                decision = DECISION_AGENT_REQUIRED
                 risk = RISK_MEDIUM
                 reason = "$action is not a fixed local replay action"
                 requiresRoot = false
@@ -219,7 +224,7 @@ class OobFunctionRunPolicy(
         return when {
             decisions.contains(DECISION_BLOCK) -> DECISION_BLOCK
             decisions.contains(DECISION_NEEDS_CONFIRMATION) -> DECISION_NEEDS_CONFIRMATION
-            decisions.contains(DECISION_NEEDS_AGENT) -> DECISION_NEEDS_AGENT
+            decisions.contains(DECISION_AGENT_REQUIRED) -> DECISION_AGENT_REQUIRED
             else -> DECISION_ALLOW
         }
     }
@@ -276,10 +281,8 @@ class OobFunctionRunPolicy(
             "title" to step["title"],
             "tool" to step["tool"],
             "executor" to step["executor"],
-            "blocked_executor" to step["blocked_executor"],
             "success" to step["success"],
-            "needs_agent" to step["needs_agent"],
-            "fallback_available" to step["fallback_available"],
+            "model_required" to step["model_required"],
             "error_code" to step["error_code"],
             "summary" to step["summary"],
             "prompt" to step["prompt"],
@@ -390,7 +393,7 @@ class OobFunctionRunPolicy(
     private companion object {
         private const val MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP = 2
         private const val DECISION_ALLOW = "allow"
-        private const val DECISION_NEEDS_AGENT = "needs_agent"
+        private const val DECISION_AGENT_REQUIRED = "agent_required"
         private const val DECISION_NEEDS_CONFIRMATION = "needs_confirmation"
         private const val DECISION_BLOCK = "block"
         private const val RISK_LOW = "low"

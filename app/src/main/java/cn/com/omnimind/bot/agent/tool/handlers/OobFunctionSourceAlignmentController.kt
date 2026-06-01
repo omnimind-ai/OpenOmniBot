@@ -69,7 +69,6 @@ class OobFunctionSourceAlignmentController(
                         "recovery" to linkedMapOf(
                             "refetched_current_page" to true,
                             "reason" to "source_alignment_miss",
-                            "navigate_recovery_available" to false,
                             "target_window" to window.map(::frameSummary),
                         ),
                         "started_at_ms" to observedAtMs,
@@ -118,7 +117,6 @@ class OobFunctionSourceAlignmentController(
         "step_index" to frame.originalIndex,
         "step_id" to frame.stepId,
         "tool" to frame.tool,
-        "role" to frame.role,
         "is_key_action" to frame.isKeyAction,
         "source_package" to frame.sourcePackage.takeIf { it.isNotBlank() },
         "source_node_id" to frame.sourceVector?.nodeId,

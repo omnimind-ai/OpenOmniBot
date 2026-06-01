@@ -59,8 +59,6 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
             mapOf(
                 "executor" to "agent",
                 "tool" to "call_tool",
-                "fallback_available" to true,
-                "needs_agent" to true,
                 "success" to false
             ),
         )
@@ -75,7 +73,6 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
             runPayload = mapOf(
                 "runner" to "oob_mixed_runner",
                 "model_required" to true,
-                "fallback_available" to true,
                 "timing" to timing
             ),
             stepResults = stepResults,
@@ -115,7 +112,7 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
     fun `direct vlm fallback payload reports completed vlm status`() {
         val stepResults = listOf<Map<*, *>>(
             mapOf("tool" to "open_app", "success" to true),
-            mapOf("tool" to "input_text", "success" to false, "needs_agent" to true),
+            mapOf("tool" to "input_text", "executor" to "agent", "success" to false),
         )
         val payload = buildOobReusableFunctionVlmFallbackPayload(
             functionId = "open_settings_then_vlm",
@@ -131,7 +128,6 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
             success = true,
             runPayload = mapOf(
                 "runner" to "oob_mixed_runner",
-                "fallback_available" to true,
             ),
             stepResults = stepResults,
             completedStepCount = 1,
@@ -182,16 +178,15 @@ class AssistsCoreManagerOobReusableFunctionPayloadTest {
     }
 
     @Test
-    fun `pending agent step detection covers agent and blocked executor forms`() {
+    fun `pending agent step detection uses agent executor or model required`() {
         assertTrue(
             isOobReusableFunctionPendingAgentStep(
-                mapOf("executor" to "agent", "fallback_available" to true)
+                mapOf("executor" to "agent", "success" to false)
             )
         )
-        assertTrue(isOobReusableFunctionPendingAgentStep(mapOf("blocked_executor" to "tool")))
         assertTrue(
             isOobReusableFunctionPendingAgentStep(
-                mapOf("blocked_executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW)
+                mapOf("model_required" to true)
             )
         )
         assertFalse(

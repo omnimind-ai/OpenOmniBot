@@ -427,7 +427,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             assertEquals("omniflow_function", step["executor"])
             assertEquals("OOB_FUNCTION_NOT_FOUND", step["error_code"])
             assertEquals(false, step["success"])
-            assertFalse(step["needs_agent"] == true)
+            assertFalse(step["model_required"] == true)
         } finally {
             context.root.deleteRecursively()
         }
@@ -529,8 +529,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 assertEquals(false, run["model_required"])
                 assertEquals("", router.toolName)
                 val step = stepResults(run).single()
-                assertEquals(false, step["fallback_available"])
-                assertEquals(false, step["needs_agent"])
+                assertFalse(step.containsKey("model_required"))
                 assertEquals("OOB_OMNIFLOW_STEP_FAILED", step["error_code"])
             }
         } finally {
@@ -844,9 +843,8 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             assertEquals(true, run["model_required"])
             val step = stepResults(run).single()
             assertEquals("agent", step["executor"])
-            assertEquals("tool", step["blocked_executor"])
             assertEquals("vlm_task", step["tool"])
-            assertEquals(true, step["needs_agent"])
+            assertEquals(true, step["model_required"])
         } finally {
             context.root.deleteRecursively()
         }

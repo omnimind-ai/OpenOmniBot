@@ -366,7 +366,7 @@ class OobFunctionToolHandler(
                     "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                     "skipped" to true,
                     "success" to true,
-                    "summary" to "Skipped legacy non-semantic step",
+                    "summary" to "Skipped observation-only replay step",
                     "started_at_ms" to stepStartedAtMs,
                     "finished_at_ms" to stepStartedAtMs,
                     "duration_ms" to 0L
@@ -400,7 +400,7 @@ class OobFunctionToolHandler(
                         allowToolDelegationWithoutRouter = allowToolDelegationWithoutRouter,
                         callStack = activeCallStack,
                     ).also { result ->
-                        if (result["needs_agent"] == true) modelRequired = true
+                        if (result["model_required"] == true) modelRequired = true
                         if (result["delegated_tool_used"] == true) delegatedToolUsed = true
                     }
                 }
@@ -465,7 +465,6 @@ class OobFunctionToolHandler(
                             runResultBuilder.agentFallbackStep(
                                 stepId = stepId,
                                 tool = OmniflowStepExecutor.actionNameForStep(step),
-                                blockedExecutor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                                 prompt = agentFallbackController.prompt(step, stepTitle, recovery),
                                 summary = "Omniflow step requires agent fallback: $stepTitle",
                                 extras = mapOf(
@@ -517,7 +516,6 @@ class OobFunctionToolHandler(
                     runResultBuilder.agentFallbackStep(
                         stepId = stepId,
                         tool = callableTool,
-                        blockedExecutor = RunLogReplayPolicy.EXECUTOR_TOOL,
                         prompt = agentPrompt,
                         summary = "Tool step requires agent runner: $stepTitle",
                     )

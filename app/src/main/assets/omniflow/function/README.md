@@ -26,7 +26,7 @@ appear:
   `click`/`long_press` lists.
 - Runtime decisions must be action-driven. Main replay, source alignment, and
   route safety should use `OobActionCodec` predicates or replay policy, not
-  offline role labels such as `semantic`, `navigation`, or `noise`.
+  explanatory role labels.
 - An executor is a replay classification, not an action. `omniflow`, `tool`,
   and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
   step, not to describe what the step does.
@@ -240,18 +240,18 @@ When adding or migrating a generic agent tool name:
 - keep checker vocabulary out of `update_function` patch appliers and step
   execution services
 
-`OobStepRoleClassifier` owns reusable step role normalization:
+`OobStepRoleClassifier` owns checker/noise role normalization:
 
-- classify explicit `agent_reuse`, cleanup annotations, and default navigation
-  roles for offline analysis and UDEG metadata
+- classify cleanup annotations and explicit checker/noise hints for offline
+  analysis and UDEG metadata
 - expose checker-candidate role alias detection used by
   `OobFunctionCheckerPatchService`
 - keep role labels such as `optional_checker`, `runtime_checker`,
   `checker_candidate`, and `ad_checker` out of checker-specific local alias
   tables
-- never decide whether a replay step is executable, key/user-facing, or
-  route-safe; those runtime decisions belong to `OobActionCodec` and replay
-  policy
+- never emit or consume explanatory main-path labels; whether a replay step is
+  executable, key/user-facing, or route-safe belongs to `OobActionCodec` and
+  replay policy
 
 `OobFunctionStructuralPatchApplier` owns structural `update_function` patches:
 
@@ -705,10 +705,9 @@ Use these owner rules when removing duplicated helper code:
   This applies to generated step specs, result payloads that report the
   executor category, runtime comparisons, and deterministic replay markers such
   as `coordinate_hook`. Replay-engine markers such as `omniflow_utg` belong in
-  the same policy object when runtime checks depend on them. Diagnostic labels such as
-  `agent_tool`, `omniflow_graph`, `omniflow_function`, or
-  `omniflow_vlm_fallback` are not executor categories and should stay local to
-  the component that emits them.
+  the same policy object when runtime checks depend on them. Diagnostic labels
+  such as `agent_tool`, `omniflow_graph`, or `omniflow_function` are not
+  executor categories and should stay local to the component that emits them.
 - Canonical replay tool names such as `call_tool`, `oob_tool_call`,
   `call_function`, `go_to_node`, `click_node`, `node_click`, and
   `oob.agent.run` also belong in
@@ -743,11 +742,11 @@ Use these owner rules when removing duplicated helper code:
   `OobFunctionToolHandler`. Do not move skip/fallback/delegation/source
   alignment decisions into mechanical helper objects.
 - Function run result payload shape belongs in `OobFunctionRunResultBuilder`.
-  Runtime components may decide that a step failed, needs agent fallback, or
-  was delegated, but they should call this owner for stable fields such as
-  `needs_agent`, `fallback_available`, `blocked_executor`, `step_id`,
-  `executor`, `error_code`, and timing payloads instead of hand-building
-  equivalent maps in each executor. This also applies to source-alignment
+  Runtime components may decide that a step failed, requires agent execution,
+  or was delegated, but they should call this owner for stable fields such as
+  `step_id`, `executor`, `model_required`, `error_code`, and timing payloads
+  instead of hand-building equivalent maps in each executor. Old per-step
+  fallback aliases are not part of new run payloads. This also applies to source-alignment
   misses and disabled-fallback terminal steps; the replay component owns the
   decision, while the builder owns the result shape.
 - Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when

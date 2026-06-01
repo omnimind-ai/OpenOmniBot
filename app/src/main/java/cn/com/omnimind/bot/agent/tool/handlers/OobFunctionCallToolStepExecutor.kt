@@ -107,7 +107,6 @@ class OobFunctionCallToolStepExecutor(
             return runResultBuilder.agentFallbackStep(
                 stepId = stepId,
                 tool = targetTool,
-                blockedExecutor = RunLogReplayPolicy.EXECUTOR_TOOL,
                 prompt = agentFallbackController.prompt(
                     LinkedHashMap<String, Any?>().apply {
                         putAll(step)
