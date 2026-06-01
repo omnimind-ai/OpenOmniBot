@@ -44,6 +44,8 @@ helper with mixed semantics.
 - prefer the local registry when both registry and workspace copies exist,
   because runtime updates are committed there first and workspace JSON is the
   portable mirror
+- report workspace/registry sync failures as structured diagnostics; registry
+  success remains the authoritative runtime registration result
 - update UDEG Function references
 - bind registered Functions back to source RunLogs
 - clear Function-as-tool exposure when the last Function is removed
@@ -54,7 +56,8 @@ helper with mixed semantics.
 - compile records through `RunLogReusableFunctionCompiler`
 - rely on `RunLogReplayStepNoiseNormalizer` for compiled-step noise cleanup
 - apply explicit name/id/description overrides
-- mirror source RunLogs into the workspace
+- mirror source RunLogs into the workspace as a best-effort portable artifact
+- return conversion diagnostics such as card count and compiled step count
 - delegate all Function persistence to `OobFunctionRepository`
 
 `RunLogReusableFunctionCompiler` owns RunLog card-to-Function assembly:

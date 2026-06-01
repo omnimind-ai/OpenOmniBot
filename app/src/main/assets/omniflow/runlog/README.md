@@ -115,7 +115,9 @@ record. Do not read only the snapshot when correctness matters.
 - Native replay policy and reusable command conversion: `app/src/main/java/cn/com/omnimind/bot/runlog/`
 - RunLog conversion facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobRunLogReplayService.kt`
   It only converts and auto-registers RunLogs; Function CRUD belongs in
-  `OobFunctionRepository`.
+  `OobFunctionRepository`. Conversion responses should expose diagnostics such
+  as card counts and compiled step counts; workspace RunLog mirroring is
+  best-effort and must not replace Function registration status.
 - Agent/MCP Function facade: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowToolkitService.kt`
 - Local UTG explorer: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowExplorer.kt`
 - Local action runtime backend: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowActionBackend.kt`

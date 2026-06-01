@@ -49,12 +49,22 @@ class OobFunctionRepository(
             )
         }
 
-        val workspaceResult = workspaceFunctionStore.register(spec)
+        val workspaceResult = runCatching {
+            workspaceFunctionStore.register(spec)
+        }.getOrElse { error ->
+            OmniLog.w(TAG, "workspace function register failed: $functionId, ${error.message}")
+            linkedMapOf(
+                "success" to false,
+                "error_code" to "WORKSPACE_REGISTER_FAILED",
+                "error_message" to error.message.orEmpty()
+            )
+        }
         val registryResult = runCatching {
             OobReusableFunctionStore.register(context, spec)
         }.getOrElse { error ->
             linkedMapOf(
                 "success" to false,
+                "error_code" to "REGISTRY_REGISTER_FAILED",
                 "error_message" to error.message.orEmpty()
             )
         }

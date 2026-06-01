@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.runlog
 import android.content.Context
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
+import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
 import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
@@ -61,8 +62,14 @@ class OobRunLogReplayService(
             ?: return errorPayload(
                 code = "RUN_LOG_NO_REPLAYABLE_STEPS",
                 message = "RunLog has no replayable steps",
-                runId = normalizedRunId
-            )
+                runId = normalizedRunId,
+                extra = noReplayableStepDiagnostics(record)
+            ).also {
+                OmniLog.w(
+                    TAG,
+                    "convert runlog failed no replayable steps runId=$normalizedRunId cards=${record.cards.size}"
+                )
+            }
         val spec = applyOverrides(
             spec = compiled,
             functionIdOverride = functionIdOverride,
@@ -71,7 +78,7 @@ class OobRunLogReplayService(
         )
         val functionId = OobFunctionRepository.functionIdFromSpec(spec)
         if (!register) {
-            return linkedMapOf(
+            return linkedMapOf<String, Any?>(
                 "success" to true,
                 "registered" to false,
                 "run_id" to normalizedRunId,
@@ -82,16 +89,30 @@ class OobRunLogReplayService(
                 "function_kind" to "oob_reusable_function",
                 "asset_state" to "native_local",
                 "source" to "oob_run_log_replay_service"
-            )
+            ).apply {
+                putAll(conversionDiagnostics(record, spec))
+            }
         }
 
-        workspaceFunctionStore.mirrorRunLog(record)
+        mirrorRunLogForWorkspace(record)
         return functionRepository.register(spec).toMutableMap().apply {
             put("registered", this["success"] == true)
             put("run_id", normalizedRunId)
             put("function_spec", spec)
             put("summary", functionRepository.summaryMap(spec))
             put("source", "oob_run_log_replay_service")
+            putAll(conversionDiagnostics(record, spec))
+            if (this["success"] == true) {
+                OmniLog.d(
+                    TAG,
+                    "convert runlog registered runId=$normalizedRunId functionId=$functionId cards=${record.cards.size}"
+                )
+            } else {
+                OmniLog.w(
+                    TAG,
+                    "convert runlog register failed runId=$normalizedRunId functionId=$functionId error=${this["error_message"] ?: this["error_code"]}"
+                )
+            }
         }
     }
 
@@ -122,7 +143,7 @@ class OobRunLogReplayService(
             eligible++
             val functionId = OobFunctionRepository.functionIdFromSpec(spec)
             val exists = functionRepository.contains(functionId)
-            workspaceFunctionStore.mirrorRunLog(record)
+            mirrorRunLogForWorkspace(record)
             if (exists) {
                 alreadyExists++
                 continue
@@ -157,6 +178,40 @@ class OobRunLogReplayService(
         return null
     }
 
+    private fun mirrorRunLogForWorkspace(record: InternalRunLogRecord) {
+        runCatching { workspaceFunctionStore.mirrorRunLog(record) }
+            .onFailure { error ->
+                OmniLog.w(TAG, "mirror runlog before register failed: ${record.runId}, ${error.message}")
+            }
+    }
+
+    private fun noReplayableStepDiagnostics(record: InternalRunLogRecord): Map<String, Any?> =
+        linkedMapOf(
+            "card_count" to record.cards.size,
+            "successful_card_count" to successfulCardCount(record),
+        )
+
+    private fun conversionDiagnostics(
+        record: InternalRunLogRecord,
+        spec: Map<String, Any?>,
+    ): Map<String, Any?> = linkedMapOf(
+        "card_count" to record.cards.size,
+        "successful_card_count" to successfulCardCount(record),
+        "compiled_step_count" to compiledStepCount(spec),
+    )
+
+    private fun successfulCardCount(record: InternalRunLogRecord): Int =
+        record.cards.count { card ->
+            card["success"] != false &&
+                (card["header"] as? Map<*, *>)?.get("success") != false
+        }
+
+    private fun compiledStepCount(spec: Map<String, Any?>): Int? {
+        val execution = spec["execution"] as? Map<*, *> ?: return null
+        return (execution["step_count"] as? Number)?.toInt()
+            ?: (execution["steps"] as? List<*>)?.size
+    }
+
     private fun applyOverrides(
         spec: Map<String, Any?>,
         functionIdOverride: String?,
@@ -179,13 +234,20 @@ class OobRunLogReplayService(
     private fun errorPayload(
         code: String,
         message: String,
-        runId: String = ""
-    ): Map<String, Any?> = linkedMapOf(
+        runId: String = "",
+        extra: Map<String, Any?> = emptyMap()
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
         "success" to false,
         "error_code" to code,
         "error_message" to message,
         "run_id" to runId,
         "function_kind" to "oob_reusable_function",
         "asset_state" to "native_local"
-    )
+    ).apply {
+        putAll(extra)
+    }
+
+    private companion object {
+        const val TAG = "OobRunLogReplayService"
+    }
 }
