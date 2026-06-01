@@ -30,7 +30,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = { functionId ->
+            runFunction = { functionId ->
                 mapOf(
                     "success" to true,
                     "fallback" to false,
@@ -70,7 +70,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, extras -> events += extras },
-            callFunction = {
+            runFunction = {
                 mapOf(
                     "success" to false,
                     "fallback" to true,
@@ -106,7 +106,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = null,
             ),
             progressReporter = { _, _ -> },
-            callFunction = {
+            runFunction = {
                 called = true
                 emptyMap()
             },
@@ -169,7 +169,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, _ -> },
-            callFunction = {
+            runFunction = {
                 called = true
                 mapOf("success" to true)
             },
@@ -204,7 +204,7 @@ class VlmToolCoordinatorRecallExecutionTest {
                 directHitFunctionId = "open_settings_function",
             ),
             progressReporter = { _, _ -> },
-            callFunction = {
+            runFunction = {
                 called = true
                 mapOf(
                     "success" to true,

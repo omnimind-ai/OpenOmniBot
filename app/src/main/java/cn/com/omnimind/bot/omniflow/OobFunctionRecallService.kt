@@ -117,12 +117,10 @@ class OobFunctionRecallService(
                 )
             )
         }
-        val directHit = ranked.takeIf { it.size == 1 }?.firstOrNull {
-            it.score >= DIRECT_HIT_SCORE &&
-                it.pageScore >= DIRECT_HIT_SCORE &&
-                it.textScore >= DIRECT_HIT_SCORE &&
-                isNoArgumentFunction(it.spec)
-        }.takeIf { allowDirectExecutionDecision }
+        val directHit = ranked.firstOrNull()?.takeIf { candidate ->
+            allowDirectExecutionDecision &&
+                isHighConfidenceFunctionHit(candidate, ranked.drop(1).firstOrNull())
+        }
         val decision = when {
             directHit != null -> "hit"
             nodeCandidates.isNotEmpty() -> "recall"
@@ -142,8 +140,16 @@ class OobFunctionRecallService(
                     "text_score" to roundScore(it.textScore),
                     "page_similarity" to roundScore(it.pageScore),
                     "strict_direct_hit" to true,
+                    "direct_hit_policy" to "top1_high_confidence_margin",
+                    "requires_arguments" to !isNoArgumentFunction(it.spec),
+                    "argument_fill_policy" to if (isNoArgumentFunction(it.spec)) {
+                        "no_arguments_required"
+                    } else {
+                        "agent_fill_required_arguments_from_user_goal"
+                    },
                     "udeg_node" to it.node,
                     "node_skill_context" to it.node["node_skill_context"],
+                    "function_profile" to functionProfile(it.spec),
                     "step_summaries" to stepSummaries(it.spec)
                 )
             },
@@ -160,9 +166,13 @@ class OobFunctionRecallService(
                 "mode" to if (allowDirectExecutionDecision) "direct_execution_allowed" else "node_skill_context_only",
                 "requires_vlm_or_tool_decision" to !allowDirectExecutionDecision,
                 "direct_hit_requested" to allowDirectExecutionDecision,
-                "direct_hit_min_score" to DIRECT_HIT_SCORE,
-                "direct_hit_requires_single_candidate" to true,
-                "direct_hit_requires_no_arguments" to true,
+                "direct_hit_min_score" to DIRECT_HIT_MIN_SCORE,
+                "direct_hit_min_page_similarity" to DIRECT_HIT_MIN_PAGE_SCORE,
+                "direct_hit_min_text_score" to DIRECT_HIT_MIN_TEXT_SCORE,
+                "direct_hit_min_margin" to DIRECT_HIT_MIN_MARGIN,
+                "direct_hit_requires_single_candidate" to false,
+                "direct_hit_requires_top1_margin" to true,
+                "direct_hit_allows_agent_filled_arguments" to true,
             ),
             "count" to candidates.size,
             "reason" to when {
@@ -288,9 +298,9 @@ class OobFunctionRecallService(
             "text_score" to roundScore(textScore),
             "page_similarity" to roundScore(pageScore),
             "strict_direct_hit" to (
-                score >= DIRECT_HIT_SCORE &&
-                    pageScore >= DIRECT_HIT_SCORE &&
-                    textScore >= DIRECT_HIT_SCORE
+                score >= DIRECT_HIT_MIN_SCORE &&
+                    pageScore >= DIRECT_HIT_MIN_PAGE_SCORE &&
+                    textScore >= DIRECT_HIT_MIN_TEXT_SCORE
                 ),
             "reason" to reason,
             "node_id" to firstNonBlank(node["node_id"]),
@@ -301,7 +311,14 @@ class OobFunctionRecallService(
             "remaining_step_count" to functionSteps.size,
             "execution_scope" to "function",
             "call" to call,
+            "requires_arguments" to !isNoArgumentFunction(spec),
+            "argument_fill_policy" to if (isNoArgumentFunction(spec)) {
+                "no_arguments_required"
+            } else {
+                "agent_fill_required_arguments_from_user_goal"
+            },
             "step_summaries" to functionSteps,
+            "function_profile" to functionProfile(spec, nodeCapability),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
             "source" to "oob_udeg_node_capability",
@@ -369,6 +386,7 @@ class OobFunctionRecallService(
             "text_score" to candidate["text_score"],
             "page_similarity" to candidate["page_similarity"],
             "strict_direct_hit" to candidate["strict_direct_hit"],
+            "direct_hit_policy" to candidate["direct_hit_policy"],
             "reason" to candidate["reason"],
             "node_id" to firstNonBlank(
                 candidate["node_id"],
@@ -378,6 +396,7 @@ class OobFunctionRecallService(
             "recall_scope" to candidate["recall_scope"],
             "remaining_step_count" to candidate["remaining_step_count"],
             "requires_arguments" to candidate["requires_arguments"],
+            "argument_fill_policy" to candidate["argument_fill_policy"],
             "execution_scope" to candidate["execution_scope"],
             "call" to candidate["call"],
             "step_count" to candidate["step_count"],
@@ -385,6 +404,7 @@ class OobFunctionRecallService(
                 candidate["has_agent_steps"]
                     ?: candidate["requires_agent_fallback"]
                 ),
+            "function_profile" to candidate["function_profile"],
             "step_summaries" to listArg(candidate["step_summaries"]).mapNotNull {
                 compactStepSummary(it)
             },
@@ -584,14 +604,82 @@ class OobFunctionRecallService(
             "score" to score,
             "reason" to reason,
             "step_count" to (execution["step_count"] ?: steps.size),
+            "requires_arguments" to !isNoArgumentFunction(spec),
+            "argument_fill_policy" to if (isNoArgumentFunction(spec)) {
+                "no_arguments_required"
+            } else {
+                "agent_fill_required_arguments_from_user_goal"
+            },
             "has_agent_steps" to (
                 execution["has_agent_steps"]
                     ?: execution["requires_agent_fallback"]
                 ),
             "step_summaries" to stepSummaries(spec),
+            "function_profile" to functionProfile(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local"
         ).apply { putAll(extras) }
+    }
+
+    private fun isHighConfidenceFunctionHit(
+        candidate: RankedFunction,
+        nextCandidate: RankedFunction?,
+    ): Boolean {
+        if (candidate.score < DIRECT_HIT_MIN_SCORE) return false
+        if (candidate.pageScore < DIRECT_HIT_MIN_PAGE_SCORE) return false
+        if (candidate.textScore < DIRECT_HIT_MIN_TEXT_SCORE) return false
+        val margin = candidate.score - (nextCandidate?.score ?: 0.0)
+        return nextCandidate == null || margin >= DIRECT_HIT_MIN_MARGIN
+    }
+
+    private fun functionProfile(
+        spec: Map<String, Any?>,
+        nodeCapability: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> {
+        val metadata = mapArg(spec["metadata"])
+        val agentReuse = mapArg(spec["agent_reuse"])
+            .ifEmpty { mapArg(metadata["agent_reuse"]) }
+        val constraints = mapArg(spec["constraints"])
+        val source = mapArg(spec["source"])
+        val useWhen = firstNonBlank(
+            agentReuse["reuse_when"],
+            agentReuse["use_when"],
+            nodeCapability["reuse_when"],
+            nodeCapability["use_when"],
+            source["goal"],
+        )
+        val successSignal = firstNonBlank(
+            agentReuse["success_signal"],
+            agentReuse["successSignal"],
+            nodeCapability["success_signal"],
+            nodeCapability["successSignal"],
+        )
+        val limitations = listArg(agentReuse["limitations"])
+            .ifEmpty { listArg(agentReuse["constraints"]) }
+            .ifEmpty { listArg(nodeCapability["limitations"]) }
+        val commonSituations = listArg(agentReuse["common_situations"])
+            .ifEmpty { listArg(agentReuse["commonSituations"]) }
+            .ifEmpty { listArg(nodeCapability["common_situations"]) }
+            .ifEmpty { listArg(nodeCapability["commonSituations"]) }
+        return linkedMapOf<String, Any?>(
+            "purpose" to firstNonBlank(
+                nodeCapability["description"],
+                spec["description"],
+                spec["name"],
+                OobFunctionSchemaBuilder.functionId(spec),
+            ),
+            "use_when" to useWhen.takeIf { it.isNotBlank() },
+            "success_signal" to successSignal.takeIf { it.isNotBlank() },
+            "limitations" to limitations.take(5).takeIf { it.isNotEmpty() },
+            "common_situations" to commonSituations.take(5).takeIf { it.isNotEmpty() },
+            "package_name" to firstNonBlank(
+                constraints["package_name"],
+                constraints["packageName"],
+                source["package_name"],
+                source["packageName"],
+            ).takeIf { it.isNotBlank() },
+            "wrong_choice_recovery" to "If replay fails, use fallback_context and continue with VLM; then call update_function with run_id evidence if the Function should be improved.",
+        ).filterValues { it != null }
     }
 
     private fun stepSummaries(spec: Map<String, Any?>): List<Map<String, Any?>> =
@@ -699,7 +787,10 @@ class OobFunctionRecallService(
     }
 
     private companion object {
-        private const val DIRECT_HIT_SCORE = 0.999
+        private const val DIRECT_HIT_MIN_SCORE = 0.92
+        private const val DIRECT_HIT_MIN_PAGE_SCORE = 0.90
+        private const val DIRECT_HIT_MIN_TEXT_SCORE = 0.85
+        private const val DIRECT_HIT_MIN_MARGIN = 0.08
         private const val PAGE_MATCH_WEIGHT = 0.70
         private const val GOAL_MATCH_WEIGHT = 0.30
     }

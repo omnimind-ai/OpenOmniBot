@@ -48,93 +48,8 @@ class OobOmniFlowToolkitService(
     fun recall(args: Map<String, Any?>?): Map<String, Any?> =
         functionRecallService.recall(args)
 
-    suspend fun callFunction(args: Map<String, Any?>?): Map<String, Any?> {
-        val callTiming = OobFunctionCallTiming()
-        val request = args ?: emptyMap()
-        val functionId = firstNonBlank(request["function_id"], request["functionId"])
-        val goal = firstNonBlank(request["goal"])
-        val callArguments = mapArg(request["arguments"])
-        if (functionId.isEmpty()) {
-            return canonicalCallError(
-                functionId = functionId,
-                error = "call_function requires function_id",
-                fallbackReason = "invalid_request"
-            )
-        }
-
-        val guard = callTiming.measure("guard_check_ms") {
-            guardCheck(
-                linkedMapOf(
-                    "functionId" to functionId,
-                    "arguments" to callArguments,
-                )
-            )
-        }
-        val decision = guard["decision"]?.toString().orEmpty()
-        if (decision == "block") {
-            return canonicalCallError(
-                functionId = functionId,
-                error = guard["reason"]?.toString() ?: "Function blocked by guard",
-                fallbackReason = "guard_blocked",
-                guard = guard
-            )
-        }
-        if (decision == "needs_confirmation") {
-            return canonicalCallError(
-                functionId = functionId,
-                error = guard["reason"]?.toString() ?: "Function requires confirmation",
-                fallbackReason = "confirmation_required",
-                guard = guard
-            )
-        }
-
-        var runPayload = callTiming.measureSuspend("execute_function_ms") {
-            functionRunner.execute(
-                functionId = functionId,
-                arguments = callArguments,
-                allowAgentFallback = false
-            )
-        }
-        runPayload = callTiming.attachTo(runPayload)
-        val success = runPayload["success"] == true && runPayload["model_required"] != true
-        OobReusableFunctionStore.recordRun(
-            context = context,
-            functionId = functionId,
-            success = success,
-            runId = runPayload["run_id"]?.toString(),
-            runner = runPayload["runner"]?.toString(),
-            stepCount = intArg(runPayload["step_count"], defaultValue = 0),
-            errorMessage = runPayload["error_message"]?.toString()
-        )
-        val fallback = false
-        val fallbackReason = when {
-            runPayload["error_code"] != null -> runPayload["error_code"]?.toString()
-            decision == "agent_required" -> "agent_fallback_required"
-            !success -> runPayload["error_message"]?.toString()?.ifBlank { "execution_failed" }
-            else -> ""
-        }.orEmpty()
-
-        return linkedMapOf<String, Any?>(
-            "success" to success,
-            "fallback" to fallback,
-            "error" to if (success) null else runPayload["error_message"],
-            "run_id" to runPayload["run_id"],
-            "audit_run_id" to runPayload["audit_run_id"],
-            "function_id" to functionId,
-            "goal" to goal.takeIf { it.isNotEmpty() },
-            "actions_executed" to (runPayload["success_step_count"] ?: 0),
-            "step_results" to runPayload["step_results"],
-            "timing" to runPayload["timing"],
-            "control" to linkedMapOf(
-                "fallback_reason" to fallbackReason,
-                "guard_decision" to decision,
-                "runner" to runPayload["runner"]
-            ),
-            "oob_result" to runPayload,
-            "guard" to guard,
-            "source" to "oob_native_omniflow_toolkit"
-        )
-    }
+    @Deprecated("Use runFunction/oob_function_run. call_function is a compatibility alias.")
+    suspend fun callFunction(args: Map<String, Any?>?): Map<String, Any?> = runFunction(args)
 
     fun ingestRunLog(args: Map<String, Any?>?): Map<String, Any?> {
         val request = args ?: emptyMap()
@@ -280,7 +195,7 @@ class OobOmniFlowToolkitService(
             )
         }
 
-        val replayResult = callFunction(
+        val replayResult = runFunction(
             linkedMapOf(
                 "function_id" to functionId,
                 "arguments" to mapArg(request["arguments"]),
@@ -296,7 +211,7 @@ class OobOmniFlowToolkitService(
             "explore" to exploreResult,
             "replay" to replayResult,
             "utg" to exploreResult["utg"],
-            "error" to replayResult["error"],
+            "error" to firstNonBlank(replayResult["error"], replayResult["error_message"]).takeIf { it.isNotEmpty() },
             "source" to "oob_native_omniflow_toolkit"
         )
     }
@@ -614,25 +529,6 @@ class OobOmniFlowToolkitService(
     private fun materializedSteps(spec: Map<String, Any?>): List<Map<String, Any?>> {
         return OobFunctionSchemaBuilder.materializedSteps(spec)
     }
-
-    private fun canonicalCallError(
-        functionId: String,
-        error: String,
-        fallbackReason: String,
-        guard: Map<String, Any?> = emptyMap(),
-    ): Map<String, Any?> = linkedMapOf(
-        "success" to false,
-        "fallback" to true,
-        "error" to error,
-        "run_id" to null,
-        "function_id" to functionId,
-        "actions_executed" to 0,
-        "control" to linkedMapOf(
-            "fallback_reason" to fallbackReason
-        ),
-        "guard" to guard,
-        "source" to "oob_native_omniflow_toolkit"
-    )
 
     private fun errorPayload(
         code: String,

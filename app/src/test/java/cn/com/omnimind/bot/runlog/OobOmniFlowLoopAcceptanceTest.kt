@@ -620,10 +620,9 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("get_state", firstStep?.get("tool"))
             assertEquals("allow", firstStep?.get("decision"))
 
-            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            val call = toolkit.runFunction(mapOf("function_id" to functionId))
             assertEquals(true, call["success"])
-            assertEquals(false, call["fallback"])
-            assertEquals(false, (call["oob_result"] as? Map<*, *>)?.get("model_required"))
+            assertEquals(false, (call["result"] as? Map<*, *>)?.get("model_required"))
             val results = call["step_results"] as? List<*>
             val firstResult = results?.firstOrNull() as? Map<*, *>
             assertEquals(true, firstResult?.get("skipped"))
@@ -683,9 +682,8 @@ class OobOmniFlowLoopAcceptanceTest {
             )
             assertEquals(true, register["success"])
 
-            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            val call = toolkit.runFunction(mapOf("function_id" to functionId))
             assertEquals(true, call["success"])
-            assertEquals(false, call["fallback"])
             val results = call["step_results"] as? List<*>
             val firstResult = results?.single() as? Map<*, *>
             assertEquals("omniflow", firstResult?.get("executor"))
@@ -907,14 +905,13 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(null, compactNodeSkillContext?.get("skill_artifact"))
             assertEquals(null, compactNodeSkillContext?.get("skill"))
 
-            val call = toolkit.callFunction(
+            val call = toolkit.runFunction(
                 mapOf(
                     "function_id" to functionId,
                     "goal" to goal,
                 )
             )
             assertEquals(true, call["success"])
-            assertEquals(false, call["fallback"])
             assertEquals(1, (call["actions_executed"] as Number).toInt())
             val functionTiming = call["timing"] as? Map<*, *>
             assertNotNull(functionTiming)
@@ -937,7 +934,7 @@ class OobOmniFlowLoopAcceptanceTest {
             assertNotNull(functionTiming?.get("startup_phase_ms") as? Map<*, *>)
             assertNotNull(functionTiming?.get("runner_phase_ms") as? Map<*, *>)
 
-            val oobResult = call["oob_result"] as? Map<*, *>
+            val oobResult = call["result"] as? Map<*, *>
             assertNotNull(oobResult)
             assertEquals("oob_omniflow_loop", oobResult?.get("runner"))
             assertEquals(false, oobResult?.get("model_required"))
@@ -1253,9 +1250,8 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("allow", step?.get("decision"))
             assertEquals("low", step?.get("risk_level"))
 
-            val call = toolkit.callFunction(mapOf("function_id" to functionId))
+            val call = toolkit.runFunction(mapOf("function_id" to functionId))
             assertEquals(true, call["success"])
-            assertEquals(false, call["fallback"])
             assertEquals(1, (call["actions_executed"] as Number).toInt())
         } finally {
             context.root.deleteRecursively()
@@ -1314,7 +1310,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val recallCounts = recallTiming["counts"] as? Map<*, *>
             assertFalse(recallCounts.orEmpty().containsKey("segment_candidates"))
 
-            val firstRun = toolkit.callFunction(
+            val firstRun = toolkit.runFunction(
                 mapOf(
                     "function_id" to parentFunctionId,
                     "goal" to "open settings",
@@ -1325,7 +1321,7 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals("com.android.settings", backend.currentPackageName())
 
             backend.setCurrentPackage("com.android.contacts")
-            val secondRun = toolkit.callFunction(
+            val secondRun = toolkit.runFunction(
                 mapOf(
                     "function_id" to parentFunctionId,
                     "goal" to "open settings",
@@ -1478,7 +1474,6 @@ class OobOmniFlowLoopAcceptanceTest {
 
     private fun assertOpenSettingsParentRun(run: Map<String, Any?>, childFunctionId: String) {
         assertEquals(true, run["success"])
-        assertEquals(false, run["fallback"])
         assertEquals(1, (run["actions_executed"] as Number).toInt())
         val stepResults = run["step_results"] as? List<*>
         val parentStep = stepResults?.single() as? Map<*, *>

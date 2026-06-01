@@ -80,11 +80,15 @@ object OobFunctionSkillProfile {
                 PromptLocale.ZH_CN -> {
                     appendLine("当前可复用的 OmniFlow Functions（候选摘要，不是完整 spec）：")
                     appendLine("- 如果用户目标与某个 Function 高置信匹配，优先 `${OobFunctionToolNames.FUNCTION_GUARD_CHECK}` -> `${OobFunctionToolNames.FUNCTION_RUN}`，不要先裸跑 `vlm_task`。")
+                    appendLine("- 带参数的 Function 也可以命中；像普通 tool 一样根据用户目标填写参数，再调用 `${OobFunctionToolNames.FUNCTION_RUN}`。")
+                    appendLine("- `vlm_task` 只有在显式允许高置信自动执行时才会复用 Function，且内部也走 `${OobFunctionToolNames.FUNCTION_RUN}`；缺少必填参数时不要空跑，交给 agent 填参。")
                     appendLine("- 如果只是相似但不确定，先 guard 或 `${OobFunctionToolNames.FUNCTION_GET}` 查看；证据不足再用 `vlm_task`。")
                 }
                 PromptLocale.EN_US -> {
                     appendLine("Reusable OmniFlow Functions available right now (candidate summaries, not full specs):")
                     appendLine("- If the user goal clearly matches a Function, prefer `${OobFunctionToolNames.FUNCTION_GUARD_CHECK}` -> `${OobFunctionToolNames.FUNCTION_RUN}` before raw `vlm_task`.")
+                    appendLine("- Parameterized Functions can still be selected; fill arguments from the user goal like a normal tool, then call `${OobFunctionToolNames.FUNCTION_RUN}`.")
+                    appendLine("- `vlm_task` reuses a Function only when high-confidence auto-execution is explicitly allowed, and it uses the same `${OobFunctionToolNames.FUNCTION_RUN}` path internally; do not run with missing required arguments.")
                     appendLine("- If the match is only tentative, inspect with guard or `${OobFunctionToolNames.FUNCTION_GET}`; use `vlm_task` when evidence is insufficient.")
                 }
             }
@@ -112,7 +116,8 @@ object OobFunctionSkillProfile {
             ?.takeIf { it.isNotEmpty() }
             ?: name
         val metadata = spec["metadata"] as? Map<*, *>
-        val agentReuse = metadata?.get("agent_reuse") as? Map<*, *>
+        val agentReuse = (spec["agent_reuse"] as? Map<*, *>)
+            ?: (metadata?.get("agent_reuse") as? Map<*, *>)
         val reuseWhen = agentReuse?.get("reuse_when")?.toString()?.trim().orEmpty()
         val successSignal = agentReuse?.get("success_signal")?.toString()?.trim().orEmpty()
         val inputSchema = OobFunctionSchemaBuilder.inputSchema(spec)

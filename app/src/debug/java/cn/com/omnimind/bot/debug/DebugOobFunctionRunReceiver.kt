@@ -32,7 +32,7 @@ class DebugOobFunctionRunReceiver : BroadcastReceiver() {
         scope.launch {
             val result = runCatching {
                 waitForReplayPage(appContext)
-                OobOmniFlowToolkitService(appContext).callFunction(
+                OobOmniFlowToolkitService(appContext).runFunction(
                     mapOf(
                         "function_id" to functionId,
                         "goal" to goal,

@@ -312,8 +312,8 @@ class VlmRecallGuidanceBuilderTest {
                     "decision" to "hit",
                     "hit" to mapOf(
                         "function_id" to "open_settings",
-                        "score" to 0.999,
-                        "page_similarity" to 0.998,
+                        "score" to 0.94,
+                        "page_similarity" to 0.89,
                         "text_score" to 1.0,
                     ),
                 )
@@ -346,6 +346,50 @@ class VlmRecallGuidanceBuilderTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun `parameterized hit is rendered for agent filled function run but not pre-executed empty`() {
+        val payload = mapOf(
+            "success" to true,
+            "decision" to "hit",
+            "decision_policy" to mapOf(
+                "mode" to "direct_execution_allowed",
+                "direct_hit_requested" to true,
+                "direct_hit_allows_agent_filled_arguments" to true,
+            ),
+            "hit" to mapOf(
+                "function_id" to "send_message",
+                "score" to 0.96,
+                "page_similarity" to 0.94,
+                "text_score" to 0.91,
+                "strict_direct_hit" to true,
+                "requires_arguments" to true,
+                "argument_fill_policy" to "agent_fill_required_arguments_from_user_goal",
+                "inputSchema" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "contact" to mapOf("type" to "string"),
+                        "message" to mapOf("type" to "string"),
+                    ),
+                    "required" to listOf("contact", "message"),
+                ),
+                "function_profile" to mapOf(
+                    "purpose" to "Send a chat message to a contact.",
+                    "use_when" to "User asks to message someone.",
+                    "success_signal" to "Message appears in the conversation.",
+                ),
+            ),
+        )
+
+        val guidance = VlmRecallGuidanceBuilder.renderGuidance(payload)
+
+        assertNull(VlmRecallGuidanceBuilder.fromAgentPayload(payload, allowDirectExecutionDecision = true).directHitFunctionId)
+        assertTrue(guidance.contains("function_id=send_message"))
+        assertTrue(guidance.contains("argument_policy: requires_arguments=true"))
+        assertTrue(guidance.contains("params=contact,message"))
+        assertTrue(guidance.contains("function_profile: purpose=Send a chat message"))
+        assertTrue(guidance.contains("parameterized_hits_may_be_called_by_agent_with_filled_arguments=true"))
     }
 
     @Test

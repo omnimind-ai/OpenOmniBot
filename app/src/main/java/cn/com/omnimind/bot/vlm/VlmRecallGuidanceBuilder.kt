@@ -163,6 +163,12 @@ object VlmRecallGuidanceBuilder {
                 val description = firstNonBlank(candidate["description"], candidate["name"], functionId)
                     .take(MAX_DESCRIPTION_CHARS)
                 appendLine("${index + 1}. function_id=$functionId score=$score description=$description")
+                renderFunctionProfile(candidate).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   function_profile: $it")
+                }
+                renderArgumentPolicy(candidate).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   argument_policy: $it")
+                }
                 renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
                     appendLine("   step: $summary")
                 }
@@ -181,6 +187,12 @@ object VlmRecallGuidanceBuilder {
                     "capability ${index + 1}: type=$type scope=$scope function_id=$functionId " +
                         "score=$score description=$description"
                 )
+                renderFunctionProfile(capability).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   capability_profile: $it")
+                }
+                renderArgumentPolicy(capability).takeIf { it.isNotBlank() }?.let {
+                    appendLine("   argument_policy: $it")
+                }
                 renderStepSummaries(capability).take(MAX_STEP_SUMMARIES).forEach { summary ->
                     appendLine("   capability_step: $summary")
                 }
@@ -203,6 +215,37 @@ object VlmRecallGuidanceBuilder {
             if (title.isBlank() && tool.isBlank()) return@mapIndexedNotNull null
             "${index + 1}. ${tool.ifBlank { "step" }}: ${title.take(MAX_STEP_TITLE_CHARS)}"
         }
+    }
+
+    private fun renderFunctionProfile(candidate: Map<String, Any?>): String {
+        val profile = mapArg(candidate["function_profile"])
+        if (profile.isEmpty()) return ""
+        val purpose = firstNonBlank(profile["purpose"]).take(MAX_DESCRIPTION_CHARS)
+        val useWhen = firstNonBlank(profile["use_when"]).take(MAX_DESCRIPTION_CHARS)
+        val success = firstNonBlank(profile["success_signal"]).take(MAX_DESCRIPTION_CHARS)
+        val pkg = firstNonBlank(profile["package_name"])
+        return listOf(
+            "purpose=$purpose".takeIf { purpose.isNotBlank() },
+            "use_when=$useWhen".takeIf { useWhen.isNotBlank() },
+            "success_signal=$success".takeIf { success.isNotBlank() },
+            "package=$pkg".takeIf { pkg.isNotBlank() },
+        ).filterNotNull().joinToString(" ")
+    }
+
+    private fun renderArgumentPolicy(candidate: Map<String, Any?>): String {
+        val requiresArguments = requiresArguments(candidate)
+        val fillPolicy = firstNonBlank(candidate["argument_fill_policy"], candidate["argumentFillPolicy"])
+        val schema = mapArg(candidate["inputSchema"])
+        val properties = mapArg(schema["properties"]).keys
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .take(6)
+            .joinToString(",")
+        return listOf(
+            "requires_arguments=$requiresArguments",
+            "fill_policy=$fillPolicy".takeIf { fillPolicy.isNotBlank() },
+            "params=$properties".takeIf { properties.isNotBlank() },
+        ).filterNotNull().joinToString(" ")
     }
 
     private fun renderDecisionContext(decisionContext: Map<String, Any?>): String {
@@ -236,9 +279,9 @@ object VlmRecallGuidanceBuilder {
 
     private fun functionExecutionPolicyLine(directDecision: Boolean): String =
         if (directDecision) {
-            "function_execution_policy=direct_execution_requested_by_caller; if_live_vlm_continues_use_native_screen_tools_only=true"
+            "function_execution_policy=direct_execution_requested_by_caller; parameterized_hits_may_be_called_by_agent_with_filled_arguments=true"
         } else {
-            "function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; live_vlm_uses_native_screen_tools_only=true"
+            "function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; function_candidates_may_be_called_by_agent_with_filled_arguments=true"
         }
 
     private fun isDirectExecutionRequested(
@@ -295,9 +338,9 @@ object VlmRecallGuidanceBuilder {
         val score = doubleArg(payload["score"])
         val pageSimilarity = doubleArg(payload["page_similarity"], payload["pageSimilarity"])
         val textScore = doubleArg(payload["text_score"], payload["textScore"])
-        if (score < STRICT_DIRECT_HIT_SCORE) return false
-        if (pageSimilarity < STRICT_DIRECT_HIT_SCORE) return false
-        if (textScore < STRICT_DIRECT_HIT_SCORE) return false
+        if (score < DIRECT_HIT_MIN_SCORE) return false
+        if (pageSimilarity < DIRECT_HIT_MIN_PAGE_SCORE) return false
+        if (textScore < DIRECT_HIT_MIN_TEXT_SCORE) return false
         if (requiresArguments(payload)) return false
         return true
     }
@@ -335,7 +378,9 @@ object VlmRecallGuidanceBuilder {
     private const val MAX_STEP_SUMMARIES = 3
     private const val MAX_DESCRIPTION_CHARS = 96
     private const val MAX_STEP_TITLE_CHARS = 96
-    private const val STRICT_DIRECT_HIT_SCORE = 0.999
+    private const val DIRECT_HIT_MIN_SCORE = 0.92
+    private const val DIRECT_HIT_MIN_PAGE_SCORE = 0.90
+    private const val DIRECT_HIT_MIN_TEXT_SCORE = 0.85
     private val AGENT_HIDDEN_RECALL_KEYS = setOf(
         "timing",
         "duration_ms",

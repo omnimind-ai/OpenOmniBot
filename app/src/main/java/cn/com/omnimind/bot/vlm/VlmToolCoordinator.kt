@@ -198,8 +198,8 @@ object VlmToolCoordinator {
             taskState = taskState,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
-            callFunction = { functionId ->
-                OobOmniFlowToolkitService(context).callFunction(
+            runFunction = { functionId ->
+                OobOmniFlowToolkitService(context).runFunction(
                     mapOf(
                         "function_id" to functionId,
                         "goal" to boundedRequest.goal,
@@ -371,8 +371,8 @@ object VlmToolCoordinator {
                     taskState = taskState,
                     recallGuidance = recallGuidance,
                     progressReporter = progressReporter,
-                    callFunction = { functionId ->
-                        OobOmniFlowToolkitService(context).callFunction(
+                    runFunction = { functionId ->
+                        OobOmniFlowToolkitService(context).runFunction(
                             mapOf(
                                 "function_id" to functionId,
                                 "goal" to boundedRequest.goal,
@@ -829,7 +829,7 @@ object VlmToolCoordinator {
         goal: String,
         recallGuidance: VlmRecallGuidance,
         progressReporter: VlmToolProgressReporter,
-        callFunction: suspend (String) -> Map<String, Any?>,
+        runFunction: suspend (String) -> Map<String, Any?>,
     ): VlmToolOutcome? {
         val functionId = recallGuidance.directHitFunctionId?.trim()?.takeIf { it.isNotEmpty() }
             ?: return null
@@ -844,7 +844,7 @@ object VlmToolCoordinator {
                 "functionId" to functionId,
             )
         )
-        val result = runCatching { callFunction(functionId) }.getOrElse { error ->
+        val result = runCatching { runFunction(functionId) }.getOrElse { error ->
             linkedMapOf<String, Any?>(
                 "success" to false,
                 "fallback" to true,
@@ -924,7 +924,7 @@ object VlmToolCoordinator {
         taskState: TaskState,
         recallGuidance: VlmRecallGuidance,
         progressReporter: VlmToolProgressReporter,
-        callFunction: suspend (String) -> Map<String, Any?>,
+        runFunction: suspend (String) -> Map<String, Any?>,
     ): VlmToolOutcome? {
         if (!request.allowOmniFlowFunctionAutoExecute) return null
         return tryExecuteRecallHit(
@@ -932,7 +932,7 @@ object VlmToolCoordinator {
             goal = request.goal,
             recallGuidance = recallGuidance,
             progressReporter = progressReporter,
-            callFunction = callFunction,
+            runFunction = runFunction,
         )
     }
 

@@ -31,7 +31,8 @@ Use cases:
 
 OMNIFLOW FUNCTION REUSE:
 - If the user goal clearly matches a saved OOB/OmniFlow Function, prefer oob_function_guard_check then oob_function_run before raw VLM exploration.
-- Keep allowOmniFlowFunctionAutoExecute=false by default. Set it true only when the caller explicitly wants a high-confidence recalled Function to execute before live VLM, or when the goal says to reuse a saved/previous Function.
+- Parameterized Functions are valid matches. Fill required arguments from the user goal like a normal tool before calling oob_function_run; do not discard a good Function only because it has an input schema.
+- Keep allowOmniFlowFunctionAutoExecute=false by default. Set it true only when the caller explicitly wants a high-confidence recalled Function to execute before live VLM, or when the goal says to reuse a saved/previous Function. If a recalled hit requires arguments, use the returned schema/profile to let the agent fill arguments instead of running empty args.
 - If the Function replay fails, use the returned fallback_context and resume later with oob_function_run resume_from_step/start_step_index.
 
 IMPORTANT FOR SUMMARY TASKS:

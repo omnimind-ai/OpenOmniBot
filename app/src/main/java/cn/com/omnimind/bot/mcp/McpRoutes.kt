@@ -248,7 +248,7 @@ object McpRoutes {
             "omniflow.call_tool" -> McpToolExecutors.executeOobToolCall(context, args)
             RunLogReplayPolicy.TOOL_CALL_TOOL -> McpToolExecutors.executeOobToolCall(context, args)
             "omniflow.recall" -> omniflowToolkit.recall(args)
-            "omniflow.call_function" -> omniflowToolkit.callFunction(args)
+            "omniflow.call_function" -> omniflowToolkit.runFunction(args)
             "omniflow.ingest_run_log" -> omniflowToolkit.ingestRunLog(args)
             "omniflow.explore_replay" -> omniflowToolkit.exploreAndReplay(args)
             OobFunctionToolNames.FUNCTION_LIST -> omniflowToolkit.listFunctions(args)

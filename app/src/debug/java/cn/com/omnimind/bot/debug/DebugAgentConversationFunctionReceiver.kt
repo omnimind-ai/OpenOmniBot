@@ -112,7 +112,7 @@ class DebugAgentConversationFunctionReceiver : BroadcastReceiver() {
         )
         val functionRegistered = functionPayload["success"] == true
         val runPayload = if (functionRegistered) {
-            OobOmniFlowToolkitService(context).callFunction(
+            OobOmniFlowToolkitService(context).runFunction(
                 mapOf(
                     "function_id" to functionId,
                     "goal" to "Validate agent-conversation registered Function replay.",

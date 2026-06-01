@@ -487,7 +487,7 @@ object McpToolExecutors {
             if (RunLogReplayPolicy.isOmniflowFunctionTool(toolName)) toolArgs["functionId"] else null,
         )
         if (functionId.isNotEmpty()) {
-            return OobOmniFlowToolkitService(context).callFunction(
+            return OobOmniFlowToolkitService(context).runFunction(
                 linkedMapOf(
                     "function_id" to functionId,
                     "arguments" to toolArgs,

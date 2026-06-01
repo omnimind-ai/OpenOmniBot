@@ -96,14 +96,21 @@ connected by artifacts, but do not merge their responsibilities.
    the current task has a high-confidence Function match. For a high-confidence
    match, prefer explicit replay through guard + Function run instead of
    re-clicking the same flow manually.
+   Parameterized Functions are still valid candidates: read `inputSchema`,
+   `function_profile`, and `argument_policy`, fill arguments from the user goal
+   like a normal tool call, then use `oob_function_run`.
 5. Explicit Function replay runs through `oob_function_guard_check` then
-   `oob_function_run`, `omniflow.call_tool`, or `call_tool(function_id=...)`.
-   This is an OmniFlow replay step, not a VLM click. It must create its own
-   visible `call_function` / reusable-command card with guard status, local
-   replay result, fallback reason, and nested step results.
+   `oob_function_run`. Legacy `omniflow.call_function` or
+   `call_tool(function_id=...)` must route to the same Function runner, not a
+   separate replay implementation. This is an OmniFlow replay step, not a VLM
+   click. It must create its own visible reusable-command card with guard
+   status, local replay result, fallback reason, and nested step results.
 6. If replay returns `fallback=true`, `needs_agent`, or `model_required=true`,
    stop replay and require an explicit bounded VLM continuation. Do not silently
    fall back to VLM inside an offline replay.
+   If the selected Function was wrong, use the returned `fallback_context` to
+   continue with native VLM actions and later call `update_function` with the
+   run evidence if the saved Function should be repaired.
 7. Convert/register a successful VLM or human-recorded RunLog only when it
    contains replayable concrete actions and finished successfully. Failed,
    unfinished, empty, perception-only, or diagnostic-only RunLogs must not
@@ -129,8 +136,9 @@ Tool ownership:
   enhancement job, writing `metadata.oob_enhancement`.
 - Function recall: UDEG current-page match returning node decision context and
   node-attached Function candidates.
-- Agent-facing Function cards: show `call_function` as a real tool call, not as
-  hidden JSON under the parent VLM result.
+- Agent-facing Function cards: show Function replay as a real `oob_function_run`
+  tool call, not as hidden JSON under the parent VLM result. Nested Function
+  steps may still use the internal `call_function` step label.
 
 ## Overview
 
@@ -493,8 +501,8 @@ external clients can call the same names through MCP:
 - `oob_function_delete` to delete one Function and remove UDEG node references.
 - `oob_function_clear` with `confirm=true` to clear all Functions and detach
   all UDEG node Function references.
-- `oob_function_run` or `omniflow.call_tool` with `function_id` to explicitly
-  replay a Function after user/agent selection.
+- `oob_function_run` to explicitly replay a Function after user/agent
+  selection. Legacy `call_tool(function_id=...)` must route to the same runner.
 
 When validating direct Function replay, inspect `step_results`, not only the
 top-level `success`. Replay no longer runs post-action page/package validation:
@@ -512,7 +520,7 @@ by the Runtime Flow section. This section only names the management tools and
 validation entrypoints. For a create/inspect/run workflow, inspect with
 `oob_run_log_get`, convert/register with `oob_run_log_convert` or
 `oob_function_register`, guard-check, then run only through explicit
-`oob_function_run` / `call_tool(function_id=...)` selection.
+`oob_function_run` selection.
 
 When submitting a conversation through `agent_run` only to create, inspect,
 convert, or explicitly run reusable instructions, pass

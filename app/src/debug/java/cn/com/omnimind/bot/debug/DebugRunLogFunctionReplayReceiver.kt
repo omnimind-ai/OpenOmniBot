@@ -68,7 +68,7 @@ class DebugRunLogFunctionReplayReceiver : BroadcastReceiver() {
                     ?: emptyMap<String, Any?>()
                 val functionSpec = convert["function_spec"] ?: convertResult["function_spec"]
                 val replay = if (shouldRun && convert["success"] == true && createdFunctionId.isNotBlank()) {
-                    service.callFunction(
+                    service.runFunction(
                         linkedMapOf(
                             "function_id" to createdFunctionId,
                             "goal" to goal,

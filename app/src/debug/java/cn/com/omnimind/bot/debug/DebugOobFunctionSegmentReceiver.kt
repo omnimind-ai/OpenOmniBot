@@ -118,7 +118,7 @@ class DebugOobFunctionSegmentReceiver : BroadcastReceiver() {
             )
         }
         val parentRun = timing.measure("parent_run_ms") {
-            toolkit.callFunction(
+            toolkit.runFunction(
                 mapOf(
                     "function_id" to parentFunctionId,
                     "goal" to goal,
