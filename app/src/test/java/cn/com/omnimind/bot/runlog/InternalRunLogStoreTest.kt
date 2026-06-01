@@ -467,7 +467,7 @@ class InternalRunLogStoreTest {
             val runningTimeline = InternalRunLogStore.timelinePayload(context, runId)
             val runningCards = runningTimeline["cards"] as List<*>
             assertEquals(2, runningCards.size)
-            assertEquals("running", runningTimeline["status"])
+            assertEquals("running", runningTimeline["run_status"])
 
             InternalRunLogStore.finishRun(
                 context = context,
@@ -480,7 +480,7 @@ class InternalRunLogStoreTest {
             val finishedCards = finishedTimeline["cards"] as List<*>
             val diagnostics = finishedTimeline["diagnostics"] as Map<*, *>
             assertEquals(2, finishedCards.size)
-            assertEquals("success", finishedTimeline["status"])
+            assertEquals("success", finishedTimeline["run_status"])
             assertEquals("overlay_touch", diagnostics["recording_backend"])
         } finally {
             context.root.deleteRecursively()
