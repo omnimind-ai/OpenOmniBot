@@ -250,7 +250,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                     listOf("step_a", "step_b", "step_c", "step_d", "step_key"),
                     results.map { it["step_id"] }
                 )
-                assertFalse(run.containsKey("pending_action_stack"))
+                assertNoSourceAlignmentPayload(run)
             }
         } finally {
             context.root.deleteRecursively()
@@ -290,7 +290,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 val results = stepResults(run)
                 assertEquals(listOf("step_a", "step_key", "step_after_key"), results.map { it["step_id"] })
                 assertFalse(results.any { it["error_code"] == "OOB_SOURCE_ALIGNMENT_MISS" })
-                assertFalse(run.containsKey("pending_action_stack"))
+                assertNoSourceAlignmentPayload(run)
             }
         } finally {
             context.root.deleteRecursively()
@@ -322,7 +322,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 assertEquals(true, run["success"])
                 val results = stepResults(run)
                 assertEquals(listOf("step_a", "step_b"), results.map { it["step_id"] })
-                assertFalse(run.containsKey("pending_action_stack"))
+                assertNoSourceAlignmentPayload(run)
             }
         } finally {
             context.root.deleteRecursively()
@@ -1034,6 +1034,13 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
           <node index="1" text="Action $label" resource-id="$packageName:id/action" class="android.widget.Button" package="$packageName" content-desc="Action $label" bounds="[0,260][1080,420]" clickable="true" focusable="true" />
         </hierarchy>
     """.trimIndent()
+
+    private fun assertNoSourceAlignmentPayload(run: Map<String, Any?>) {
+        assertFalse(run.containsKey("pending_action_stack"))
+        assertFalse(run.containsKey("source_alignment"))
+        assertFalse(run.containsKey("source_alignment_enabled"))
+        assertFalse(run.containsKey("skipped_by_source_alignment_count"))
+    }
 
     private fun runLogCard(
         toolName: String,

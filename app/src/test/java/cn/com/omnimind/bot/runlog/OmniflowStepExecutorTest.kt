@@ -117,14 +117,13 @@ class OmniflowStepExecutorTest {
     }
 
     @Test
-    fun `execute uses omniflow loop with action transfer and checker diagnostics`() = runBlocking {
+    fun `execute derives coordinate remap from action and source context`() = runBlocking {
         val backend = FakeBackend(beforeXml = SOURCE_XML, afterXml = AFTER_XML)
         OmniflowActionRuntime.useBackendForTesting(backend).use {
             val result = OmniflowStepExecutor.execute(
                 step = mapOf(
                     "executor" to "omniflow",
                     "omniflow_action" to "click",
-                    "coordinate_hook" to "omniflow",
                     "args" to mapOf("x" to 120, "y" to 240),
                     "source_context" to mapOf(
                         "src_ctx" to mapOf("page" to SOURCE_XML),

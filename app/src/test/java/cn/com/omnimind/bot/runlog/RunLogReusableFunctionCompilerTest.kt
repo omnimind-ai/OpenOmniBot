@@ -88,7 +88,7 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals("omniflow", click["executor"])
         assertEquals(true, click["model_free"])
         assertEquals("click", click["omniflow_action"])
-        assertEquals("omniflow", click["coordinate_hook"])
+        assertFalse(click.containsKey("coordinate_hook"))
         assertFalse(click.containsKey("agent_call"))
         assertEquals(
             SOURCE_XML,
@@ -121,7 +121,7 @@ class RunLogReusableFunctionCompilerTest {
         val click = stepsFrom(spec).single()
         assertEquals("click", click["tool"])
         assertEquals("omniflow", click["executor"])
-        assertEquals("omniflow", click["coordinate_hook"])
+        assertFalse(click.containsKey("coordinate_hook"))
         val args = click["args"] as Map<*, *>
         assertEquals(540, (args["x"] as Number).toInt())
         assertEquals(620, (args["y"] as Number).toInt())
@@ -160,7 +160,7 @@ class RunLogReusableFunctionCompilerTest {
         val click = stepsFrom(spec).single()
         assertEquals("click", click["tool"])
         assertEquals("omniflow", click["executor"])
-        assertEquals("omniflow", click["coordinate_hook"])
+        assertFalse(click.containsKey("coordinate_hook"))
         val args = click["args"] as Map<*, *>
         assertEquals(880, (args["x"] as Number).toInt())
         assertEquals(1680, (args["y"] as Number).toInt())
@@ -204,7 +204,7 @@ class RunLogReusableFunctionCompilerTest {
         val input = stepsFrom(spec).single()
         assertEquals("input_text", input["tool"])
         assertEquals("omniflow", input["executor"])
-        assertEquals("omniflow", input["coordinate_hook"])
+        assertFalse(input.containsKey("coordinate_hook"))
         val args = input["args"] as Map<*, *>
         assertEquals("hello", args["text"])
         assertEquals(540, (args["x"] as Number).toInt())
@@ -854,7 +854,7 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals("click", step["omniflow_action"])
         assertEquals("android_privileged_action", step["source_tool"])
         assertEquals("omniflow", step["executor"])
-        assertEquals("omniflow", step["coordinate_hook"])
+        assertFalse(step.containsKey("coordinate_hook"))
         val args = step["args"] as Map<*, *>
         assertEquals(120, (args["x"] as Number).toInt())
         assertEquals(240, (args["y"] as Number).toInt())
@@ -970,7 +970,7 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals(listOf("click", "input_text"), steps.map { it["tool"] })
         assertTrue(steps.all { it["executor"] == "omniflow" })
         assertTrue(steps.all { it["model_free"] == true })
-        assertEquals("omniflow", steps[0]["coordinate_hook"])
+        assertFalse(steps[0].containsKey("coordinate_hook"))
         assertEquals(
             SOURCE_XML,
             ((steps[0]["source_context"] as Map<*, *>)["src_ctx"] as Map<*, *>)["page"],
@@ -1098,7 +1098,7 @@ class RunLogReusableFunctionCompilerTest {
         assertEquals(180, rebuiltArgs["x"])
         assertEquals(232, rebuiltArgs["y"])
         assertEquals("app:id/first_name", rebuiltArgs["node_resource_id"])
-        assertEquals("omniflow", rebuiltStep["coordinate_hook"])
+        assertFalse(rebuiltStep.containsKey("coordinate_hook"))
     }
 
     @Test

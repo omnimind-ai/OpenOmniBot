@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,8 +92,8 @@ class OobOmniFlowExplorerTest {
         assertEquals("oob.reusable_function.v1", spec["schema_version"])
         assertEquals("omniflow", step["executor"])
         assertEquals("click", step["omniflow_action"])
-        assertEquals("omniflow", step["coordinate_hook"])
-        assertEquals("omniflow_utg", step["replay_engine"])
+        assertFalse(step.containsKey("coordinate_hook"))
+        assertFalse(step.containsKey("replay_engine"))
         assertNotNull(step["utg"])
         assertNotNull(sourceContext)
         assertEquals("open network settings", (spec["source"] as Map<*, *>)["goal"])
@@ -149,8 +150,8 @@ class OobOmniFlowExplorerTest {
 
         assertEquals("omniflow", step["executor"])
         assertEquals(OobActionCodec.ACTION_SWIPE, step["omniflow_action"])
-        assertEquals("omniflow", step["coordinate_hook"])
-        assertEquals("omniflow_utg", step["replay_engine"])
+        assertFalse(step.containsKey("coordinate_hook"))
+        assertFalse(step.containsKey("replay_engine"))
         assertEquals("up", args["direction"])
         assertNotNull(args["x1"])
         assertNotNull(args["x2"])

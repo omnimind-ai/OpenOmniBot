@@ -13,7 +13,7 @@ import org.junit.Test
  * End-to-end flow tests for oob.reusable_function.v1 fixed replay.
  *
  * Tests cover: spec parsing, materializedSteps, executor classification,
- * canRunFullyWithOmniflow, and coordinate_hook guard.
+ * canRunFullyWithOmniflow, and source-context replay metadata.
  */
 class OobSkillReplayTest {
 
@@ -88,7 +88,6 @@ class OobSkillReplayTest {
             "title": "点击联系人张三",
             "executor": "omniflow",
             "omniflow_action": "click",
-            "coordinate_hook": "omniflow",
             "source_context": {
               "src_ctx": {
                 "page": "<hierarchy><node bounds=\"[0,0][1080,1920]\" clickable=\"true\" text=\"张三\"/></hierarchy>",
@@ -109,7 +108,6 @@ class OobSkillReplayTest {
             "title": "点击发送",
             "executor": "omniflow",
             "omniflow_action": "click",
-            "coordinate_hook": "omniflow",
             "source_context": {
               "src_ctx": {
                 "page": "<hierarchy><node bounds=\"[900,1800][1080,1900]\" clickable=\"true\" text=\"发送\"/></hierarchy>",
@@ -213,7 +211,7 @@ class OobSkillReplayTest {
         val click = steps[1]
         assertEquals("omniflow", click["executor"])
         assertEquals("click", click["omniflow_action"])
-        assertEquals("omniflow", click["coordinate_hook"])
+        assertFalse(click.containsKey("coordinate_hook"))
         assertNotNull(click["source_context"])
 
         val type = steps[2]
@@ -244,25 +242,20 @@ class OobSkillReplayTest {
         assertTrue(canRunFullyWithOmniflow(spec))
     }
 
-    // ── coordinate hook guard ─────────────────────────────────────────────────
+    // ── derived replay metadata ──────────────────────────────────────────────
 
     @Test
-    fun `coordinate_hook only present when source_context is non-empty`() {
+    fun `coordinate hook marker is not required in new specs`() {
         val spec = specFromJson(pureOmniflowSpec)
         val steps = materializedSteps(spec)
 
-        // open_app: no coordinate_hook
-        assertNull(steps[0]["coordinate_hook"])
-        // click with source_context: has coordinate_hook
-        assertEquals("omniflow", steps[1]["coordinate_hook"])
-        // type: no coordinate_hook
-        assertNull(steps[2]["coordinate_hook"])
-        // click with source_context: has coordinate_hook
-        assertEquals("omniflow", steps[3]["coordinate_hook"])
+        assertTrue(steps.none { it.containsKey("coordinate_hook") })
+        assertNotNull(steps[1]["source_context"])
+        assertNotNull(steps[3]["source_context"])
     }
 
     @Test
-    fun `step with coordinate_hook has valid source_context page xml`() {
+    fun `coordinate replay step keeps valid source_context page xml`() {
         val spec = specFromJson(pureOmniflowSpec)
         val steps = materializedSteps(spec)
         val clickStep = steps[1]

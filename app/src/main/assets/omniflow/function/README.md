@@ -336,6 +336,11 @@ When adding or migrating a generic agent tool name:
 - own the guard decision/risk vocabulary used in guard and fallback payloads
 - build agent fallback context when deterministic replay fails
 - generate the resume instruction for `oob_function_run`
+- keep `Function.steps` as the only pending sequence. OmniFlow replay should
+  re-localize and attempt each active step in order; it must not skip action
+  steps because a terminal postcondition appears satisfied or because the page
+  seems to have advanced. If the current step cannot be executed, return
+  fallback context with `resume_from_step`.
 
 `OobFunctionRunner` owns runtime execution startup:
 
@@ -418,6 +423,8 @@ primitive local action execution:
 - decide whether a step is locally executable as graph/function/call_tool
 - extract replayable agent tools from recorded agent fallback steps
 - keep these routing predicates out of the main replay loop
+- skip only explicit observation/no-op legacy steps. Do not introduce
+  `already_satisfied` or `optional_not_present` runtime skips for action steps.
 
 `OobFunctionToolDelegationExecutor` owns live tool delegation inside replay:
 
@@ -696,11 +703,13 @@ Use these owner rules when removing duplicated helper code:
   run policy, RunLog compilation, and local replay checks should use those
   constants instead of local string literals for `omniflow`, `tool`, or `agent`.
   This applies to generated step specs, result payloads that report the
-  executor category, runtime comparisons, and deterministic replay markers such
-  as `coordinate_hook`. Replay-engine markers such as `omniflow_utg` belong in
-  the same policy object when runtime checks depend on them. Diagnostic labels
-  such as `agent_tool`, `omniflow_graph`, or `omniflow_function` are not
-  executor categories and should stay local to the component that emits them.
+  executor category, and runtime comparisons. Do not add generated-step marker
+  fields for facts the runtime can derive from `executor`, action, source
+  context, or UTG data. Legacy markers such as `coordinate_hook` and
+  `replay_engine` may be read for compatibility, but new specs should not write
+  them. Diagnostic labels such as `agent_tool`, `omniflow_graph`, or
+  `omniflow_function` are not executor categories and should stay local to the
+  component that emits them.
 - Canonical replay tool names such as `call_tool`, `oob_tool_call`,
   `call_function`, `go_to_node`, `click_node`, `node_click`, and
   `oob.agent.run` also belong in

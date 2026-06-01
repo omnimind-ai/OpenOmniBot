@@ -241,7 +241,6 @@ internal object RunLogReplayStepCompiler {
             "source_tool" to toolName.takeIf { it != canonicalToolName },
             "args" to canonicalArgs,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-            "replay_engine" to if (isGraphTool) RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
             "observed_result" to result.takeUnless(::isEmptyJsonValue),
         )
@@ -284,8 +283,6 @@ internal object RunLogReplayStepCompiler {
         sourceContext: Map<String, Any?>,
         utg: Map<String, Any?> = emptyMap(),
     ): Map<String, Any?> {
-        val usesCoordinateHook =
-            RunLogReplayPolicy.isCoordinateAction(replayAction) && sourceContext.isNotEmpty()
         return nullableMap(
             "title" to title,
             "kind" to "omniflow_action",
@@ -299,8 +296,6 @@ internal object RunLogReplayStepCompiler {
             "source_tool" to sourceToolName.takeIf { it != replayAction },
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-            "coordinate_hook" to if (usesCoordinateHook) RunLogReplayPolicy.EXECUTOR_OMNIFLOW else null,
-            "replay_engine" to if (utg.isNotEmpty()) RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
         )
     }

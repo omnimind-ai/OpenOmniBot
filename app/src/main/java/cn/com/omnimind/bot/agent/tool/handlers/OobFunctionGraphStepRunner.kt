@@ -175,7 +175,6 @@ class OobFunctionGraphStepRunner(
             "callable_tool" to localAction,
             "args" to edgeArgs,
             "source_context" to mapArg(edge["source_context"]).takeIf { it.isNotEmpty() },
-            "coordinate_hook" to edge["coordinate_hook"],
         ).filterValues { it != null }
     }
 

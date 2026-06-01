@@ -322,11 +322,6 @@ object OobFunctionSchemaBuilder {
         "callable_tool" to action,
         "args" to args.filterValues { it != null },
         "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-        "coordinate_hook" to if (action in OobActionCodec.coordinateActions && sourceContext.isNotEmpty()) {
-            RunLogReplayPolicy.EXECUTOR_OMNIFLOW
-        } else {
-            null
-        },
     ).filterValues { it != null }
 
     private fun graphStep(
@@ -345,7 +340,6 @@ object OobFunctionSchemaBuilder {
         "tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
         "callable_tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
         "args" to args.filterValues { it != null },
-        "replay_engine" to RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG,
     )
 
     private fun functionStep(
