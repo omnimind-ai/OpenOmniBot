@@ -262,7 +262,7 @@ object RunLogReusableFunctionParameterizer {
                 )
             }
             RunLogReplayPolicy.isOmniflowGraphTool(action) -> nullableMap(
-                "type" to "click_node",
+                "type" to RunLogReplayPolicy.TOOL_CLICK_NODE,
                 "params" to nullableMap(
                     "node_id" to firstNonBlank(args["node_id"], args["nodeId"]),
                     "path" to listArg(args["path"]).takeIf { it.isNotEmpty() },

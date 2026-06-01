@@ -25,6 +25,8 @@ object RunLogReplayPolicy {
     const val TOOL_OOB_TOOL_CALL: String = "oob_tool_call"
     const val TOOL_CALL_FUNCTION: String = "call_function"
     const val TOOL_GO_TO_NODE: String = "go_to_node"
+    const val TOOL_CLICK_NODE: String = "click_node"
+    const val TOOL_NODE_CLICK: String = "node_click"
 
     val omniflowActions: Set<String> = OobActionCodec.executableActions
 
@@ -61,11 +63,16 @@ object RunLogReplayPolicy {
 
     val omniflowGraphTools: Set<String> = setOf(
         TOOL_GO_TO_NODE,
-        "click_node",
-        "node_click",
+        TOOL_CLICK_NODE,
+        TOOL_NODE_CLICK,
         "navigate_to_node",
         "gotonode",
         "goto_node",
+    )
+
+    val omniflowClickNodeGraphTools: Set<String> = setOf(
+        TOOL_CLICK_NODE,
+        TOOL_NODE_CLICK,
     )
 
     val omniflowFunctionTools: Set<String> = setOf(
@@ -121,6 +128,9 @@ object RunLogReplayPolicy {
 
     fun isOmniflowGraphTool(toolName: String): Boolean =
         normalizeToolName(toolName) in omniflowGraphTools
+
+    fun isOmniflowClickNodeGraphTool(toolName: String): Boolean =
+        normalizeToolName(toolName) in omniflowClickNodeGraphTools
 
     fun isOmniflowFunctionTool(toolName: String): Boolean =
         normalizeToolName(toolName) in omniflowFunctionTools

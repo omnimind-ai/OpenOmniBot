@@ -328,6 +328,9 @@ primitive local action execution:
 - lower graph edges into primitive OmniFlow local-action steps
 - execute the primitive path with the same checker rules as normal replay
 - report path-level success, failure, and per-edge step results
+- use `RunLogReplayPolicy` for graph replay tool aliases such as `click_node`
+  and `node_click`; graph runners and schema builders should not rebuild these
+  alias sets locally
 
 `OobFunctionEntryPackageGuard` owns pre-replay app restoration:
 
@@ -661,7 +664,8 @@ Use these owner rules when removing duplicated helper code:
   `omniflow_vlm_fallback` are not executor categories and should stay local to
   the component that emits them.
 - Canonical replay tool names such as `call_tool`, `oob_tool_call`,
-  `call_function`, `go_to_node`, and `oob.agent.run` also belong in
+  `call_function`, `go_to_node`, `click_node`, `node_click`, and
+  `oob.agent.run` also belong in
   `RunLogReplayPolicy` constants when they are used as replay tool taxonomy.
   UDEG edge-kind field names and diagnostic counter keys are graph-storage
   vocabulary and should remain with `OobUdegNodeStore`.
@@ -674,6 +678,10 @@ Use these owner rules when removing duplicated helper code:
 - Step role aliases belong in `OobStepRoleClassifier`. Checker patching may
   consume those roles, but should not maintain a separate optional-checker role
   alias table.
+- Checker action aliases belong in `OobFunctionCheckerPatchService`, but when
+  a checker patch references a real local action such as `click` or `open_app`,
+  it must canonicalize through `OobActionCodec` before mapping to checker-only
+  actions such as dismiss, allow, or reopen-app.
 - Function update policy belongs in `OobFunctionUpdateService` and its patch
   appliers. Do not move checker, evidence, audit, retarget, insert, delete, or
   reindex rules into `OobFunctionJson`.

@@ -115,8 +115,8 @@ object OobFunctionSchemaBuilder {
             .ifBlank { normalizedType }
         val stepId = firstNonBlank(action["id"], action["step_id"], "step_${index + 1}")
 
-        return when (normalizedType) {
-            OobActionCodec.ACTION_CLICK -> {
+        return when {
+            normalizedType == OobActionCodec.ACTION_CLICK -> {
                 val targetKind = firstNonBlank(target["kind"])
                 if (targetKind == "node_ref") {
                     graphStep(
@@ -151,7 +151,7 @@ object OobFunctionSchemaBuilder {
                     )
                 }
             }
-            OobActionCodec.ACTION_LONG_PRESS -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_LONG_PRESS -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -164,7 +164,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            OobActionCodec.ACTION_INPUT_TEXT -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_INPUT_TEXT -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -198,7 +198,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            OobActionCodec.ACTION_SWIPE -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_SWIPE -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -215,7 +215,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            OobActionCodec.ACTION_OPEN_APP -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_OPEN_APP -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -227,7 +227,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            OobActionCodec.ACTION_PRESS_KEY -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_PRESS_KEY -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -237,7 +237,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            OobActionCodec.ACTION_FINISHED -> localActionStep(
+            normalizedType == OobActionCodec.ACTION_FINISHED -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -249,7 +249,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            "click_node", RunLogReplayPolicy.TOOL_GO_TO_NODE, "node_click", "navigate_to_node", "gotonode", "goto_node" -> graphStep(
+            RunLogReplayPolicy.isOmniflowGraphTool(normalizedType) -> graphStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -259,7 +259,7 @@ object OobFunctionSchemaBuilder {
                     putFirstPresent("utg", params["utg"], action["utg"])
                 },
             )
-            RunLogReplayPolicy.TOOL_CALL_FUNCTION, "run_function", "execute_function", "omniflow.call_function" -> functionStep(
+            RunLogReplayPolicy.isOmniflowFunctionTool(normalizedType) -> functionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -279,7 +279,7 @@ object OobFunctionSchemaBuilder {
                     if (arguments.isNotEmpty()) put("arguments", arguments)
                 },
             )
-            "external_tool" -> externalToolStep(
+            normalizedType == "external_tool" -> externalToolStep(
                 stepId = stepId,
                 index = index,
                 title = title,

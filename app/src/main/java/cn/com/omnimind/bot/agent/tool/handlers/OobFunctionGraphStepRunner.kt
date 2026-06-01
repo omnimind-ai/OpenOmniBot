@@ -101,8 +101,9 @@ class OobFunctionGraphStepRunner {
 
         val rawPath = when {
             directPath.isNotEmpty() -> directPath
-            edges.isNotEmpty() && RunLogReplayPolicy.normalizeToolName(callableTool) in
-                setOf("click_node", "node_click") -> selectClickNodeEdges(edges, args)
+            edges.isNotEmpty() && RunLogReplayPolicy.isOmniflowClickNodeGraphTool(callableTool) -> {
+                selectClickNodeEdges(edges, args)
+            }
             utgPathIds.isNotEmpty() && utgEdges.isNotEmpty() -> {
                 val edgeById = utgEdges.associateBy { firstNonBlank(it["edge_id"], it["edgeId"], it["id"]) }
                 utgPathIds.mapNotNull { rawId -> edgeById[rawId?.toString().orEmpty()] }

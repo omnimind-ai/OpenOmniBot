@@ -8,6 +8,7 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonMap
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonValue
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
+import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OobStepRoleClassifier
 
 /**
@@ -18,6 +19,35 @@ import cn.com.omnimind.bot.runlog.OobStepRoleClassifier
  * instead of turning popup/ad dismissal into required execution steps.
  */
 class OobFunctionCheckerPatchService {
+    private val dismissActionAliases = setOf(
+        "dismiss",
+        "close",
+        "close_popup",
+        "click_close",
+        "click_dismiss",
+        "skip",
+    )
+    private val allowActionAliases = setOf(
+        "allow",
+        "grant",
+        "grant_permission",
+        "click_allow",
+    )
+    private val resolverActionAliases = setOf(
+        "confirm_resolver_always",
+        "always_open",
+        "open_always",
+        "click_always_open",
+        "click_always",
+        "confirm_default",
+        "set_default",
+    )
+    private val hideKeyboardActionAliases = setOf(
+        "hide_keyboard",
+        "dismiss_keyboard",
+        "close_keyboard",
+    )
+
     fun applyCheckerRulesPatch(
         metadata: MutableMap<String, Any?>,
         rawRules: Any?,
@@ -223,31 +253,15 @@ class OobFunctionCheckerPatchService {
     private fun normalizeCheckerAction(raw: String, condition: String): String {
         val text = raw.trim().lowercase().replace('-', '_')
         if (text.isBlank()) return checkerActionForCondition(condition)
-        return when (text) {
-            "dismiss",
-            "close",
-            "close_popup",
-            "click_close",
-            "click_dismiss",
-            "skip" -> OmniflowCheckerRule.ACTION_DISMISS
-            "allow",
-            "grant",
-            "grant_permission",
-            "click_allow" -> OmniflowCheckerRule.ACTION_ALLOW
-            "confirm_resolver_always",
-            "always_open",
-            "open_always",
-            "click_always_open",
-            "click_always",
-            "confirm_default",
-            "set_default" -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
-            "hide_keyboard",
-            "dismiss_keyboard",
-            "close_keyboard" -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
-            "open_app",
-            "launch_app",
-            "start_app" -> OmniflowCheckerRule.ACTION_OPEN_APP
-            "click" -> when (condition) {
+        val canonicalAction = OobActionCodec.canonicalActionForName(text)
+        return when {
+            text in dismissActionAliases -> OmniflowCheckerRule.ACTION_DISMISS
+            text in allowActionAliases -> OmniflowCheckerRule.ACTION_ALLOW
+            text in resolverActionAliases -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
+            text in hideKeyboardActionAliases -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
+            canonicalAction == OobActionCodec.ACTION_OPEN_APP ||
+                text == "start_app" -> OmniflowCheckerRule.ACTION_OPEN_APP
+            canonicalAction == OobActionCodec.ACTION_CLICK -> when (condition) {
                 OmniflowCheckerRule.COND_OVERLAY_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
                 OmniflowCheckerRule.COND_AD_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
                 OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW

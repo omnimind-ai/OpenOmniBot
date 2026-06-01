@@ -101,6 +101,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
+import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
@@ -6584,7 +6585,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     step["tool"],
                     step["callable_tool"],
                 ).lowercase()
-                if (action != "open_app") return@mapNotNull null
+                if (action != OobActionCodec.ACTION_OPEN_APP) return@mapNotNull null
                 firstNonBlankString(args["package_name"], args["packageName"])
             }
             .firstOrNull { it.isNotBlank() }
