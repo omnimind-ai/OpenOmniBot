@@ -4,6 +4,9 @@ import android.content.Context
 import cn.com.omnimind.assists.task.vlmserver.UIContext
 import cn.com.omnimind.assists.task.vlmserver.VLMPageContextProvider
 import cn.com.omnimind.assists.task.vlmserver.VLMPageContextRequest
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 
 class OobVlmPageContextProvider(
@@ -173,32 +176,6 @@ class OobVlmPageContextProvider(
                     .takeIf { it.isNotBlank() }
             }
             .take(MAX_STEPS_PER_CAPABILITY)
-
-    private fun mapArg(value: Any?): Map<String, Any?> {
-        return when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-    }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
 
     private companion object {
         private const val MAX_ITEMS = 8

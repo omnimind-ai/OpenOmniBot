@@ -47,6 +47,8 @@ record. Do not read only the snapshot when correctness matters.
 - Function checker metadata normalization: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionCheckerPatchService.kt`
 - Function target repair source matcher: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionTargetSourceMatcher.kt`
 - Function recall policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRecallService.kt`
+- VLM Function recall guidance: `app/src/main/java/cn/com/omnimind/bot/vlm/VlmRecallGuidanceBuilder.kt`
+- VLM UDEG page context guidance: `app/src/main/java/cn/com/omnimind/bot/vlm/OobVlmPageContextProvider.kt`
 - Function guard/fallback policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunPolicy.kt`
 - Function call timing: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionCallTiming.kt`
 - Function-management skill profile: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionSkillProfile.kt`

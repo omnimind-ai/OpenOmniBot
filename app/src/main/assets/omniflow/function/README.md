@@ -203,6 +203,8 @@ belong in UI documentation.
 - rank attached Function capabilities against the agent goal
 - decide whether a no-argument Function is a strict direct hit
 - compact recall payloads for normal agent use while preserving debug mode
+- share mechanical Function payload coercion with VLM recall/page-context
+  guidance through `OobFunctionJson`
 
 `OobFunctionRunPolicy` owns run-time policy:
 
@@ -366,6 +368,8 @@ Agent/MCP tool surface
       -> OobFunctionRecallService    # page/node recall and direct-hit policy
           -> OobFunctionJson # shared value coercion for Function payloads
           -> OobUdegNodeStore        # page/node recall index
+      -> VLM recall/page context guidance # render Function candidates for live VLM prompts
+          -> OobFunctionJson # shared value coercion for Function payloads
       -> OobFunctionRunPolicy        # guard and fallback handoff
           -> OobFunctionJson # shared value coercion for Function payloads
       -> OobFunctionCallTiming       # call-level timing merge

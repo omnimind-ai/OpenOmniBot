@@ -1,6 +1,9 @@
 package cn.com.omnimind.bot.vlm
 
 import android.content.Context
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
@@ -262,14 +265,6 @@ object VlmRecallGuidanceBuilder {
         }
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-
     private fun requiresArguments(payload: Map<String, Any?>): Boolean {
         val raw = payload["requires_arguments"] ?: payload["requiresArguments"]
         return when (raw) {
@@ -316,24 +311,6 @@ object VlmRecallGuidanceBuilder {
         }
         return 0.0
     }
-
-    private fun mapArg(value: Any?): Map<String, Any?> {
-        return when (value) {
-            is Map<*, *> -> linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), item)
-                }
-            }
-            else -> emptyMap()
-        }
-    }
-
-    private fun listArg(value: Any?): List<Any?> =
-        when (value) {
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
 
     private fun sanitizeForAgent(value: Any?): Any? {
         return when (value) {
