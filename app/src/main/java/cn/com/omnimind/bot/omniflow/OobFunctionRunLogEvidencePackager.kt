@@ -12,6 +12,8 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
  * evidence before saving an update.
  */
 class OobFunctionRunLogEvidencePackager {
+    private val analysis = OobFunctionRunLogAnalysisContract
+
     fun analysisContext(
         functionId: String,
         functionSpec: Map<String, Any?>,
@@ -55,34 +57,34 @@ class OobFunctionRunLogEvidencePackager {
 
             Required workflow:
             1. Compare function.steps with runlog.cards.
-            2. Mark every useful action as required_action, optional_checker, noise, duplicate, failed_action, or success_evidence.
+            2. Mark every useful action as ${analysis.roleChoiceText}.
             3. Identify why the RunLog succeeded or failed.
             4. Produce a structured analysis object in this exact shape:
             {
-              "summary": "这次 RunLog 说明 Function 为什么成功/失败",
-              "step_findings": [
+              "${analysis.FIELD_SUMMARY}": "这次 RunLog 说明 Function 为什么成功/失败",
+              "${analysis.FIELD_STEP_FINDINGS}": [
                 {
-                  "function_step_index": 1,
-                  "runlog_card_index": 3,
-                  "label": "点击外卖入口",
-                  "role": "required_action | optional_checker | noise | duplicate | failed_action | success_evidence",
-                  "reason": "为什么这样判断"
+                  "${analysis.FIELD_FUNCTION_STEP_INDEX}": 1,
+                  "${analysis.FIELD_RUNLOG_CARD_INDEX}": 3,
+                  "${analysis.FIELD_LABEL}": "点击外卖入口",
+                  "${analysis.FIELD_ROLE}": "${analysis.roleChoiceText}",
+                  "${analysis.FIELD_REASON}": "为什么这样判断"
                 }
               ],
-              "failure_reason": {
-                "code": "wrong_target | target_missing | ad_interruption | repeated_input | unstable_coordinate | unknown",
-                "message": "具体原因"
+              "${analysis.FIELD_FAILURE_REASON}": {
+                "${analysis.FIELD_CODE}": "${analysis.failureCodeChoiceText}",
+                "${analysis.FIELD_MESSAGE}": "具体原因"
               },
-              "recommended_patch": {
-                "ops": []
+              "${analysis.FIELD_RECOMMENDED_PATCH}": {
+                "${analysis.FIELD_OPS}": []
               }
             }
-            5. Call update_function with functionId="$functionId", run_id="$runId", analysis=<that object>, and patch=<recommended_patch> only when the evidence is clear.
+            5. Call update_function with functionId="$functionId", run_id="$runId", analysis=<that object>, and patch=<${analysis.FIELD_RECOMMENDED_PATCH}> only when the evidence is clear.
 
             Constraints:
-            - If unsure, do not change the main path; return a suggested patch or an empty recommended_patch.ops.
-            - Ads, skip buttons, close popups, and other transient interruptions are optional_checker evidence, not mandatory steps.
-            - wait, pure perception wrappers, failed cards, and repeated input are noise unless they explain a concrete failure.
+            - If unsure, do not change the main path; return a suggested patch or an empty ${analysis.FIELD_RECOMMENDED_PATCH}.${analysis.FIELD_OPS}.
+            - Ads, skip buttons, close popups, and other transient interruptions are ${analysis.ROLE_OPTIONAL_CHECKER} evidence, not mandatory steps.
+            - wait, pure perception wrappers, failed cards, and repeated input are ${analysis.ROLE_NOISE} unless they explain a concrete failure.
             - Successful RunLogs may improve description, step title/summary, selector hints, and evidence metadata.
             - Failed RunLogs may only change a step when there is clear evidence.
         """.trimIndent()

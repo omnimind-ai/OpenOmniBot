@@ -17,6 +17,10 @@ especially after replay failure or after a successful run shows a better path.
 
 ## Required Analysis Shape
 
+The Kotlin prompt contract owner is
+`OobFunctionRunLogAnalysisContract`; keep field names, evidence roles, and
+failure codes aligned with it.
+
 ```json
 {
   "summary": "这次 RunLog 说明 Function 为什么成功/失败",

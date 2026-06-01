@@ -169,6 +169,8 @@ belong in UI documentation.
 - generate the built-in agent prompt that tells the agent how to mark required
   actions, optional checkers, noise, duplicate steps, failed actions, and
   success evidence
+- use `OobFunctionRunLogAnalysisContract` for the agent-facing analysis field
+  names, role labels, and failure codes embedded in that prompt
 - keep evidence-analysis prompt contracts outside Function mutation code
 - never save Functions or apply patches
 
@@ -435,6 +437,9 @@ Keep these pieces separate:
   mutation, execution reindexing, and execution capability recomputation
 - `OobFunctionRunLogEvidencePackager`: Function + RunLog evidence context and
   agent prompt packaging
+- `OobFunctionRunLogAnalysisContract`: agent-facing analysis JSON field names,
+  evidence role labels, and failure code vocabulary used by
+  `OobFunctionRunLogEvidencePackager`; this is not runtime replay role policy
 - `OobFunctionCheckerPatchService`: checker rule and checker asset metadata
   normalization
 - `OobFunctionJson`: mechanical JSON/map/list/scalar coercion shared by Function
