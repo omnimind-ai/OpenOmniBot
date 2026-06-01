@@ -568,6 +568,14 @@ change:
 - `OmniflowStepExecutor.firstNonBlank` and `OobPageVectorSet.firstNonBlank`
   are low-risk local helpers in runtime/vector internals; merge them only when
   touching the surrounding code for another reason.
+- `OobReusableFunctionStore` lives in `baselib` and cannot depend on app-layer
+  helper owners such as `OobFunctionJson`; keep its storage-compatibility
+  coercion local unless the owner is moved to a shared module.
+- `VlmToolCoordinator.firstNonBlank`, `VlmRecallGuidanceBuilder.boolArg`,
+  `AgentAiCapabilityConfigSync.firstNonBlank`, and
+  `AssistsCoreManager.firstNonBlankString` are outside Function payload
+  ownership. Do not merge them into Function helpers unless their surrounding
+  feature is explicitly migrated to the Function/RunLog backend.
 
 ## Verification
 

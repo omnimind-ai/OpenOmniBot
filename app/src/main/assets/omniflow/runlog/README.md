@@ -162,6 +162,12 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   than generic action coercion, and MCP route/executor helpers may keep
   multi-key argument alias/default parsing local when the semantics are
   route-specific.
+- Keep `baselib` storage coercion local until the Function JSON owner is moved
+  to a shared module. App-layer owners such as `OobFunctionJson` must not be
+  imported into `OobReusableFunctionStore`.
+- Leave unrelated VLM, agent-config, and Assists string/default helpers in
+  their owning features. They are not RunLog card conversion or Function
+  payload helpers unless their feature boundary is intentionally changed.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
   in `RunLogReusableFunctionParameterizer`; do not put those rules back into
