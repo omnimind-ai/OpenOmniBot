@@ -240,7 +240,7 @@ class OobFunctionCheckerPatchService {
             "checker_id" to checkerId,
             "step_index" to stepIndex,
             "step_id" to firstNonBlank(step["id"], "step_${stepIndex + 1}"),
-            "role" to "checker_candidate",
+            "role" to OobStepRoleClassifier.ROLE_CHECKER_CANDIDATE,
             "materialization" to "metadata_checker_rule",
             "reason" to reason.takeIf { it.isNotBlank() },
         ).filterValues { it != null }

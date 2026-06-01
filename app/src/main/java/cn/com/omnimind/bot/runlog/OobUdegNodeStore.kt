@@ -1389,7 +1389,7 @@ class OobUdegNodeStore(
                     "page_changed" to (fromNodeId != toNodeId),
                 ).filterValues { it != null },
                 "role" to role,
-                "route_safe" to (role == "navigation"),
+                "route_safe" to (role == OobStepRoleClassifier.ROLE_NAVIGATION),
                 "callable" to false,
                 "created_at_ms" to now,
                 "updated_at_ms" to now,
