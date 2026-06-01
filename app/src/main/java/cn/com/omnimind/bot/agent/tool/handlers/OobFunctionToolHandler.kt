@@ -476,19 +476,17 @@ class OobFunctionToolHandler(
                                 ),
                             )
                         } else {
-                            linkedMapOf<String, Any?>(
-                                "step_id" to stepId,
-                                "tool" to OmniflowStepExecutor.actionNameForStep(step),
-                                "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
-                                "model_free" to true,
-                                "success" to false,
-                                "needs_agent" to false,
-                                "fallback_available" to false,
-                                "error_code" to (executionError?.errorCode ?: "OOB_OMNIFLOW_STEP_FAILED"),
-                                "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
-                                "recovery" to recovery,
-                                "summary" to failReason
-                            ).filterValues { it != null }
+                            runResultBuilder.failureStep(
+                                stepId = stepId,
+                                tool = OmniflowStepExecutor.actionNameForStep(step),
+                                executor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
+                                summary = failReason,
+                                errorCode = executionError?.errorCode ?: "OOB_OMNIFLOW_STEP_FAILED",
+                                extras = mapOf(
+                                    "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
+                                    "recovery" to recovery,
+                                ),
+                            )
                         }
                     }
                 }
@@ -558,14 +556,12 @@ class OobFunctionToolHandler(
                             summary = "Agent fallback required: $stepTitle",
                         )
                     } else {
-                        linkedMapOf(
-                            "step_id" to stepId,
-                            "tool" to agentTool.ifEmpty { callableTool.ifEmpty { "?" } },
-                            "executor" to executor.ifEmpty { RunLogReplayPolicy.EXECUTOR_AGENT },
-                            "success" to false,
-                            "needs_agent" to false,
-                            "fallback_available" to false,
-                            "summary" to "Agent fallback disabled: $stepTitle"
+                        runResultBuilder.failureStep(
+                            stepId = stepId,
+                            tool = agentTool.ifEmpty { callableTool.ifEmpty { "?" } },
+                            executor = executor.ifEmpty { RunLogReplayPolicy.EXECUTOR_AGENT },
+                            summary = "Agent fallback disabled: $stepTitle",
+                            errorCode = "OOB_AGENT_FALLBACK_DISABLED",
                         )
                     }
                 }

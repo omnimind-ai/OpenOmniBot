@@ -11,7 +11,9 @@ import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
  * step is executed. This keeps page-vector skip/fail policy out of the main
  * deterministic replay loop.
  */
-class OobFunctionSourceAlignmentController {
+class OobFunctionSourceAlignmentController(
+    private val runResultBuilder: OobFunctionRunResultBuilder = OobFunctionRunResultBuilder(),
+) {
     fun align(stack: PendingActionStack): Result {
         if (!stack.sourceAlignmentEnabled) return Result()
         val top = stack.peek() ?: return Result()
@@ -44,39 +46,37 @@ class OobFunctionSourceAlignmentController {
             if (!top.hasSourcePage) return Result()
             val failedAtMs = System.currentTimeMillis()
             return Result(
-                failureResult = linkedMapOf<String, Any?>(
-                    "step_id" to top.stepId,
-                    "index" to top.originalIndex,
-                    "tool" to top.tool,
-                    "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
-                    "model_free" to true,
-                    "success" to false,
-                    "needs_agent" to false,
-                    "fallback_available" to false,
-                    "error_code" to "OOB_SOURCE_ALIGNMENT_MISS",
-                    "summary" to "Current page does not match the pending function source window",
-                    "source_alignment" to linkedMapOf(
-                        "matched" to false,
-                        "best_score" to bestScore.takeIf { it.isFinite() },
-                        "min_score" to OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE,
-                        "window" to window.map(::frameSummary),
-                        "current" to linkedMapOf(
-                            "node_id" to currentVector.nodeId,
-                            "package_name" to currentVector.packageName.takeIf { it.isNotBlank() },
-                            "signature" to currentVector.signature,
-                            "observed_at_ms" to observedAtMs,
+                failureResult = runResultBuilder.failureStep(
+                    stepId = top.stepId,
+                    tool = top.tool,
+                    executor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
+                    summary = "Current page does not match the pending function source window",
+                    errorCode = "OOB_SOURCE_ALIGNMENT_MISS",
+                    extras = mapOf(
+                        "index" to top.originalIndex,
+                        "source_alignment" to linkedMapOf(
+                            "matched" to false,
+                            "best_score" to bestScore.takeIf { it.isFinite() },
+                            "min_score" to OobUdegNodeStore.STRONG_PAGE_MATCH_SCORE,
+                            "window" to window.map(::frameSummary),
+                            "current" to linkedMapOf(
+                                "node_id" to currentVector.nodeId,
+                                "package_name" to currentVector.packageName.takeIf { it.isNotBlank() },
+                                "signature" to currentVector.signature,
+                                "observed_at_ms" to observedAtMs,
+                            ).filterValues { it != null },
                         ).filterValues { it != null },
-                    ).filterValues { it != null },
-                    "recovery" to linkedMapOf(
-                        "refetched_current_page" to true,
-                        "reason" to "source_alignment_miss",
-                        "navigate_recovery_available" to false,
-                        "target_window" to window.map(::frameSummary),
+                        "recovery" to linkedMapOf(
+                            "refetched_current_page" to true,
+                            "reason" to "source_alignment_miss",
+                            "navigate_recovery_available" to false,
+                            "target_window" to window.map(::frameSummary),
+                        ),
+                        "started_at_ms" to observedAtMs,
+                        "finished_at_ms" to failedAtMs,
+                        "duration_ms" to (failedAtMs - observedAtMs).coerceAtLeast(0),
                     ),
-                    "started_at_ms" to observedAtMs,
-                    "finished_at_ms" to failedAtMs,
-                    "duration_ms" to (failedAtMs - observedAtMs).coerceAtLeast(0),
-                ).filterValues { it != null }
+                )
             )
         }
         if (matched == top) return Result()

@@ -740,7 +740,9 @@ Use these owner rules when removing duplicated helper code:
   was delegated, but they should call this owner for stable fields such as
   `needs_agent`, `fallback_available`, `blocked_executor`, `step_id`,
   `executor`, `error_code`, and timing payloads instead of hand-building
-  equivalent maps in each executor.
+  equivalent maps in each executor. This also applies to source-alignment
+  misses and disabled-fallback terminal steps; the replay component owns the
+  decision, while the builder owns the result shape.
 - Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when
   building tool definitions or serializing generic tool payloads, instead of
   adding another local `mapToJsonElement` copy or a forwarding method on
