@@ -125,6 +125,8 @@ record. Do not read only the snapshot when correctness matters.
 - Local UTG explorer: `app/src/main/java/cn/com/omnimind/bot/runlog/OobOmniFlowExplorer.kt`
 - Local action runtime backend: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowActionBackend.kt`
 - Local action step executor: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowStepExecutor.kt`
+  It executes canonical actions and should branch through `OobActionCodec`
+  constants/action families rather than local action string lists.
 - Local checker rules: `app/src/main/java/cn/com/omnimind/bot/runlog/OmniflowCheckerRule.kt`
 - Page/package inference helper: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogPagePackageInference.kt`
 - Function backend ownership: `app/src/main/assets/omniflow/function/README.md`

@@ -197,16 +197,16 @@ object OmniflowStepExecutor {
         val actionTransferApplied = transferRequested && remapResult.meta["applied"] == true
         val summary = timing.measure("act_ms") {
             when (action) {
-                "click" -> {
+                OobActionCodec.ACTION_CLICK -> {
                     val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
                         ?: throw IllegalArgumentException("click requires x")
                     val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
                         ?: throw IllegalArgumentException("click requires y")
                     backend.click(x, y)
-                    "click"
+                    OobActionCodec.ACTION_CLICK
                 }
 
-                "long_press" -> {
+                OobActionCodec.ACTION_LONG_PRESS -> {
                     val x = numberArg(args, "x", "center_x", "centerX")?.toFloat()
                         ?: throw IllegalArgumentException("long_press requires x")
                     val y = numberArg(args, "y", "center_y", "centerY")?.toFloat()
@@ -216,7 +216,7 @@ object OmniflowStepExecutor {
                         y = y,
                         durationMs = durationMs(args, defaultMs = 1000L)
                     )
-                    "long_press"
+                    OobActionCodec.ACTION_LONG_PRESS
                 }
 
                 OobActionCodec.ACTION_SWIPE -> {
@@ -408,7 +408,9 @@ object OmniflowStepExecutor {
             )
         }
         return when (tool) {
-            "click", "long_press", "input_text" -> remapPointActionArgs(tool, args, sourceXml, currentXml)
+            OobActionCodec.ACTION_CLICK,
+            OobActionCodec.ACTION_LONG_PRESS,
+            OobActionCodec.ACTION_INPUT_TEXT -> remapPointActionArgs(tool, args, sourceXml, currentXml)
             OobActionCodec.ACTION_SWIPE -> remapScrollActionArgs(tool, args, sourceXml, currentXml)
             else -> StepArgsResult(args)
         }
@@ -908,7 +910,7 @@ object OmniflowStepExecutor {
             "phase" to "before_action",
             "effect" to "run_actions",
             "controller" to rule.id,
-            "action" to "click",
+            "action" to OobActionCodec.ACTION_CLICK,
             "x" to candidate.centerX,
             "y" to candidate.centerY,
             "target_element" to summarizeNode(candidate),
@@ -921,7 +923,7 @@ object OmniflowStepExecutor {
         replayAction: ReplayAction,
     ): Map<String, Any?>? {
         val action = replayAction.action
-        if (action !in setOf("click", "long_press", OobActionCodec.ACTION_SWIPE)) return null
+        if (action !in OobActionCodec.pointTargetActions + OobActionCodec.ACTION_SWIPE) return null
         val page = state.page ?: return null
         val keyboardTop = keyboardTop(page) ?: return null
         if (!actionTargetIntersectsKeyboard(action, replayAction.args, keyboardTop)) return null
