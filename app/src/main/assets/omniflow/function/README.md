@@ -177,6 +177,8 @@ When adding or migrating a generic agent tool name:
   Function fields
 - materialize legacy action specs into canonical execution-step shapes for
   schema/tool compatibility only
+- emit canonical local action names through `OobActionCodec` when rebuilding
+  execution steps from legacy action specs
 - never decide recall ranking, replay policy, or update patches
 
 `OobFunctionSpecBuilder` owns simple Function spec construction:

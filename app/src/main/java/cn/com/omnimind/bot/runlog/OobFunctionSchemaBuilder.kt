@@ -116,7 +116,7 @@ object OobFunctionSchemaBuilder {
         val stepId = firstNonBlank(action["id"], action["step_id"], "step_${index + 1}")
 
         return when (normalizedType) {
-            "click" -> {
+            OobActionCodec.ACTION_CLICK -> {
                 val targetKind = firstNonBlank(target["kind"])
                 if (targetKind == "node_ref") {
                     graphStep(
@@ -132,7 +132,7 @@ object OobFunctionSchemaBuilder {
                         stepId = stepId,
                         index = index,
                         title = title,
-                        action = "click",
+                        action = OobActionCodec.ACTION_CLICK,
                         args = linkedMapOf<String, Any?>().apply {
                             putFirstPresent("x", target["x"], params["x"], action["x"])
                             putFirstPresent("y", target["y"], params["y"], action["y"])
@@ -151,11 +151,11 @@ object OobFunctionSchemaBuilder {
                     )
                 }
             }
-            "long_press" -> localActionStep(
+            OobActionCodec.ACTION_LONG_PRESS -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "long_press",
+                action = OobActionCodec.ACTION_LONG_PRESS,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("x", target["x"], params["x"], action["x"])
                     putFirstPresent("y", target["y"], params["y"], action["y"])
@@ -168,7 +168,7 @@ object OobFunctionSchemaBuilder {
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "input_text",
+                action = OobActionCodec.ACTION_INPUT_TEXT,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("text", action["text"], params["text"], action["content"], params["content"])
                     putFirstPresent(
@@ -202,7 +202,7 @@ object OobFunctionSchemaBuilder {
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "swipe",
+                action = OobActionCodec.ACTION_SWIPE,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("x", target["x"], params["x"], action["x"])
                     putFirstPresent("y", target["y"], params["y"], action["y"])
@@ -231,7 +231,7 @@ object OobFunctionSchemaBuilder {
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "press_key",
+                action = OobActionCodec.ACTION_PRESS_KEY,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("key", action["key"], params["key"], action["hotkey"], params["hotkey"])
                 },
