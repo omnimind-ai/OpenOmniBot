@@ -597,8 +597,10 @@ Use these owner rules when removing duplicated helper code:
 - Function payload shape helpers belong in `OobFunctionJson`. This includes
   generic map/list/string/int/long/bool coercion used by register, update,
   recall, run payloads, timing merge payloads, and Function replay argument
-  compatibility. It must stay policy-free. Call this owner directly instead of
-  adding local forwarding helpers with the same names.
+  compatibility. Repository summary/projection code should also call this owner
+  for mechanical numeric/string coercion instead of growing storage-local
+  copies. It must stay policy-free. Call this owner directly instead of adding
+  local forwarding helpers with the same names.
 - RunLog action/value helpers belong in `OobActionCodec`. This includes action
   aliases, low-level action argument extraction, and generic coercion used while
   converting RunLog cards or building RunLog-derived compatibility payloads.

@@ -213,9 +213,9 @@ class OobFunctionRepository(
             "description" to spec["description"],
             "step_count" to (execution?.get("step_count") ?: steps.size),
             "card_count" to (
-                intValue(source?.get("card_count"))
+                OobFunctionJson.intArg(source?.get("card_count"), defaultValue = 0)
                     .takeIf { it > 0 }
-                    ?: intValue(source?.get("replayable_card_count"))
+                    ?: OobFunctionJson.intArg(source?.get("replayable_card_count"), defaultValue = 0)
                     .takeIf { it > 0 }
                     ?: steps.size
                 ),
@@ -384,12 +384,5 @@ class OobFunctionRepository(
             }
         }
 
-        private fun intValue(value: Any?): Int {
-            return when (value) {
-                is Number -> value.toInt()
-                is String -> value.trim().toIntOrNull() ?: 0
-                else -> 0
-            }
-        }
     }
 }
