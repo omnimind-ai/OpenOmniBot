@@ -24,7 +24,7 @@ class OobFunctionRepository(
     )
 ) {
     fun register(functionSpec: Map<String, Any?>): Map<String, Any?> {
-        val rawSpec = sanitizeMap(functionSpec)
+        val rawSpec = OobFunctionJson.sanitizeMap(functionSpec)
         val rawFunctionId = functionIdFromSpec(rawSpec)
         if (rawFunctionId.isEmpty()) {
             return errorPayload(
@@ -133,13 +133,13 @@ class OobFunctionRepository(
         val normalized = functionId.trim()
         if (normalized.isEmpty()) return null
         OobReusableFunctionStore.get(context, normalized)?.let { registrySpec ->
-            return sanitizeMap(registrySpec)
+            return OobFunctionJson.sanitizeMap(registrySpec)
         }
         val workspaceSpec = workspaceFunctionStore.get(normalized)
         if (workspaceSpec != null) {
             runCatching { OobReusableFunctionStore.register(context, workspaceSpec) }
                 .onFailure { OmniLog.w(TAG, "sync workspace function failed: ${it.message}") }
-            return sanitizeMap(workspaceSpec)
+            return OobFunctionJson.sanitizeMap(workspaceSpec)
         }
         return null
     }
@@ -231,8 +231,12 @@ class OobFunctionRepository(
             "updated_at" to registry?.get("updated_at"),
             "source_run_ids" to sourceRunIds(spec),
             "source" to spec["source"],
-            "run_stats" to sanitizeValue(runStats ?: emptyMap<Any?, Any?>()),
-            "last_run" to sanitizeValue(runStats?.get("last_run") ?: emptyMap<Any?, Any?>())
+            "run_stats" to OobFunctionJson.sanitizeValue(
+                runStats ?: emptyMap<Any?, Any?>()
+            ),
+            "last_run" to OobFunctionJson.sanitizeValue(
+                runStats?.get("last_run") ?: emptyMap<Any?, Any?>()
+            )
         )
     }
 
@@ -249,14 +253,14 @@ class OobFunctionRepository(
             val functionId = functionIdFromSpec(spec)
             if (functionId.isNotEmpty()) {
                 val merged = linkedMapOf<String, Any?>().apply {
-                    putAll(sanitizeMap(spec))
+                    putAll(OobFunctionJson.sanitizeMap(spec))
                     val registry = OobReusableFunctionStore.get(context, functionId)
                         ?.get("_oob_registry")
                     if (registry is Map<*, *>) {
-                        put("_oob_registry", sanitizeMap(registry))
+                        put("_oob_registry", OobFunctionJson.sanitizeMap(registry))
                     }
                 }
-                byId[functionId] = sanitizeMap(merged)
+                byId[functionId] = OobFunctionJson.sanitizeMap(merged)
             }
         }
         val summaries = (OobReusableFunctionStore.list(context, scanLimit)["functions"] as? List<*>)
@@ -266,7 +270,7 @@ class OobFunctionRepository(
             val functionId = summary["function_id"]?.toString()?.trim().orEmpty()
             if (functionId.isEmpty() || byId.containsKey(functionId)) return@forEach
             OobReusableFunctionStore.get(context, functionId)?.let { spec ->
-                byId[functionId] = sanitizeMap(spec)
+                byId[functionId] = OobFunctionJson.sanitizeMap(spec)
             }
         }
         val window = byId.values.drop(safeOffset).take(safeLimit + 1).toList()
@@ -364,25 +368,6 @@ class OobFunctionRepository(
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local"
         )
-
-        fun sanitizeMap(value: Map<*, *>): Map<String, Any?> {
-            return linkedMapOf<String, Any?>().apply {
-                value.forEach { (key, item) ->
-                    if (key != null) put(key.toString(), sanitizeValue(item))
-                }
-            }
-        }
-
-        fun sanitizeValue(value: Any?): Any? {
-            return when (value) {
-                null -> null
-                is String, is Number, is Boolean -> value
-                is Map<*, *> -> sanitizeMap(value)
-                is Iterable<*> -> value.map(::sanitizeValue)
-                is Array<*> -> value.map(::sanitizeValue)
-                else -> value.toString()
-            }
-        }
 
     }
 }

@@ -29,6 +29,23 @@ internal object OobFunctionJson {
             else -> value
         }
 
+    fun sanitizeMap(value: Map<*, *>): Map<String, Any?> =
+        linkedMapOf<String, Any?>().apply {
+            value.forEach { (key, item) ->
+                if (key != null) put(key.toString(), sanitizeValue(item))
+            }
+        }
+
+    fun sanitizeValue(value: Any?): Any? =
+        when (value) {
+            null -> null
+            is String, is Number, is Boolean -> value
+            is Map<*, *> -> sanitizeMap(value)
+            is Iterable<*> -> value.map(::sanitizeValue)
+            is Array<*> -> value.map(::sanitizeValue)
+            else -> value.toString()
+        }
+
     fun firstNonBlank(vararg values: Any?): String {
         for (value in values) {
             val text = value?.toString()?.trim().orEmpty()
