@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.mcp
 
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 
 /**
  * MCP 工具定义
@@ -396,7 +397,7 @@ BEHAVIOR:
     )
 
     val oobFunctionListTool = mapOf(
-        "name" to "oob_function_list",
+        "name" to OobFunctionToolNames.FUNCTION_LIST,
         "description" to "List registered OOB reusable Functions available for direct deterministic replay.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -407,7 +408,7 @@ BEHAVIOR:
     )
 
     val oobFunctionGetTool = mapOf(
-        "name" to "oob_function_get",
+        "name" to OobFunctionToolNames.FUNCTION_GET,
         "description" to "Read one registered OOB reusable Function by id.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -418,7 +419,7 @@ BEHAVIOR:
     )
 
     val oobFunctionRegisterTool = mapOf(
-        "name" to "oob_function_register",
+        "name" to OobFunctionToolNames.FUNCTION_REGISTER,
         "description" to "Register or update one OOB reusable Function. Prefer the simple shape {functionId,name,description,steps,sourcePage}; pass functionSpec only when you already have a full oob.reusable_function.v1 spec. Registration never auto-executes the Function.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -441,7 +442,7 @@ BEHAVIOR:
     )
 
     val updateFunctionTool = mapOf(
-        "name" to "update_function",
+        "name" to OobFunctionToolNames.FUNCTION_UPDATE,
         "description" to "Update one saved OOB Function from a structured patch, user correction, or RunLog evidence. Passing run_id without analysis/patch returns analysis_context and agent_prompt; saving RunLog evidence uses analysis plus an optional patch.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -463,7 +464,7 @@ BEHAVIOR:
     )
 
     val oobFunctionGuardCheckTool = mapOf(
-        "name" to "oob_function_guard_check",
+        "name" to OobFunctionToolNames.FUNCTION_GUARD_CHECK,
         "description" to "Run preflight guard checks for one OOB reusable Function before replay.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -476,7 +477,7 @@ BEHAVIOR:
     )
 
     val oobFunctionRunTool = mapOf(
-        "name" to "oob_function_run",
+        "name" to OobFunctionToolNames.FUNCTION_RUN,
         "description" to "Run one saved OOB/OmniFlow reusable Function. When the user's goal clearly matches a saved Function, prefer oob_function_guard_check then this tool before raw vlm_task. On local replay failure, returns fallback_context so an agent can handle the failed step and call this tool again with resume_from_step/start_step_index.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -511,7 +512,7 @@ BEHAVIOR:
     )
 
     val oobFunctionDeleteTool = mapOf(
-        "name" to "oob_function_delete",
+        "name" to OobFunctionToolNames.FUNCTION_DELETE,
         "description" to "Delete one registered OOB reusable Function from Workspace, local registry, and UDEG node references.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -524,7 +525,7 @@ BEHAVIOR:
     )
 
     val oobFunctionClearTool = mapOf(
-        "name" to "oob_function_clear",
+        "name" to OobFunctionToolNames.FUNCTION_CLEAR,
         "description" to "Clear all registered OOB reusable Functions and detach all Function references from UDEG node skills. Requires confirm=true.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -536,7 +537,7 @@ BEHAVIOR:
     )
 
     val oobRunLogListTool = mapOf(
-        "name" to "oob_run_log_list",
+        "name" to OobFunctionToolNames.RUN_LOG_LIST,
         "description" to "List recent OOB internal RunLogs that can be inspected or converted to Functions.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -547,7 +548,7 @@ BEHAVIOR:
     )
 
     val oobRunLogGetTool = mapOf(
-        "name" to "oob_run_log_get",
+        "name" to OobFunctionToolNames.RUN_LOG_GET,
         "description" to "Read one OOB internal RunLog timeline payload by id.",
         "inputSchema" to mapOf(
             "type" to "object",
@@ -559,7 +560,7 @@ BEHAVIOR:
     )
 
     val oobRunLogConvertTool = mapOf(
-        "name" to "oob_run_log_convert",
+        "name" to OobFunctionToolNames.RUN_LOG_CONVERT,
         "description" to "Convert one successful OOB RunLog into a reusable Function and optionally register it.",
         "inputSchema" to mapOf(
             "type" to "object",

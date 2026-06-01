@@ -7,6 +7,7 @@ import cn.com.omnimind.baselib.llm.SceneModelBindingEntry
 import cn.com.omnimind.baselib.llm.SceneModelBindingStore
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
 import cn.com.omnimind.bot.manager.AssistsCoreManager
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -248,17 +249,17 @@ object McpRoutes {
             "omniflow.call_function" -> omniflowToolkit.callFunction(args)
             "omniflow.ingest_run_log" -> omniflowToolkit.ingestRunLog(args)
             "omniflow.explore_replay" -> omniflowToolkit.exploreAndReplay(args)
-            "oob_function_list" -> omniflowToolkit.listFunctions(args)
-            "oob_function_get" -> omniflowToolkit.getFunction(args)
-            "oob_function_register" -> omniflowToolkit.registerFunction(args)
-            "update_function" -> omniflowToolkit.updateFunction(args)
-            "oob_function_guard_check" -> omniflowToolkit.guardCheck(args)
-            "oob_function_run" -> omniflowToolkit.runFunction(args)
-            "oob_function_delete" -> omniflowToolkit.deleteFunction(args)
-            "oob_function_clear" -> omniflowToolkit.clearFunctions(args)
-            "oob_run_log_list" -> omniflowToolkit.listRunLogs(args)
-            "oob_run_log_get" -> omniflowToolkit.getRunLog(args)
-            "oob_run_log_convert" -> omniflowToolkit.convertRunLog(args)
+            OobFunctionToolNames.FUNCTION_LIST -> omniflowToolkit.listFunctions(args)
+            OobFunctionToolNames.FUNCTION_GET -> omniflowToolkit.getFunction(args)
+            OobFunctionToolNames.FUNCTION_REGISTER -> omniflowToolkit.registerFunction(args)
+            OobFunctionToolNames.FUNCTION_UPDATE -> omniflowToolkit.updateFunction(args)
+            OobFunctionToolNames.FUNCTION_GUARD_CHECK -> omniflowToolkit.guardCheck(args)
+            OobFunctionToolNames.FUNCTION_RUN -> omniflowToolkit.runFunction(args)
+            OobFunctionToolNames.FUNCTION_DELETE -> omniflowToolkit.deleteFunction(args)
+            OobFunctionToolNames.FUNCTION_CLEAR -> omniflowToolkit.clearFunctions(args)
+            OobFunctionToolNames.RUN_LOG_LIST -> omniflowToolkit.listRunLogs(args)
+            OobFunctionToolNames.RUN_LOG_GET -> omniflowToolkit.getRunLog(args)
+            OobFunctionToolNames.RUN_LOG_CONVERT -> omniflowToolkit.convertRunLog(args)
             "oob_project_create" -> mcpProjectCreate(context, args)
             "oob_project_activate" -> mcpProjectActivate(context, args)
             "oob_project_open" -> mcpProjectOpen(context, args)

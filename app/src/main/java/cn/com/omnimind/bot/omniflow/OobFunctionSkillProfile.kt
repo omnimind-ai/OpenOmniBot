@@ -27,19 +27,7 @@ object OobFunctionSkillProfile {
     private const val MAX_PROMPT_FUNCTION_CANDIDATES = 5
     private val MODEL_TOOL_NAME_REGEX = Regex("^[A-Za-z0-9_-]{1,64}$")
 
-    val toolNames: Set<String> = setOf(
-        "oob_function_list",
-        "oob_function_get",
-        "oob_function_register",
-        "update_function",
-        "oob_function_guard_check",
-        "oob_function_run",
-        "oob_function_delete",
-        "oob_function_clear",
-        "oob_run_log_list",
-        "oob_run_log_get",
-        "oob_run_log_convert",
-    )
+    val toolNames: Set<String> = OobFunctionToolNames.profileTools
 
     fun isProfile(profile: String?): Boolean =
         normalizeProfile(profile) == PROFILE
@@ -91,13 +79,13 @@ object OobFunctionSkillProfile {
             when (locale) {
                 PromptLocale.ZH_CN -> {
                     appendLine("当前可复用的 OmniFlow Functions（候选摘要，不是完整 spec）：")
-                    appendLine("- 如果用户目标与某个 Function 高置信匹配，优先 `oob_function_guard_check` -> `oob_function_run`，不要先裸跑 `vlm_task`。")
-                    appendLine("- 如果只是相似但不确定，先 guard 或 `oob_function_get` 查看；证据不足再用 `vlm_task`。")
+                    appendLine("- 如果用户目标与某个 Function 高置信匹配，优先 `${OobFunctionToolNames.FUNCTION_GUARD_CHECK}` -> `${OobFunctionToolNames.FUNCTION_RUN}`，不要先裸跑 `vlm_task`。")
+                    appendLine("- 如果只是相似但不确定，先 guard 或 `${OobFunctionToolNames.FUNCTION_GET}` 查看；证据不足再用 `vlm_task`。")
                 }
                 PromptLocale.EN_US -> {
                     appendLine("Reusable OmniFlow Functions available right now (candidate summaries, not full specs):")
-                    appendLine("- If the user goal clearly matches a Function, prefer `oob_function_guard_check` -> `oob_function_run` before raw `vlm_task`.")
-                    appendLine("- If the match is only tentative, inspect with guard or `oob_function_get`; use `vlm_task` when evidence is insufficient.")
+                    appendLine("- If the user goal clearly matches a Function, prefer `${OobFunctionToolNames.FUNCTION_GUARD_CHECK}` -> `${OobFunctionToolNames.FUNCTION_RUN}` before raw `vlm_task`.")
+                    appendLine("- If the match is only tentative, inspect with guard or `${OobFunctionToolNames.FUNCTION_GET}`; use `vlm_task` when evidence is insufficient.")
                 }
             }
             candidates.forEachIndexed { index, spec ->
@@ -188,7 +176,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionListTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_list")
+            put("name", OobFunctionToolNames.FUNCTION_LIST)
             put("displayName", "列出复用指令")
             put("toolType", "workbench")
             put("description", "列出本机已注册的 OOB 复用指令。用于查看可选 Function 候选；不会执行任何手机操作。")
@@ -207,7 +195,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionGetTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_get")
+            put("name", OobFunctionToolNames.FUNCTION_GET)
             put("displayName", "查看复用指令")
             put("toolType", "workbench")
             put("description", "读取一个 OOB 复用指令的结构化 Function spec，用于确认步骤、参数和来源。不会执行手机操作。")
@@ -230,7 +218,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionRegisterTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_register")
+            put("name", OobFunctionToolNames.FUNCTION_REGISTER)
             put("displayName", "注册复用指令")
             put("toolType", "workbench")
             put("description", "注册或更新一个 OOB 复用指令。优先使用轻量字段 functionId/name/description/steps；只有已有完整底层结构时才传 functionSpec。")
@@ -258,7 +246,7 @@ object OobFunctionSkillProfile {
     private val updateFunctionTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "update_function")
+            put("name", OobFunctionToolNames.FUNCTION_UPDATE)
             put("displayName", "更新复用指令")
             put("toolType", "workbench")
             put("description", "根据结构化 patch、用户纠错指令或 RunLog 证据分析更新一个已保存的 OOB Function。传 run_id 且不传 analysis/patch 时只返回 agent 分析上下文；不会执行手机操作。")
@@ -269,7 +257,7 @@ object OobFunctionSkillProfile {
                     putJsonObject("function_id") { put("type", "string") }
                     putJsonObject("run_id") {
                         put("type", "string")
-                        put("description", "Optional local RunLog id. With no analysis/patch, update_function returns analysis_context and agent_prompt for evidence analysis.")
+                        put("description", "Optional local RunLog id. With no analysis/patch, ${OobFunctionToolNames.FUNCTION_UPDATE} returns analysis_context and agent_prompt for evidence analysis.")
                     }
                     putJsonObject("runId") {
                         put("type", "string")
@@ -300,12 +288,12 @@ object OobFunctionSkillProfile {
     private val oobFunctionRunTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_run")
+            put("name", OobFunctionToolNames.FUNCTION_RUN)
             put("displayName", "执行复用指令")
             put("toolType", "workbench")
             put(
                 "description",
-                "执行一个已保存的 OOB/OmniFlow Function。用户目标与候选 Function 高置信匹配时，优先先调用 oob_function_guard_check 再调用本工具，不要先裸跑 vlm_task。失败时返回 fallback_context，agent 可接管失败步骤，然后用 resume_from_step/start_step_index 从失败或下一步恢复继续。"
+                "执行一个已保存的 OOB/OmniFlow Function。用户目标与候选 Function 高置信匹配时，优先先调用 ${OobFunctionToolNames.FUNCTION_GUARD_CHECK} 再调用本工具，不要先裸跑 vlm_task。失败时返回 fallback_context，agent 可接管失败步骤，然后用 resume_from_step/start_step_index 从失败或下一步恢复继续。"
             )
             putJsonObject("parameters") {
                 put("type", "object")
@@ -358,7 +346,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionGuardCheckTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_guard_check")
+            put("name", OobFunctionToolNames.FUNCTION_GUARD_CHECK)
             put("displayName", "检查复用指令")
             put("toolType", "workbench")
             put("description", "执行前检查一个 OOB 复用指令的参数和运行风险。不会执行手机操作。")
@@ -376,7 +364,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionDeleteTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_delete")
+            put("name", OobFunctionToolNames.FUNCTION_DELETE)
             put("displayName", "删除复用指令")
             put("toolType", "workbench")
             put("description", "删除一个 OOB 复用指令。")
@@ -393,7 +381,7 @@ object OobFunctionSkillProfile {
     private val oobFunctionClearTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_function_clear")
+            put("name", OobFunctionToolNames.FUNCTION_CLEAR)
             put("displayName", "清空复用指令")
             put("toolType", "workbench")
             put("description", "清空所有 OOB 复用指令。只有用户明确要求清空全部时使用，必须传 confirm=true。")
@@ -409,7 +397,7 @@ object OobFunctionSkillProfile {
     private val oobRunLogListTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_run_log_list")
+            put("name", OobFunctionToolNames.RUN_LOG_LIST)
             put("displayName", "列出 RunLog")
             put("toolType", "workbench")
             put("description", "列出 OOB 内部最近的 RunLogs，用于选择可固化或检查的历史执行。")
@@ -423,7 +411,7 @@ object OobFunctionSkillProfile {
     private val oobRunLogGetTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_run_log_get")
+            put("name", OobFunctionToolNames.RUN_LOG_GET)
             put("displayName", "查看 RunLog")
             put("toolType", "workbench")
             put("description", "读取一个 OOB 内部 RunLog 时间线。只在需要检查具体历史执行时使用。")
@@ -440,7 +428,7 @@ object OobFunctionSkillProfile {
     private val oobRunLogConvertTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "oob_run_log_convert")
+            put("name", OobFunctionToolNames.RUN_LOG_CONVERT)
             put("displayName", "转换 RunLog")
             put("toolType", "workbench")
             put("description", "把成功完成的 RunLog 转换为 oob.reusable_function.v1。register=true 时同时注册为可直接调用的 OOB 指令。")

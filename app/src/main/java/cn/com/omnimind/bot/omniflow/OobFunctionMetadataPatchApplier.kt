@@ -82,7 +82,7 @@ class OobFunctionMetadataPatchApplier(
         val metadata = mutableJsonMap(mapArg(spec["metadata"]))
         metadata["oob_function_update"] = linkedMapOf(
             "schema_version" to "oob.function_update.v1",
-            "tool" to "update_function",
+            "tool" to OobFunctionToolNames.FUNCTION_UPDATE,
             "mode" to mode,
             "status" to if (changed) "updated" else "unchanged",
             "changed" to changed,
@@ -94,7 +94,7 @@ class OobFunctionMetadataPatchApplier(
         if (mode == "enhance" || metadata["oob_enhancement"] != null) {
             metadata["oob_enhancement"] = linkedMapOf(
                 "schema_version" to "oob.function_enhancement.v1",
-                "source" to "update_function",
+                "source" to OobFunctionToolNames.FUNCTION_UPDATE,
                 "status" to if (changed) "enhanced" else "unchanged",
                 "changed" to changed,
                 "message" to if (changed) {

@@ -94,6 +94,17 @@ belong in UI documentation.
 - build compact prompt candidates for agent tool selection
 - never execute Functions or mutate Function specs
 
+`OobFunctionToolNames` owns canonical in-app agent tool names for Function and
+RunLog lifecycle:
+
+- define `oob_function_*`, `update_function`, and `oob_run_log_*` names used by
+  the native skill profile, Workbench tool handler, and MCP OOB Function schema
+- keep legacy/external `omniflow.*`, `call_tool`, and `oob_tool_call`
+  compatibility names in the MCP adapter instead of mixing them into this set
+- keep replay-step executor/tool taxonomy in `RunLogReplayPolicy`
+- never own tool descriptions, schemas, execution, recall, update, or replay
+  behavior
+
 `AgentToolJson` owns agent-facing JSON projection helpers:
 
 - convert Kotlin maps/lists/scalars into `JsonElement` for tool definitions and
@@ -552,9 +563,12 @@ the same commit as the code change:
 Use canonical OOB Function tools in agent-facing docs:
 `oob_function_list`, `oob_function_get`, `oob_function_register`,
 `update_function`, `oob_function_guard_check`, `oob_function_run`,
-`oob_function_delete`, and `oob_function_clear`. Treat `omniflow.*` names as
+`oob_function_delete`, `oob_function_clear`, `oob_run_log_list`,
+`oob_run_log_get`, and `oob_run_log_convert`. Treat `omniflow.*` names as
 legacy/external MCP compatibility unless the code path being documented is
-specifically that adapter.
+specifically that adapter. In Kotlin, route those canonical names through
+`OobFunctionToolNames` unless the code is deliberately documenting user-facing
+text or legacy replay taxonomy.
 
 ## Helper Maintenance Audit
 

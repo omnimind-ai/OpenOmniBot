@@ -111,7 +111,7 @@ class OobFunctionStructuralPatchApplier(
             if (wrongText.isNotBlank()) {
                 put("avoid_text", mergeStringList(selectorHints["avoid_text"], wrongText))
             }
-            put("updated_by", "update_function")
+            put("updated_by", OobFunctionToolNames.FUNCTION_UPDATE)
         }
         if (selectorHints != updatedHints) {
             args["selector_hints"] = updatedHints
@@ -133,7 +133,7 @@ class OobFunctionStructuralPatchApplier(
                 setArgIfChanged(args, "node_resource_id", desiredNode.resourceId, changes, stepIndex)
             }
             args["target_resolution"] = linkedMapOf(
-                "source" to "update_function.source_context_xml",
+                "source" to "${OobFunctionToolNames.FUNCTION_UPDATE}.source_context_xml",
                 "matched_text" to desiredNode.text.takeIf { it.isNotBlank() },
                 "matched_content_desc" to desiredNode.contentDesc.takeIf { it.isNotBlank() },
                 "resource_id" to desiredNode.resourceId.takeIf { it.isNotBlank() },
@@ -142,7 +142,7 @@ class OobFunctionStructuralPatchApplier(
             ).filterValues { it != null }
         } else {
             args["target_resolution"] = linkedMapOf(
-                "source" to "update_function",
+                "source" to OobFunctionToolNames.FUNCTION_UPDATE,
                 "matched" to false,
                 "reason" to "desired_text_not_found_in_source_context",
             )
@@ -152,7 +152,7 @@ class OobFunctionStructuralPatchApplier(
         updateStepTextFieldReplacingTarget(step, "summary", wrongText, desiredText, action, changes, stepIndex)
         updateStepTextFieldReplacingTarget(step, "description", wrongText, desiredText, action, changes, stepIndex)
         step["args"] = args
-        step["updated_by"] = "update_function"
+        step["updated_by"] = OobFunctionToolNames.FUNCTION_UPDATE
         steps[stepIndex] = step
         execution["steps"] = steps
         execution["step_count"] = steps.size

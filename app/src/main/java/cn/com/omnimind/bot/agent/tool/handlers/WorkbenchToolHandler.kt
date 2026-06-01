@@ -7,6 +7,7 @@ import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
@@ -43,18 +44,7 @@ class WorkbenchToolHandler(
         "workbench_project_ingest_android",
         "workbench_project_ingest_oss",
         "workbench_project_progress_get",
-        "oob_function_list",
-        "oob_function_get",
-        "oob_function_register",
-        "update_function",
-        "oob_function_guard_check",
-        "oob_function_run",
-        "oob_function_delete",
-        "oob_function_clear",
-        "oob_run_log_list",
-        "oob_run_log_get",
-        "oob_run_log_convert"
-    )
+    ) + OobFunctionToolNames.profileTools
 
     private val workbenchProjectStore = WorkbenchProjectStore(helper.context)
     private val workspaceFunctionStore: WorkspaceFunctionStore by lazy {
@@ -92,17 +82,17 @@ class WorkbenchToolHandler(
             "workbench_project_ingest_android" -> executeWorkbenchProjectIngestAndroid(args, env, callback)
             "workbench_project_ingest_oss" -> executeWorkbenchProjectIngestOss(args, env, callback)
             "workbench_project_progress_get" -> executeWorkbenchProjectProgressGet(args, env, callback)
-            "oob_function_list" -> executeOobFunctionListTool(args, env)
-            "oob_function_get" -> executeOobFunctionGetTool(args, env)
-            "oob_function_register" -> executeOobFunctionRegisterTool(args, env)
-            "update_function" -> executeUpdateFunctionTool(args, env)
-            "oob_function_guard_check" -> executeOobFunctionGuardCheckTool(args, env)
-            "oob_function_run" -> executeOobFunctionRunTool(args, env)
-            "oob_function_delete" -> executeOobFunctionDeleteTool(args, env)
-            "oob_function_clear" -> executeOobFunctionClearTool(args, env)
-            "oob_run_log_list" -> executeOobRunLogList(env)
-            "oob_run_log_get" -> executeOobRunLogGet(args, env)
-            "oob_run_log_convert" -> executeOobRunLogConvert(args, env)
+            OobFunctionToolNames.FUNCTION_LIST -> executeOobFunctionListTool(args, env)
+            OobFunctionToolNames.FUNCTION_GET -> executeOobFunctionGetTool(args, env)
+            OobFunctionToolNames.FUNCTION_REGISTER -> executeOobFunctionRegisterTool(args, env)
+            OobFunctionToolNames.FUNCTION_UPDATE -> executeUpdateFunctionTool(args, env)
+            OobFunctionToolNames.FUNCTION_GUARD_CHECK -> executeOobFunctionGuardCheckTool(args, env)
+            OobFunctionToolNames.FUNCTION_RUN -> executeOobFunctionRunTool(args, env)
+            OobFunctionToolNames.FUNCTION_DELETE -> executeOobFunctionDeleteTool(args, env)
+            OobFunctionToolNames.FUNCTION_CLEAR -> executeOobFunctionClearTool(args, env)
+            OobFunctionToolNames.RUN_LOG_LIST -> executeOobRunLogList(env)
+            OobFunctionToolNames.RUN_LOG_GET -> executeOobRunLogGet(args, env)
+            OobFunctionToolNames.RUN_LOG_CONVERT -> executeOobRunLogConvert(args, env)
             else -> ToolExecutionResult.Error(toolCall.function.name, "Unknown workbench tool")
         }
     }
@@ -114,7 +104,7 @@ class WorkbenchToolHandler(
         val payload = omniflowToolkit.listFunctions(helper.jsonObjectToMap(args))
         val count = (payload["count"] as? Number)?.toInt()
             ?: ((payload["functions"] as? List<*>)?.size ?: 0)
-        return contextResult("oob_function_list", "${count} 条复用指令", payload, true, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_LIST, "${count} 条复用指令", payload, true, env)
     }
 
     private fun executeOobFunctionGetTool(
@@ -137,7 +127,7 @@ class WorkbenchToolHandler(
         } else {
             payload["error_message"]?.toString() ?: "复用指令不存在"
         }
-        return contextResult("oob_function_get", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_GET, summary, payload, success, env)
     }
 
     private fun executeOobFunctionRegisterTool(
@@ -152,7 +142,7 @@ class WorkbenchToolHandler(
         } else {
             payload["error_message"]?.toString() ?: "复用指令注册失败"
         }
-        return contextResult("oob_function_register", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_REGISTER, summary, payload, success, env)
     }
 
     private fun executeUpdateFunctionTool(
@@ -175,7 +165,7 @@ class WorkbenchToolHandler(
             success -> "复用指令无需更新 $functionId"
             else -> payload["error_message"]?.toString() ?: "复用指令更新失败"
         }
-        return contextResult("update_function", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_UPDATE, summary, payload, success, env)
     }
 
     private fun executeOobFunctionGuardCheckTool(
@@ -193,7 +183,7 @@ class WorkbenchToolHandler(
         } else {
             payload["error_message"]?.toString() ?: "复用指令检查失败"
         }
-        return contextResult("oob_function_guard_check", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_GUARD_CHECK, summary, payload, success, env)
     }
 
     private suspend fun executeOobFunctionRunTool(
@@ -218,7 +208,7 @@ class WorkbenchToolHandler(
                 ?: payload["reason"]?.toString()
                 ?: "复用指令执行未完成"
         }
-        return contextResult("oob_function_run", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_RUN, summary, payload, success, env)
     }
 
     private fun executeOobFunctionDeleteTool(
@@ -230,7 +220,7 @@ class WorkbenchToolHandler(
         val success = payload["success"] == true || payload["deleted"] == true
         val functionId = firstNonBlank(payload["function_id"], argsMap["functionId"], argsMap["function_id"])
         val summary = if (success) "已删除复用指令 $functionId" else "复用指令不存在"
-        return contextResult("oob_function_delete", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_DELETE, summary, payload, success, env)
     }
 
     private fun executeOobFunctionClearTool(
@@ -245,13 +235,13 @@ class WorkbenchToolHandler(
         } else {
             payload["error_message"]?.toString() ?: "confirm=true is required"
         }
-        return contextResult("oob_function_clear", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.FUNCTION_CLEAR, summary, payload, success, env)
     }
 
     private fun executeOobRunLogList(env: AgentExecutionEnvironment): ToolExecutionResult {
         val payload = cn.com.omnimind.baselib.runlog.InternalRunLogStore
             .listRuns(helper.context, limit = 50)
-        return contextResult("oob_run_log_list", "${payload["count"]} runs", payload, true, env)
+        return contextResult(OobFunctionToolNames.RUN_LOG_LIST, "${payload["count"]} runs", payload, true, env)
     }
 
     private fun executeOobRunLogGet(
@@ -261,12 +251,12 @@ class WorkbenchToolHandler(
         val argsMap = helper.jsonObjectToMap(args)
         val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
         if (runId.isEmpty()) {
-            return ToolExecutionResult.Error("oob_run_log_get", "run_id is required")
+            return ToolExecutionResult.Error(OobFunctionToolNames.RUN_LOG_GET, "run_id is required")
         }
         val payload = cn.com.omnimind.baselib.runlog.InternalRunLogStore
             .timelinePayload(helper.context, runId)
         val success = payload["success"] == true
-        return contextResult("oob_run_log_get",
+        return contextResult(OobFunctionToolNames.RUN_LOG_GET,
             if (success) "Run ${runId.take(16)}…" else "Not found",
             payload, success, env)
     }
@@ -278,7 +268,7 @@ class WorkbenchToolHandler(
         val argsMap = helper.jsonObjectToMap(args)
         val runId = firstNonBlank(argsMap["run_id"], argsMap["runId"])
         if (runId.isEmpty()) {
-            return ToolExecutionResult.Error("oob_run_log_convert", "run_id is required")
+            return ToolExecutionResult.Error(OobFunctionToolNames.RUN_LOG_CONVERT, "run_id is required")
         }
         val register = when (val raw = argsMap["register"]) {
             is Boolean -> raw
@@ -301,7 +291,7 @@ class WorkbenchToolHandler(
         } else {
             payload["error_message"]?.toString() ?: "RunLog convert failed"
         }
-        return contextResult("oob_run_log_convert", summary, payload, success, env)
+        return contextResult(OobFunctionToolNames.RUN_LOG_CONVERT, summary, payload, success, env)
     }
 
     private suspend fun executeWorkbenchProjectCreate(

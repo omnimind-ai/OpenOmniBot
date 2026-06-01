@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.mcp
 
+import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,13 +43,30 @@ class McpToolDefinitionsTest {
             File("src/main/java/cn/com/omnimind/bot/mcp/McpRoutes.kt"),
         ).first { it.exists() }.readText()
         val missingRoutes = McpToolDefinitions.fixedToolNames
-            .filterNot { toolName -> "\"$toolName\" ->" in routeSource }
+            .filterNot { toolName ->
+                "\"$toolName\" ->" in routeSource ||
+                    functionToolRouteConstants[toolName]?.let { "$it ->" in routeSource } == true
+            }
 
         assertTrue(
             "Fixed MCP tools must be routed before Workbench fallback: $missingRoutes",
             missingRoutes.isEmpty()
         )
     }
+
+    private val functionToolRouteConstants = mapOf(
+        OobFunctionToolNames.FUNCTION_LIST to "OobFunctionToolNames.FUNCTION_LIST",
+        OobFunctionToolNames.FUNCTION_GET to "OobFunctionToolNames.FUNCTION_GET",
+        OobFunctionToolNames.FUNCTION_REGISTER to "OobFunctionToolNames.FUNCTION_REGISTER",
+        OobFunctionToolNames.FUNCTION_UPDATE to "OobFunctionToolNames.FUNCTION_UPDATE",
+        OobFunctionToolNames.FUNCTION_GUARD_CHECK to "OobFunctionToolNames.FUNCTION_GUARD_CHECK",
+        OobFunctionToolNames.FUNCTION_RUN to "OobFunctionToolNames.FUNCTION_RUN",
+        OobFunctionToolNames.FUNCTION_DELETE to "OobFunctionToolNames.FUNCTION_DELETE",
+        OobFunctionToolNames.FUNCTION_CLEAR to "OobFunctionToolNames.FUNCTION_CLEAR",
+        OobFunctionToolNames.RUN_LOG_LIST to "OobFunctionToolNames.RUN_LOG_LIST",
+        OobFunctionToolNames.RUN_LOG_GET to "OobFunctionToolNames.RUN_LOG_GET",
+        OobFunctionToolNames.RUN_LOG_CONVERT to "OobFunctionToolNames.RUN_LOG_CONVERT",
+    )
 
     @Test
     fun exploreReplayToolExposesNativeExplorerControls() {

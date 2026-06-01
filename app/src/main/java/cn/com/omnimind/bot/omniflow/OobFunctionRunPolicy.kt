@@ -121,7 +121,7 @@ class OobFunctionRunPolicy(
             "remaining_steps" to remainingSteps,
             "recovery" to recovery.takeIf { it.isNotEmpty() },
             "return_instruction" to linkedMapOf(
-                "tool" to "oob_function_run",
+                "tool" to OobFunctionToolNames.FUNCTION_RUN,
                 "args" to linkedMapOf(
                     "function_id" to functionId,
                     "arguments" to arguments,
