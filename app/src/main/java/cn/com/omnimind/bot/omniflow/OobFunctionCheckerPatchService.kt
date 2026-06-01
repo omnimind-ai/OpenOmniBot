@@ -8,7 +8,6 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonMap
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonValue
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
-import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OobStepRoleClassifier
 
 /**
@@ -19,35 +18,6 @@ import cn.com.omnimind.bot.runlog.OobStepRoleClassifier
  * instead of turning popup/ad dismissal into required execution steps.
  */
 class OobFunctionCheckerPatchService {
-    private val dismissActionAliases = setOf(
-        "dismiss",
-        "close",
-        "close_popup",
-        "click_close",
-        "click_dismiss",
-        "skip",
-    )
-    private val allowActionAliases = setOf(
-        "allow",
-        "grant",
-        "grant_permission",
-        "click_allow",
-    )
-    private val resolverActionAliases = setOf(
-        "confirm_resolver_always",
-        "always_open",
-        "open_always",
-        "click_always_open",
-        "click_always",
-        "confirm_default",
-        "set_default",
-    )
-    private val hideKeyboardActionAliases = setOf(
-        "hide_keyboard",
-        "dismiss_keyboard",
-        "close_keyboard",
-    )
-
     fun applyCheckerRulesPatch(
         metadata: MutableMap<String, Any?>,
         rawRules: Any?,
@@ -136,10 +106,10 @@ class OobFunctionCheckerPatchService {
                 OmniflowCheckerRule.COND_PERMISSION_DIALOG
             else -> OmniflowCheckerRule.COND_OVERLAY_BLOCKING
         }
-        val action = checkerActionForCondition(condition)
+        val action = OmniflowCheckerRule.actionForCondition(condition)
         return linkedMapOf(
             "id" to "optional_checker_step_${stepIndex}_$condition",
-            "phase" to checkerPhaseForCondition(condition),
+            "phase" to OmniflowCheckerRule.phaseForCondition(condition),
             "condition" to condition,
             "action" to action,
             "enabled" to true,
@@ -182,10 +152,13 @@ class OobFunctionCheckerPatchService {
 
     private fun sanitizeCheckerRule(raw: Map<String, Any?>): Map<String, Any?>? {
         if (raw.isEmpty()) return null
-        val condition = normalizeCheckerCondition(firstNonBlank(raw["condition"], raw["when"], raw["type"]))
+        val condition = OmniflowCheckerRule.normalizeCondition(firstNonBlank(raw["condition"], raw["when"], raw["type"]))
         if (condition.isBlank()) return null
-        val action = normalizeCheckerAction(firstNonBlank(raw["action"], raw["then"], raw["effect"]), condition)
-        if (action.isBlank() || !isSupportedCheckerPair(condition, action)) return null
+        val action = OmniflowCheckerRule.normalizeAction(
+            raw = firstNonBlank(raw["action"], raw["then"], raw["effect"]),
+            condition = condition,
+        )
+        if (action.isBlank() || !OmniflowCheckerRule.isSupportedPair(condition, action)) return null
         val params = mutableMapOf<String, Any?>()
         val rawParams = mapArg(raw["params"])
         val packageName = firstNonBlank(
@@ -201,106 +174,13 @@ class OobFunctionCheckerPatchService {
         }
         return linkedMapOf(
             "id" to safeCheckerRuleId(firstNonBlank(raw["id"], "function_checker")),
-            "phase" to checkerPhaseForCondition(condition),
+            "phase" to OmniflowCheckerRule.phaseForCondition(condition),
             "condition" to condition,
             "action" to action,
             "enabled" to boolArgOrDefault(raw["enabled"], true),
             "params" to params,
         )
     }
-
-    private fun normalizeCheckerCondition(raw: String): String =
-        when (raw.trim().lowercase().replace('-', '_')) {
-            "overlay_blocking",
-            "blocking_overlay",
-            "popup_blocking",
-            "popup",
-            "banner",
-            "coupon",
-            "obstruction",
-            "conditional_obstruction" -> OmniflowCheckerRule.COND_OVERLAY_BLOCKING
-            "ad_blocking",
-            "blocking_ad",
-            "ad_popup",
-            "ad",
-            "ads",
-            "splash_ad",
-            "interstitial_ad",
-            "skip_ad",
-            "advertising" -> OmniflowCheckerRule.COND_AD_BLOCKING
-            "permission_dialog",
-            "permission",
-            "permission_prompt",
-            "permission_nudge" -> OmniflowCheckerRule.COND_PERMISSION_DIALOG
-            "resolver_dialog",
-            "open_with_dialog",
-            "chooser_dialog",
-            "intent_resolver",
-            "intent_resolver_dialog",
-            "default_app_dialog",
-            "always_open_dialog" -> OmniflowCheckerRule.COND_RESOLVER_DIALOG
-            "keyboard_obscuring",
-            "keyboard",
-            "ime_obscuring",
-            "soft_keyboard" -> OmniflowCheckerRule.COND_KEYBOARD_OBSCURING
-            "package_mismatch",
-            "wrong_app",
-            "app_mismatch",
-            "foreground_package_mismatch" -> OmniflowCheckerRule.COND_PACKAGE_MISMATCH
-            else -> ""
-        }
-
-    private fun normalizeCheckerAction(raw: String, condition: String): String {
-        val text = raw.trim().lowercase().replace('-', '_')
-        if (text.isBlank()) return checkerActionForCondition(condition)
-        val canonicalAction = OobActionCodec.canonicalActionForName(text)
-        return when {
-            text in dismissActionAliases -> OmniflowCheckerRule.ACTION_DISMISS
-            text in allowActionAliases -> OmniflowCheckerRule.ACTION_ALLOW
-            text in resolverActionAliases -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
-            text in hideKeyboardActionAliases -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
-            canonicalAction == OobActionCodec.ACTION_OPEN_APP ||
-                text == "start_app" -> OmniflowCheckerRule.ACTION_OPEN_APP
-            canonicalAction == OobActionCodec.ACTION_CLICK -> when (condition) {
-                OmniflowCheckerRule.COND_OVERLAY_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
-                OmniflowCheckerRule.COND_AD_BLOCKING -> OmniflowCheckerRule.ACTION_DISMISS
-                OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
-                OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
-                else -> ""
-            }
-            else -> ""
-        }
-    }
-
-    private fun checkerActionForCondition(condition: String): String =
-        when (condition) {
-            OmniflowCheckerRule.COND_KEYBOARD_OBSCURING -> OmniflowCheckerRule.ACTION_HIDE_KEYBOARD
-            OmniflowCheckerRule.COND_PERMISSION_DIALOG -> OmniflowCheckerRule.ACTION_ALLOW
-            OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS
-            OmniflowCheckerRule.COND_PACKAGE_MISMATCH -> OmniflowCheckerRule.ACTION_OPEN_APP
-            else -> OmniflowCheckerRule.ACTION_DISMISS
-        }
-
-    private fun checkerPhaseForCondition(condition: String): String =
-        when (condition) {
-            OmniflowCheckerRule.COND_KEYBOARD_OBSCURING -> OmniflowCheckerRule.PHASE_PRE_ACTION
-            OmniflowCheckerRule.COND_RESOLVER_DIALOG -> OmniflowCheckerRule.PHASE_POST_ACTION
-            else -> OmniflowCheckerRule.PHASE_PRE_TRANSFER
-        }
-
-    private fun isSupportedCheckerPair(condition: String, action: String): Boolean =
-        (condition == OmniflowCheckerRule.COND_OVERLAY_BLOCKING &&
-            action == OmniflowCheckerRule.ACTION_DISMISS) ||
-            (condition == OmniflowCheckerRule.COND_AD_BLOCKING &&
-                action == OmniflowCheckerRule.ACTION_DISMISS) ||
-            (condition == OmniflowCheckerRule.COND_PERMISSION_DIALOG &&
-                action == OmniflowCheckerRule.ACTION_ALLOW) ||
-            (condition == OmniflowCheckerRule.COND_RESOLVER_DIALOG &&
-                action == OmniflowCheckerRule.ACTION_CONFIRM_RESOLVER_ALWAYS) ||
-            (condition == OmniflowCheckerRule.COND_KEYBOARD_OBSCURING &&
-                action == OmniflowCheckerRule.ACTION_HIDE_KEYBOARD) ||
-            (condition == OmniflowCheckerRule.COND_PACKAGE_MISMATCH &&
-                action == OmniflowCheckerRule.ACTION_OPEN_APP)
 
     private fun mergeCheckerRules(
         existing: List<Any?>,

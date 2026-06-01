@@ -66,6 +66,35 @@ data class OmniflowCheckerRule(
         /** Emit a handoff signal so the host agent resumes. */
         const val ACTION_HANDOFF = "handoff"
 
+        private val dismissActionAliases = setOf(
+            ACTION_DISMISS,
+            "close",
+            "close_popup",
+            "click_close",
+            "click_dismiss",
+            "skip",
+        )
+        private val allowActionAliases = setOf(
+            ACTION_ALLOW,
+            "grant",
+            "grant_permission",
+            "click_allow",
+        )
+        private val resolverActionAliases = setOf(
+            ACTION_CONFIRM_RESOLVER_ALWAYS,
+            "always_open",
+            "open_always",
+            "click_always_open",
+            "click_always",
+            "confirm_default",
+            "set_default",
+        )
+        private val hideKeyboardActionAliases = setOf(
+            ACTION_HIDE_KEYBOARD,
+            "dismiss_keyboard",
+            "close_keyboard",
+        )
+
         // ── Built-in global rules ────────────────────────────────────────────
         val GLOBAL_PRE_TRANSFER: List<OmniflowCheckerRule> = listOf(
             OmniflowCheckerRule(
@@ -122,15 +151,21 @@ data class OmniflowCheckerRule(
 
         fun fromMap(map: Map<*, *>): OmniflowCheckerRule? {
             val id = map["id"]?.toString()?.trim().orEmpty().ifBlank { return null }
-            val condition = map["condition"]?.toString()?.trim().orEmpty().ifBlank { return null }
-            val action = map["action"]?.toString()?.trim().orEmpty().ifBlank { return null }
+            val condition = normalizeCondition(
+                OobActionCodec.firstNonBlank(map["condition"], map["when"], map["type"])
+            ).ifBlank { return null }
+            val action = normalizeAction(
+                raw = OobActionCodec.firstNonBlank(map["action"], map["then"], map["effect"]),
+                condition = condition,
+            ).ifBlank { return null }
+            if (!isSupportedPair(condition, action)) return null
             val params = OobActionCodec.mapArg(map["params"])
             return OmniflowCheckerRule(
                 id = id,
                 condition = condition,
                 action = action,
                 params = params,
-                phase = map["phase"]?.toString()?.trim() ?: PHASE_PRE_TRANSFER,
+                phase = map["phase"]?.toString()?.trim()?.ifBlank { null } ?: phaseForCondition(condition),
                 enabled = map["enabled"]?.let(OobActionCodec::boolArg) ?: true,
             )
         }
@@ -141,5 +176,92 @@ data class OmniflowCheckerRule(
             val rules = OobActionCodec.listArg(metadata["checker_rules"])
             return rules.mapNotNull { OobActionCodec.mapArg(it).takeIf { rule -> rule.isNotEmpty() }?.let(::fromMap) }
         }
+
+        fun normalizeCondition(raw: String): String =
+            when (raw.trim().lowercase().replace('-', '_')) {
+                "overlay_blocking",
+                "blocking_overlay",
+                "popup_blocking",
+                "popup",
+                "banner",
+                "coupon",
+                "obstruction",
+                "conditional_obstruction" -> COND_OVERLAY_BLOCKING
+                "ad_blocking",
+                "blocking_ad",
+                "ad_popup",
+                "ad",
+                "ads",
+                "splash_ad",
+                "interstitial_ad",
+                "skip_ad",
+                "advertising" -> COND_AD_BLOCKING
+                "permission_dialog",
+                "permission",
+                "permission_prompt",
+                "permission_nudge" -> COND_PERMISSION_DIALOG
+                "resolver_dialog",
+                "open_with_dialog",
+                "chooser_dialog",
+                "intent_resolver",
+                "intent_resolver_dialog",
+                "default_app_dialog",
+                "always_open_dialog" -> COND_RESOLVER_DIALOG
+                "keyboard_obscuring",
+                "keyboard",
+                "ime_obscuring",
+                "soft_keyboard" -> COND_KEYBOARD_OBSCURING
+                "package_mismatch",
+                "wrong_app",
+                "app_mismatch",
+                "foreground_package_mismatch" -> COND_PACKAGE_MISMATCH
+                else -> ""
+            }
+
+        fun normalizeAction(raw: String, condition: String): String {
+            val text = raw.trim().lowercase().replace('-', '_')
+            if (text.isBlank()) return actionForCondition(condition)
+            val canonicalAction = OobActionCodec.canonicalActionForName(text)
+            return when {
+                text in dismissActionAliases -> ACTION_DISMISS
+                text in allowActionAliases -> ACTION_ALLOW
+                text in resolverActionAliases -> ACTION_CONFIRM_RESOLVER_ALWAYS
+                text in hideKeyboardActionAliases -> ACTION_HIDE_KEYBOARD
+                canonicalAction == OobActionCodec.ACTION_OPEN_APP ||
+                    text == "start_app" -> ACTION_OPEN_APP
+                canonicalAction == OobActionCodec.ACTION_CLICK -> when (condition) {
+                    COND_OVERLAY_BLOCKING -> ACTION_DISMISS
+                    COND_AD_BLOCKING -> ACTION_DISMISS
+                    COND_PERMISSION_DIALOG -> ACTION_ALLOW
+                    COND_RESOLVER_DIALOG -> ACTION_CONFIRM_RESOLVER_ALWAYS
+                    else -> ""
+                }
+                else -> ""
+            }
+        }
+
+        fun actionForCondition(condition: String): String =
+            when (condition) {
+                COND_KEYBOARD_OBSCURING -> ACTION_HIDE_KEYBOARD
+                COND_PERMISSION_DIALOG -> ACTION_ALLOW
+                COND_RESOLVER_DIALOG -> ACTION_CONFIRM_RESOLVER_ALWAYS
+                COND_PACKAGE_MISMATCH -> ACTION_OPEN_APP
+                else -> ACTION_DISMISS
+            }
+
+        fun phaseForCondition(condition: String): String =
+            when (condition) {
+                COND_KEYBOARD_OBSCURING -> PHASE_PRE_ACTION
+                COND_RESOLVER_DIALOG -> PHASE_POST_ACTION
+                else -> PHASE_PRE_TRANSFER
+            }
+
+        fun isSupportedPair(condition: String, action: String): Boolean =
+            (condition == COND_OVERLAY_BLOCKING && action == ACTION_DISMISS) ||
+                (condition == COND_AD_BLOCKING && action == ACTION_DISMISS) ||
+                (condition == COND_PERMISSION_DIALOG && action == ACTION_ALLOW) ||
+                (condition == COND_RESOLVER_DIALOG && action == ACTION_CONFIRM_RESOLVER_ALWAYS) ||
+                (condition == COND_KEYBOARD_OBSCURING && action == ACTION_HIDE_KEYBOARD) ||
+                (condition == COND_PACKAGE_MISMATCH && action == ACTION_OPEN_APP)
     }
 }

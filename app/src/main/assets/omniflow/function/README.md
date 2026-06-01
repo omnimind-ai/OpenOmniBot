@@ -33,6 +33,9 @@ appear:
 - A checker is conditional environment handling. Ads, popups, permission
   prompts, resolver sheets, and "skip" buttons should be represented as checker
   metadata or evidence, not inserted as mandatory Function path steps.
+- Checker rule condition/action/phase vocabulary and alias normalization belong
+  to `OmniflowCheckerRule`; patch appliers should delegate to it instead of
+  maintaining local `dismiss`/`allow`/`skip` alias tables.
 
 When adding code, first decide which concept it belongs to. If the new code
 needs two concepts, wire the existing owners together instead of creating a new
@@ -209,6 +212,15 @@ When adding or migrating a generic agent tool name:
 - delegate checker rule and optional checker candidate normalization to
   `OobFunctionCheckerPatchService`
 - never insert/delete/reorder execution steps or retarget a recorded action
+
+`OmniflowCheckerRule` owns runtime checker rule vocabulary:
+
+- define checker phases, conditions, actions, and global built-in checker rules
+- normalize checker condition/action aliases such as `skip_ad`, `click_allow`,
+  `always_open`, and `dismiss_keyboard`
+- expose the supported condition/action matrix and default phase/action mapping
+- keep checker vocabulary out of `update_function` patch appliers and step
+  execution services
 
 `OobStepRoleClassifier` owns reusable step role normalization:
 
