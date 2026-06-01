@@ -70,7 +70,7 @@ object RunLogReplayStepNoiseNormalizer {
             val step = steps[i]
             val next = steps.getOrNull(i + 1)
             if (next != null &&
-                replayActionForStep(step) == "click" &&
+                replayActionForStep(step) == OobActionCodec.ACTION_CLICK &&
                 replayActionForStep(next) in inputTextActions &&
                 clickAndInputShareTarget(step, next)
             ) {

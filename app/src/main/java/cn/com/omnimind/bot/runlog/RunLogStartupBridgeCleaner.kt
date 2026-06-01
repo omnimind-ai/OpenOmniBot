@@ -149,7 +149,7 @@ internal object RunLogStartupBridgeCleaner {
         if (!isLaunchableInitialPackageCandidate(packageName)) return steps
 
         val candidate = steps[1]
-        if (replayActionForStep(candidate) != "click") return steps
+        if (replayActionForStep(candidate) != OobActionCodec.ACTION_CLICK) return steps
         if (!isInjectedLaunchBridgeClick(candidate, packageName, steps.drop(2))) {
             return steps
         }
@@ -285,7 +285,7 @@ internal object RunLogStartupBridgeCleaner {
         val card = cards[cardIndex]
         if (isManualRecordingCard(card)) return false
         val action = replayActionForCard(card) ?: return false
-        if (action != "click") return false
+        if (action != OobActionCodec.ACTION_CLICK) return false
 
         val args = asMap(extractArgs(card))
         val target = firstNonBlank(

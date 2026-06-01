@@ -211,6 +211,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   It owns repeated input collapse and redundant click-before-input removal;
   startup launch bridge cleanup belongs in `RunLogStartupBridgeCleaner`, and
   the compiler should only orchestrate card-to-step conversion.
+- Cleanup code that compares replay actions must use `OobActionCodec`
+  constants; natural-language token lists may still contain literal words like
+  `click` because those are UI labels, not action names.
 - Keep single-card action semantics in `RunLogReplayStepCompiler`. It owns
   whether a card becomes `executor=omniflow`, `executor=tool`, or
   `executor=agent`, plus step titles and source-context repair.
