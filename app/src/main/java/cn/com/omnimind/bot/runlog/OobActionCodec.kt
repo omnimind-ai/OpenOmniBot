@@ -37,6 +37,13 @@ object OobActionCodec {
         ACTION_LONG_PRESS,
     )
 
+    val userFacingActions: Set<String> = setOf(
+        ACTION_CLICK,
+        ACTION_LONG_PRESS,
+        ACTION_INPUT_TEXT,
+        ACTION_SWIPE,
+    )
+
     val actionAliases: Map<String, String> = mapOf(
         "tap" to ACTION_CLICK,
         "click_at" to ACTION_CLICK,
@@ -88,6 +95,17 @@ object OobActionCodec {
         val raw = rawActionNameForStep(step)
         return canonicalActionForName(raw)
             ?: normalizeName(raw).ifBlank { "unknown" }
+    }
+
+    fun isUserFacingAction(actionType: String): Boolean =
+        canonicalActionForName(actionType) in userFacingActions
+
+    fun isRouteAction(actionType: String, args: Map<String, Any?> = emptyMap()): Boolean {
+        val canonical = canonicalActionForName(actionType) ?: normalizeName(actionType)
+        if (canonical == ACTION_OPEN_APP) return true
+        if (canonical != ACTION_PRESS_KEY) return false
+        val key = firstNonBlank(args["key"], args["key_code"], args["keyCode"]).lowercase()
+        return key in setOf("back", "home")
     }
 
     fun argsForStep(step: Map<String, Any?>): Map<String, Any?> {

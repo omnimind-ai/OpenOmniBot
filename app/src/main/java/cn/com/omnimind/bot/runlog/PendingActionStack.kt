@@ -87,7 +87,7 @@ class PendingActionStack private constructor(
                     sourcePackage = srcPackage,
                     sourceVector = sourceVector,
                     role = role.role,
-                    isKeyAction = role.role == OobStepRoleClassifier.ROLE_SEMANTIC,
+                    isKeyAction = OobActionCodec.isUserFacingAction(actionName),
                     explicitRole = role.explicit,
                 )
             }

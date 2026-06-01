@@ -3,7 +3,9 @@ package cn.com.omnimind.bot.runlog
 import java.util.Locale
 
 /**
- * Shared step-role classifier used by replay alignment and UDEG indexing.
+ * Offline step annotation classifier used by RunLog analysis, checker mining,
+ * and UDEG metadata. Runtime replay decisions should use OobActionCodec or
+ * replay policy instead of branching on these roles.
  */
 object OobStepRoleClassifier {
     const val ROLE_NAVIGATION = "navigation"
@@ -79,10 +81,8 @@ object OobStepRoleClassifier {
     }
 
     fun defaultRole(actionType: String, actionSummary: Map<String, Any?> = emptyMap()): String {
-        val key = OobActionCodec.firstNonBlank(actionSummary["key"]).lowercase(Locale.US)
         return when {
-            actionType == OobActionCodec.ACTION_OPEN_APP -> ROLE_NAVIGATION
-            actionType == OobActionCodec.ACTION_PRESS_KEY && key in setOf("back", "home") -> ROLE_NAVIGATION
+            OobActionCodec.isRouteAction(actionType, actionSummary) -> ROLE_NAVIGATION
             else -> ROLE_UNKNOWN
         }
     }

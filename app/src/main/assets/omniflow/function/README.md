@@ -24,6 +24,9 @@ appear:
 - Code that needs an action family, such as point-target actions, should use
   the sets exposed by `OobActionCodec` instead of rebuilding local
   `click`/`long_press` lists.
+- Runtime decisions must be action-driven. Main replay, source alignment, and
+  route safety should use `OobActionCodec` predicates or replay policy, not
+  offline role labels such as `semantic`, `navigation`, or `noise`.
 - An executor is a replay classification, not an action. `omniflow`, `tool`,
   and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
   step, not to describe what the step does.
@@ -238,12 +241,15 @@ When adding or migrating a generic agent tool name:
 `OobStepRoleClassifier` owns reusable step role normalization:
 
 - classify explicit `agent_reuse`, cleanup annotations, and default navigation
-  roles for replay alignment and UDEG indexing
+  roles for offline analysis and UDEG metadata
 - expose checker-candidate role alias detection used by
   `OobFunctionCheckerPatchService`
 - keep role labels such as `optional_checker`, `runtime_checker`,
   `checker_candidate`, and `ad_checker` out of checker-specific local alias
   tables
+- never decide whether a replay step is executable, key/user-facing, or
+  route-safe; those runtime decisions belong to `OobActionCodec` and replay
+  policy
 
 `OobFunctionStructuralPatchApplier` owns structural `update_function` patches:
 

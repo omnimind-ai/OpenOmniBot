@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,6 +23,18 @@ class OobActionCodecTest {
             OobActionCodec.pointTargetActions,
         )
         assertTrue(OobActionCodec.ACTION_INPUT_TEXT !in OobActionCodec.pointTargetActions)
+    }
+
+    @Test
+    fun `classifies runtime action families without step roles`() {
+        assertTrue(OobActionCodec.isUserFacingAction("tap"))
+        assertTrue(OobActionCodec.isUserFacingAction(OobActionCodec.ACTION_INPUT_TEXT))
+        assertFalse(OobActionCodec.isUserFacingAction(OobActionCodec.ACTION_OPEN_APP))
+
+        assertTrue(OobActionCodec.isRouteAction("launch_app"))
+        assertTrue(OobActionCodec.isRouteAction("press_key", mapOf("key" to "back")))
+        assertFalse(OobActionCodec.isRouteAction("click"))
+        assertFalse(OobActionCodec.isRouteAction("press_key", mapOf("key" to "enter")))
     }
 
     @Test
