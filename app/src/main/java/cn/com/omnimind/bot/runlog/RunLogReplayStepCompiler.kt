@@ -19,6 +19,8 @@ import cn.com.omnimind.bot.runlog.RunLogCardAccessors.toolNameForCard
  * Translates a successful RunLog card into one executable reusable Function step.
  */
 internal object RunLogReplayStepCompiler {
+    private const val SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML = "coordinate_only_no_xml"
+
     fun compileCard(
         card: Map<String, Any?>,
         skipPerceptionTools: Boolean,
@@ -241,7 +243,7 @@ internal object RunLogReplayStepCompiler {
             "source_tool" to toolName.takeIf { it != canonicalToolName },
             "args" to canonicalArgs,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-            "replay_engine" to if (isGraphTool) "omniflow_utg" else null,
+            "replay_engine" to if (isGraphTool) RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
             "observed_result" to result.takeUnless(::isEmptyJsonValue),
         )
@@ -300,7 +302,7 @@ internal object RunLogReplayStepCompiler {
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
             "coordinate_hook" to if (usesCoordinateHook) RunLogReplayPolicy.EXECUTOR_OMNIFLOW else null,
-            "replay_engine" to if (utg.isNotEmpty()) "omniflow_utg" else null,
+            "replay_engine" to if (utg.isNotEmpty()) RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
         )
     }
@@ -325,35 +327,6 @@ internal object RunLogReplayStepCompiler {
             before["xml"],
             before["page"],
         )
-        if (sourceXml.isEmpty()) return emptyMap()
-        val afterXml = firstNonBlank(
-            after["observation_xml"],
-            after["observationXml"],
-            after["xml"],
-            after["page"],
-        )
-        val nextBefore = nextReplayableCard?.let(::beforeObservationForCard).orEmpty()
-        val nextBeforeXml = firstNonBlank(
-            nextBefore["observation_xml"],
-            nextBefore["observationXml"],
-            nextBefore["xml"],
-            nextBefore["page"],
-        )
-        val sourcePackage = RunLogPagePackageInference.effectivePackage(
-            firstNonBlank(before["package_name"], before["packageName"]),
-            sourceXml,
-        )
-        val repairedAfterXml = if (shouldUseNextBeforeAsAfter(afterXml, nextBeforeXml)) {
-            nextBeforeXml
-        } else {
-            afterXml
-        }
-        val rawAfterPackage = if (repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank()) {
-            firstNonBlank(nextBefore["package_name"], nextBefore["packageName"])
-        } else {
-            firstNonBlank(after["package_name"], after["packageName"])
-        }
-        val afterPackage = RunLogPagePackageInference.effectivePackage(rawAfterPackage, repairedAfterXml)
         val rawToolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
         val actionArgs = if (normalizedToolName == AgentToolNames.ANDROID_PRIVILEGED_ACTION) {
@@ -391,12 +364,70 @@ internal object RunLogReplayStepCompiler {
                 sourceAction[key] = actionArgs[key]
             }
         }
-        return linkedMapOf(
-            "src_ctx" to linkedMapOf(
-                "page" to sourceXml,
-                "package_name" to sourcePackage,
-                "require_unique_action_signature" to false,
+        val beforeScreenshot = asMap(before["screenshot"])
+        val beforeScreenshotPath = firstNonBlank(
+            before["screenshot_path"],
+            before["screenshotPath"],
+            before["screenshot_file"],
+            before["screenshotFile"],
+            beforeScreenshot["path"],
+            beforeScreenshot["screenshot_path"],
+            beforeScreenshot["screenshotPath"],
+            beforeScreenshot["absolute_path"],
+            beforeScreenshot["absolutePath"],
+            beforeScreenshot["relative_path"],
+            beforeScreenshot["relativePath"],
+        )
+        val sourcePackage = RunLogPagePackageInference.effectivePackage(
+            firstNonBlank(
+                before["package_name"],
+                before["packageName"],
+                actionArgs["package_name"],
+                actionArgs["packageName"],
+                card["package_name"],
+                card["packageName"],
             ),
+            sourceXml,
+        )
+        val srcCtx = sourceContextSourcePage(
+            sourceXml = sourceXml,
+            beforeScreenshot = beforeScreenshot,
+            beforeScreenshotPath = beforeScreenshotPath,
+            sourcePackage = sourcePackage,
+        )
+        if (sourceXml.isEmpty()) {
+            return coordinateOnlySourceContext(
+                normalizedToolName = normalizedToolName,
+                srcCtx = srcCtx,
+                sourceAction = sourceAction,
+            )
+        }
+        val afterXml = firstNonBlank(
+            after["observation_xml"],
+            after["observationXml"],
+            after["xml"],
+            after["page"],
+        )
+        val nextBefore = nextReplayableCard?.let(::beforeObservationForCard).orEmpty()
+        val nextBeforeXml = firstNonBlank(
+            nextBefore["observation_xml"],
+            nextBefore["observationXml"],
+            nextBefore["xml"],
+            nextBefore["page"],
+        )
+        val repairedAfterXml = if (shouldUseNextBeforeAsAfter(afterXml, nextBeforeXml)) {
+            nextBeforeXml
+        } else {
+            afterXml
+        }
+        val rawAfterPackage = if (repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank()) {
+            firstNonBlank(nextBefore["package_name"], nextBefore["packageName"])
+        } else {
+            firstNonBlank(after["package_name"], after["packageName"])
+        }
+        val afterPackage = RunLogPagePackageInference.effectivePackage(rawAfterPackage, repairedAfterXml)
+        return linkedMapOf(
+            "src_ctx" to srcCtx,
             "dst_ctx" to linkedMapOf(
                 "page" to repairedAfterXml,
                 "package_name" to afterPackage,
@@ -404,10 +435,63 @@ internal object RunLogReplayStepCompiler {
                     repairedAfterXml == nextBeforeXml && nextBeforeXml.isNotBlank() && repairedAfterXml != afterXml
                 },
             ).filterValues { value ->
-                value != null && value.trim().isNotEmpty()
+                !value.isNullOrBlank()
             }.takeIf { it.isNotEmpty() },
             "action" to sourceAction,
         ).filterValues { it != null }
+    }
+
+    private fun sourceContextSourcePage(
+        sourceXml: String,
+        beforeScreenshot: Map<String, Any?>,
+        beforeScreenshotPath: String,
+        sourcePackage: String,
+    ): Map<String, Any?> = linkedMapOf(
+        "page" to sourceXml.takeIf { it.isNotBlank() },
+        "screenshot" to beforeScreenshot.takeIf { it.isNotEmpty() },
+        "screenshot_path" to beforeScreenshotPath,
+        "package_name" to sourcePackage,
+        "require_unique_action_signature" to false,
+    ).filterValues { value ->
+        value != null && value.toString().trim().isNotEmpty()
+    }
+
+    private fun coordinateOnlySourceContext(
+        normalizedToolName: String,
+        srcCtx: Map<String, Any?>,
+        sourceAction: Map<String, Any?>,
+    ): Map<String, Any?> {
+        val action = OobActionCodec.canonicalActionForName(normalizedToolName)
+            ?: OobActionCodec.canonicalActionForName(sourceAction["tool"]?.toString().orEmpty())
+            ?: return emptyMap()
+        if (action !in OobActionCodec.coordinateActions || !hasCoordinateEvidence(sourceAction)) {
+            return emptyMap()
+        }
+        return linkedMapOf(
+            "src_ctx" to srcCtx,
+            "action" to sourceAction,
+            "_oob_meta" to linkedMapOf(
+                "source_context_mode" to SOURCE_CONTEXT_MODE_COORDINATE_ONLY_NO_XML,
+                "missing_source_xml" to true,
+            ),
+        )
+    }
+
+    private fun hasCoordinateEvidence(sourceAction: Map<String, Any?>): Boolean {
+        val hasPoint = firstNonBlank(
+            sourceAction["x"],
+            sourceAction["center_x"],
+            sourceAction["centerX"],
+        ).isNotBlank() && firstNonBlank(
+            sourceAction["y"],
+            sourceAction["center_y"],
+            sourceAction["centerY"],
+        ).isNotBlank()
+        val hasSwipe = firstNonBlank(sourceAction["x1"]).isNotBlank() &&
+            firstNonBlank(sourceAction["y1"]).isNotBlank() &&
+            firstNonBlank(sourceAction["x2"]).isNotBlank() &&
+            firstNonBlank(sourceAction["y2"]).isNotBlank()
+        return hasPoint || hasSwipe
     }
 
     private fun shouldUseNextBeforeAsAfter(afterXml: String, nextBeforeXml: String): Boolean {

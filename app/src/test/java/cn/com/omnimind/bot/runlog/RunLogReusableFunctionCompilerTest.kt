@@ -136,6 +136,137 @@ class RunLogReusableFunctionCompilerTest {
     }
 
     @Test
+    fun `manual coordinate action without source xml still compiles for keyboard flow`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf(
+                        "target_description" to "Search",
+                        "x" to 880,
+                        "y" to 1680,
+                        "recording_backend" to "a11y_post_input",
+                    ),
+                    beforeXml = "",
+                    beforePackage = "com.example.search",
+                    beforeScreenshotPath = "/tmp/runlog-before.png",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-keyboard-post-input-click",
+        )
+
+        val click = stepsFrom(spec).single()
+        assertEquals("click", click["tool"])
+        assertEquals("omniflow", click["executor"])
+        assertEquals("omniflow", click["coordinate_hook"])
+        val args = click["args"] as Map<*, *>
+        assertEquals(880, (args["x"] as Number).toInt())
+        assertEquals(1680, (args["y"] as Number).toInt())
+        val sourceContext = click["source_context"] as Map<*, *>
+        val srcCtx = sourceContext["src_ctx"] as Map<*, *>
+        val action = sourceContext["action"] as Map<*, *>
+        val meta = sourceContext["_oob_meta"] as Map<*, *>
+        assertFalse(srcCtx.containsKey("page"))
+        assertEquals("com.example.search", srcCtx["package_name"])
+        assertEquals("/tmp/runlog-before.png", srcCtx["screenshot_path"])
+        assertEquals("click", action["tool"])
+        assertEquals(880, (action["x"] as Number).toInt())
+        assertEquals(1680, (action["y"] as Number).toInt())
+        assertEquals("coordinate_only_no_xml", meta["source_context_mode"])
+    }
+
+    @Test
+    fun `manual input text without source xml still compiles for keyboard flow`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "input_text",
+                    mapOf(
+                        "target_description" to "输入框",
+                        "text" to "hello",
+                        "content" to "hello",
+                        "x" to 540,
+                        "y" to 620,
+                        "recording_backend" to "overlay_touch_text_input",
+                        "target_resolution" to "overlay_touch_coordinate_text_anchor_unresolved+ime_text_event_unresolved",
+                    ),
+                    beforeXml = "",
+                    beforePackage = "com.example.search",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-keyboard-final-input-text",
+        )
+
+        val input = stepsFrom(spec).single()
+        assertEquals("input_text", input["tool"])
+        assertEquals("omniflow", input["executor"])
+        assertEquals("omniflow", input["coordinate_hook"])
+        val args = input["args"] as Map<*, *>
+        assertEquals("hello", args["text"])
+        assertEquals(540, (args["x"] as Number).toInt())
+        assertEquals(620, (args["y"] as Number).toInt())
+        val sourceContext = input["source_context"] as Map<*, *>
+        val srcCtx = sourceContext["src_ctx"] as Map<*, *>
+        val action = sourceContext["action"] as Map<*, *>
+        val meta = sourceContext["_oob_meta"] as Map<*, *>
+        assertFalse(srcCtx.containsKey("page"))
+        assertEquals("com.example.search", srcCtx["package_name"])
+        assertEquals("input_text", action["tool"])
+        assertEquals(540, (action["x"] as Number).toInt())
+        assertEquals(620, (action["y"] as Number).toInt())
+        assertEquals("coordinate_only_no_xml", meta["source_context_mode"])
+    }
+
+    @Test
+    fun `manual coordinate action without coordinates does not claim coordinate source context`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "click",
+                    mapOf("target_description" to "Search"),
+                    beforeXml = "",
+                    beforePackage = "com.example.search",
+                    beforeScreenshotPath = "/tmp/runlog-before.png",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-keyboard-click-without-coordinate",
+        )
+
+        val click = stepsFrom(spec).single()
+        assertEquals("click", click["tool"])
+        assertFalse(click.containsKey("source_context"))
+        assertFalse(click.containsKey("coordinate_hook"))
+    }
+
+    @Test
+    fun `non coordinate action without source xml does not get coordinate source context`() {
+        val spec = compile(
+            listOf(
+                card(
+                    "press_key",
+                    mapOf("key" to "back"),
+                    beforeXml = "",
+                    beforePackage = "com.example.search",
+                    compileKind = "manual_recording",
+                    source = "human_trajectory",
+                ),
+            ),
+            runId = "run-keyboard-press-key-without-xml",
+        )
+
+        val pressKey = stepsFrom(spec).single()
+        assertEquals("press_key", pressKey["tool"])
+        assertFalse(pressKey.containsKey("source_context"))
+        assertFalse(pressKey.containsKey("coordinate_hook"))
+    }
+
+    @Test
     fun `get state observation cards are omitted from reusable function replay`() {
         val spec = compile(
             listOf(
@@ -1016,6 +1147,7 @@ class RunLogReusableFunctionCompilerTest {
         afterXml: String = "",
         beforePackage: String = "com.example",
         afterPackage: String = beforePackage,
+        beforeScreenshotPath: String = "",
         success: Boolean? = null,
         title: String? = null,
         compileKind: String? = null,
@@ -1031,6 +1163,7 @@ class RunLogReusableFunctionCompilerTest {
             "before" to linkedMapOf(
                 "package_name" to beforePackage,
                 "observation_xml" to beforeXml,
+                "screenshot_path" to beforeScreenshotPath.takeIf { it.isNotBlank() },
             ),
             "after" to linkedMapOf(
                 "package_name" to afterPackage,

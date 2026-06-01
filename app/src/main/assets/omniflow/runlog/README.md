@@ -36,6 +36,11 @@ RunLog code should preserve these concepts:
   Analysis may justify labels, summaries, checker candidates, and small
   patches, but Kotlin conversion should not silently infer a new main path from
   weak or failed evidence.
+- Source context: replay repair evidence for coordinate actions. XML page
+  context is preferred, but manual keyboard flows may emit coordinate-only
+  context with screenshot/package evidence and
+  `source_context_mode=coordinate_only_no_xml`; keep that as degraded evidence
+  instead of dropping the step.
 
 Do not merge code just because two places touch the same string. Merge only
 when they own the same concept with the same compatibility rules. Keep
