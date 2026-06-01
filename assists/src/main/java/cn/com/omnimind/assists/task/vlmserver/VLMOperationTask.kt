@@ -828,6 +828,7 @@ open class VLMOperationTask(
             is PressHomeAction -> "返回桌面"
             is PressBackAction -> "返回"
             is GetStateAction -> "刷新页面状态"
+            is FunctionRunAction -> "执行复用指令"
             is WaitAction -> "旧版停留"
             is RecordAction -> "记录信息"
             is FinishedAction -> "完成任务"
@@ -872,6 +873,10 @@ open class VLMOperationTask(
             is PressHomeAction -> emptyMap()
             is PressBackAction -> emptyMap()
             is GetStateAction -> linkedMapOf("reason" to action.reason)
+            is FunctionRunAction -> linkedMapOf(
+                "function_id" to action.functionId,
+                "arguments" to action.arguments
+            )
             is WaitAction -> emptyMap()
             is RecordAction -> linkedMapOf("content" to action.content)
             is FinishedAction -> linkedMapOf("content" to action.content)

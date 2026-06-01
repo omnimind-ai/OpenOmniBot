@@ -39,7 +39,8 @@ class VlmRecallGuidanceBuilderTest {
         assertTrue(guidance.contains("path=page match -> UDEG node -> node skill-like decision context -> VLM/tool decision"))
         assertTrue(guidance.contains("function_execution_policy=direct_execution_requested_by_caller"))
         assertTrue(guidance.contains("function_id=open_network_settings"))
-        assertTrue(guidance.contains("step: 1. open_app"))
+        assertTrue(guidance.contains("oob_function_run function_id=open_network_settings"))
+        assertFalse(guidance.contains("step: 1. open_app"))
         assertFalse(guidance.contains("任务已完成"))
         assertFalse(guidance.contains("current task is complete"))
     }
@@ -148,8 +149,8 @@ class VlmRecallGuidanceBuilderTest {
         )
 
         assertTrue(guidance.contains("decision_policy: mode=node_skill_context_only"))
-        assertTrue(guidance.contains("capability 1: type=function scope=udeg_node function_id=open_network_settings"))
-        assertTrue(guidance.contains("capability_step: 1. click"))
+        assertTrue(guidance.contains("capability 1: type=function scope=udeg_node oob_function_run function_id=open_network_settings"))
+        assertFalse(guidance.contains("capability_step: 1. click"))
         assertNull(
             VlmRecallGuidanceBuilder.directHitFunctionId(
                 mapOf(
@@ -192,7 +193,8 @@ class VlmRecallGuidanceBuilderTest {
 
         assertTrue(guidance.contains("function_execution_policy=optional_candidates_only"))
         assertTrue(guidance.contains("do_not_auto_execute=true"))
-        assertTrue(guidance.contains("1. function_id=open_network_settings"))
+        assertTrue(guidance.contains("1. oob_function_run function_id=open_network_settings"))
+        assertFalse(guidance.contains("step:"))
         assertFalse(guidance.contains("segment"))
         assertFalse(guidance.contains("start_step_index"))
         assertNull(

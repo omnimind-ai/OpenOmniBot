@@ -981,6 +981,7 @@ class VLMOperationService(
                     summary = processedStep.summary,
                     observationXml = dispatchXml,
                     afterObservationXml = afterActionXml.takeIf { it.isNotBlank() },
+                    actionResultData = executedStep.actionResultData,
                     packageName = beforePackageName,
                     afterPackageName = afterPackageName,
                     startedAtMs = actionStartedAtMs,
@@ -1187,7 +1188,8 @@ class VLMOperationService(
             is PressHomeAction,
             is PressBackAction,
             is HotKeyAction,
-            is GetStateAction -> true
+            is GetStateAction,
+            is FunctionRunAction -> true
             else -> false
         }
     }
@@ -1673,7 +1675,8 @@ class VLMOperationService(
             is PressHomeAction,
             is HotKeyAction,
             is OpenAppAction,
-            is InputTextAction -> true
+            is InputTextAction,
+            is FunctionRunAction -> true
             else -> false
         }
 

@@ -133,6 +133,9 @@ class VLMClient(
             if (executedStep.summary.isNotBlank()) {
                 put("summary", JsonPrimitive(executedStep.summary))
             }
+            executedStep.actionResultData?.let { data ->
+                put("data", data)
+            }
             VLMPostActionObservation.summarize(executedStep)?.let { post ->
                 put("screen_changed", JsonPrimitive(post.screenChanged))
                 put("package_changed", JsonPrimitive(post.packageChanged))
@@ -197,6 +200,7 @@ class VLMClient(
             is PressHomeAction -> "press_home"
             is PressBackAction -> "press_back"
             is GetStateAction -> "get_state ${action.reason.take(MAX_HISTORY_ACTION_CHARS)}"
+            is FunctionRunAction -> "oob_function_run ${action.functionId}"
             is FinishedAction -> "finished"
             is RequireUserChoiceAction -> "require_user_choice"
             is RequireUserConfirmationAction -> "require_user_confirmation"
@@ -499,6 +503,12 @@ class VLMClient(
             "get_state" -> GetStateAction(
                 reason = optionalString(args, "reason").orEmpty()
             )
+            "oob_function_run", "call_function", "run_function" -> FunctionRunAction(
+                functionId = requireString(args, "function_id", "functionId"),
+                arguments = (args["arguments"] as? JsonObject)
+                    ?: (args["params"] as? JsonObject)
+                    ?: buildJsonObject {}
+            )
             "hot_key" -> HotKeyAction(
                 key = requireString(args, "key").uppercase()
             )
@@ -628,6 +638,9 @@ class VLMClient(
         "press_home",
         "press_back",
         "get_state",
+        "oob_function_run",
+        "call_function",
+        "run_function",
         "hot_key",
         "finished",
         "info",

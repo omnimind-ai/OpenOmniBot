@@ -164,6 +164,15 @@ class ActionExecutor(
                 )
             }
 
+            is FunctionRunAction -> {
+                VLMFunctionRunRegistry.run(
+                    VLMFunctionRunRequest(
+                        functionId = action.functionId,
+                        arguments = action.arguments,
+                    )
+                )
+            }
+
             is RecordAction -> {
                 // 特殊处理：记录动作不调用设备，返回成功结果
                 OperationResult(
@@ -245,6 +254,7 @@ class ActionExecutor(
             is PressBackAction,
             is HotKeyAction -> true
             is GetStateAction -> false
+            is FunctionRunAction -> true
             else -> false
         }
 
@@ -262,7 +272,8 @@ class ActionExecutor(
             observation = vlmStep.observation,
             thought = vlmStep.thought,
             action = vlmStep.action,
-            result = if (result.success) result.message else "执行失败: ${result.message}"
+            result = if (result.success) result.message else "执行失败: ${result.message}",
+            actionResultData = result.data
         )
     }
 

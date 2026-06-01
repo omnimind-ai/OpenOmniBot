@@ -2,6 +2,9 @@ package cn.com.omnimind.assists.task.vlmserver
 
 import cn.com.omnimind.baselib.util.OmniLog
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -101,6 +104,45 @@ class ActionExecutorTest {
             assertEquals(listOf("415-555-0130"), operator.focusedInputs)
             assertFalse(result.result.orEmpty().startsWith("执行失败"))
         } finally {
+            OmniLog.setLogLevel(previousLogLevel)
+        }
+    }
+
+    @Test
+    fun `function run action returns function payload as action result data`() = runBlocking {
+        val previousLogLevel = OmniLog.getLogLevel()
+        OmniLog.setLogLevel(OmniLog.Level.DISABLE)
+        val operator = FakeDeviceOperator()
+        val executor = ActionExecutor(operator, UIContextManager())
+        VLMFunctionRunRegistry.register(object : VLMFunctionRunHandler {
+            override suspend fun runFunction(request: VLMFunctionRunRequest): OperationResult {
+                return OperationResult(
+                    success = true,
+                    message = "function completed",
+                    data = buildJsonObject {
+                        put("function_id", JsonPrimitive(request.functionId))
+                        put("fallback", JsonPrimitive(false))
+                    }
+                )
+            }
+        })
+
+        try {
+            val result = executor.executeAction(
+                VLMStep(
+                    observation = "",
+                    thought = "reuse known flow",
+                    action = FunctionRunAction(functionId = "order_takeout")
+                )
+            )
+
+            assertEquals("function completed", result.result)
+            assertEquals(
+                JsonPrimitive("order_takeout"),
+                result.actionResultData?.jsonObject?.get("function_id")
+            )
+        } finally {
+            VLMFunctionRunRegistry.register(null)
             OmniLog.setLogLevel(previousLogLevel)
         }
     }

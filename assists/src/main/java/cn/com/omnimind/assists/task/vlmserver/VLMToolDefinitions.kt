@@ -234,6 +234,28 @@ object VLMToolDefinitions {
             )
         ),
         ToolSpec(
+            name = "oob_function_run",
+            description = t(
+                locale,
+                "执行当前页面上下文中明确给出的 OOB 复用指令候选。只能使用上下文里出现过的 function_id，并根据用户任务填写参数。",
+                "Run an OOB reusable Function candidate explicitly listed in the current page context. Only use a function_id shown in context and fill arguments from the user task."
+            ),
+            parameters = objectSchema(
+                properties = linkedMapOf(
+                    "function_id" to stringSchema(
+                        t(locale, "当前页面上下文中给出的 Function id。", "Function id shown in the current page context.")
+                    ),
+                    "arguments" to objectSchema(additionalProperties = true)
+                ),
+                required = listOf("function_id")
+            ),
+            promptGuide = t(
+                locale,
+                "- oob_function_run(function_id, arguments?): 当 UDEG 当前页上下文给出了高度匹配的复用指令候选时调用；不要发明 function_id，参数从用户任务中填写。",
+                "- oob_function_run(function_id, arguments?): Use only when the UDEG current-page context lists a matching reusable Function candidate; do not invent function_id, fill arguments from the user task."
+            )
+        ),
+        ToolSpec(
             name = "hot_key",
             description = t(locale, "发送一个受支持的快捷键。", "Send a supported hot key."),
             parameters = objectSchema(
@@ -774,11 +796,12 @@ object VLMToolDefinitions {
 
     private fun objectSchema(
         properties: Map<String, JsonObject> = emptyMap(),
-        required: List<String> = emptyList()
+        required: List<String> = emptyList(),
+        additionalProperties: Boolean = false
     ): JsonObject {
         return buildJsonObject {
             put("type", JsonPrimitive("object"))
-            put("additionalProperties", JsonPrimitive(false))
+            put("additionalProperties", JsonPrimitive(additionalProperties))
             put(
                 "properties",
                 JsonObject(properties)

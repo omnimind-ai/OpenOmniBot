@@ -280,6 +280,38 @@ class VLMClientRequestTest {
     }
 
     @Test
+    fun `openai tool action parser supports oob function run with arguments`() {
+        val client = VLMClient()
+        val result = client.parseVLMResponse(
+            SceneChatCompletionTurn(
+                parser = ModelSceneRegistry.ResponseParser.OPENAI_TOOL_ACTIONS,
+                route = "scene.vlm.operation.primary",
+                resolvedModel = "vlm-test-model",
+                turn = ChatCompletionTurn(
+                    message = ChatCompletionMessage(
+                        role = "assistant",
+                        toolCalls = listOf(
+                            AssistantToolCall(
+                                id = "call_1",
+                                function = AssistantToolCallFunction(
+                                    name = "oob_function_run",
+                                    arguments = """{"function_id":"xiaohongshu_search","arguments":{"keyword":"美食"}}"""
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+            modelOrScene = "scene.vlm.operation.primary"
+        )
+
+        assertTrue(result.success)
+        val action = requireNotNull(result.step).action as FunctionRunAction
+        assertEquals("xiaohongshu_search", action.functionId)
+        assertEquals("美食", action.arguments["keyword"]!!.jsonPrimitive.contentOrNull)
+    }
+
+    @Test
     fun `text fallback tool parser supports input_text`() {
         val client = VLMClient()
         val result = client.parseVLMResponse(

@@ -9,6 +9,7 @@ import cn.com.omnimind.baselib.llm.SceneModelBindingStore
 import cn.com.omnimind.baselib.shizuku.ShizukuCapabilityManager
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
+import cn.com.omnimind.bot.agent.AgentToolJson
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.SkillIndexService
 import cn.com.omnimind.bot.agent.WorkspaceMemoryRollupScheduler
@@ -18,10 +19,15 @@ import cn.com.omnimind.bot.localmodel.LocalModelFeatureInstaller
 import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.mcp.McpServerManager
 import cn.com.omnimind.bot.quicklog.QuickLogWidgetUpdater
+import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
 import cn.com.omnimind.bot.terminal.EmbeddedTerminalRuntime
 import cn.com.omnimind.bot.update.AppUpdateManager
 import cn.com.omnimind.bot.util.NestedBackgroundStateUtil
 import cn.com.omnimind.bot.vlm.OobVlmPageContextProvider
+import cn.com.omnimind.assists.task.vlmserver.OperationResult
+import cn.com.omnimind.assists.task.vlmserver.VLMFunctionRunHandler
+import cn.com.omnimind.assists.task.vlmserver.VLMFunctionRunRegistry
+import cn.com.omnimind.assists.task.vlmserver.VLMFunctionRunRequest
 import com.rk.resources.Res
 import com.tencent.mmkv.MMKV
 import io.flutter.FlutterInjector
@@ -29,6 +35,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineGroup
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugins.GeneratedPluginRegistrant
+import kotlinx.serialization.json.JsonArray as KJsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject as KJsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -164,6 +179,32 @@ class App : BaseApplication() {
                 OobVlmPageContextProvider(this)
             )
         }
+        runCatching {
+            VLMFunctionRunRegistry.register(object : VLMFunctionRunHandler {
+                override suspend fun runFunction(request: VLMFunctionRunRequest): OperationResult {
+                    val payload = OobOmniFlowToolkitService(this@App).runFunction(
+                        linkedMapOf(
+                            "function_id" to request.functionId,
+                            "arguments" to jsonObjectToPlainMap(request.arguments),
+                        )
+                    )
+                    val success = payload["success"] == true
+                    val message = listOf(
+                        payload["message"],
+                        payload["summary"],
+                        payload["error_message"],
+                        payload["error"],
+                    ).firstNotNullOfOrNull { value ->
+                        value?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    } ?: if (success) "复用指令执行完成" else "复用指令执行失败"
+                    return OperationResult(
+                        success = success,
+                        message = message,
+                        data = AgentToolJson.mapToJsonElement(payload),
+                    )
+                }
+            })
+        }
 
         initSDKsAfterPrivacyConsent()
         McpServerManager.restoreIfEnabled(this)
@@ -208,6 +249,23 @@ class App : BaseApplication() {
             source = "debug_install",
             path = "build_config_default_model_provider"
         )
+    }
+
+    private fun jsonObjectToPlainMap(value: KJsonObject): Map<String, Any?> =
+        value.mapValues { (_, item) -> jsonElementToPlainValue(item) }
+
+    private fun jsonElementToPlainValue(value: JsonElement?): Any? {
+        return when (value) {
+            null, JsonNull -> null
+            is KJsonObject -> jsonObjectToPlainMap(value)
+            is KJsonArray -> value.map { jsonElementToPlainValue(it) }
+            is JsonPrimitive -> {
+                value.booleanOrNull
+                    ?: value.longOrNull
+                    ?: value.doubleOrNull
+                    ?: value.contentOrNull
+            }
+        }
     }
 
     private fun seedFlutterManualModelId(profileId: String, modelId: String) {

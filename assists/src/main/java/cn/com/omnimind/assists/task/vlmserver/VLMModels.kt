@@ -7,6 +7,8 @@ import cn.com.omnimind.baselib.llm.ModelSceneRegistry
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import okhttp3.sse.EventSource
 
 // ==================== UI操作动作 ====================
@@ -120,6 +122,15 @@ data class GetStateAction(
 ) : UIAction()
 
 @Serializable
+@SerialName("oob_function_run")
+data class FunctionRunAction(
+    override val name: String = "oob_function_run",
+    @SerialName("function_id")
+    val functionId: String,
+    val arguments: JsonObject = buildJsonObject {}
+) : UIAction()
+
+@Serializable
 @SerialName("record")
 data class RecordAction(
     override val name: String = "record",
@@ -194,6 +205,8 @@ data class UIStep(
     val packageName: String? = null,
     @SerialName("after_package_name")
     val afterPackageName: String? = null,
+    @SerialName("action_result_data")
+    val actionResultData: JsonElement? = null,
     @SerialName("started_at_ms")
     val startedAtMs: Long? = null,
     @SerialName("finished_at_ms")

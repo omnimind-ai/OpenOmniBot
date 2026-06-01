@@ -162,15 +162,12 @@ object VlmRecallGuidanceBuilder {
                 val score = candidate["score"]?.toString()?.trim().orEmpty()
                 val description = firstNonBlank(candidate["description"], candidate["name"], functionId)
                     .take(MAX_DESCRIPTION_CHARS)
-                appendLine("${index + 1}. function_id=$functionId score=$score description=$description")
+                appendLine("${index + 1}. oob_function_run function_id=$functionId score=$score description=$description")
                 renderFunctionProfile(candidate).takeIf { it.isNotBlank() }?.let {
                     appendLine("   function_profile: $it")
                 }
                 renderArgumentPolicy(candidate).takeIf { it.isNotBlank() }?.let {
                     appendLine("   argument_policy: $it")
-                }
-                renderStepSummaries(candidate).take(MAX_STEP_SUMMARIES).forEach { summary ->
-                    appendLine("   step: $summary")
                 }
             }
             val capabilityCandidates = listArg(payload["capability_candidates"])
@@ -184,7 +181,7 @@ object VlmRecallGuidanceBuilder {
                 val description = firstNonBlank(capability["description"], capability["name"], functionId)
                     .take(MAX_DESCRIPTION_CHARS)
                 appendLine(
-                    "capability ${index + 1}: type=$type scope=$scope function_id=$functionId " +
+                    "capability ${index + 1}: type=$type scope=$scope oob_function_run function_id=$functionId " +
                         "score=$score description=$description"
                 )
                 renderFunctionProfile(capability).takeIf { it.isNotBlank() }?.let {
@@ -192,9 +189,6 @@ object VlmRecallGuidanceBuilder {
                 }
                 renderArgumentPolicy(capability).takeIf { it.isNotBlank() }?.let {
                     appendLine("   argument_policy: $it")
-                }
-                renderStepSummaries(capability).take(MAX_STEP_SUMMARIES).forEach { summary ->
-                    appendLine("   capability_step: $summary")
                 }
             }
         }.trim()
@@ -204,17 +198,6 @@ object VlmRecallGuidanceBuilder {
         val hit = mapArg(payload["hit"])
         if (hit.isNotEmpty()) return listOf(hit)
         return listArg(payload["candidates"]).mapNotNull { raw -> mapArg(raw).takeIf { it.isNotEmpty() } }
-    }
-
-    private fun renderStepSummaries(candidate: Map<String, Any?>): List<String> {
-        return listArg(candidate["step_summaries"]).mapIndexedNotNull { index, raw ->
-            val step = mapArg(raw)
-            if (step.isEmpty()) return@mapIndexedNotNull null
-            val tool = firstNonBlank(step["tool"], step["omniflow_action"], step["callable_tool"], step["kind"])
-            val title = firstNonBlank(step["title"], tool)
-            if (title.isBlank() && tool.isBlank()) return@mapIndexedNotNull null
-            "${index + 1}. ${tool.ifBlank { "step" }}: ${title.take(MAX_STEP_TITLE_CHARS)}"
-        }
     }
 
     private fun renderFunctionProfile(candidate: Map<String, Any?>): String {
@@ -281,7 +264,7 @@ object VlmRecallGuidanceBuilder {
         if (directDecision) {
             "function_execution_policy=direct_execution_requested_by_caller; parameterized_hits_may_be_called_by_agent_with_filled_arguments=true"
         } else {
-            "function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_agent_selection=true; function_candidates_may_be_called_by_agent_with_filled_arguments=true"
+            "function_execution_policy=optional_candidates_only; do_not_auto_execute=true; require_explicit_oob_function_run_selection=true; function_candidates_may_be_called_by_agent_with_filled_arguments=true"
         }
 
     private fun isDirectExecutionRequested(
@@ -375,9 +358,7 @@ object VlmRecallGuidanceBuilder {
 
     private const val DEFAULT_RECALL_COUNT = 3
     private const val MAX_GUIDANCE_CANDIDATES = 2
-    private const val MAX_STEP_SUMMARIES = 3
     private const val MAX_DESCRIPTION_CHARS = 96
-    private const val MAX_STEP_TITLE_CHARS = 96
     private const val DIRECT_HIT_MIN_SCORE = 0.92
     private const val DIRECT_HIT_MIN_PAGE_SCORE = 0.90
     private const val DIRECT_HIT_MIN_TEXT_SCORE = 0.85

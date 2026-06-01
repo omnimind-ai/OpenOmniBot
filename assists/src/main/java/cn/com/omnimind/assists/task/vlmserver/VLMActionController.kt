@@ -313,6 +313,7 @@ private object SemanticSearchController : VLMActionController {
             is FeedbackAction -> action.value
             is AbortAction -> action.value
             is OpenAppAction -> action.packageName
+            is FunctionRunAction -> action.functionId
             is RequireUserChoiceAction -> listOf(action.prompt, action.options.joinToString(" ")).joinToString(" ")
             is RequireUserConfirmationAction -> action.prompt
             is HotKeyAction -> action.key

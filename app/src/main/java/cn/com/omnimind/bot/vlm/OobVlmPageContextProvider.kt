@@ -107,11 +107,11 @@ class OobVlmPageContextProvider(
                 append("\nUDEG使用方式: ").append(usageRules)
             }
             appendCapabilitySection(
-                title = "UDEG attached Functions (optional capabilities)",
+                title = "UDEG attached Functions (callable optional capabilities)",
                 capabilities = attachedFunctions
             )
             append("\n约束: 这是当前页决策上下文；下一步动作仍必须基于本轮 live screenshot/XML/indexed evidence。")
-            append("\n约束: attached Function 只是候选能力，不是完成证明；除非外层显式允许且严格命中，否则不要自动重放。")
+            append("\n约束: attached Function 只是候选能力，不是完成证明；只有当描述与用户目标明确匹配时，才显式调用 oob_function_run。")
             append("\nUDEG观测来源: live screenshot/XML page match")
         }.take(MAX_GUIDANCE_CHARS)
     }
@@ -149,13 +149,13 @@ class OobVlmPageContextProvider(
                     capability["name"],
                     functionId
                 ).take(MAX_DESCRIPTION_CHARS)
-                val steps = renderStepSummaries(capability)
+                val params = renderParameterSummary(capability)
+                val useWhen = renderUseWhen(capability)
                 buildString {
-                    append(index + 1).append(". function_id=").append(functionId)
+                    append(index + 1).append(". oob_function_run function_id=").append(functionId)
                     if (description.isNotBlank()) append(" description=").append(description)
-                    if (steps.isNotEmpty()) {
-                        append(" steps=").append(steps.joinToString(" | "))
-                    }
+                    if (params.isNotBlank()) append(" params=").append(params)
+                    if (useWhen.isNotBlank()) append(" use_when=").append(useWhen)
                 }
             }
         if (rendered.isEmpty()) return
@@ -163,27 +163,35 @@ class OobVlmPageContextProvider(
         rendered.forEach { append("\n- ").append(it) }
     }
 
-    private fun renderStepSummaries(capability: Map<String, Any?>): List<String> =
-        listArg(capability["step_summaries"])
-            .mapNotNull { raw ->
-                val step = mapArg(raw)
-                val tool = firstNonBlank(step["tool"], step["omniflow_action"], step["callable_tool"], step["kind"])
-                val title = firstNonBlank(step["title"], tool)
-                listOf(tool, title)
-                    .filter { it.isNotBlank() }
-                    .joinToString(": ")
-                    .take(MAX_STEP_CHARS)
-                    .takeIf { it.isNotBlank() }
+    private fun renderParameterSummary(capability: Map<String, Any?>): String {
+        val schema = mapArg(capability["input_schema"]).ifEmpty { mapArg(capability["inputSchema"]) }
+        val properties = mapArg(schema["properties"])
+        if (properties.isEmpty()) return "none"
+        val required = listArg(schema["required"]).map { it.toString() }.toSet()
+        return properties.keys
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .take(MAX_PARAMS)
+            .joinToString(",") { name ->
+                if (name in required) "$name*" else name
             }
-            .take(MAX_STEPS_PER_CAPABILITY)
+    }
+
+    private fun renderUseWhen(capability: Map<String, Any?>): String {
+        val source = mapArg(capability["source"])
+        return firstNonBlank(
+            capability["reuse_when"],
+            capability["use_when"],
+            source["goal"],
+        ).take(MAX_DESCRIPTION_CHARS)
+    }
 
     private companion object {
         private const val MAX_ITEMS = 8
         private const val MAX_HINTS = 3
         private const val MAX_CAPABILITIES = 4
-        private const val MAX_STEPS_PER_CAPABILITY = 2
+        private const val MAX_PARAMS = 6
         private const val MAX_DESCRIPTION_CHARS = 140
-        private const val MAX_STEP_CHARS = 100
         private const val MAX_GUIDANCE_CHARS = 1_400
         private const val MAX_CONTEXT_CHARS = 2_400
     }
