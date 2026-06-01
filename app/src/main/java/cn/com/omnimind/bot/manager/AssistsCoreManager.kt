@@ -6584,8 +6584,10 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     step["local_action"],
                     step["tool"],
                     step["callable_tool"],
-                ).lowercase()
-                if (action != OobActionCodec.ACTION_OPEN_APP) return@mapNotNull null
+                )
+                if (OobActionCodec.canonicalActionForName(action) != OobActionCodec.ACTION_OPEN_APP) {
+                    return@mapNotNull null
+                }
                 firstNonBlankString(args["package_name"], args["packageName"])
             }
             .firstOrNull { it.isNotBlank() }

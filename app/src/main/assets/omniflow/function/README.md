@@ -338,6 +338,9 @@ primitive local action execution:
 - skip restoration when replay already starts with `open_app`
 - launch the expected package when the foreground app drifted before replay
 - keep package recovery outside the main step loop
+- callers that infer an entry package from Function steps should canonicalize
+  action aliases through `OobActionCodec`; legacy names such as `launch_app`
+  must still be treated as `open_app`
 
 `OobFunctionAccessibilityPreflightGuard` owns replay permission preflight:
 
