@@ -79,6 +79,14 @@ belong in UI documentation.
 - route `update_function` evidence analysis and patches through
   `OobFunctionUpdateService`
 
+`McpToolDefinitions` and `McpToolExecutors` own the external MCP adapter:
+
+- expose the public MCP schema for OOB tools, including Function tools
+- normalize MCP argument aliases before dispatching into the agent/tool runtime
+- directly hand `oob_function_run`-style Function calls to
+  `OobOmniFlowToolkitService`
+- never implement Function storage, recall, update, guard, or replay policy
+
 `OobFunctionSpecBuilder` owns simple Function spec construction:
 
 - normalize simple register requests into canonical Function specs
@@ -307,6 +315,7 @@ operation.
 
 ```text
 Agent/MCP tool surface
+  -> McpToolDefinitions / McpToolExecutors # external MCP schema/argument adapter
   -> OobOmniFlowToolkitService
       -> OobFunctionRepository       # storage/index/source bindings
       -> OobFunctionSpecBuilder      # simple register/insert-step normalization
@@ -426,6 +435,8 @@ Keep these pieces separate:
   permission-blocked failed-run payloads before replay starts
 - `OobFunctionGraphStepRunner`: graph/UTG path selection and primitive action
   lowering inside runtime replay
+- `McpToolDefinitions` and `McpToolExecutors`: external MCP schema and argument
+  alias adapter before dispatch into the Function/tool facade
 - `OobOmniFlowToolkitService`: public tool facade and response shaping
 - builtin skill prompts: agent instructions, not executable policy
 
@@ -493,6 +504,12 @@ change:
 - `OobUdegNodeStore` keeps some graph timestamp and graph-export sanitization
   helpers local because they normalize stored graph values, not just coerce
   Function or RunLog payloads.
+- `McpToolExecutors.boolArg` and `McpToolExecutors.boolArgOrDefault` read
+  multi-key MCP argument aliases and defaults; keep them local unless a shared
+  MCP argument adapter with identical semantics exists.
+- `McpRoutes.mapArg` and `McpRoutes.listArg` support legacy/debug HTTP route
+  request parsing, including nullable maps and comma-separated string lists.
+  They are not Function payload helpers.
 - `OmniflowStepExecutor.firstNonBlank` and `OobPageVectorSet.firstNonBlank`
   are low-risk local helpers in runtime/vector internals; merge them only when
   touching the surrounding code for another reason.

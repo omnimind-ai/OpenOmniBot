@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.mcp
 import android.content.Context
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.util.OmniLog
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.vlm.VlmToolCoordinator
 import cn.com.omnimind.bot.vlm.VlmToolOutcome
 import cn.com.omnimind.bot.vlm.VlmToolOutcomeStatus
@@ -518,14 +519,6 @@ object McpToolExecutors {
         )
     }
 
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) return text
-        }
-        return ""
-    }
-    
     private fun outcomeToMcpResponse(outcome: VlmToolOutcome): Map<String, Any?> {
         val state = McpTaskManager.getTask(outcome.taskId)
         return when (outcome.status) {

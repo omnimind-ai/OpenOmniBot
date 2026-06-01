@@ -49,6 +49,8 @@ record. Do not read only the snapshot when correctness matters.
 - Function recall policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRecallService.kt`
 - Function guard/fallback policy: `app/src/main/java/cn/com/omnimind/bot/omniflow/OobFunctionRunPolicy.kt`
 - Function call timing: `app/src/main/java/cn/com/omnimind/bot/runlog/OobFunctionCallTiming.kt`
+- MCP Function tool schema: `app/src/main/java/cn/com/omnimind/bot/mcp/McpToolDefinitions.kt`
+- MCP Function/tool call adapter: `app/src/main/java/cn/com/omnimind/bot/mcp/McpToolExecutors.kt`
 - SharedPreferences registry/materialization: `baselib/src/main/java/cn/com/omnimind/baselib/runlog/OobReusableFunctionStore.kt`
 - Native timeline and method channel handlers: `app/src/main/java/cn/com/omnimind/bot/manager/AssistsCoreManager.kt`
 - RunLog replay step noise normalizer: `app/src/main/java/cn/com/omnimind/bot/runlog/RunLogReplayStepNoiseNormalizer.kt`
@@ -143,8 +145,10 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Do not force-merge helpers with intentionally different compatibility
   behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
   `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key
-  behavior, and `RunLogCardAccessors` owns card-field extraction helpers rather
-  than generic action coercion.
+  behavior, `RunLogCardAccessors` owns card-field extraction helpers rather
+  than generic action coercion, and MCP route/executor helpers may keep
+  multi-key argument alias/default parsing local when the semantics are
+  route-specific.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
   in `RunLogReusableFunctionParameterizer`; do not put those rules back into
