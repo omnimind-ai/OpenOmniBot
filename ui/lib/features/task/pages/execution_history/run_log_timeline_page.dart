@@ -2712,12 +2712,12 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                                 }),
                                 initiallyExpanded: false,
                                 child: _JsonBlock(
-                                  value: {
+                                  value: _userVisibleJson({
                                     if (snapshot.before.isNotEmpty)
                                       'before': snapshot.before,
                                     if (snapshot.after.isNotEmpty)
                                       'after': snapshot.after,
-                                  },
+                                  }),
                                 ),
                               ),
                             ],

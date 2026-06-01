@@ -586,7 +586,7 @@ object AgentToolDefinitions {
     val vlmTaskTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "vlm_task")
+            put("name", AgentToolNames.VLM_TASK)
             put("displayName", "视觉执行")
             put("toolType", "builtin")
             put(
@@ -828,7 +828,7 @@ object AgentToolDefinitions {
         return decorateToolDefinition(buildJsonObject {
             put("type", "function")
             putJsonObject("function") {
-                put("name", "android_privileged_action")
+                put("name", AgentToolNames.ANDROID_PRIVILEGED_ACTION)
                 put("displayName", text("安卓高级动作", "Android Privileged Action"))
                 put("toolType", "privileged")
                 put(
@@ -1215,7 +1215,7 @@ object AgentToolDefinitions {
     val webSearchTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "web_search")
+            put("name", AgentToolNames.WEB_SEARCH)
             put("displayName", "网页搜索")
             put("toolType", "research")
             put(
@@ -1244,7 +1244,7 @@ object AgentToolDefinitions {
     val browserUseTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "browser_use")
+            put("name", AgentToolNames.BROWSER_USE)
             put("displayName", "浏览器操作")
             put("toolType", "browser")
             put(

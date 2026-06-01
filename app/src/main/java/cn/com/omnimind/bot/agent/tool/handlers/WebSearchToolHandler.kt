@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.BrowserUseAction
@@ -21,7 +22,7 @@ class WebSearchToolHandler(
     private val helper: SharedHelper,
     private val workspaceManager: AgentWorkspaceManager
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("web_search")
+    override val toolNames: Set<String> = setOf(AgentToolNames.WEB_SEARCH)
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -31,7 +32,7 @@ class WebSearchToolHandler(
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        val toolName = "web_search"
+        val toolName = AgentToolNames.WEB_SEARCH
         return try {
             helper.requireWorkspaceStorageAccess(callback)?.let { return it }
             val query = args["query"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()

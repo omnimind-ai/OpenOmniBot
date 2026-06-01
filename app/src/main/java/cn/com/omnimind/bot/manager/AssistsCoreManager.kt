@@ -84,6 +84,7 @@ import cn.com.omnimind.bot.agent.AgentScheduleToolBridge
 import cn.com.omnimind.bot.agent.AgentRunControl
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
 import cn.com.omnimind.bot.agent.AgentToolExposurePolicy
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.agent.AgentToolProgressSnapshot
 import cn.com.omnimind.bot.agent.AgentWorkspaceManager
 import cn.com.omnimind.bot.agent.LiveAgentBrowserSessionManager
@@ -1717,16 +1718,16 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         return when (toolName) {
             "context_apps_query" -> AgentToolMeta("builtin", t("查询已安装应用", "Query Installed Apps"))
             "context_time_now" -> AgentToolMeta("builtin", t("查询当前时间", "Query Current Time"))
-            "vlm_task" -> AgentToolMeta("vlm", t("视觉执行", "Visual Task"))
+            AgentToolNames.VLM_TASK -> AgentToolMeta("vlm", t("视觉执行", "Visual Task"))
             RunLogReplayPolicy.TOOL_CALL_FUNCTION, "omniflow.call_function" -> AgentToolMeta(
                 "oob_function",
                 t("复用指令", "Reusable Command")
             )
             RunLogReplayPolicy.TOOL_CALL_TOOL,
             RunLogReplayPolicy.TOOL_OOB_TOOL_CALL -> AgentToolMeta("builtin", t("工具调用", "Tool Call"))
-            "web_search" -> AgentToolMeta("research", t("网页搜索", "Web Search"))
-            "browser_use" -> AgentToolMeta("browser", t("浏览器操作", "Browser Action"))
-            "android_privileged_action" -> AgentToolMeta("privileged", t("安卓高级动作", "Android Privileged Action"))
+            AgentToolNames.WEB_SEARCH -> AgentToolMeta("research", t("网页搜索", "Web Search"))
+            AgentToolNames.BROWSER_USE -> AgentToolMeta("browser", t("浏览器操作", "Browser Action"))
+            AgentToolNames.ANDROID_PRIVILEGED_ACTION -> AgentToolMeta("privileged", t("安卓高级动作", "Android Privileged Action"))
             "android_privileged_session_start" -> AgentToolMeta("privileged", t("启动高权限会话", "Start Privileged Session"))
             "android_privileged_session_exec" -> AgentToolMeta("privileged", t("执行高权限命令", "Run Privileged Command"))
             "android_privileged_session_read" -> AgentToolMeta("privileged", t("读取高权限输出", "Read Privileged Output"))
@@ -2005,7 +2006,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         if (result.actions.isNotEmpty()) {
             payload["actions"] = result.actions.map { it.toPayload() }
         }
-        if (toolName.equals("vlm_task", ignoreCase = true)) {
+        if (toolName.equals(AgentToolNames.VLM_TASK, ignoreCase = true)) {
             listOf(previewJson, rawResultJson)
                 .firstNotNullOfOrNull { json ->
                     runCatching {
@@ -2017,8 +2018,8 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     payload["childRunId"] = childRunId
                     payload["child_run_id"] = childRunId
                 }
-            payload["spanKind"] = "vlm_task"
-            payload["span_kind"] = "vlm_task"
+            payload["spanKind"] = AgentToolNames.VLM_TASK
+            payload["span_kind"] = AgentToolNames.VLM_TASK
         }
         return payload
     }
@@ -2033,7 +2034,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         finishedAtMillis: Long? = null
     ): Map<String, Any?> {
         val meta = resolveAgentToolMeta(toolName)
-        val isVlmWrapper = toolName.trim().equals("vlm_task", ignoreCase = true)
+        val isVlmWrapper = toolName.trim().equals(AgentToolNames.VLM_TASK, ignoreCase = true)
         val durationMs = finishedAtMillis?.let { (it - startedAtMillis).coerceAtLeast(0L) }
         val success = when (val raw = payload["success"]) {
             is Boolean -> raw
@@ -2093,7 +2094,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
             payload["spanKind"],
             payload["span_kind"]
         ).ifBlank {
-            if (isVlmWrapper) "vlm_task" else ""
+            if (isVlmWrapper) AgentToolNames.VLM_TASK else ""
         }
         val compileKind = firstNonBlankString(
             payload["compile_kind"],
@@ -3068,13 +3069,13 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
         val extras = linkedMapOf<String, Any?>(
             "cardId" to cardId,
             "toolCallId" to cardId,
-            "toolName" to (event["toolName"] ?: "vlm_task"),
-            "displayName" to (event["displayName"] ?: event["toolName"] ?: "vlm_task"),
+            "toolName" to (event["toolName"] ?: AgentToolNames.VLM_TASK),
+            "displayName" to (event["displayName"] ?: event["toolName"] ?: AgentToolNames.VLM_TASK),
             "toolType" to "vlm",
             "spanKind" to (event["spanKind"] ?: event["span_kind"] ?: "vlm_step"),
             "span_kind" to (event["span_kind"] ?: event["spanKind"] ?: "vlm_step"),
-            "parentSpanKind" to (event["parentSpanKind"] ?: event["parent_span_kind"] ?: "vlm_task"),
-            "parent_span_kind" to (event["parent_span_kind"] ?: event["parentSpanKind"] ?: "vlm_task"),
+            "parentSpanKind" to (event["parentSpanKind"] ?: event["parent_span_kind"] ?: AgentToolNames.VLM_TASK),
+            "parent_span_kind" to (event["parent_span_kind"] ?: event["parentSpanKind"] ?: AgentToolNames.VLM_TASK),
             "runLogId" to (event["runLogId"] ?: event["run_id"] ?: taskId),
             "run_id" to (event["run_id"] ?: event["runLogId"] ?: taskId),
             "status" to (event["status"] ?: if (normalizedKind == "tool_completed") "success" else "running")

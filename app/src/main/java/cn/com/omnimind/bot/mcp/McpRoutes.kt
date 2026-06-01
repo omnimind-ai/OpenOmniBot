@@ -6,6 +6,7 @@ import cn.com.omnimind.baselib.llm.ModelProviderProfile
 import cn.com.omnimind.baselib.llm.SceneModelBindingEntry
 import cn.com.omnimind.baselib.llm.SceneModelBindingStore
 import cn.com.omnimind.bot.agent.AgentAiCapabilityConfigSync
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
@@ -236,7 +237,7 @@ object McpRoutes {
         return runCatching {
             val omniflowToolkit by lazy { OobOmniFlowToolkitService(context) }
             when (name) {
-            "vlm_task" -> McpToolExecutors.executeVlmTask(context, args, serverScope)
+            AgentToolNames.VLM_TASK -> McpToolExecutors.executeVlmTask(context, args, serverScope)
             "task_status" -> McpToolExecutors.executeTaskStatus(args)
             "task_reply" -> McpToolExecutors.executeTaskReply(args)
             "task_wait_unlock" -> McpToolExecutors.executeTaskWaitUnlock(context, args, serverScope)

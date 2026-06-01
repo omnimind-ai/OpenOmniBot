@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.mcp
 
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 
 /**
@@ -10,7 +11,7 @@ object McpToolDefinitions {
     private fun brandName(): String = AppLocaleManager.brandName()
     
     val vlmTaskTool = mapOf(
-        "name" to "vlm_task",
+        "name" to AgentToolNames.VLM_TASK,
         "description" to """Execute an autonomous VLM (Visual Language Model) agent task on an Android device.
 
 This tool enables AI-driven device automation by using a visual language model to understand screen content and perform actions. The agent will:

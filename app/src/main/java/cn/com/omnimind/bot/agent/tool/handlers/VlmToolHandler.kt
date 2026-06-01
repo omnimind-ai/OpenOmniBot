@@ -25,7 +25,7 @@ class VlmToolHandler(
     private val helper: SharedHelper,
     private val scope: CoroutineScope
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("vlm_task")
+    override val toolNames: Set<String> = setOf(AgentToolNames.VLM_TASK)
 
     data class VlmExecutionArgs(
         val goal: String,
@@ -132,7 +132,7 @@ class VlmToolHandler(
                     )
                 )
                 return ToolExecutionResult.ContextResult(
-                    toolName = "vlm_task",
+                    toolName = AgentToolNames.VLM_TASK,
                     summaryText = helper.localized(
                         "已跳过小万屏幕任务：上传图片分析应直接由当前多模态模型回答。"
                     ),
@@ -182,8 +182,8 @@ class VlmToolHandler(
                         put("progress", progress)
                         put("childRunId", vlmTaskId)
                         put("child_run_id", vlmTaskId)
-                        put("parentSpanKind", "vlm_task")
-                        put("parent_span_kind", "vlm_task")
+                        put("parentSpanKind", AgentToolNames.VLM_TASK)
+                        put("parent_span_kind", AgentToolNames.VLM_TASK)
                         parentCardId?.let {
                             put("parentCardId", it)
                             put("parent_card_id", it)
@@ -204,11 +204,11 @@ class VlmToolHandler(
                     } else {
                         helper.reportToolProgress(
                             callback,
-                            "vlm_task",
+                            AgentToolNames.VLM_TASK,
                             progress,
                             traceExtras + mapOf(
-                                "spanKind" to "vlm_task",
-                                "span_kind" to "vlm_task"
+                                "spanKind" to AgentToolNames.VLM_TASK,
+                                "span_kind" to AgentToolNames.VLM_TASK
                             ),
                             toolHandle = toolHandle
                         )
@@ -229,18 +229,18 @@ class VlmToolHandler(
                     ToolExecutionResult.Clarify(localizedQuestion, null)
                 }
                 VlmToolOutcomeStatus.ERROR, VlmToolOutcomeStatus.CANCELLED -> {
-                    helper.errorResult("vlm_task", outcome.errorMessage ?: outcome.message, "视觉执行失败")
+                    helper.errorResult(AgentToolNames.VLM_TASK, outcome.errorMessage ?: outcome.message, "视觉执行失败")
                 }
                 VlmToolOutcomeStatus.FINISHED -> {
                     ToolExecutionResult.ContextResult(
-                        toolName = "vlm_task",
+                        toolName = AgentToolNames.VLM_TASK,
                         summaryText = helper.localized(outcome.finishedContent ?: outcome.summaryText ?: outcome.message.ifBlank { "视觉任务已完成" }),
                         previewJson = payloadJson, rawResultJson = payloadJson, success = true
                     )
                 }
                 VlmToolOutcomeStatus.TIMEOUT -> {
                     ToolExecutionResult.ContextResult(
-                        toolName = "vlm_task",
+                        toolName = AgentToolNames.VLM_TASK,
                         summaryText = helper.localized("视觉任务超时，设备上可能仍在继续执行"),
                         previewJson = payloadJson, rawResultJson = payloadJson, success = true
                     )
@@ -250,7 +250,7 @@ class VlmToolHandler(
             VlmToolCoordinator.cancelTask(vlmTaskId, scope)
             throw e
         } catch (e: Exception) {
-            ToolExecutionResult.Error("vlm_task", helper.localized(e.message ?: "Unknown error"))
+            ToolExecutionResult.Error(AgentToolNames.VLM_TASK, helper.localized(e.message ?: "Unknown error"))
         } finally {
             AgentVlmUiSession.endTask(vlmTaskId)
         }

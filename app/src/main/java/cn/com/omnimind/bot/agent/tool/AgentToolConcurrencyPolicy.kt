@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool
 
 import cn.com.omnimind.baselib.llm.AssistantToolCall
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.agent.tool.handlers.ToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.ToolHandlerConcurrencyHint
 import kotlinx.serialization.json.JsonObject
@@ -55,7 +56,7 @@ object AgentToolConcurrencyPolicy {
         if (handler is ToolHandlerConcurrencyHint) {
             handler.concurrencyFor(toolName, args)?.let { return it }
         }
-        if (toolName == "browser_use") {
+        if (toolName == AgentToolNames.BROWSER_USE) {
             val action = (args["action"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
             return if (action in BROWSER_USE_PARALLEL_SAFE_ACTIONS) {
                 ToolConcurrency.PARALLEL_SAFE

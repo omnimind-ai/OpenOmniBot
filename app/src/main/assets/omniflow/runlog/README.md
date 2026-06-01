@@ -119,6 +119,14 @@ Canonical in-app Function and RunLog lifecycle tool names such as
 `oob_function_run`, `update_function`, and `oob_run_log_convert` live in
 `OobFunctionToolNames`; `RunLogReplayPolicy` may classify those tools but should
 not duplicate their string definitions.
+Canonical generic agent tool names such as `vlm_task`, `browser_use`,
+`web_search`, and `android_privileged_action` live in `AgentToolNames`.
+Tool definitions, handlers, MCP adapters, agent run-log card construction, and
+RunLog classifiers should reference that owner instead of scattering literals.
+When a new generic agent tool affects replay, `RunLogReplayPolicy` may classify
+the `AgentToolNames` constant, but it should not redefine the string. If the
+tool is only a live agent capability and does not appear in reusable replay
+steps, leave RunLog policy unchanged.
 Agent-facing docs should name the OOB Function tools first. Legacy
 `omniflow.recall`, `omniflow.call_tool`, `omniflow.call_function`,
 `omniflow.ingest_run_log`, and `omniflow.explore_replay` remain compatibility

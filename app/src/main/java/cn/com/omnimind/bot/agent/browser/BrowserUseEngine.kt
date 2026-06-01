@@ -1375,7 +1375,7 @@ class BrowserUseEngine(
             }
             bitmap.recycle()
         }
-        val artifact = workspaceManager.buildArtifactForFile(screenshotFile, "browser_use")
+        val artifact = workspaceManager.buildArtifactForFile(screenshotFile, AgentToolNames.BROWSER_USE)
         return BrowserUseOutcome(
             summaryText = request.toolTitle,
             payload = buildCommonPayload(
@@ -1807,7 +1807,7 @@ class BrowserUseEngine(
             }
             connection.disconnect()
         }
-        val artifact = workspaceManager.buildArtifactForFile(targetFile, "browser_use")
+        val artifact = workspaceManager.buildArtifactForFile(targetFile, AgentToolNames.BROWSER_USE)
         return BrowserUseOutcome(
             summaryText = request.toolTitle,
             payload = buildCommonPayload(
@@ -2050,7 +2050,7 @@ class BrowserUseEngine(
                 extension = "txt"
             )
             file.writeText(text)
-            val artifact = workspaceManager.buildArtifactForFile(file, "browser_use")
+            val artifact = workspaceManager.buildArtifactForFile(file, AgentToolNames.BROWSER_USE)
             artifacts += artifact
             payloadExtra["textSnippet"] = text.take(4_000)
             payloadExtra["artifactUri"] = artifact.uri
@@ -2089,7 +2089,7 @@ class BrowserUseEngine(
                 extension = "json"
             )
             file.writeText(JSONObject(mapOf("items" to items)).toString(2))
-            val artifact = workspaceManager.buildArtifactForFile(file, "browser_use")
+            val artifact = workspaceManager.buildArtifactForFile(file, AgentToolNames.BROWSER_USE)
             artifacts += artifact
             extra["itemsPreview"] = items.take(20)
             extra["artifactUri"] = artifact.uri
@@ -2128,7 +2128,7 @@ class BrowserUseEngine(
                 extension = extension
             )
             file.writeText(content)
-            val artifact = workspaceManager.buildArtifactForFile(file, "browser_use")
+            val artifact = workspaceManager.buildArtifactForFile(file, AgentToolNames.BROWSER_USE)
             artifacts += artifact
             extra[label] = when (value) {
                 is JsonArray -> (jsonElementToAny(value) as? List<*>)?.take(10)

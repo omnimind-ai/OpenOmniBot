@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import kotlinx.serialization.json.JsonObject
@@ -73,12 +74,12 @@ class OobFunctionAgentFallbackController {
             id = "${parentToolCallId}_${stepId}_fallback",
             type = "function",
             function = cn.com.omnimind.baselib.llm.AssistantToolCallFunction(
-                name = "vlm_task",
+                name = AgentToolNames.VLM_TASK,
                 arguments = vlmArgs.toString()
             )
         )
         val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
-            name = "vlm_task",
+            name = AgentToolNames.VLM_TASK,
             displayName = stepTitle,
             toolType = "omniflow_fallback"
         )
@@ -89,7 +90,7 @@ class OobFunctionAgentFallbackController {
             val succeeded = subResult !is cn.com.omnimind.bot.agent.ToolExecutionResult.Error
             linkedMapOf<String, Any?>(
                 "step_id" to stepId,
-                "tool" to "vlm_task",
+                "tool" to AgentToolNames.VLM_TASK,
                 "executor" to "omniflow_vlm_fallback",
                 "success" to succeeded,
                 "omniflow_fail_reason" to failReason,

@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.androidPrivilegedReplayAction
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.androidPrivilegedReplayArgs
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asMap
@@ -45,7 +46,7 @@ internal object RunLogReplayStepCompiler {
         return when {
             RunLogReplayPolicy.shouldSkipTool(normalizedToolName) -> null
             RunLogReplayPolicy.isPerceptionTool(normalizedToolName) && skipPerceptionTools -> null
-            normalizedToolName == "android_privileged_action" -> {
+            normalizedToolName == AgentToolNames.ANDROID_PRIVILEGED_ACTION -> {
                 val action = androidPrivilegedReplayAction(args) ?: return null
                 omniflowStep(
                     title = cleanStepTitle(title, action, androidPrivilegedReplayArgs(args)),
@@ -355,14 +356,14 @@ internal object RunLogReplayStepCompiler {
         val afterPackage = RunLogPagePackageInference.effectivePackage(rawAfterPackage, repairedAfterXml)
         val rawToolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(rawToolName)
-        val actionArgs = if (normalizedToolName == "android_privileged_action") {
+        val actionArgs = if (normalizedToolName == AgentToolNames.ANDROID_PRIVILEGED_ACTION) {
             androidPrivilegedReplayArgs(args)
         } else {
             args
         }
         val sourceAction = linkedMapOf<String, Any?>(
             "tool" to (
-                if (normalizedToolName == "android_privileged_action") {
+                if (normalizedToolName == AgentToolNames.ANDROID_PRIVILEGED_ACTION) {
                     androidPrivilegedReplayAction(args)
                 } else {
                     OobActionCodec.canonicalActionForName(rawToolName)

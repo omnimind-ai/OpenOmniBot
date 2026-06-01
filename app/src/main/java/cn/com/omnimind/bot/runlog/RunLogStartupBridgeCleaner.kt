@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.agent.AgentToolNames
+
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.afterObservationForCard
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asMap
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.beforeObservationForCard
@@ -66,7 +68,7 @@ internal object RunLogStartupBridgeCleaner {
         if (OobActionCodec.canonicalActionForName(toolName) != null) {
             return true
         }
-        if (RunLogReplayPolicy.normalizeToolName(toolName) != "android_privileged_action") {
+        if (RunLogReplayPolicy.normalizeToolName(toolName) != AgentToolNames.ANDROID_PRIVILEGED_ACTION) {
             return false
         }
         val args = asMap(extractArgs(card))
@@ -325,7 +327,7 @@ internal object RunLogStartupBridgeCleaner {
         val toolName = toolNameForCard(card)
         val normalizedToolName = RunLogReplayPolicy.normalizeToolName(toolName)
         val args = asMap(extractArgs(card))
-        return if (normalizedToolName == "android_privileged_action") {
+        return if (normalizedToolName == AgentToolNames.ANDROID_PRIVILEGED_ACTION) {
             androidPrivilegedReplayAction(args)
         } else {
             OobActionCodec.canonicalActionForName(toolName)

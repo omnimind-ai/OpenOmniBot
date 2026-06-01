@@ -105,6 +105,26 @@ RunLog lifecycle:
 - never own tool descriptions, schemas, execution, recall, update, or replay
   behavior
 
+`AgentToolNames` owns canonical in-app names for generic agent tools:
+
+- define stable names such as `vlm_task`, `browser_use`, `web_search`, and
+  `android_privileged_action`
+- share those names across agent tool definitions, handlers, MCP adapters,
+  agent run-log card construction, and RunLog classifiers
+- never own OOB Function lifecycle names or replay-only taxonomy such as
+  `call_function`
+
+When adding or migrating a generic agent tool name:
+
+- add the string once in `AgentToolNames`
+- use that constant in the tool definition, handler routing, MCP route/schema
+  adapter, fallback call sites, and run-log card construction
+- update `RunLogReplayPolicy` only when replay classification must recognize
+  the tool; do not move Function lifecycle names into `AgentToolNames`
+- keep user-facing skill/tool descriptions near the existing tool schema owner,
+  not in `AgentToolNames`
+- add or update a route/schema test when the tool is exposed through MCP
+
 `AgentToolJson` owns agent-facing JSON projection helpers:
 
 - convert Kotlin maps/lists/scalars into `JsonElement` for tool definitions and
@@ -597,6 +617,9 @@ Use these owner rules when removing duplicated helper code:
   `RunLogReplayPolicy` constants when they are used as replay tool taxonomy.
   UDEG edge-kind field names and diagnostic counter keys are graph-storage
   vocabulary and should remain with `OobUdegNodeStore`.
+- Generic agent tool names such as `vlm_task`, `browser_use`, `web_search`,
+  and `android_privileged_action` belong in `AgentToolNames`. Use that owner
+  for registration, routing, fallback calls, and run-log card construction.
 - RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
   another local parser for `tool_call`, card headers, results, observations, or
   card payload JSON.

@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.mcp
 
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,7 +12,7 @@ class McpToolDefinitionsTest {
     fun fixedToolsIncludeAgentRunOobFunctionAndOobProjectControls() {
         val names = McpToolDefinitions.fixedTools.map { it["name"].toString() }.toSet()
 
-        assertTrue(names.contains("vlm_task"))
+        assertTrue(names.contains(AgentToolNames.VLM_TASK))
         assertTrue(names.contains("agent_run"))
         assertTrue(names.contains("oob_tool_call"))
         assertTrue(names.contains("omniflow.recall"))
@@ -55,6 +56,7 @@ class McpToolDefinitionsTest {
     }
 
     private val functionToolRouteConstants = mapOf(
+        AgentToolNames.VLM_TASK to "AgentToolNames.VLM_TASK",
         OobFunctionToolNames.FUNCTION_LIST to "OobFunctionToolNames.FUNCTION_LIST",
         OobFunctionToolNames.FUNCTION_GET to "OobFunctionToolNames.FUNCTION_GET",
         OobFunctionToolNames.FUNCTION_REGISTER to "OobFunctionToolNames.FUNCTION_REGISTER",

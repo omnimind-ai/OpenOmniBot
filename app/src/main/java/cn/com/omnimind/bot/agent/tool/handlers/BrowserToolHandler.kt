@@ -13,7 +13,7 @@ class BrowserToolHandler(
     private val helper: SharedHelper,
     private val workspaceManager: cn.com.omnimind.bot.agent.AgentWorkspaceManager
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("browser_use")
+    override val toolNames: Set<String> = setOf(AgentToolNames.BROWSER_USE)
 
     override suspend fun execute(
         toolCall: cn.com.omnimind.baselib.llm.AssistantToolCall,
@@ -36,7 +36,7 @@ class BrowserToolHandler(
         callback: AgentCallback,
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
-        val toolName = "browser_use"
+        val toolName = AgentToolNames.BROWSER_USE
         return try {
             helper.requireWorkspaceStorageAccess(callback)?.let { return it }
             val request = BrowserUseRequest.fromJson(args)

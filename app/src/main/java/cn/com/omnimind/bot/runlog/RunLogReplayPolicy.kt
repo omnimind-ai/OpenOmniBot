@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 
 /**
@@ -31,7 +32,7 @@ object RunLogReplayPolicy {
     val coordinateActions: Set<String> = OobActionCodec.coordinateActions
 
     val perceptionTools: Set<String> = setOf(
-        "vlm_task",
+        AgentToolNames.VLM_TASK,
         "image_picker",
         "android_privileged_action_screenshot",
         "screen_capture",
@@ -46,8 +47,8 @@ object RunLogReplayPolicy {
     ) + OobFunctionToolNames.runLogTools
 
     val dataFlowTools: Set<String> = setOf(
-        "browser_use",
-        "web_search",
+        AgentToolNames.BROWSER_USE,
+        AgentToolNames.WEB_SEARCH,
         "memory_search",
         "memory_recall",
         "memory_query",

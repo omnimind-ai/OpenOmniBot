@@ -25,7 +25,7 @@ class PrivilegedToolHandler(
     private val terminalToolHandler: TerminalToolHandler
 ) : ToolHandler {
     override val toolNames: Set<String> = setOf(
-        "android_privileged_action",
+        AgentToolNames.ANDROID_PRIVILEGED_ACTION,
         "android_privileged_session_start",
         "android_privileged_session_exec",
         "android_privileged_session_read",
@@ -73,7 +73,7 @@ class PrivilegedToolHandler(
         toolHandle: AgentToolExecutionHandle
     ): ToolExecutionResult {
         return when (toolCall.function.name) {
-            "android_privileged_action" -> executeAndroidPrivilegedAction(args, callback)
+            AgentToolNames.ANDROID_PRIVILEGED_ACTION -> executeAndroidPrivilegedAction(args, callback)
             "android_privileged_session_start" -> executeAndroidPrivilegedSessionStart(args, env.workspaceDescriptor, callback)
             "android_privileged_session_exec" -> executeAndroidPrivilegedSessionExec(args, env.workspaceDescriptor, callback, toolHandle)
             "android_privileged_session_read" -> executeAndroidPrivilegedSessionRead(args, env.workspaceDescriptor, callback)
@@ -110,7 +110,7 @@ class PrivilegedToolHandler(
     }
 
     private suspend fun executeAndroidPrivilegedAction(args: JsonObject, callback: AgentCallback): ToolExecutionResult {
-        val toolName = "android_privileged_action"
+        val toolName = AgentToolNames.ANDROID_PRIVILEGED_ACTION
         return try {
             val parsed = parseAndroidPrivilegedArgs(args)
             val shizukuManager = ShizukuCapabilityManager.get(helper.context)
