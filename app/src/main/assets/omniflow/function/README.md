@@ -551,9 +551,9 @@ change:
   for compatibility metadata.
 - `RunLogCardAccessors.asMap` and `RunLogCardAccessors.firstNonBlank` are the
   RunLog card-field extraction API, not duplicate action codecs.
-- `OobFunctionCheckerPatchService.boolArgOrDefault` encodes checker-patch
-  default semantics; only merge it if `OobFunctionJson` grows an equivalent
-  default-aware helper with the same behavior.
+- `OobFunctionJson.boolArgOrDefault` owns default-aware Function boolean
+  coercion for checker/update payloads. Do not add checker-local copies unless
+  a patch needs intentionally different semantics.
 - `OobUdegNodeStore` keeps some graph timestamp and graph-export sanitization
   helpers local because they normalize stored graph values, not just coerce
   Function or RunLog payloads.

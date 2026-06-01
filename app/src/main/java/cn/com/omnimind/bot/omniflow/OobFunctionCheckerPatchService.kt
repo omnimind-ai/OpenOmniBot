@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.omniflow
 
+import cn.com.omnimind.bot.omniflow.OobFunctionJson.boolArgOrDefault
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.intArg
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
@@ -430,19 +431,4 @@ class OobFunctionCheckerPatchService {
         "new" to new,
     ).filterValues { it != null }
 
-    private fun boolArgOrDefault(value: Any?, defaultValue: Boolean): Boolean =
-        when (value) {
-            null -> defaultValue
-            is Boolean -> value
-            is String -> {
-                val text = value.trim().lowercase()
-                when (text) {
-                    "true", "1", "yes", "y", "on" -> true
-                    "false", "0", "no", "n", "off" -> false
-                    else -> defaultValue
-                }
-            }
-            is Number -> value.toInt() != 0
-            else -> defaultValue
-        }
 }

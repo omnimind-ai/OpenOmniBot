@@ -62,6 +62,22 @@ internal object OobFunctionJson {
             else -> false
         }
 
+    fun boolArgOrDefault(value: Any?, defaultValue: Boolean): Boolean =
+        when (value) {
+            null -> defaultValue
+            is Boolean -> value
+            is String -> {
+                val text = value.trim().lowercase()
+                when (text) {
+                    "true", "1", "yes", "y", "on" -> true
+                    "false", "0", "no", "n", "off" -> false
+                    else -> defaultValue
+                }
+            }
+            is Number -> value.toInt() != 0
+            else -> defaultValue
+        }
+
     fun intArg(vararg values: Any?, defaultValue: Int): Int {
         values.forEach { value ->
             when (value) {
