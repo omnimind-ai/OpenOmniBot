@@ -4,6 +4,34 @@ This document records the backend ownership rules for OOB reusable Functions.
 It is intentionally about core logic only; Flutter cards and display behavior
 belong in UI documentation.
 
+## Concept Model
+
+Function code should be unified by concept, not by where a string happens to
+appear:
+
+- A Function is a reusable capability. Its durable shape is the Function spec,
+  execution steps, parameters, checker metadata, evidence metadata, and recall
+  hints.
+- A RunLog is evidence. It can create or improve a Function, but raw cards,
+  failed attempts, perception wrappers, and cleanup clicks are not themselves
+  Function steps until the RunLog compiler accepts them.
+- An action is a device operation such as `click`, `input_text`, or `open_app`.
+  Action vocabulary belongs to `OobActionCodec`; do not redefine action aliases
+  in Function update, recall, or replay services.
+- An executor is a replay classification, not an action. `omniflow`, `tool`,
+  and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
+  step, not to describe what the step does.
+- A tool name is an agent/MCP surface. Function lifecycle tools belong to
+  `OobFunctionToolNames`; generic agent tools belong to `AgentToolNames`;
+  replay bridge names such as `call_tool` belong to `RunLogReplayPolicy`.
+- A checker is conditional environment handling. Ads, popups, permission
+  prompts, resolver sheets, and "skip" buttons should be represented as checker
+  metadata or evidence, not inserted as mandatory Function path steps.
+
+When adding code, first decide which concept it belongs to. If the new code
+needs two concepts, wire the existing owners together instead of creating a new
+helper with mixed semantics.
+
 ## Ownership
 
 `OobFunctionRepository` is the single owner for Function storage:

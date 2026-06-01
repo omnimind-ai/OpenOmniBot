@@ -85,19 +85,19 @@ internal object RunLogStartupBridgeCleaner {
     ): List<Map<String, Any?>> {
         if (steps.isEmpty()) return steps
         val firstAction = replayActionForStep(steps.first())
-        if (firstAction == "open_app") return steps
+        if (firstAction == OobActionCodec.ACTION_OPEN_APP) return steps
 
         val packageName = initialReplayPackage(steps, replayableCards) ?: return steps
         val openAppStep = nullableMap(
             "title" to "open_app: $packageName",
             "kind" to "omniflow_action",
             "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
-            "omniflow_action" to "open_app",
-            "local_action" to "open_app",
+            "omniflow_action" to OobActionCodec.ACTION_OPEN_APP,
+            "local_action" to OobActionCodec.ACTION_OPEN_APP,
             "model_free" to true,
             "scriptable" to true,
-            "tool" to "open_app",
-            "callable_tool" to "open_app",
+            "tool" to OobActionCodec.ACTION_OPEN_APP,
+            "callable_tool" to OobActionCodec.ACTION_OPEN_APP,
             "args" to linkedMapOf(
                 "package_name" to packageName,
                 "reset_task" to true,

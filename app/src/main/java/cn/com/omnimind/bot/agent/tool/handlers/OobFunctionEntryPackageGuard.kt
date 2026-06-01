@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 import cn.com.omnimind.baselib.util.OmniLog
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
+import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
@@ -58,11 +59,11 @@ class OobFunctionEntryPackageGuard {
             "title" to "open_app: $packageName",
             "kind" to "omniflow_action",
             "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
-            "omniflow_action" to "open_app",
-            "local_action" to "open_app",
+            "omniflow_action" to OobActionCodec.ACTION_OPEN_APP,
+            "local_action" to OobActionCodec.ACTION_OPEN_APP,
             "model_free" to true,
-            "tool" to "open_app",
-            "callable_tool" to "open_app",
+            "tool" to OobActionCodec.ACTION_OPEN_APP,
+            "callable_tool" to OobActionCodec.ACTION_OPEN_APP,
             "args" to linkedMapOf("package_name" to packageName, "reset_task" to false),
         )
 

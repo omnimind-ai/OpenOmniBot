@@ -16,6 +16,32 @@ RunLog is a runtime contract, not just a UI feature. Keep these boundaries align
 
 Read `references/runlog-contract.md` before changing conversion or replay behavior.
 
+## Concept Model
+
+RunLog code should preserve these concepts:
+
+- Record: the append-only runtime evidence in `InternalRunLogStore`.
+- Card: one recorded observation/tool/action event. Cards may be useful
+  evidence, but they are not automatically replay steps.
+- Step: the canonical Function execution unit produced by conversion.
+- Action: the local device operation inside a deterministic step. The action
+  vocabulary and aliases live in `OobActionCodec`.
+- Executor: the runtime owner for a step. `RunLogReplayPolicy` classifies
+  `omniflow`, `tool`, and `agent`; this is separate from the action name.
+- Checker: optional conditional handling for ads, popups, permissions,
+  keyboards, package mismatches, and resolver sheets. Checker candidates should
+  stay as metadata/evidence unless the user or agent has explicit proof that
+  they are required path steps.
+- Evidence analysis: agent-authored reasoning stored by `update_function`.
+  Analysis may justify labels, summaries, checker candidates, and small
+  patches, but Kotlin conversion should not silently infer a new main path from
+  weak or failed evidence.
+
+Do not merge code just because two places touch the same string. Merge only
+when they own the same concept with the same compatibility rules. Keep
+route-specific alias parsing, schema projection, and storage compatibility local
+when their semantics differ from replay conversion.
+
 Home input exposes RunLog entry points through one compact trajectory icon below
 the composer. Tapping it opens a transient three-action popup: existing
 trajectories, the current/latest trajectory, and record trajectory. Do not
