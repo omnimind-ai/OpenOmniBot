@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import cn.com.omnimind.baselib.i18n.PromptLocale
 import cn.com.omnimind.bot.omniflow.OobFunctionSkillProfile
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -50,7 +51,7 @@ class AgentToolDefinitionsMusicTest {
                     ?.contentOrNull)
             }
 
-        assertTrue(toolNames.contains("call_tool"))
+        assertTrue(toolNames.contains(RunLogReplayPolicy.TOOL_CALL_TOOL))
     }
 
     @Test

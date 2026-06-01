@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.mcp
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
  * MCP 工具定义
@@ -296,7 +297,7 @@ BEHAVIOR:
     )
 
     val oobToolCallTool = mapOf(
-        "name" to "oob_tool_call",
+        "name" to RunLogReplayPolicy.TOOL_OOB_TOOL_CALL,
         "description" to """Call any OOB capability through the normal in-app Agent runtime, or run a saved OOB Function by function_id. Use this as the generic bridge when a Project Tool needs VLM, files, terminal/Alpine, UI automation, memory, schedules, or another OOB tool.""".trimIndent(),
         "inputSchema" to mapOf(
             "type" to "object",

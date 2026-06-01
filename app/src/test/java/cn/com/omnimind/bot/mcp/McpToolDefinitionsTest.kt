@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.mcp
 
 import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,7 +15,7 @@ class McpToolDefinitionsTest {
 
         assertTrue(names.contains(AgentToolNames.VLM_TASK))
         assertTrue(names.contains("agent_run"))
-        assertTrue(names.contains("oob_tool_call"))
+        assertTrue(names.contains(RunLogReplayPolicy.TOOL_OOB_TOOL_CALL))
         assertTrue(names.contains("omniflow.recall"))
         assertTrue(names.contains("omniflow.call_tool"))
         assertTrue(!names.contains("omniflow.call_function"))
@@ -68,6 +69,7 @@ class McpToolDefinitionsTest {
         OobFunctionToolNames.RUN_LOG_LIST to "OobFunctionToolNames.RUN_LOG_LIST",
         OobFunctionToolNames.RUN_LOG_GET to "OobFunctionToolNames.RUN_LOG_GET",
         OobFunctionToolNames.RUN_LOG_CONVERT to "OobFunctionToolNames.RUN_LOG_CONVERT",
+        RunLogReplayPolicy.TOOL_OOB_TOOL_CALL to "RunLogReplayPolicy.TOOL_OOB_TOOL_CALL",
     )
 
     @Test
