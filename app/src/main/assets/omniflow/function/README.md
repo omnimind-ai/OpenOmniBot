@@ -667,6 +667,8 @@ Use these owner rules when removing duplicated helper code:
   `call_function`, `go_to_node`, `click_node`, `node_click`, and
   `oob.agent.run` also belong in
   `RunLogReplayPolicy` constants when they are used as replay tool taxonomy.
+  Compatibility replay types such as `wait` and `external_tool` also belong
+  there when Function compilation or schema projection needs to preserve them.
   UDEG edge-kind field names and diagnostic counter keys are graph-storage
   vocabulary and should remain with `OobUdegNodeStore`.
 - Generic agent tool names such as `vlm_task`, `browser_use`, `web_search`,

@@ -279,7 +279,7 @@ object OobFunctionSchemaBuilder {
                     if (arguments.isNotEmpty()) put("arguments", arguments)
                 },
             )
-            normalizedType == "external_tool" -> externalToolStep(
+            normalizedType == RunLogReplayPolicy.TOOL_EXTERNAL_TOOL -> externalToolStep(
                 stepId = stepId,
                 index = index,
                 title = title,

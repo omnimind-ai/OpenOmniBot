@@ -269,8 +269,8 @@ object RunLogReusableFunctionParameterizer {
                 ),
                 "description" to description,
             )
-            action == "wait" -> nullableMap(
-                "type" to "wait",
+            action == RunLogReplayPolicy.TOOL_WAIT -> nullableMap(
+                "type" to RunLogReplayPolicy.TOOL_WAIT,
                 "timeMs" to firstPresent(args["timeMs"], args["time_ms"]),
                 "params" to nullableMap(
                     "time_s" to firstPresent(args["time_s"], args["seconds"]),
@@ -280,7 +280,7 @@ object RunLogReusableFunctionParameterizer {
                 "description" to description,
             )
             else -> nullableMap(
-                "type" to "external_tool",
+                "type" to RunLogReplayPolicy.TOOL_EXTERNAL_TOOL,
                 "toolName" to firstNonBlank(step["callable_tool"], step["tool"], step["action"], action),
                 "arguments" to args,
                 "description" to description,

@@ -27,6 +27,8 @@ object RunLogReplayPolicy {
     const val TOOL_GO_TO_NODE: String = "go_to_node"
     const val TOOL_CLICK_NODE: String = "click_node"
     const val TOOL_NODE_CLICK: String = "node_click"
+    const val TOOL_WAIT: String = "wait"
+    const val TOOL_EXTERNAL_TOOL: String = "external_tool"
 
     val omniflowActions: Set<String> = OobActionCodec.executableActions
 
@@ -106,7 +108,7 @@ object RunLogReplayPolicy {
         "status_update",
         "assistant_response",
         "get_state",
-        "wait",
+        TOOL_WAIT,
     )
 
     fun normalizeToolName(toolName: String): String = toolName.trim().lowercase()
