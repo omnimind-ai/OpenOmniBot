@@ -299,7 +299,7 @@ internal object RunLogReplayStepCompiler {
             "source_tool" to sourceToolName.takeIf { it != replayAction },
             "args" to args,
             "source_context" to sourceContext.takeIf { it.isNotEmpty() },
-            "coordinate_hook" to if (usesCoordinateHook) "omniflow" else null,
+            "coordinate_hook" to if (usesCoordinateHook) RunLogReplayPolicy.EXECUTOR_OMNIFLOW else null,
             "replay_engine" to if (utg.isNotEmpty()) "omniflow_utg" else null,
             "utg" to utg.takeIf { it.isNotEmpty() },
         )

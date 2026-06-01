@@ -110,6 +110,9 @@ Use the constants for both step construction and executor comparisons. Keep
 component-specific diagnostic labels, for example `agent_tool`,
 `omniflow_graph`, `omniflow_function`, or `omniflow_vlm_fallback`, outside this
 taxonomy unless they become first-class replay executors.
+Fields that carry the deterministic replay marker, such as `coordinate_hook`,
+should also reference `RunLogReplayPolicy.EXECUTOR_OMNIFLOW` instead of
+spelling the string locally.
 Canonical replay tool names such as `call_tool`, `oob_tool_call`,
 `call_function`, `go_to_node`, and `oob.agent.run` also live in
 `RunLogReplayPolicy` when they are used by Function compilation, schema

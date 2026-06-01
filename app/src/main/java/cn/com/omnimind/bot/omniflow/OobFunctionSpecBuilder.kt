@@ -172,7 +172,7 @@ class OobFunctionSpecBuilder {
                 if (sourceContext.isNotEmpty()) {
                     step["source_context"] = sourceContext
                     if (RunLogReplayPolicy.isCoordinateAction(action)) {
-                        step["coordinate_hook"] = "omniflow"
+                        step["coordinate_hook"] = RunLogReplayPolicy.EXECUTOR_OMNIFLOW
                     }
                 }
             }

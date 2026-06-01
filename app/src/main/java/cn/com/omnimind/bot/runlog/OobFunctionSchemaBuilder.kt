@@ -323,7 +323,7 @@ object OobFunctionSchemaBuilder {
         "args" to args.filterValues { it != null },
         "source_context" to sourceContext.takeIf { it.isNotEmpty() },
         "coordinate_hook" to if (action in OobActionCodec.coordinateActions && sourceContext.isNotEmpty()) {
-            "omniflow"
+            RunLogReplayPolicy.EXECUTOR_OMNIFLOW
         } else {
             null
         },

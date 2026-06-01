@@ -426,7 +426,7 @@ object OmniflowStepExecutor {
     private fun shouldUseCoordinateHook(step: Map<String, Any?>): Boolean {
         val coordinateHook = step["coordinate_hook"]?.toString()?.trim()?.lowercase().orEmpty()
         val replayEngine = step["replay_engine"]?.toString()?.trim()?.lowercase().orEmpty()
-        return coordinateHook == "omniflow" ||
+        return coordinateHook == RunLogReplayPolicy.EXECUTOR_OMNIFLOW ||
             step["omniflow"] == true ||
             replayEngine == "omniflow_utg"
     }
