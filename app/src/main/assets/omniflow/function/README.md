@@ -485,6 +485,8 @@ change:
   intentionally does not accept every runtime truthy alias.
 - `RunLogReusableFunctionParameterizer.asMap` preserves legacy map-key behavior
   for compatibility metadata.
+- `RunLogCardAccessors.asMap` and `RunLogCardAccessors.firstNonBlank` are the
+  RunLog card-field extraction API, not duplicate action codecs.
 - `OobFunctionCheckerPatchService.boolArgOrDefault` encodes checker-patch
   default semantics; only merge it if `OobFunctionJson` grows an equivalent
   default-aware helper with the same behavior.

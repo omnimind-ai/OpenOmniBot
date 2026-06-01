@@ -1,5 +1,8 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
+import cn.com.omnimind.bot.runlog.OobActionCodec.listArg
+
 /**
  * Builds reusable Function parameters and canonical action specs from compiled replay steps.
  *
@@ -392,8 +395,6 @@ object RunLogReusableFunctionParameterizer {
         return value.entries.associate { (key, item) -> key.toString() to item }
     }
 
-    private fun listArg(value: Any?): List<Any?> = OobActionCodec.listArg(value)
-
     private fun firstPresent(vararg values: Any?): Any? {
         for (value in values) {
             if (value == null) continue
@@ -402,8 +403,6 @@ object RunLogReusableFunctionParameterizer {
         }
         return null
     }
-
-    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 
     private fun nullableMap(vararg pairs: Pair<String, Any?>): Map<String, Any?> {
         return linkedMapOf<String, Any?>().apply {

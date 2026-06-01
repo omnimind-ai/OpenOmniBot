@@ -142,8 +142,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   forwarding helpers.
 - Do not force-merge helpers with intentionally different compatibility
   behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
-  and `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key
-  behavior.
+  `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key
+  behavior, and `RunLogCardAccessors` owns card-field extraction helpers rather
+  than generic action coercion.
 - Keep deterministic `input_text` parameter inference, canonical JSON schema
   construction, legacy `actions` compatibility, and parameter binding metadata
   in `RunLogReusableFunctionParameterizer`; do not put those rules back into

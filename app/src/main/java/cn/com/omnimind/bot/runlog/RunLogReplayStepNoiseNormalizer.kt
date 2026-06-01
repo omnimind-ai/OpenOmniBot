@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
+
 /**
  * Removes deterministic noise from compiled replay steps.
  *
@@ -169,5 +171,4 @@ object RunLogReplayStepNoiseNormalizer {
         )
     }
 
-    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 }

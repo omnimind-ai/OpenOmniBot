@@ -1,5 +1,9 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
+import cn.com.omnimind.bot.runlog.OobActionCodec.listArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.mapArg
+
 /**
  * Builds the JSON-schema shaped argument contract used when an OOB reusable
  * Function is exposed as an agent tool.
@@ -388,10 +392,6 @@ object OobFunctionSchemaBuilder {
             else -> "string"
         }
 
-    private fun mapArg(value: Any?): Map<String, Any?> = OobActionCodec.mapArg(value)
-
-    private fun listArg(value: Any?): List<Any?> = OobActionCodec.listArg(value)
-
     private fun boolArg(value: Any?): Boolean {
         return when (value) {
             is Boolean -> value
@@ -400,8 +400,6 @@ object OobFunctionSchemaBuilder {
             else -> false
         }
     }
-
-    private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
 
     private fun MutableMap<String, Any?>.putFirstPresent(key: String, vararg values: Any?) {
         values.firstOrNull { value ->
