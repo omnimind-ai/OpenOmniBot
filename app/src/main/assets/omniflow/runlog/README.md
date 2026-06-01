@@ -169,8 +169,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   `OobFunctionCallTiming`, schema/parameterization helpers, explorer utilities,
   and cleanup services should call it instead of adding private
   `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg` copies when
-  behavior is equivalent. Prefer direct calls or member imports from
-  `OobActionCodec`; do not add one-line local forwarding helpers. In
+  behavior is equivalent. Execution code such as `OmniflowStepExecutor` should
+  follow the same rule for generic argument coercion. Prefer direct calls or
+  member imports from `OobActionCodec`; do not add one-line local forwarding helpers. In
   particular, schema projection and Function parameterization should not carry
   private `boolArg`/`asMap` equivalents.
 - Keep generic Function payload coercion in `OobFunctionJson`. Function

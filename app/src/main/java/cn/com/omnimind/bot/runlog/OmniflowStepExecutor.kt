@@ -1,5 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
+import cn.com.omnimind.bot.runlog.OobActionCodec.boolArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -258,7 +260,7 @@ object OmniflowStepExecutor {
                 "open_app" -> {
                     val packageName = stringArg(args, "package_name", "packageName")
                         ?: throw IllegalArgumentException("open_app requires package_name")
-                    val resetTask = booleanArg(args["reset_task"]) ||
+                    val resetTask = boolArg(args["reset_task"]) ||
                         stringArg(args, "launch_mode")?.equals("fresh_task", ignoreCase = true) == true
                     if (resetTask) {
                         backend.launchApplication(packageName, true)
@@ -1286,21 +1288,8 @@ object OmniflowStepExecutor {
             node.className,
         ).filter { it.isNotBlank() }.joinToString(" ").lowercase()
 
-    private fun booleanArg(value: Any?): Boolean =
-        value == true || value?.toString()?.equals("true", ignoreCase = true) == true
-
     private fun currentRootCenter(state: ReplayState): Pair<Float, Float>? =
         state.page?.let { it.rootBounds.centerX to it.rootBounds.centerY }
-
-    private fun firstNonBlank(vararg values: Any?): String {
-        for (value in values) {
-            val text = value?.toString()?.trim().orEmpty()
-            if (text.isNotEmpty()) {
-                return text
-            }
-        }
-        return ""
-    }
 
     private data class Rect(
         val left: Float,
@@ -1537,10 +1526,10 @@ object OmniflowStepExecutor {
     }
 
     private fun coordinateReplayAllowed(args: Map<String, Any?>): Boolean =
-        booleanArg(args["coordinate_replay_allowed"]) ||
-            booleanArg(args["coordinateReplayAllowed"]) ||
-            booleanArg(args["raw_coordinate_replay_allowed"]) ||
-            booleanArg(args["allow_raw_coordinate_replay"]) ||
+        boolArg(args["coordinate_replay_allowed"]) ||
+            boolArg(args["coordinateReplayAllowed"]) ||
+            boolArg(args["raw_coordinate_replay_allowed"]) ||
+            boolArg(args["allow_raw_coordinate_replay"]) ||
             stringArg(args, "projection_mode", "projectionMode")
                 ?.equals("fixed", ignoreCase = true) == true
 
