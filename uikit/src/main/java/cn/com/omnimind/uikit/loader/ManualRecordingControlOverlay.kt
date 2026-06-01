@@ -341,16 +341,22 @@ object ManualRecordingControlOverlay {
             }
             setOnClickListener {
                 isEnabled = false
+                text = "保存中"
                 val finishingState = ManualRecordingControlOverlay.state
-                // Complete/cancel BEFORE dismiss so that dismiss() sees isActive()=false
-                // and does not trigger a redundant cancelActive().
+                synchronized(this@ManualRecordingControlOverlay) {
+                    dismissLocked()
+                }
                 recordingControlScope.launch {
-                    val updated = if (finishingState == State.PREPARING) {
-                        HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
-                    } else {
-                        HumanTrajectoryLearningSession.completeActive()
+                    val updated = runCatching {
+                        if (finishingState == State.PREPARING) {
+                            HumanTrajectoryLearningSession.cancelActive("人工轨迹学习已取消")
+                        } else {
+                            HumanTrajectoryLearningSession.completeActive()
+                        }
+                    }.getOrElse { error ->
+                        OmniLog.e(TAG, "finish manual recording failed: ${error.message}", error)
+                        false
                     }
-                    withContext(Dispatchers.Main) { dismiss() }
                     if (!updated) {
                         OmniLog.w(TAG, "finish clicked without active manual recording session state=$finishingState")
                     }

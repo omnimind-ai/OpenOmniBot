@@ -135,6 +135,41 @@ object DraggableBallInstance {
         return instance.takeIf { it.isAttachedToWindow }
     }
 
+    private fun ensureShowInfoViewAttachedOrUpdated(
+        instance: DraggableBallLoader,
+        caller: String
+    ): Boolean {
+        val view = instance.catDialogShowInfoView
+        val windowManager = instance.getWindowManager()
+        return try {
+            if (view.isAttachedToWindow) {
+                view.cancelAnimations()
+                windowManager.updateViewLayout(view, instance.catDialogShowInfoViewParams)
+            } else {
+                try {
+                    windowManager.addView(view, instance.catDialogShowInfoViewParams)
+                } catch (e: IllegalStateException) {
+                    if (e.message?.contains("already been added", ignoreCase = true) == true) {
+                        OmniLog.w(TAG, "$caller addView skipped because showInfoView is already added")
+                        windowManager.updateViewLayout(view, instance.catDialogShowInfoViewParams)
+                    } else {
+                        throw e
+                    }
+                }
+            }
+            true
+        } catch (e: BadTokenException) {
+            OmniLog.e(TAG, "$caller showInfoView attach BadTokenException: ${e.message}")
+            false
+        } catch (e: IllegalArgumentException) {
+            OmniLog.e(TAG, "$caller showInfoView layout skipped: ${e.message}")
+            false
+        } catch (e: IllegalStateException) {
+            OmniLog.e(TAG, "$caller showInfoView attach skipped: ${e.message}")
+            false
+        }
+    }
+
     /**
      * 收起小猫
      */
@@ -165,17 +200,7 @@ object DraggableBallInstance {
         instance.catDialogShowInfoViewParams.width = w
         instance.catDialogShowInfoViewParams.height = h
         instance.catDialogShowInfoView.visibility = View.VISIBLE
-        if (instance.isAttachedToWindow) {
-            instance.catDialogShowInfoView.cancelAnimations()
-            instance.getWindowManager().removeView(instance.catDialogShowInfoView)
-        }
-        try {
-            instance.getWindowManager()
-                .addView(instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams)
-        } catch (e: BadTokenException) {
-            OmniLog.e(TAG, "readyDoingTask addView BadTokenException: ${e.message}")
-            return
-        }
+        if (!ensureShowInfoViewAttachedOrUpdated(instance, "readyDoingTask")) return
         // 无论当前是什么状态，都直接执行首次展示动画
         instance.catDialogShowInfoView.readyDoingTask(
             message = message
@@ -193,7 +218,9 @@ object DraggableBallInstance {
         CancelClickLoader.cancelIntercepting()
         instance.catView.setViewState(DraggableViewState.DOING_TASK)
         instance.collapseMenu()
-        if (CatDialogStateData.viewState == CatDialogViewState.EMPTY) {
+        if (CatDialogStateData.viewState == CatDialogViewState.EMPTY ||
+            !instance.catDialogShowInfoView.isAttachedToWindow
+        ) {
             instance.catDialogShowInfoViewParams = instance.getParams(WindowFlag.SCREEN_LOCK_FLAG)
             val (x, y) = CatDialogStateData.getDoingTaskXY()
             val (w, h) = CatDialogStateData.getTaskDoingWH()
@@ -202,17 +229,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.width = w
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
-            if (instance.isAttachedToWindow) {
-                instance.catDialogShowInfoView.cancelAnimations()
-                instance.getWindowManager().removeView(instance.catDialogShowInfoView)
-            }
-            try {
-                instance.getWindowManager()
-                    .addView(instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams)
-            } catch (e: BadTokenException) {
-                OmniLog.e(TAG, "doingTask addView BadTokenException: ${e.message}")
-                return
-            }
+            if (!ensureShowInfoViewAttachedOrUpdated(instance, "doingTask")) return
         }
 
         // 调用 doingTask，传递必要的参数以支持状态切换动画
@@ -246,7 +263,8 @@ object DraggableBallInstance {
             WindowFlag.SCREEN_UNLOCK_FLAG
         }
         if (CatDialogStateData.viewState == CatDialogViewState.EMPTY ||
-            instance.catDialogShowInfoViewParams.flags != windowFlag
+            instance.catDialogShowInfoViewParams.flags != windowFlag ||
+            !instance.catDialogShowInfoView.isAttachedToWindow
         ) {
             instance.catDialogShowInfoViewParams = instance.getParams(windowFlag)
             val (x, y) = CatDialogStateData.getDoingTaskXY()
@@ -256,17 +274,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.width = w
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
-            if (instance.catDialogShowInfoView.isAttachedToWindow) {
-                instance.catDialogShowInfoView.cancelAnimations()
-                instance.getWindowManager().removeView(instance.catDialogShowInfoView)
-            }
-            try {
-                instance.getWindowManager()
-                    .addView(instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams)
-            } catch (e: BadTokenException) {
-                OmniLog.e(TAG, "setDoing addView BadTokenException: ${e.message}")
-                return
-            }
+            if (!ensureShowInfoViewAttachedOrUpdated(instance, "setDoing")) return
         }
         var msg = if (message.isEmpty() || message.equals("null")) {
             "正在执行中..."
@@ -314,17 +322,7 @@ object DraggableBallInstance {
             instance.catDialogShowInfoViewParams.width = w
             instance.catDialogShowInfoViewParams.height = h
             instance.catDialogShowInfoView.visibility = View.VISIBLE
-            if (instance.catDialogShowInfoView.isAttachedToWindow) {
-                instance.catDialogShowInfoView.cancelAnimations()
-                instance.getWindowManager().removeView(instance.catDialogShowInfoView)
-            }
-            try {
-                instance.getWindowManager()
-                    .addView(instance.catDialogShowInfoView, instance.catDialogShowInfoViewParams)
-            } catch (e: BadTokenException) {
-                OmniLog.e(TAG, "learningTask addView BadTokenException: ${e.message}")
-                return
-            }
+            if (!ensureShowInfoViewAttachedOrUpdated(instance, "learningTask")) return
         } else {
             val (x, y) = CatDialogStateData.getDoingTaskXY()
             val (w, h) = CatDialogStateData.getTaskDoingWH()
