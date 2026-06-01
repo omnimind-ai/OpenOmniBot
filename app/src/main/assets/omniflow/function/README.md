@@ -544,8 +544,9 @@ Use these owner rules when removing duplicated helper code:
   constants instead of local string literals for `omniflow`, `tool`, or `agent`.
   This applies to generated step specs, result payloads that report the
   executor category, and runtime comparisons. Diagnostic labels such as
-  `agent_tool` or `omniflow_vlm_fallback` are not executor categories and
-  should stay local to the component that emits them.
+  `agent_tool`, `omniflow_graph`, `omniflow_function`, or
+  `omniflow_vlm_fallback` are not executor categories and should stay local to
+  the component that emits them.
 - RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
   another local parser for `tool_call`, card headers, results, observations, or
   card payload JSON.

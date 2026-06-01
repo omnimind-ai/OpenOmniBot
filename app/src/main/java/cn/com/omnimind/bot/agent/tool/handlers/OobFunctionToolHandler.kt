@@ -569,7 +569,7 @@ class OobFunctionToolHandler(
                         linkedMapOf(
                             "step_id" to stepId,
                             "tool" to agentTool.ifEmpty { callableTool.ifEmpty { "?" } },
-                            "executor" to executor.ifEmpty { "agent" },
+                            "executor" to executor.ifEmpty { RunLogReplayPolicy.EXECUTOR_AGENT },
                             "success" to false,
                             "needs_agent" to false,
                             "fallback_available" to false,

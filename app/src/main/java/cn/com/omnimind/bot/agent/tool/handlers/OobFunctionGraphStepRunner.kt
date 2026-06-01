@@ -45,7 +45,7 @@ class OobFunctionGraphStepRunner {
                 failureStepResult(
                     stepId = pathStepId,
                     tool = OmniflowStepExecutor.actionNameForStep(primitiveStep),
-                    executor = "omniflow",
+                    executor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                     summary = e.message ?: "UTG path action failed",
                     errorCode = "OOB_UTG_ACTION_FAILED",
                 )

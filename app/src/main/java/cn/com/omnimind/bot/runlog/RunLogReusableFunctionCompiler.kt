@@ -103,9 +103,9 @@ object RunLogReusableFunctionCompiler {
         return linkedMapOf(
             "scriptable_step_count" to steps.count { it["scriptable"] == true },
             "model_free_step_count" to steps.count { it["model_free"] == true },
-            "omniflow_step_count" to steps.count { it["executor"] == "omniflow" },
-            "agent_step_count" to steps.count { it["executor"] == "agent" },
-            "requires_agent_fallback" to steps.any { it["executor"] == "agent" },
+            "omniflow_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_OMNIFLOW },
+            "agent_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
+            "requires_agent_fallback" to steps.any { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
         )
     }
 

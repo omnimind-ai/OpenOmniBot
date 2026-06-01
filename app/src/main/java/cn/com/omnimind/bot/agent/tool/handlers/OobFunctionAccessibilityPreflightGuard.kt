@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
  * Blocks deterministic replay before the step loop when required accessibility
@@ -44,7 +45,7 @@ class OobFunctionAccessibilityPreflightGuard(
                     runResultBuilder.failureStep(
                         stepId = stepId,
                         tool = action,
-                        executor = "omniflow",
+                        executor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                         summary = message,
                         errorCode = "OOB_ACCESSIBILITY_REQUIRED",
                         extras = linkedMapOf(

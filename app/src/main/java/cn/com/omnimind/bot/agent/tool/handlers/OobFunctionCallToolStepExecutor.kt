@@ -126,7 +126,7 @@ class OobFunctionCallToolStepExecutor(
         return failureStepResult(
             stepId = stepId,
             tool = targetTool,
-            executor = "tool",
+            executor = RunLogReplayPolicy.EXECUTOR_TOOL,
             summary = "Tool router unavailable for $targetTool",
             errorCode = "OOB_CALL_TOOL_ROUTER_UNAVAILABLE",
         )

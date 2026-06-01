@@ -106,9 +106,9 @@ Kotlin executor string constants live in `RunLogReplayPolicy`; compiler,
 runtime, and guard code should use those constants instead of scattering
 literal `"omniflow"`, `"tool"`, or `"agent"` checks in core replay paths.
 Use the constants for both step construction and executor comparisons. Keep
-component-specific diagnostic labels, for example `agent_tool` or
-`omniflow_vlm_fallback`, outside this taxonomy unless they become first-class
-replay executors.
+component-specific diagnostic labels, for example `agent_tool`,
+`omniflow_graph`, `omniflow_function`, or `omniflow_vlm_fallback`, outside this
+taxonomy unless they become first-class replay executors.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,
