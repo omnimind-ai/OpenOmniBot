@@ -121,7 +121,7 @@ class WorkbenchToolHandlerOobFunctionToolsTest {
             assertEquals("oob.reusable_function.v1", stored?.get("schema_version"))
             val execution = stored?.get("execution") as? Map<*, *>
             assertEquals(2, (execution?.get("step_count") as Number).toInt())
-            assertEquals(false, execution["requires_agent_fallback"])
+            assertEquals(false, execution["has_agent_steps"])
 
             val guard = handler.execute(
                 toolCall = toolCall(OobFunctionToolNames.FUNCTION_GUARD_CHECK),

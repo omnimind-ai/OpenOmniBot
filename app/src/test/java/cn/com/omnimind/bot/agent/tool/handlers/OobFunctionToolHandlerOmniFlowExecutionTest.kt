@@ -212,7 +212,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
-    fun `call_function source alignment is disabled by default`() = runBlocking {
+    fun `call_function executes source-context steps in fixed order`() = runBlocking {
         val context = TempFilesContext()
         val pageA = pageXml("A", "com.example.a")
         val pageB = pageXml("B", "com.example.b")
@@ -220,7 +220,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         val pageD = pageXml("D", "com.example.d")
         try {
             val spec = functionSpec(
-                functionId = "source_alignment_skip_prefix",
+                functionId = "fixed_order_with_source_context",
                 steps = listOf(
                     finishedStepWithSource("step_a", pageA, "com.example.a"),
                     finishedStepWithSource("step_b", pageB, "com.example.b"),
@@ -237,7 +237,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             val backend = RecordingBackend(pageD, "com.example.d", "TestActivity")
             OmniflowActionRuntime.useBackendForTesting(backend).use {
                 val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
-                    functionId = "source_alignment_skip_prefix",
+                    functionId = "fixed_order_with_source_context",
                     spec = spec,
                     materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
                     allowAgentFallback = false,
@@ -250,10 +250,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                     listOf("step_a", "step_b", "step_c", "step_d", "step_key"),
                     results.map { it["step_id"] }
                 )
-                assertFalse(results.any { it["skipped_by_source_alignment"] == true })
-                val stack = run["pending_action_stack"] as Map<*, *>
-                assertEquals(false, stack["source_alignment_enabled"])
-                assertEquals(0, (stack["skipped_by_source_alignment_count"] as Number).toInt())
+                assertFalse(run.containsKey("pending_action_stack"))
             }
         } finally {
             context.root.deleteRecursively()
@@ -261,14 +258,14 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
     }
 
     @Test
-    fun `call_function source alignment disabled does not block on key boundary miss`() = runBlocking {
+    fun `call_function ignores key action metadata during fixed replay`() = runBlocking {
         val context = TempFilesContext()
         val pageA = pageXml("A", "com.example.a")
         val pageB = pageXml("B", "com.example.b")
         val pageC = pageXml("C", "com.example.c")
         try {
             val spec = functionSpec(
-                functionId = "source_alignment_key_boundary",
+                functionId = "fixed_order_key_metadata",
                 steps = listOf(
                     finishedStepWithSource("step_a", pageA, "com.example.a"),
                     finishedStepWithSource("step_key", pageB, "com.example.b"),
@@ -283,7 +280,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             val backend = RecordingBackend(pageC, "com.example.c", "TestActivity")
             OmniflowActionRuntime.useBackendForTesting(backend).use {
                 val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
-                    functionId = "source_alignment_key_boundary",
+                    functionId = "fixed_order_key_metadata",
                     spec = spec,
                     materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
                     allowAgentFallback = false,
@@ -293,8 +290,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 val results = stepResults(run)
                 assertEquals(listOf("step_a", "step_key", "step_after_key"), results.map { it["step_id"] })
                 assertFalse(results.any { it["error_code"] == "OOB_SOURCE_ALIGNMENT_MISS" })
-                val stack = run["pending_action_stack"] as Map<*, *>
-                assertEquals(false, stack["source_alignment_enabled"])
+                assertFalse(run.containsKey("pending_action_stack"))
             }
         } finally {
             context.root.deleteRecursively()
@@ -308,7 +304,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
         val pageB = pageXml("B", "com.example.b")
         try {
             val spec = functionSpec(
-                functionId = "source_alignment_no_key_metadata",
+                functionId = "fixed_order_no_key_metadata",
                 steps = listOf(
                     finishedStepWithSource("step_a", pageA, "com.example.a"),
                     finishedStepWithSource("step_b", pageB, "com.example.b"),
@@ -317,7 +313,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
             val backend = RecordingBackend(pageB, "com.example.b", "TestActivity")
             OmniflowActionRuntime.useBackendForTesting(backend).use {
                 val run = handler(context, WorkspaceFunctionStore(context.root)).runMaterializedFunction(
-                    functionId = "source_alignment_no_key_metadata",
+                    functionId = "fixed_order_no_key_metadata",
                     spec = spec,
                     materializedSpec = OobReusableFunctionStore.materialize(spec, emptyMap()),
                     allowAgentFallback = false,
@@ -326,9 +322,7 @@ class OobFunctionToolHandlerOmniFlowExecutionTest {
                 assertEquals(true, run["success"])
                 val results = stepResults(run)
                 assertEquals(listOf("step_a", "step_b"), results.map { it["step_id"] })
-                assertFalse(results.any { it["skipped_by_source_alignment"] == true })
-                val stack = run["pending_action_stack"] as Map<*, *>
-                assertEquals(false, stack["source_alignment_enabled"])
+                assertFalse(run.containsKey("pending_action_stack"))
             }
         } finally {
             context.root.deleteRecursively()

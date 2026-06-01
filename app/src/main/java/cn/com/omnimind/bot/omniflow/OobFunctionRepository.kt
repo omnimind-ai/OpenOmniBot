@@ -231,7 +231,10 @@ class OobFunctionRepository(
                 ),
             "omniflow_step_count" to execution?.get("omniflow_step_count"),
             "agent_step_count" to execution?.get("agent_step_count"),
-            "requires_agent_fallback" to execution?.get("requires_agent_fallback"),
+            "has_agent_steps" to (
+                execution?.get("has_agent_steps")
+                    ?: execution?.get("requires_agent_fallback")
+                ),
             "parameter_names" to OobFunctionSchemaBuilder.parameterNames(spec),
             "step_summaries" to OobFunctionSchemaBuilder.stepSummaries(spec),
             "function_kind" to "oob_reusable_function",

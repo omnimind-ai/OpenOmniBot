@@ -24,9 +24,8 @@ appear:
 - Code that needs an action family, such as point-target actions, should use
   the sets exposed by `OobActionCodec` instead of rebuilding local
   `click`/`long_press` lists.
-- Runtime decisions must be action-driven. Main replay, source alignment, and
-  route safety should use `OobActionCodec` predicates or replay policy, not
-  explanatory role labels.
+- Runtime decisions must be action-driven. Main replay and route safety should
+  use `OobActionCodec` predicates or replay policy, not explanatory role labels.
 - An executor is a replay classification, not an action. `omniflow`, `tool`,
   and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
   step, not to describe what the step does.
@@ -206,6 +205,8 @@ When adding or migrating a generic agent tool name:
 - capture current page source context when a simple registration needs it
 - normalize inserted steps for `update_function`
 - compute execution capability counts from canonical steps
+- report static agent presence as `has_agent_steps`/`agent_step_count`; runtime
+  fallback state belongs to run payloads, not durable Function capabilities
 - use `OobFunctionSpecVocabulary` for durable spec vocabulary such as schema
   version, execution kind, execution runner, and registry runner
 
@@ -391,13 +392,6 @@ primitive local action execution:
 - keep main-thread UI calls outside the deterministic step executor
 - skip nested Function calls so only the top-level replay owns the overlay
 
-`OobFunctionSourceAlignmentController` owns source-page alignment during replay:
-
-- compare the current page vector against the pending source window
-- skip already-satisfied replay steps when the current page matches a later step
-- produce the alignment-miss failure payload when replay is on the wrong page
-- keep vector matching and skip/fail policy outside the main step loop
-
 `OobFunctionAgentFallbackController` owns agent-facing fallback context:
 
 - build fallback prompts from the failed step, materialized args, and recovery
@@ -447,7 +441,7 @@ primitive local action execution:
 - emit nested Function tool-card start/completion payloads through
   `OobFunctionNestedCallCardPresenter`
 - map the nested run result back into the parent step result payload
-- never decide parent replay order, recursion limits, or source alignment policy
+- never decide parent replay order or recursion limits
 
 `OobFunctionRunResultBuilder` owns replay result payloads:
 
@@ -507,7 +501,6 @@ Agent/MCP tool surface
       -> OobFunctionRunner           # load/materialize/execute Functions
           -> OobFunctionToolHandler  # deterministic replay and agent handoff
               -> OobFunctionFrontendSessionController # replay overlay/session
-              -> OobFunctionSourceAlignmentController # page-vector skip/fail
               -> OobFunctionAgentFallbackController # recovery prompt/VLM fallback
               -> OobFunctionCallRequestResolver # replay/call_tool args
               -> OobFunctionStepClassifier # replay step-shape routing
@@ -590,8 +583,6 @@ Keep these pieces separate:
 - `OobFunctionToolHandler` and `OmniflowStepExecutor`: runtime step execution
 - `OobFunctionFrontendSessionController`: top-level replay overlay lifecycle
   and stop signal handling
-- `OobFunctionSourceAlignmentController`: current-page/source-page alignment
-  policy, replay skip results, and alignment-miss failure payloads
 - `OobFunctionAgentFallbackController`: failed-step recovery snapshots,
   fallback prompts, and optional VLM fallback calls
 - `OobFunctionCallRequestResolver`: replay step args, `call_tool` target
@@ -739,16 +730,15 @@ Use these owner rules when removing duplicated helper code:
   appliers. Do not move checker, evidence, audit, retarget, insert, delete, or
   reindex rules into `OobFunctionJson`.
 - Runtime replay policy belongs in the replay components under
-  `OobFunctionToolHandler`. Do not move skip/fallback/delegation/source
-  alignment decisions into mechanical helper objects.
+  `OobFunctionToolHandler`. Do not move skip/fallback/delegation decisions into
+  mechanical helper objects.
 - Function run result payload shape belongs in `OobFunctionRunResultBuilder`.
   Runtime components may decide that a step failed, requires agent execution,
   or was delegated, but they should call this owner for stable fields such as
   `step_id`, `executor`, `model_required`, `error_code`, and timing payloads
   instead of hand-building equivalent maps in each executor. Old per-step
-  fallback aliases are not part of new run payloads. This also applies to source-alignment
-  misses and disabled-fallback terminal steps; the replay component owns the
-  decision, while the builder owns the result shape.
+  fallback aliases are not part of new run payloads. Disabled-fallback terminal
+  steps are replay decisions; the builder owns only the result shape.
 - Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when
   building tool definitions or serializing generic tool payloads, instead of
   adding another local `mapToJsonElement` copy or a forwarding method on

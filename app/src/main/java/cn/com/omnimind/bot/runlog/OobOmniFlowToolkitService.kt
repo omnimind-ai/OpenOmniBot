@@ -596,7 +596,10 @@ class OobOmniFlowToolkitService(
             "step_count" to (execution["step_count"] ?: steps.size),
             "omniflow_step_count" to execution["omniflow_step_count"],
             "agent_step_count" to execution["agent_step_count"],
-            "requires_agent_fallback" to execution["requires_agent_fallback"],
+            "has_agent_steps" to (
+                execution["has_agent_steps"]
+                    ?: execution["requires_agent_fallback"]
+                ),
             "parameter_names" to OobFunctionSchemaBuilder.parameterNames(spec),
             "step_summaries" to stepSummaries(spec),
             "source" to spec["source"],

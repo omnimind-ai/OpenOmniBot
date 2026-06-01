@@ -57,7 +57,7 @@ class OobOmniFlowLoopAcceptanceTest {
             assertEquals(functionId, (stored["summary"] as? Map<*, *>)?.get("function_id"))
             val execution = stored["execution"] as? Map<*, *>
             assertEquals(2, (execution?.get("step_count") as Number).toInt())
-            assertEquals(false, execution["requires_agent_fallback"])
+            assertEquals(false, execution["has_agent_steps"])
 
             val guard = toolkit.guardCheck(mapOf("functionId" to functionId))
             assertEquals(true, guard["success"])
@@ -953,7 +953,7 @@ class OobOmniFlowLoopAcceptanceTest {
             val execution = stored["execution"] as? Map<*, *>
             assertEquals(functionId, stored["function_id"])
             assertEquals(1, (execution?.get("omniflow_step_count") as Number).toInt())
-            assertEquals(false, execution["requires_agent_fallback"])
+            assertEquals(false, execution["has_agent_steps"])
         } finally {
             context.root.deleteRecursively()
         }
@@ -1214,7 +1214,7 @@ class OobOmniFlowLoopAcceptanceTest {
                             "model_free_step_count" to 1,
                             "omniflow_step_count" to 1,
                             "agent_step_count" to 0,
-                            "requires_agent_fallback" to false,
+                            "has_agent_steps" to false,
                         ),
                         "steps" to listOf(
                             mapOf(
@@ -1240,7 +1240,7 @@ class OobOmniFlowLoopAcceptanceTest {
                         "step_count" to 1,
                         "omniflow_step_count" to 1,
                         "agent_step_count" to 0,
-                        "requires_agent_fallback" to false,
+                        "has_agent_steps" to false,
                     ),
                 )
             )
@@ -1567,13 +1567,13 @@ class OobOmniFlowLoopAcceptanceTest {
                 "model_free_step_count" to steps.size,
                 "omniflow_step_count" to steps.size,
                 "agent_step_count" to 0,
-                "requires_agent_fallback" to false,
+                "has_agent_steps" to false,
             ),
             "steps" to steps,
             "step_count" to steps.size,
             "omniflow_step_count" to steps.size,
             "agent_step_count" to 0,
-            "requires_agent_fallback" to false,
+            "has_agent_steps" to false,
         )
     )
 

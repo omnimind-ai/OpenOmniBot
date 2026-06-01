@@ -90,7 +90,7 @@ class OobFunctionSpecBuilder {
                 "step_count" to normalizedSteps.size,
                 "omniflow_step_count" to capabilities["omniflow_step_count"],
                 "agent_step_count" to capabilities["agent_step_count"],
-                "requires_agent_fallback" to capabilities["requires_agent_fallback"],
+                "has_agent_steps" to capabilities["has_agent_steps"],
             ),
             "_oob_registry" to linkedMapOf(
                 "registered_at" to now,
@@ -418,7 +418,7 @@ class OobFunctionSpecBuilder {
             "model_free_step_count" to steps.count { it["model_free"] == true },
             "omniflow_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_OMNIFLOW },
             "agent_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
-            "requires_agent_fallback" to steps.any { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
+            "has_agent_steps" to steps.any { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
         )
 
     private fun putIfPresent(

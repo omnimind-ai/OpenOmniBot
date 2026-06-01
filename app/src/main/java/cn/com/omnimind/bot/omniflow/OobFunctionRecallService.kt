@@ -381,7 +381,10 @@ class OobFunctionRecallService(
             "execution_scope" to candidate["execution_scope"],
             "call" to candidate["call"],
             "step_count" to candidate["step_count"],
-            "requires_agent_fallback" to candidate["requires_agent_fallback"],
+            "has_agent_steps" to (
+                candidate["has_agent_steps"]
+                    ?: candidate["requires_agent_fallback"]
+                ),
             "step_summaries" to listArg(candidate["step_summaries"]).mapNotNull {
                 compactStepSummary(it)
             },
@@ -581,7 +584,10 @@ class OobFunctionRecallService(
             "score" to score,
             "reason" to reason,
             "step_count" to (execution["step_count"] ?: steps.size),
-            "requires_agent_fallback" to execution["requires_agent_fallback"],
+            "has_agent_steps" to (
+                execution["has_agent_steps"]
+                    ?: execution["requires_agent_fallback"]
+                ),
             "step_summaries" to stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local"

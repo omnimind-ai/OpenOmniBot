@@ -100,8 +100,6 @@ class OobFunctionRunResultBuilder {
         modelRequired: Boolean,
         delegatedToolUsed: Boolean,
         allowAgentFallback: Boolean,
-        sourceAlignmentEnabled: Boolean,
-        skippedBySourceAlignmentCount: Int,
         failureReason: String?,
     ): LinkedHashMap<String, Any?> {
         val successCount = stepResults.count { it["success"] != false }
@@ -132,10 +130,6 @@ class OobFunctionRunResultBuilder {
             "model_required" to modelRequired,
             "delegated_tool_used" to delegatedToolUsed,
             "failed_step_index" to failedStepIndex,
-            "pending_action_stack" to linkedMapOf(
-                "source_alignment_enabled" to sourceAlignmentEnabled,
-                "skipped_by_source_alignment_count" to skippedBySourceAlignmentCount,
-            ),
             "error_code" to stepResults.firstOrNull { it["success"] == false }?.get("error_code"),
             "error_message" to failureReason,
             "step_results" to stepResults

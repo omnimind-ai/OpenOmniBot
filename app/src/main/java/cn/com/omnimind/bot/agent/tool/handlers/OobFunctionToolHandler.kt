@@ -5,7 +5,6 @@ import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
-import cn.com.omnimind.bot.runlog.PendingActionStack
 import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.atomic.AtomicLong
@@ -17,8 +16,6 @@ class OobFunctionToolHandler(
     private val entryPackageGuard: OobFunctionEntryPackageGuard = OobFunctionEntryPackageGuard(),
     private val frontendSessionController: OobFunctionFrontendSessionController =
         OobFunctionFrontendSessionController(helper),
-    private val sourceAlignmentController: OobFunctionSourceAlignmentController =
-        OobFunctionSourceAlignmentController(),
     private val agentFallbackController: OobFunctionAgentFallbackController =
         OobFunctionAgentFallbackController(),
     private val nestedCallCardPresenter: OobFunctionNestedCallCardPresenter =
@@ -283,14 +280,6 @@ class OobFunctionToolHandler(
         } else {
             steps
         }
-        val pendingActionStack = timing.measure("pending_action_stack_build_ms") {
-            PendingActionStack.fromSteps(
-                steps = activeSteps,
-                functionSpec = materializedSpec,
-                originalSpec = spec,
-                startIndex = normalizedResumeFromStep,
-            )
-        }
         val preflightFailure = timing.measure("accessibility_preflight_ms") {
             accessibilityPreflightGuard.failureIfBlocked(
                 functionId = functionId,
@@ -328,24 +317,11 @@ class OobFunctionToolHandler(
 
         val stepLoopStartedAt = System.nanoTime()
         timing.recordSinceStart("pre_step_loop_ms", stepLoopStartedAt)
-        var skippedBySourceAlignmentCount = 0
-        while (!pendingActionStack.isEmpty()) {
+        for ((relativeIndex, step) in activeSteps.withIndex()) {
             val stepStartedAtMs = System.currentTimeMillis()
             frontendSession?.throwIfStopRequested()
             toolHandle?.throwIfStopRequested()
-            val alignmentResult = sourceAlignmentController.align(pendingActionStack)
-            if (alignmentResult.skippedResults.isNotEmpty()) {
-                skippedBySourceAlignmentCount += alignmentResult.skippedResults.size
-                stepResults += alignmentResult.skippedResults
-            }
-            alignmentResult.failureResult?.let { failure ->
-                stepResults += failure
-                failureReason = failure["summary"]?.toString()
-                break
-            }
-            val frame = pendingActionStack.peek() ?: break
-            val index = frame.originalIndex
-            val step = frame.step
+            val index = normalizedResumeFromStep + relativeIndex
             val stepIndex = index + 1
             val stepId = step["id"]?.toString() ?: "step_$stepIndex"
             val stepTitle = step["title"]?.toString() ?: stepId
@@ -371,7 +347,6 @@ class OobFunctionToolHandler(
                     "finished_at_ms" to stepStartedAtMs,
                     "duration_ms" to 0L
                 )
-                pendingActionStack.popExecuted()
                 continue
             }
 
@@ -582,7 +557,6 @@ class OobFunctionToolHandler(
                 failureReason = timedStepResult["summary"]?.toString()
                 break
             }
-            pendingActionStack.popExecuted()
         }
         timing.recordElapsed("step_loop_ms", stepLoopStartedAt)
 
@@ -600,8 +574,6 @@ class OobFunctionToolHandler(
             modelRequired = modelRequired,
             delegatedToolUsed = delegatedToolUsed,
             allowAgentFallback = allowAgentFallback,
-            sourceAlignmentEnabled = pendingActionStack.sourceAlignmentEnabled,
-            skippedBySourceAlignmentCount = skippedBySourceAlignmentCount,
             failureReason = failureReason,
         )
         timing.recordElapsed("result_build_ms", resultBuildStartedAt)

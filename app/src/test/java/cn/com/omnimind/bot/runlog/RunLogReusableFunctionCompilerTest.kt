@@ -56,7 +56,7 @@ class RunLogReusableFunctionCompilerTest {
         val capabilities = capabilitiesFrom(spec)
         assertEquals(1, capabilities["agent_step_count"])
         assertEquals(0, capabilities["omniflow_step_count"])
-        assertEquals(true, capabilities["requires_agent_fallback"])
+        assertEquals(true, capabilities["has_agent_steps"])
         assertEquals("oob.reusable_function.v1", spec["schema_version"])
         assertEquals("run_log", (spec["source"] as Map<*, *>)["kind"])
         assertFalse(spec.containsKey("runtime_targets"))
@@ -748,7 +748,7 @@ class RunLogReusableFunctionCompilerTest {
         val capabilities = capabilitiesFrom(spec)
         assertEquals(2, capabilities["omniflow_step_count"])
         assertEquals(0, capabilities["agent_step_count"])
-        assertEquals(false, capabilities["requires_agent_fallback"])
+        assertEquals(false, capabilities["has_agent_steps"])
     }
 
     @Test

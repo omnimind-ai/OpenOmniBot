@@ -324,9 +324,11 @@ class OobFunctionStructuralPatchApplier(
         execution["step_count"] = normalizedSteps.size
         execution["omniflow_step_count"] = capabilities["omniflow_step_count"]
         execution["agent_step_count"] = capabilities["agent_step_count"]
-        execution["requires_agent_fallback"] = capabilities["requires_agent_fallback"]
+        execution["has_agent_steps"] = capabilities["has_agent_steps"]
+        execution.remove("requires_agent_fallback")
         execution["capabilities"] = linkedMapOf<String, Any?>().apply {
             putAll(mapArg(execution["capabilities"]))
+            remove("requires_agent_fallback")
             putAll(capabilities)
         }
         spec["execution"] = execution
