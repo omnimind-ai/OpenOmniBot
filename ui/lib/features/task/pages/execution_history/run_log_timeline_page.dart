@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import 'package:ui/services/run_log_function_enhancement_job_service.dart';
 import 'package:ui/theme/theme_context.dart';
 import 'package:ui/utils/ui.dart';
 import 'package:ui/widgets/common_app_bar.dart';
+import 'package:ui/widgets/image_preview_overlay.dart';
 
 Future<void> showRunLogTimelineSheet(
   BuildContext context, {
@@ -2711,13 +2713,9 @@ class _StepDetailSheetState extends State<_StepDetailSheet> {
                                     'after': snapshot.after,
                                 }),
                                 initiallyExpanded: false,
-                                child: _JsonBlock(
-                                  value: _userVisibleJson({
-                                    if (snapshot.before.isNotEmpty)
-                                      'before': snapshot.before,
-                                    if (snapshot.after.isNotEmpty)
-                                      'after': snapshot.after,
-                                  }),
+                                child: _BeforeAfterStateView(
+                                  before: snapshot.before,
+                                  after: snapshot.after,
                                 ),
                               ),
                             ],
@@ -4049,7 +4047,9 @@ class _ReusableFunctionSpecSheetState
       return _localeValue(
         context,
         zh: taskId.isEmpty ? '已交给 Agent 继续执行' : '已交给 Agent 继续执行：$taskId',
-        en: taskId.isEmpty ? 'Handed off to Agent' : 'Handed off to Agent: $taskId',
+        en: taskId.isEmpty
+            ? 'Handed off to Agent'
+            : 'Handed off to Agent: $taskId',
       );
     }
     if (result.completedLocal) {
@@ -5504,6 +5504,137 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _BeforeAfterStateView extends StatelessWidget {
+  const _BeforeAfterStateView({required this.before, required this.after});
+
+  final Map<String, dynamic> before;
+  final Map<String, dynamic> after;
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePaths = <String>[
+      if (before.isNotEmpty) _stateScreenshotPath(before),
+      if (after.isNotEmpty) _stateScreenshotPath(after),
+    ].where((path) => path.isNotEmpty).toSet().toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (before.isNotEmpty)
+          _RunLogStatePanel(
+            title: _text(context, '操作前', 'Before'),
+            state: before,
+            imagePaths: imagePaths,
+          ),
+        if (before.isNotEmpty && after.isNotEmpty) const SizedBox(height: 12),
+        if (after.isNotEmpty)
+          _RunLogStatePanel(
+            title: _text(context, '操作后', 'After'),
+            state: after,
+            imagePaths: imagePaths,
+          ),
+      ],
+    );
+  }
+}
+
+class _RunLogStatePanel extends StatelessWidget {
+  const _RunLogStatePanel({
+    required this.title,
+    required this.state,
+    required this.imagePaths,
+  });
+
+  final String title;
+  final Map<String, dynamic> state;
+  final List<String> imagePaths;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final screenshotPath = _stateScreenshotPath(state);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            color: palette.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (screenshotPath.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _RunLogScreenshotPreview(path: screenshotPath, allPaths: imagePaths),
+        ],
+        const SizedBox(height: 8),
+        _JsonBlock(value: _userVisibleJson(state)),
+      ],
+    );
+  }
+}
+
+class _RunLogScreenshotPreview extends StatelessWidget {
+  const _RunLogScreenshotPreview({required this.path, required this.allPaths});
+
+  final String path;
+  final List<String> allPaths;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.omniPalette;
+    final sources = (allPaths.isEmpty ? <String>[path] : allPaths)
+        .map((item) => FileImageSource(item) as ImagePreviewSource)
+        .toList(growable: false);
+    final initialIndex = math.max(0, allPaths.indexOf(path));
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => ImagePreviewOverlay.showAll(
+          context,
+          sources: sources,
+          initialIndex: initialIndex,
+        ),
+        child: Container(
+          width: double.infinity,
+          height: 220,
+          decoration: BoxDecoration(
+            color: context.isDarkTheme
+                ? Colors.black.withValues(alpha: 0.22)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: palette.borderSubtle),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.file(
+            File(path),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    path,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: palette.textTertiary,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -7403,6 +7534,39 @@ dynamic _firstPresent(List<dynamic> values) {
 
 String _firstNonBlank(List<dynamic> values) {
   return AgentToolCardPolicy.firstNonBlank(values);
+}
+
+String _stateScreenshotPath(Map<String, dynamic> state) {
+  final screenshot = _asStringKeyMap(state['screenshot']);
+  final image = _asStringKeyMap(state['image']);
+  final rawPath = _firstNonBlank([
+    state['screenshot_path'],
+    state['screenshotPath'],
+    state['image_path'],
+    state['imagePath'],
+    state['path'],
+    screenshot['path'],
+    screenshot['screenshot_path'],
+    screenshot['screenshotPath'],
+    screenshot['absolute_path'],
+    screenshot['absolutePath'],
+    screenshot['relative_path'],
+    screenshot['relativePath'],
+    image['path'],
+    image['image_path'],
+    image['imagePath'],
+  ]);
+  if (rawPath.isEmpty) {
+    return '';
+  }
+  if (rawPath.startsWith('file://')) {
+    try {
+      return Uri.parse(rawPath).toFilePath();
+    } catch (_) {
+      return rawPath;
+    }
+  }
+  return rawPath;
 }
 
 String _compactPreview(String value, {int maxLength = 160}) {
