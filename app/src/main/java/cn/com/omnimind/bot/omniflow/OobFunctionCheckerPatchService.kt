@@ -8,6 +8,7 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonMap
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mutableJsonValue
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
+import cn.com.omnimind.bot.runlog.OobStepRoleClassifier
 
 /**
  * Owns Function checker metadata normalization.
@@ -117,31 +118,18 @@ class OobFunctionCheckerPatchService {
     }
 
     private fun isOptionalCheckerAnnotation(annotation: Map<String, Any?>): Boolean {
-        val action = normalizeCleanupAction(
+        return listOf(
             firstNonBlank(
                 annotation["cleanup_action"],
                 annotation["cleanupAction"],
                 annotation["action"],
-            )
-        )
-        val usefulness = firstNonBlank(annotation["usefulness"]).lowercase()
-        val category = firstNonBlank(annotation["category"]).lowercase()
-        return action == "optional_checker" ||
-            usefulness == "conditional_checker" ||
-            category in setOf("conditional_obstruction", "runtime_checker", "checker_candidate")
+            ),
+            firstNonBlank(annotation["usefulness"]),
+            firstNonBlank(annotation["category"]),
+            firstNonBlank(annotation["role"]),
+            firstNonBlank(annotation["kind"]),
+        ).any { OobStepRoleClassifier.isCheckerCandidateRole(it) }
     }
-
-    private fun normalizeCleanupAction(raw: String): String =
-        when (raw.trim().lowercase().replace('-', '_')) {
-            "optional",
-            "optional_checker",
-            "conditional",
-            "conditional_checker",
-            "conditional_obstruction",
-            "popup_checker",
-            "ad_checker" -> "optional_checker"
-            else -> raw.trim().lowercase().replace('-', '_')
-        }
 
     private fun checkerInferenceText(
         step: Map<String, Any?>,

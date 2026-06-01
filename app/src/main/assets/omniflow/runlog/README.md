@@ -137,6 +137,10 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
 - Keep RunLog card field extraction and JSON coercion in `RunLogCardAccessors`.
   Do not duplicate `tool_call`/`header`/observation parsing across compiler,
   startup cleanup, or future analysis code.
+- Keep step role normalization in `OobStepRoleClassifier`. Replay alignment,
+  UDEG indexing, and Function checker patching should share checker-candidate
+  role aliases instead of each service carrying its own `optional_checker` /
+  `ad_checker` table.
 - Keep generic RunLog action/value coercion in `OobActionCodec`. Tool facades
   such as `OobOmniFlowToolkitService` and small payload helpers such as
   `OobFunctionCallTiming`, schema/parameterization helpers, explorer utilities,

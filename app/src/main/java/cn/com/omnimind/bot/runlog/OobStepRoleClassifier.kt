@@ -114,6 +114,12 @@ object OobStepRoleClassifier {
             else -> null
         }
 
+    fun isCheckerCandidateRole(rawRole: String): Boolean {
+        val normalized = rawRole.trim().lowercase(Locale.US).replace('-', '_')
+        return normalizeRole(normalized) == ROLE_CHECKER_CANDIDATE ||
+            normalized in setOf("optional", "conditional")
+    }
+
     fun matchesStepReference(
         rawReference: Any?,
         step: Map<String, Any?>,

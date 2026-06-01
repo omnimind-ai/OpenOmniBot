@@ -140,6 +140,16 @@ belong in UI documentation.
   `OobFunctionCheckerPatchService`
 - never insert/delete/reorder execution steps or retarget a recorded action
 
+`OobStepRoleClassifier` owns reusable step role normalization:
+
+- classify explicit `agent_reuse`, cleanup annotations, and default navigation
+  roles for replay alignment and UDEG indexing
+- expose checker-candidate role alias detection used by
+  `OobFunctionCheckerPatchService`
+- keep role labels such as `optional_checker`, `runtime_checker`,
+  `checker_candidate`, and `ad_checker` out of checker-specific local alias
+  tables
+
 `OobFunctionStructuralPatchApplier` owns structural `update_function` patches:
 
 - retarget an existing action when the agent says the Function clicked or used
@@ -532,6 +542,9 @@ Use these owner rules when removing duplicated helper code:
 - RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
   another local parser for `tool_call`, card headers, results, observations, or
   card payload JSON.
+- Step role aliases belong in `OobStepRoleClassifier`. Checker patching may
+  consume those roles, but should not maintain a separate optional-checker role
+  alias table.
 - Function update policy belongs in `OobFunctionUpdateService` and its patch
   appliers. Do not move checker, evidence, audit, retarget, insert, delete, or
   reindex rules into `OobFunctionJson`.

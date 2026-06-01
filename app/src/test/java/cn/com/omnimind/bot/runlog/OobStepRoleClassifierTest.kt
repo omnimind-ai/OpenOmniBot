@@ -45,6 +45,25 @@ class OobStepRoleClassifierTest {
     }
 
     @Test
+    fun `recognizes checker candidate role aliases for patch annotations`() {
+        listOf(
+            "optional",
+            "conditional",
+            "optional_checker",
+            "conditional_checker",
+            "conditional_obstruction",
+            "runtime_checker",
+            "checker_candidate",
+            "popup_checker",
+            "ad_checker",
+        ).forEach { role ->
+            assertTrue(role, OobStepRoleClassifier.isCheckerCandidateRole(role))
+        }
+        assertFalse(OobStepRoleClassifier.isCheckerCandidateRole("noise"))
+        assertFalse(OobStepRoleClassifier.isCheckerCandidateRole("main_action"))
+    }
+
+    @Test
     fun `defaults navigation role for canonical back key action`() {
         val classification = OobStepRoleClassifier.classify(
             functionSpec = emptyMap(),
