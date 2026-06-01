@@ -64,7 +64,9 @@ helper with mixed semantics.
 - apply explicit name/id/description overrides
 - mirror source RunLogs into the workspace as a best-effort portable artifact
 - return conversion diagnostics such as card count and compiled step count
-- delegate all Function persistence to `OobFunctionRepository`
+- delegate all Function persistence to `OobFunctionRepository`; callers that
+  already own a repository should inject it so conversion and tool facades share
+  the same storage owner instance
 
 `InternalRunLogStore` owns native RunLog persistence:
 
@@ -511,6 +513,7 @@ Agent/MCP tool surface
                   -> OmniflowActionBackend # accessibility-backed action runtime
                   -> OmniflowCheckerRule # global/function/node checker metadata
       -> OobRunLogReplayService      # RunLog -> Function conversion
+          -> OobFunctionRepository   # injected storage owner for registration
           -> RunLogReusableFunctionCompiler # cards -> reusable Function spec
               -> RunLogStartupBridgeCleaner # transient launch bridge cleanup
               -> RunLogReplayStepCompiler # single-card action -> replay step

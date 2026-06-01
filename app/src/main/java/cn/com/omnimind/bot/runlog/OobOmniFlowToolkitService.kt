@@ -36,8 +36,8 @@ class OobOmniFlowToolkitService(
         AgentWorkspaceManager.rootDirectory(context)
     )
 ) {
-    private val replayService = OobRunLogReplayService(context, workspaceFunctionStore)
     private val functionRepository = OobFunctionRepository(context, workspaceFunctionStore)
+    private val replayService = OobRunLogReplayService(context, workspaceFunctionStore, functionRepository)
     private val functionRecallService = OobFunctionRecallService(context, functionRepository)
     private val functionRunner = OobFunctionRunner(context, workspaceFunctionStore, functionRepository)
     private val functionRunPolicy = OobFunctionRunPolicy(functionRepository)

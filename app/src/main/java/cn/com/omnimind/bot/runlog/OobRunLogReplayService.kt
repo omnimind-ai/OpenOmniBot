@@ -19,10 +19,12 @@ class OobRunLogReplayService(
     private val context: Context,
     private val workspaceFunctionStore: WorkspaceFunctionStore = WorkspaceFunctionStore(
         AgentWorkspaceManager.rootDirectory(context)
+    ),
+    private val functionRepository: OobFunctionRepository = OobFunctionRepository(
+        context,
+        workspaceFunctionStore
     )
 ) {
-    private val functionRepository = OobFunctionRepository(context, workspaceFunctionStore)
-
     fun convertRunLog(
         runId: String,
         register: Boolean = true,
