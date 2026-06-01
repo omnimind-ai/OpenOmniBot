@@ -29,6 +29,10 @@ object RunLogReplayPolicy {
     const val TOOL_NODE_CLICK: String = "node_click"
     const val TOOL_WAIT: String = "wait"
     const val TOOL_EXTERNAL_TOOL: String = "external_tool"
+    const val TOOL_OOB_AGENT_RUN_LEGACY: String = "oob_agent_run"
+    const val TOOL_OMNIFLOW_RECALL: String = "omniflow.recall"
+    const val TOOL_OMNIFLOW_INGEST_RUN_LOG: String = "omniflow.ingest_run_log"
+    const val TOOL_WORKBENCH_API_LIST: String = "workbench_api_list"
 
     val omniflowActions: Set<String> = OobActionCodec.executableActions
 
@@ -57,10 +61,10 @@ object RunLogReplayPolicy {
         "memory_search",
         "memory_recall",
         "memory_query",
-        "oob_agent_run",
-        "omniflow.recall",
-        "omniflow.ingest_run_log",
-        "workbench_api_list",
+        TOOL_OOB_AGENT_RUN_LEGACY,
+        TOOL_OMNIFLOW_RECALL,
+        TOOL_OMNIFLOW_INGEST_RUN_LOG,
+        TOOL_WORKBENCH_API_LIST,
     ) + functionDataFlowTools
 
     val omniflowGraphTools: Set<String> = setOf(

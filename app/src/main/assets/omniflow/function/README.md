@@ -674,6 +674,9 @@ Use these owner rules when removing duplicated helper code:
   `RunLogReplayPolicy` constants when they are used as replay tool taxonomy.
   Compatibility replay types such as `wait` and `external_tool` also belong
   there when Function compilation or schema projection needs to preserve them.
+  Replay-only data-flow compatibility names such as `oob_agent_run`,
+  `omniflow.recall`, `omniflow.ingest_run_log`, and `workbench_api_list` should
+  be named there when RunLog conversion or guard policy classifies them.
   UDEG edge-kind field names and diagnostic counter keys are graph-storage
   vocabulary and should remain with `OobUdegNodeStore`.
 - Generic agent tool names such as `vlm_task`, `browser_use`, `web_search`,
