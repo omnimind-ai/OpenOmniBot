@@ -18,6 +18,9 @@ appear:
 - An action is a device operation such as `click`, `input_text`, or `open_app`.
   Action vocabulary belongs to `OobActionCodec`; do not redefine action aliases
   in Function update, recall, or replay services.
+- Code that branches on canonical action names must use `OobActionCodec`
+  constants. Literal strings are acceptable only in raw JSON fixtures,
+  compatibility alias lists, or user-facing prose.
 - An executor is a replay classification, not an action. `omniflow`, `tool`,
   and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
   step, not to describe what the step does.

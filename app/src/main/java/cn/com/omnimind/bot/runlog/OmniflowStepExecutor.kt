@@ -257,7 +257,7 @@ object OmniflowStepExecutor {
                     action
                 }
 
-                "open_app" -> {
+                OobActionCodec.ACTION_OPEN_APP -> {
                     val packageName = stringArg(args, "package_name", "packageName")
                         ?: throw IllegalArgumentException("open_app requires package_name")
                     val resetTask = boolArg(args["reset_task"]) ||
@@ -268,7 +268,7 @@ object OmniflowStepExecutor {
                         backend.launchApplication(packageName)
                     }
                     stabilizeOpenAppLaunch(packageName, resetTask, timing)
-                    "open_app"
+                    OobActionCodec.ACTION_OPEN_APP
                 }
 
                 OobActionCodec.ACTION_PRESS_KEY -> {
@@ -278,7 +278,7 @@ object OmniflowStepExecutor {
                     action
                 }
 
-                "finished" -> "finished"
+                OobActionCodec.ACTION_FINISHED -> OobActionCodec.ACTION_FINISHED
 
                 else -> throw IllegalArgumentException("Unsupported omniflow action: $action")
             }
@@ -287,7 +287,7 @@ object OmniflowStepExecutor {
             val hasPostActionRules = checkerRules.any {
                 it.phase == OmniflowCheckerRule.PHASE_POST_ACTION && it.enabled
             }
-            if (fixedReplay || (action != "open_app" && !hasPostActionRules)) {
+            if (fixedReplay || (action != OobActionCodec.ACTION_OPEN_APP && !hasPostActionRules)) {
                 emptyList()
             } else {
                 runCheckerPhase(
@@ -579,8 +579,8 @@ object OmniflowStepExecutor {
         extraRules: List<OmniflowCheckerRule>,
     ): List<Map<String, Any?>> {
         val action = replayAction.action
-        if (action == "finished") return emptyList()
-        if (action == "open_app" && phase != OmniflowCheckerRule.PHASE_POST_ACTION) {
+        if (action == OobActionCodec.ACTION_FINISHED) return emptyList()
+        if (action == OobActionCodec.ACTION_OPEN_APP && phase != OmniflowCheckerRule.PHASE_POST_ACTION) {
             return emptyList()
         }
         val globalRules = when (phase) {

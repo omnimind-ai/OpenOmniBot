@@ -223,8 +223,8 @@ object RunLogReusableFunctionParameterizer {
                     "description" to description,
                 )
             }
-            action == "open_app" -> nullableMap(
-                "type" to "open_app",
+            action == OobActionCodec.ACTION_OPEN_APP -> nullableMap(
+                "type" to OobActionCodec.ACTION_OPEN_APP,
                 "packageName" to firstNonBlank(args["package_name"], args["packageName"]),
                 "description" to description,
             )
@@ -233,8 +233,8 @@ object RunLogReusableFunctionParameterizer {
                 "key" to firstNonBlank(args["key"], args["hotkey"], args["hot_key"]),
                 "description" to description,
             )
-            action == "finished" -> nullableMap(
-                "type" to "finished",
+            action == OobActionCodec.ACTION_FINISHED -> nullableMap(
+                "type" to OobActionCodec.ACTION_FINISHED,
                 "content" to firstPresent(args["content"], args["summary"]),
                 "enableSummary" to firstPresent(args["enable_summary"], args["enableSummary"]),
                 "summaryPrompt" to firstPresent(args["summary_prompt"], args["summaryPrompt"]),

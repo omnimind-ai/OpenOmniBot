@@ -161,7 +161,7 @@ class OobFunctionRunPolicy(
                 reason = "$action is an observation-only or legacy non-semantic replay step"
                 requiresRoot = false
             }
-            action == "finished" -> {
+            action == OobActionCodec.ACTION_FINISHED -> {
                 decision = "allow"
                 risk = "low"
                 reason = "finished is a terminal marker"

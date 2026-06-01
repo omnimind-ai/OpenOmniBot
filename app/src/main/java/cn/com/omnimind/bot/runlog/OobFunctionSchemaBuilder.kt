@@ -215,11 +215,11 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = sourceContext,
             )
-            "open_app" -> localActionStep(
+            OobActionCodec.ACTION_OPEN_APP -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "open_app",
+                action = OobActionCodec.ACTION_OPEN_APP,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("package_name", action["packageName"], action["package_name"], params["package_name"])
                     putFirstPresent("reset_task", action["reset_task"], params["reset_task"])
@@ -237,11 +237,11 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            "finished" -> localActionStep(
+            OobActionCodec.ACTION_FINISHED -> localActionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
-                action = "finished",
+                action = OobActionCodec.ACTION_FINISHED,
                 args = linkedMapOf<String, Any?>().apply {
                     putFirstPresent("content", action["content"], params["content"])
                     putFirstPresent("enable_summary", action["enableSummary"], params["enable_summary"])

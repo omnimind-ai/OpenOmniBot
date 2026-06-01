@@ -139,7 +139,7 @@ internal object RunLogStartupBridgeCleaner {
     ): List<Map<String, Any?>> {
         if (steps.size < 2) return steps
         val first = steps.first()
-        if (replayActionForStep(first) != "open_app") return steps
+        if (replayActionForStep(first) != OobActionCodec.ACTION_OPEN_APP) return steps
         if (first["route_note"] != "injected_initial_package_from_runlog") return steps
 
         val packageName = firstNonBlank(
