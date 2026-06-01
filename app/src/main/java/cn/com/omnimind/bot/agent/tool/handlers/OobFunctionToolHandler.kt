@@ -738,22 +738,6 @@ class OobFunctionToolHandler(
         return OobFunctionSchemaBuilder.materializedSteps(materializedSpec)
     }
 
-    private fun failureStepResult(
-        stepId: String,
-        tool: String,
-        executor: String,
-        summary: String,
-        errorCode: String,
-        extras: Map<String, Any?> = emptyMap(),
-    ): Map<String, Any?> = runResultBuilder.failureStep(
-        stepId = stepId,
-        tool = tool,
-        executor = executor,
-        summary = summary,
-        errorCode = errorCode,
-        extras = extras,
-    )
-
     private companion object {
         const val TAG = "OobFunctionToolHandler"
         const val MAX_OMNIFLOW_CALL_DEPTH = 8

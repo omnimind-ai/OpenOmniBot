@@ -13,7 +13,9 @@ import kotlinx.coroutines.CancellationException
  * OmniFlow actions. The Function tool handler owns the main replay loop; this
  * class owns graph path selection and edge-to-step lowering.
  */
-class OobFunctionGraphStepRunner {
+class OobFunctionGraphStepRunner(
+    private val runResultBuilder: OobFunctionRunResultBuilder = OobFunctionRunResultBuilder(),
+) {
     suspend fun execute(
         step: Map<String, Any?>,
         stepId: String,
@@ -207,16 +209,12 @@ class OobFunctionGraphStepRunner {
         executor: String = "omniflow_graph",
         summary: String,
         errorCode: String,
-    ): Map<String, Any?> = linkedMapOf(
-        "step_id" to stepId,
-        "tool" to tool,
-        "executor" to executor,
-        "model_free" to true,
-        "success" to false,
-        "needs_agent" to false,
-        "fallback_available" to false,
-        "error_code" to errorCode,
-        "summary" to summary,
+    ): Map<String, Any?> = runResultBuilder.failureStep(
+        stepId = stepId,
+        tool = tool,
+        executor = executor,
+        summary = summary,
+        errorCode = errorCode,
     )
 
     private companion object {

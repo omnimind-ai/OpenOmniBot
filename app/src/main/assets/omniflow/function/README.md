@@ -360,6 +360,7 @@ primitive local action execution:
 - lower graph edges into primitive OmniFlow local-action steps
 - execute the primitive path with the same checker rules as normal replay
 - report path-level success, failure, and per-edge step results
+- delegate stable failure step payload shape to `OobFunctionRunResultBuilder`
 - use `RunLogReplayPolicy` for graph replay tool aliases such as `click_node`
   and `node_click`; graph runners and schema builders should not rebuild these
   alias sets locally
