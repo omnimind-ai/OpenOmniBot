@@ -248,7 +248,7 @@ object OobFunctionSchemaBuilder {
                 },
                 sourceContext = emptyMap(),
             )
-            "click_node", "go_to_node", "node_click", "navigate_to_node", "gotonode", "goto_node" -> graphStep(
+            "click_node", RunLogReplayPolicy.TOOL_GO_TO_NODE, "node_click", "navigate_to_node", "gotonode", "goto_node" -> graphStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -258,7 +258,7 @@ object OobFunctionSchemaBuilder {
                     putFirstPresent("utg", params["utg"], action["utg"])
                 },
             )
-            "call_function", "run_function", "execute_function", "omniflow.call_function" -> functionStep(
+            RunLogReplayPolicy.TOOL_CALL_FUNCTION, "run_function", "execute_function", "omniflow.call_function" -> functionStep(
                 stepId = stepId,
                 index = index,
                 title = title,
@@ -341,8 +341,8 @@ object OobFunctionSchemaBuilder {
         "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
         "model_free" to true,
         "scriptable" to true,
-        "tool" to "go_to_node",
-        "callable_tool" to "go_to_node",
+        "tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
+        "callable_tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
         "args" to args.filterValues { it != null },
         "replay_engine" to "omniflow_utg",
     )
@@ -360,8 +360,8 @@ object OobFunctionSchemaBuilder {
         "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
         "model_free" to true,
         "scriptable" to true,
-        "tool" to "call_function",
-        "callable_tool" to "call_function",
+        "tool" to RunLogReplayPolicy.TOOL_CALL_FUNCTION,
+        "callable_tool" to RunLogReplayPolicy.TOOL_CALL_FUNCTION,
         "args" to args.filterValues { it != null },
     )
 

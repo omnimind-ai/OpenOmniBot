@@ -9,6 +9,7 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlin.math.roundToInt
 
 /**
@@ -268,7 +269,7 @@ class OobFunctionRecallService(
     ): Map<String, Any?> {
         val functionSteps = stepSummaries(spec)
         val call = linkedMapOf<String, Any?>(
-            "tool" to "call_tool",
+            "tool" to RunLogReplayPolicy.TOOL_CALL_TOOL,
             "function_id" to functionId,
             "arguments" to emptyMap<String, Any?>(),
         )

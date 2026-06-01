@@ -55,14 +55,14 @@ class OobFunctionCallToolStepExecutor(
             }
             return executeNestedFunctionStep(
                 functionStep,
-                callableTool.ifEmpty { "call_tool" }
+                callableTool.ifEmpty { RunLogReplayPolicy.TOOL_CALL_TOOL }
             )
         }
 
         if (targetTool.isEmpty()) {
             return failureStepResult(
                 stepId = stepId,
-                tool = callableTool.ifEmpty { "call_tool" },
+                tool = callableTool.ifEmpty { RunLogReplayPolicy.TOOL_CALL_TOOL },
                 executor = RunLogReplayPolicy.EXECUTOR_TOOL,
                 summary = "$stepTitle missing tool_name or function_id",
                 errorCode = "OOB_CALL_TOOL_TARGET_MISSING",
@@ -71,7 +71,7 @@ class OobFunctionCallToolStepExecutor(
         if (RunLogReplayPolicy.isOmniflowToolCallTool(targetTool)) {
             return failureStepResult(
                 stepId = stepId,
-                tool = callableTool.ifEmpty { "call_tool" },
+                tool = callableTool.ifEmpty { RunLogReplayPolicy.TOOL_CALL_TOOL },
                 executor = RunLogReplayPolicy.EXECUTOR_TOOL,
                 summary = "$stepTitle nested call_tool is not allowed",
                 errorCode = "OOB_CALL_TOOL_RECURSION",
@@ -99,7 +99,7 @@ class OobFunctionCallToolStepExecutor(
                         router = router,
                     )
                 )
-                put("delegated_from", callableTool.ifEmpty { "call_tool" })
+                put("delegated_from", callableTool.ifEmpty { RunLogReplayPolicy.TOOL_CALL_TOOL })
                 put("delegated_tool_used", true)
             }
         }

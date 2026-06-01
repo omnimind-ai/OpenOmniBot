@@ -547,6 +547,11 @@ Use these owner rules when removing duplicated helper code:
   `agent_tool`, `omniflow_graph`, `omniflow_function`, or
   `omniflow_vlm_fallback` are not executor categories and should stay local to
   the component that emits them.
+- Canonical replay tool names such as `call_tool`, `oob_tool_call`,
+  `call_function`, `go_to_node`, and `oob.agent.run` also belong in
+  `RunLogReplayPolicy` constants when they are used as replay tool taxonomy.
+  UDEG edge-kind field names and diagnostic counter keys are graph-storage
+  vocabulary and should remain with `OobUdegNodeStore`.
 - RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
   another local parser for `tool_call`, card headers, results, observations, or
   card payload JSON.

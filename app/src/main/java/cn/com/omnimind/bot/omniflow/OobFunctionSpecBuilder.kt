@@ -139,7 +139,7 @@ class OobFunctionSpecBuilder {
             raw["type"],
         ).ifBlank {
             if (firstNonBlank(raw["function_id"], raw["functionId"]).isNotBlank()) {
-                "call_tool"
+                RunLogReplayPolicy.TOOL_CALL_TOOL
             } else {
                 "finished"
             }
@@ -193,9 +193,9 @@ class OobFunctionSpecBuilder {
                 step["executor"] = RunLogReplayPolicy.EXECUTOR_OMNIFLOW
                 step["model_free"] = true
                 step["scriptable"] = true
-                step["tool"] = "call_tool"
-                step["callable_tool"] = "call_tool"
-                step["source_tool"] = normalizedTool.takeIf { it != "call_tool" }
+                step["tool"] = RunLogReplayPolicy.TOOL_CALL_TOOL
+                step["callable_tool"] = RunLogReplayPolicy.TOOL_CALL_TOOL
+                step["source_tool"] = normalizedTool.takeIf { it != RunLogReplayPolicy.TOOL_CALL_TOOL }
                 step["args"] = canonicalSimpleCallToolArgs(raw, stepArgs)
                 if (sourceContext.isNotEmpty()) step["source_context"] = sourceContext
             }

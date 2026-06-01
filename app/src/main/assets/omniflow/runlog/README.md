@@ -109,6 +109,11 @@ Use the constants for both step construction and executor comparisons. Keep
 component-specific diagnostic labels, for example `agent_tool`,
 `omniflow_graph`, `omniflow_function`, or `omniflow_vlm_fallback`, outside this
 taxonomy unless they become first-class replay executors.
+Canonical replay tool names such as `call_tool`, `oob_tool_call`,
+`call_function`, `go_to_node`, and `oob.agent.run` also live in
+`RunLogReplayPolicy` when they are used by Function compilation, schema
+materialization, recall, or replay routing. UDEG edge-kind names and diagnostic
+counter keys remain graph-storage vocabulary owned by `OobUdegNodeStore`.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,

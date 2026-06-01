@@ -33,7 +33,7 @@ class OobFunctionStepClassifier(
         )
         return candidates.asSequence()
             .map { it?.toString()?.trim().orEmpty() }
-            .firstOrNull { it.isNotEmpty() && it != "oob.agent.run" }
+            .firstOrNull { it.isNotEmpty() && it != RunLogReplayPolicy.TOOL_AGENT_RUN }
             .orEmpty()
     }
 

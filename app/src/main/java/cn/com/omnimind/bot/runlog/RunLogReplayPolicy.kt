@@ -16,6 +16,11 @@ object RunLogReplayPolicy {
     const val EXECUTOR_OMNIFLOW: String = "omniflow"
     const val EXECUTOR_AGENT: String = "agent"
     const val EXECUTOR_TOOL: String = "tool"
+    const val TOOL_AGENT_RUN: String = "oob.agent.run"
+    const val TOOL_CALL_TOOL: String = "call_tool"
+    const val TOOL_OOB_TOOL_CALL: String = "oob_tool_call"
+    const val TOOL_CALL_FUNCTION: String = "call_function"
+    const val TOOL_GO_TO_NODE: String = "go_to_node"
 
     val omniflowActions: Set<String> = OobActionCodec.executableActions
 
@@ -51,7 +56,7 @@ object RunLogReplayPolicy {
     )
 
     val omniflowGraphTools: Set<String> = setOf(
-        "go_to_node",
+        TOOL_GO_TO_NODE,
         "click_node",
         "node_click",
         "navigate_to_node",
@@ -61,7 +66,7 @@ object RunLogReplayPolicy {
 
     val omniflowFunctionTools: Set<String> = setOf(
         "omniflow.call_function",
-        "call_function",
+        TOOL_CALL_FUNCTION,
         "oob_function_run",
         "run_function",
         "execute_function",
@@ -72,8 +77,8 @@ object RunLogReplayPolicy {
 
     val omniflowToolCallTools: Set<String> = setOf(
         "omniflow.call_tool",
-        "call_tool",
-        "oob_tool_call",
+        TOOL_CALL_TOOL,
+        TOOL_OOB_TOOL_CALL,
         "calltool",
     )
 

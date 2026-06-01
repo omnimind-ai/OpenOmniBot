@@ -25,7 +25,7 @@ class OobFunctionGraphStepRunner {
         if (path.isEmpty()) {
             return failureStepResult(
                 stepId = stepId,
-                tool = callableTool.ifEmpty { "go_to_node" },
+                tool = callableTool.ifEmpty { RunLogReplayPolicy.TOOL_GO_TO_NODE },
                 summary = "$stepTitle has no executable UTG path",
                 errorCode = "OOB_UTG_PATH_EMPTY",
             )
@@ -65,7 +65,7 @@ class OobFunctionGraphStepRunner {
             primitiveResults.none { it["success"] == false }
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
-            "tool" to callableTool.ifEmpty { "go_to_node" },
+            "tool" to callableTool.ifEmpty { RunLogReplayPolicy.TOOL_GO_TO_NODE },
             "executor" to "omniflow_graph",
             "model_free" to true,
             "success" to success,

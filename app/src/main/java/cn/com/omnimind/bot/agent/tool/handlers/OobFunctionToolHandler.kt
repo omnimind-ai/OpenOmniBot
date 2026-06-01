@@ -47,7 +47,10 @@ class OobFunctionToolHandler(
             runResultBuilder
         ),
 ) : ToolHandler {
-    override val toolNames: Set<String> = setOf("call_tool", "oob_tool_call")
+    override val toolNames: Set<String> = setOf(
+        RunLogReplayPolicy.TOOL_CALL_TOOL,
+        RunLogReplayPolicy.TOOL_OOB_TOOL_CALL,
+    )
 
     internal var router: cn.com.omnimind.bot.agent.AgentToolExecutor? = null
 
@@ -215,7 +218,7 @@ class OobFunctionToolHandler(
         val subDescriptor = cn.com.omnimind.bot.agent.AgentToolRegistry.RuntimeToolDescriptor(
             name = targetTool,
             displayName = targetTool,
-            toolType = "call_tool"
+            toolType = RunLogReplayPolicy.TOOL_CALL_TOOL
         )
         return delegatedRouter.execute(
             syntheticCall,

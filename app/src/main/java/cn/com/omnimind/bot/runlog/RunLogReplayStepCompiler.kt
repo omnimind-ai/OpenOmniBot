@@ -91,17 +91,17 @@ internal object RunLogReplayStepCompiler {
                     "title" to title,
                     "kind" to "agent_call",
                     "tool" to toolName,
-                    "callable_tool" to "oob.agent.run",
+                    "callable_tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                     "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
                     "scriptable" to false,
                     "args" to args,
                     "tool_binding" to linkedMapOf(
                         "kind" to "agent_replan",
                         "name" to toolName,
-                        "callable_tool" to "oob.agent.run",
+                        "callable_tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                     ),
                     "agent_call" to linkedMapOf(
-                        "tool" to "oob.agent.run",
+                        "tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                         "args" to linkedMapOf(
                             "prompt" to fallbackPrompt,
                             "original_tool" to toolName,
@@ -111,7 +111,7 @@ internal object RunLogReplayStepCompiler {
                     ),
                     "fallback" to linkedMapOf(
                         "kind" to "agent_replan",
-                        "tool" to "oob.agent.run",
+                        "tool" to RunLogReplayPolicy.TOOL_AGENT_RUN,
                         "prompt" to fallbackPrompt,
                     ),
                     "observed_result" to result.takeUnless(::isEmptyJsonValue),
@@ -204,7 +204,11 @@ internal object RunLogReplayStepCompiler {
         val isGraphTool = RunLogReplayPolicy.isOmniflowGraphTool(toolName)
         val isFunctionTool = RunLogReplayPolicy.isOmniflowFunctionTool(toolName)
         val isCallTool = RunLogReplayPolicy.isOmniflowToolCallTool(toolName)
-        val canonicalToolName = if (isFunctionTool || isCallTool) "call_tool" else toolName
+        val canonicalToolName = if (isFunctionTool || isCallTool) {
+            RunLogReplayPolicy.TOOL_CALL_TOOL
+        } else {
+            toolName
+        }
         val canonicalArgs = if (isFunctionTool || isCallTool) {
             canonicalCallToolArgs(toolName, args)
         } else {
