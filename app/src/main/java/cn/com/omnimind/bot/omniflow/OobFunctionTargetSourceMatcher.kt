@@ -2,6 +2,7 @@ package cn.com.omnimind.bot.omniflow
 
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
+import cn.com.omnimind.bot.runlog.OobActionCodec
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import org.xml.sax.InputSource
@@ -121,7 +122,7 @@ class OobFunctionTargetSourceMatcher {
         if (score == 0) return 0
         if (visible) score += 8
         if (enabled) score += 6
-        if (clickable && action in setOf("click", "long_press")) score += 10
+        if (clickable && action in OobActionCodec.pointTargetActions) score += 10
         if (area <= 0.0) score -= 20
         return score
     }

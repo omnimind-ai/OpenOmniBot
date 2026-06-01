@@ -32,6 +32,11 @@ object OobActionCodec {
         ACTION_SWIPE,
     )
 
+    val pointTargetActions: Set<String> = setOf(
+        ACTION_CLICK,
+        ACTION_LONG_PRESS,
+    )
+
     val actionAliases: Map<String, String> = mapOf(
         "tap" to ACTION_CLICK,
         "click_at" to ACTION_CLICK,

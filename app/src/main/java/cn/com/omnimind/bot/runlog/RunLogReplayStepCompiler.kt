@@ -169,11 +169,11 @@ internal object RunLogReplayStepCompiler {
             args["value"],
         ).take(80)
         return when (action) {
-            "open_app" -> {
+            OobActionCodec.ACTION_OPEN_APP -> {
                 val packageName = firstNonBlank(args["package_name"], args["packageName"])
-                if (packageName.isNotBlank()) "open_app: $packageName" else "open_app"
+                if (packageName.isNotBlank()) "${OobActionCodec.ACTION_OPEN_APP}: $packageName" else OobActionCodec.ACTION_OPEN_APP
             }
-            "click", "long_press" -> {
+            in OobActionCodec.pointTargetActions -> {
                 if (target.isNotBlank()) {
                     "$action: $target"
                 } else {
@@ -182,16 +182,16 @@ internal object RunLogReplayStepCompiler {
                     if (x.isNotBlank() && y.isNotBlank()) "$action: ($x, $y)" else action
                 }
             }
-            "input_text" -> if (target.isNotBlank()) "$action: $target" else action
-            "swipe" -> {
+            OobActionCodec.ACTION_INPUT_TEXT -> if (target.isNotBlank()) "$action: $target" else action
+            OobActionCodec.ACTION_SWIPE -> {
                 val direction = firstNonBlank(args["direction"], args["scroll_direction"])
                 if (direction.isNotBlank()) "$action: $direction" else action
             }
-            "press_key" -> {
+            OobActionCodec.ACTION_PRESS_KEY -> {
                 val key = firstNonBlank(args["key"], args["hotkey"], args["hot_key"])
                 if (key.isNotBlank()) "$action: $key" else action
             }
-            "finished" -> "finished"
+            OobActionCodec.ACTION_FINISHED -> OobActionCodec.ACTION_FINISHED
             else -> if (target.isNotBlank()) "$action: $target" else action.ifBlank { "step" }
         }
     }

@@ -163,20 +163,20 @@ object RunLogReusableFunctionParameterizer {
         val description = firstNonBlank(step["title"], step["summary"]).takeIf { it.isNotBlank() }
         val sourceContext = mapArg(step["source_context"]).ifEmpty { mapArg(args["source_context"]) }
         return when {
-            action == "click" -> canonicalPointAction(
-                type = "click",
+            action == OobActionCodec.ACTION_CLICK -> canonicalPointAction(
+                type = OobActionCodec.ACTION_CLICK,
                 args = args,
                 description = description,
                 sourceContext = sourceContext,
             )
-            action == "long_press" -> canonicalPointAction(
-                type = "long_press",
+            action == OobActionCodec.ACTION_LONG_PRESS -> canonicalPointAction(
+                type = OobActionCodec.ACTION_LONG_PRESS,
                 args = args,
                 description = description,
                 sourceContext = sourceContext,
             )
             action == OobActionCodec.ACTION_INPUT_TEXT -> nullableMap(
-                "type" to "input_text",
+                "type" to OobActionCodec.ACTION_INPUT_TEXT,
                 "text" to inputTextValue(args, index, parameterTemplates),
                 "target" to coordinateTarget(args).takeIf {
                     it["x"] != null && it["y"] != null
@@ -210,7 +210,7 @@ object RunLogReusableFunctionParameterizer {
             action == OobActionCodec.ACTION_SWIPE -> {
                 val target = coordinateTarget(args)
                 nullableMap(
-                    "type" to "swipe",
+                    "type" to OobActionCodec.ACTION_SWIPE,
                     "target" to target,
                     "direction" to firstNonBlank(args["direction"], args["scroll_direction"]).ifBlank { "down" },
                     "distance" to firstPresent(args["distance"], args["scroll_distance"]),
@@ -229,7 +229,7 @@ object RunLogReusableFunctionParameterizer {
                 "description" to description,
             )
             action == OobActionCodec.ACTION_PRESS_KEY -> nullableMap(
-                "type" to "press_key",
+                "type" to OobActionCodec.ACTION_PRESS_KEY,
                 "key" to firstNonBlank(args["key"], args["hotkey"], args["hot_key"]),
                 "description" to description,
             )

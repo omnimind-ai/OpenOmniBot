@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.omniflow
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.listArg
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
+import cn.com.omnimind.bot.runlog.OobActionCodec
 
 /**
  * Normalizes update_function patch and natural-language repair intent into
@@ -118,10 +119,10 @@ class OobFunctionUpdateIntentParser {
 
     private fun inferredActionFromInstruction(instruction: String): String =
         when {
-            instruction.contains("长按") -> "long_press"
-            instruction.contains("输入") || instruction.contains("填写") -> "input_text"
-            instruction.contains("滑") || instruction.contains("滚") -> "swipe"
-            else -> "click"
+            instruction.contains("长按") -> OobActionCodec.ACTION_LONG_PRESS
+            instruction.contains("输入") || instruction.contains("填写") -> OobActionCodec.ACTION_INPUT_TEXT
+            instruction.contains("滑") || instruction.contains("滚") -> OobActionCodec.ACTION_SWIPE
+            else -> OobActionCodec.ACTION_CLICK
         }
 
 }

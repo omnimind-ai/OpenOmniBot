@@ -21,6 +21,9 @@ appear:
 - Code that branches on canonical action names must use `OobActionCodec`
   constants. Literal strings are acceptable only in raw JSON fixtures,
   compatibility alias lists, or user-facing prose.
+- Code that needs an action family, such as point-target actions, should use
+  the sets exposed by `OobActionCodec` instead of rebuilding local
+  `click`/`long_press` lists.
 - An executor is a replay classification, not an action. `omniflow`, `tool`,
   and `agent` belong to `RunLogReplayPolicy`; use them to decide who executes a
   step, not to describe what the step does.
@@ -221,6 +224,9 @@ When adding or migrating a generic agent tool name:
   the wrong target
 - insert and delete execution steps only when structural changes are explicitly
   allowed
+- canonicalize patch action names through `OobActionCodec` before matching
+  recorded steps, so aliases such as `scroll` do not become durable Function
+  actions
 - normalize inserted simple steps through `OobFunctionSpecBuilder`
 - reindex execution steps and recompute execution capability counts after
   structural edits
@@ -245,6 +251,8 @@ When adding or migrating a generic agent tool name:
   `replace_target` into explicit update operations
 - infer simple target-repair operations from user instructions such as
   `应该点「外卖」而不是点「美食」`
+- emit canonical action names from `OobActionCodec` when inferring simple
+  repair operations
 - classify replace-target and structural operations for update-mode decisions
 - never apply an operation or mutate a Function spec
 

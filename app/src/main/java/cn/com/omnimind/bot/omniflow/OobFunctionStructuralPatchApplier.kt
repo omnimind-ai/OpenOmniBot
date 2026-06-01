@@ -56,9 +56,9 @@ class OobFunctionStructuralPatchApplier(
                 reason = "desired_text_missing"
             )
         }
-        val action = firstNonBlank(op["action"], op["tool"], op["omniflow_action"])
-            .lowercase()
-            .ifBlank { "click" }
+        val rawAction = firstNonBlank(op["action"], op["tool"], op["omniflow_action"])
+        val action = OobActionCodec.canonicalActionForName(rawAction)
+            ?: OobActionCodec.normalizeName(rawAction).ifBlank { OobActionCodec.ACTION_CLICK }
         val execution = mutableJsonMap(mapArg(spec["execution"]))
         val steps = mutableJsonList(listArg(execution["steps"]))
         val explicitIndex = intArg(
@@ -455,9 +455,9 @@ class OobFunctionStructuralPatchApplier(
 
     private fun actionTitle(action: String, target: String): String =
         when (action) {
-            "input_text" -> "填写$target"
-            "long_press" -> "长按$target"
-            "swipe", "scroll" -> "滑动到$target"
+            OobActionCodec.ACTION_INPUT_TEXT -> "填写$target"
+            OobActionCodec.ACTION_LONG_PRESS -> "长按$target"
+            OobActionCodec.ACTION_SWIPE -> "滑动到$target"
             else -> "点击$target"
         }
 

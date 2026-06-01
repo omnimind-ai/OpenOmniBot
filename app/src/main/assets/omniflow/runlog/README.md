@@ -26,6 +26,9 @@ RunLog code should preserve these concepts:
 - Step: the canonical Function execution unit produced by conversion.
 - Action: the local device operation inside a deterministic step. The action
   vocabulary and aliases live in `OobActionCodec`.
+- Action family: reusable groups such as point-target actions also live in
+  `OobActionCodec`; replay/update/fallback code should not rebuild their own
+  `click`/`long_press` sets.
 - Executor: the runtime owner for a step. `RunLogReplayPolicy` classifies
   `omniflow`, `tool`, and `agent`; this is separate from the action name.
 - Checker: optional conditional handling for ads, popups, permissions,

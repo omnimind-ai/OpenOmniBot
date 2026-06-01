@@ -4,6 +4,7 @@ import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
+import cn.com.omnimind.bot.runlog.OobActionCodec
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -63,8 +64,8 @@ class OobFunctionAgentFallbackController {
         if (targetDesc.isEmpty()) return null
         val action = OmniflowStepExecutor.actionNameForStep(step)
         val goal = when (action) {
-            "click", "long_press" -> "找到并点击「$targetDesc」"
-            "scroll" -> "在「$targetDesc」区域滚动"
+            in OobActionCodec.pointTargetActions -> "找到并点击「$targetDesc」"
+            OobActionCodec.ACTION_SWIPE -> "在「$targetDesc」区域滑动"
             else -> "执行 $action 操作：$targetDesc"
         } + recoveryPromptSuffix(recovery)
         val vlmArgs = mapToJsonElement(

@@ -7,12 +7,21 @@ import org.junit.Test
 class OobActionCodecTest {
     @Test
     fun `normalizes legacy names to canonical actions`() {
-        assertEquals("click", OobActionCodec.canonicalActionForName("tap"))
-        assertEquals("input_text", OobActionCodec.canonicalActionForName("set_text"))
-        assertEquals("swipe", OobActionCodec.canonicalActionForName("scroll_down"))
-        assertEquals("press_key", OobActionCodec.canonicalActionForName("press_back"))
-        assertEquals("open_app", OobActionCodec.canonicalActionForName("launch_app"))
-        assertEquals("finished", OobActionCodec.canonicalActionForName("done"))
+        assertEquals(OobActionCodec.ACTION_CLICK, OobActionCodec.canonicalActionForName("tap"))
+        assertEquals(OobActionCodec.ACTION_INPUT_TEXT, OobActionCodec.canonicalActionForName("set_text"))
+        assertEquals(OobActionCodec.ACTION_SWIPE, OobActionCodec.canonicalActionForName("scroll_down"))
+        assertEquals(OobActionCodec.ACTION_PRESS_KEY, OobActionCodec.canonicalActionForName("press_back"))
+        assertEquals(OobActionCodec.ACTION_OPEN_APP, OobActionCodec.canonicalActionForName("launch_app"))
+        assertEquals(OobActionCodec.ACTION_FINISHED, OobActionCodec.canonicalActionForName("done"))
+    }
+
+    @Test
+    fun `exposes point target action family`() {
+        assertEquals(
+            setOf(OobActionCodec.ACTION_CLICK, OobActionCodec.ACTION_LONG_PRESS),
+            OobActionCodec.pointTargetActions,
+        )
+        assertTrue(OobActionCodec.ACTION_INPUT_TEXT !in OobActionCodec.pointTargetActions)
     }
 
     @Test
