@@ -345,7 +345,7 @@ object OobFunctionSchemaBuilder {
         "tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
         "callable_tool" to RunLogReplayPolicy.TOOL_GO_TO_NODE,
         "args" to args.filterValues { it != null },
-        "replay_engine" to "omniflow_utg",
+        "replay_engine" to RunLogReplayPolicy.REPLAY_ENGINE_OMNIFLOW_UTG,
     )
 
     private fun functionStep(

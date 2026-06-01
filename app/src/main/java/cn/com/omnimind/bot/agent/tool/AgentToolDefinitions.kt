@@ -3,6 +3,7 @@ package cn.com.omnimind.bot.agent
 import cn.com.omnimind.baselib.shizuku.ShizukuBackend
 import cn.com.omnimind.baselib.i18n.AppLocaleManager
 import cn.com.omnimind.baselib.i18n.PromptLocale
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
@@ -552,7 +553,7 @@ object AgentToolDefinitions {
     val callToolTool: JsonObject = buildJsonObject {
         put("type", "function")
         putJsonObject("function") {
-            put("name", "call_tool")
+            put("name", RunLogReplayPolicy.TOOL_CALL_TOOL)
             put("displayName", "调用工具")
             put("toolType", "builtin")
             put(

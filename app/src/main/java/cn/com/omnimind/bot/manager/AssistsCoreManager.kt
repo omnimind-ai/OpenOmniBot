@@ -466,8 +466,9 @@ private const val AGENT_STREAM_META_SCHEMA_VERSION = "oob.agent_event.v1"
 
 internal fun isOobReusableFunctionPendingAgentStep(step: Map<*, *>): Boolean {
     return step["needs_agent"] == true ||
-        (step["fallback_available"] == true && step["executor"]?.toString() == "agent") ||
-        step["blocked_executor"]?.toString() == "tool" ||
+        (step["fallback_available"] == true &&
+            step["executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_AGENT) ||
+        step["blocked_executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_TOOL ||
         step["blocked_executor"]?.toString() == RunLogReplayPolicy.EXECUTOR_OMNIFLOW
 }
 
@@ -6663,7 +6664,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                     lines += "$num. [直接执行] $title"
                     lines += "  → $action${if (argsLine.isNotEmpty()) " $argsLine" else ""}$coordNote"
                 }
-                executor == "agent" -> {
+                executor == RunLogReplayPolicy.EXECUTOR_AGENT -> {
                     val prompt = ((step["agent_call"] as? Map<*, *>)
                         ?.get("args") as? Map<*, *>)
                         ?.get("prompt")?.toString()?.trim() ?: title
