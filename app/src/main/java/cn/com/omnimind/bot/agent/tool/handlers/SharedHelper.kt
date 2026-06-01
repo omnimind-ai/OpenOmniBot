@@ -383,7 +383,7 @@ class SharedHelper(
     }
 
     fun encodeLocalizedPayload(payload: Any?): String {
-        return json.encodeToString(mapToJsonElement(localizePayloadValue(payload)))
+        return json.encodeToString(AgentToolJson.mapToJsonElement(localizePayloadValue(payload)))
     }
 
     private fun localizeMissingPermissions(missing: List<String>): List<String> {
@@ -470,10 +470,6 @@ class SharedHelper(
                 else -> element.content
             }
         }
-    }
-
-    fun mapToJsonElement(value: Any?): JsonElement {
-        return AgentToolJson.mapToJsonElement(value)
     }
 
     fun parseIntegerArray(raw: JsonArray?): List<Int> {

@@ -540,7 +540,8 @@ Use these owner rules when removing duplicated helper code:
   alignment decisions into mechanical helper objects.
 - Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when
   building tool definitions or serializing generic tool payloads, instead of
-  adding another local `mapToJsonElement` copy.
+  adding another local `mapToJsonElement` copy or a forwarding method on
+  `SharedHelper`.
 
 Known helper exceptions that should not be force-merged without a semantic
 change:

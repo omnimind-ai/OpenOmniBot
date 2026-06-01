@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
 import cn.com.omnimind.bot.agent.ManualToolStopCancellationException
+import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.runlog.OmniflowCheckerRule
 import cn.com.omnimind.bot.runlog.OobFunctionSchemaBuilder
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
@@ -19,7 +20,7 @@ class OobFunctionToolHandler(
     private val sourceAlignmentController: OobFunctionSourceAlignmentController =
         OobFunctionSourceAlignmentController(),
     private val agentFallbackController: OobFunctionAgentFallbackController =
-        OobFunctionAgentFallbackController(helper),
+        OobFunctionAgentFallbackController(),
     private val nestedCallCardPresenter: OobFunctionNestedCallCardPresenter =
         OobFunctionNestedCallCardPresenter(helper),
     private val callRequestResolver: OobFunctionCallRequestResolver =
@@ -29,7 +30,7 @@ class OobFunctionToolHandler(
     private val runResultBuilder: OobFunctionRunResultBuilder =
         OobFunctionRunResultBuilder(),
     private val toolDelegationExecutor: OobFunctionToolDelegationExecutor =
-        OobFunctionToolDelegationExecutor(helper),
+        OobFunctionToolDelegationExecutor(),
     private val accessibilityPreflightGuard: OobFunctionAccessibilityPreflightGuard =
         OobFunctionAccessibilityPreflightGuard(stepClassifier, runResultBuilder),
     private val nestedFunctionExecutor: OobFunctionNestedFunctionExecutor =
@@ -201,7 +202,7 @@ class OobFunctionToolHandler(
             ?: return cn.com.omnimind.bot.agent.ToolExecutionResult.Error(
                 toolName, "Tool router unavailable for $targetTool"
             )
-        val targetArgsJson = helper.mapToJsonElement(targetArgs) as? JsonObject
+        val targetArgsJson = mapToJsonElement(targetArgs) as? JsonObject
             ?: JsonObject(emptyMap())
         val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
             id = "${toolCall.id}_${targetTool}",

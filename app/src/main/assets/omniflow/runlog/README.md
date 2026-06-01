@@ -152,6 +152,9 @@ Do not hard replay `browser_use` or `web_search`; their outputs are live context
   semantics stay in `OobActionCodec` and `RunLogCardAccessors`. Prefer direct
   calls or member imports from `OobFunctionJson`; do not add one-line local
   forwarding helpers.
+- Keep agent-facing tool JSON projection in `AgentToolJson`. Runtime tool
+  handlers should call it directly for generic map/list/scalar payloads instead
+  of routing through `SharedHelper` forwarding methods.
 - Do not force-merge helpers with intentionally different compatibility
   behavior. `OobFunctionSchemaBuilder.boolArg` is stricter for schema fields,
   `RunLogReusableFunctionParameterizer.asMap` preserves its legacy map-key

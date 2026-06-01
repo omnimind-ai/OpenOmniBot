@@ -4,6 +4,7 @@ import cn.com.omnimind.bot.agent.AgentCallback
 import cn.com.omnimind.bot.agent.AgentExecutionEnvironment
 import cn.com.omnimind.bot.agent.AgentToolExecutor
 import cn.com.omnimind.bot.agent.AgentToolExecutionHandle
+import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
@@ -18,9 +19,7 @@ import kotlinx.serialization.json.JsonObject
  * owns the mechanical bridge from a materialized Function step to a synthetic
  * tool call and back to a stable per-step result payload.
  */
-class OobFunctionToolDelegationExecutor(
-    private val helper: SharedHelper,
-) {
+class OobFunctionToolDelegationExecutor {
     suspend fun execute(
         step: Map<String, Any?>,
         stepId: String,
@@ -83,7 +82,7 @@ class OobFunctionToolDelegationExecutor(
         val remapResult = OmniflowStepExecutor.remapStepArgs(step)
         val stepArgsMap = remapResult.args
         return when (stepArgsMap) {
-            is Map<*, *> -> helper.mapToJsonElement(
+            is Map<*, *> -> mapToJsonElement(
                 stepArgsMap.entries.associate { (key, value) -> key.toString() to value }
             ) as? JsonObject ?: JsonObject(emptyMap())
             else -> JsonObject(emptyMap())

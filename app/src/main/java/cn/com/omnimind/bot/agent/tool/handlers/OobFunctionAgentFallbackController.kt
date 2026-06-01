@@ -1,5 +1,6 @@
 package cn.com.omnimind.bot.agent.tool.handlers
 
+import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
 import kotlinx.serialization.json.JsonObject
@@ -9,9 +10,7 @@ import kotlinx.serialization.json.JsonObject
  * decides when fallback is allowed; this controller owns prompt/recovery
  * shaping and the optional VLM fallback tool call.
  */
-class OobFunctionAgentFallbackController(
-    private val helper: SharedHelper,
-) {
+class OobFunctionAgentFallbackController {
     fun prompt(
         step: Map<String, Any?>,
         stepTitle: String,
@@ -23,7 +22,7 @@ class OobFunctionAgentFallbackController(
             ?: stepTitle
         val args = OmniflowStepExecutor.normalizeArgsMap(step["args"])
         val argsText = if (args.isNotEmpty()) {
-            "\n\n当前已物化参数：${helper.mapToJsonElement(args)}"
+            "\n\n当前已物化参数：${mapToJsonElement(args)}"
         } else {
             ""
         }
@@ -67,7 +66,7 @@ class OobFunctionAgentFallbackController(
             "scroll" -> "在「$targetDesc」区域滚动"
             else -> "执行 $action 操作：$targetDesc"
         } + recoveryPromptSuffix(recovery)
-        val vlmArgs = helper.mapToJsonElement(
+        val vlmArgs = mapToJsonElement(
             mapOf("goal" to goal, "startFromCurrent" to true)
         ) as? JsonObject ?: return null
         val syntheticCall = cn.com.omnimind.baselib.llm.AssistantToolCall(
