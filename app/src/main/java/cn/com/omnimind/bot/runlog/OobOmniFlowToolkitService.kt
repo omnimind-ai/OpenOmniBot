@@ -25,8 +25,10 @@ import cn.com.omnimind.bot.workbench.WorkspaceFunctionStore
  * The service deliberately keeps the first version fixed and local: Functions
  * are registered in OOB stores, recall is deterministic, and execution runs
  * through the existing OOB replay dispatcher. External OmniFlow can replace this
- * class later behind the same `recall -> call_tool(function_id) -> ingest_run_log`
- * contract.
+ * class later behind the same Function lifecycle shape:
+ * `list/get or recall -> guard_check -> run -> run_log_convert/update_function`.
+ * Legacy `omniflow.*` adapters remain compatibility routes, not the preferred
+ * in-app agent path.
  */
 class OobOmniFlowToolkitService(
     private val context: Context,

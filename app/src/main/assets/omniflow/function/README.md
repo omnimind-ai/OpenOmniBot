@@ -525,6 +525,32 @@ should live in the owning update service or replay component. Prefer direct
 calls or member imports from the owner object over local one-line forwarding
 helpers; thin wrappers make ownership harder to audit.
 
+## Documentation Maintenance
+
+When Function or RunLog behavior changes, update the nearest owner document in
+the same commit as the code change:
+
+- Tool surface or activation wording: update the built-in skill docs under
+  `app/src/main/assets/builtin_skills/omniflow/` and this backend map when the
+  native owner changes.
+- Function storage, update, recall, run, checker, fallback, or replay ownership:
+  update this file.
+- RunLog conversion, card filtering, action aliases, executor categories,
+  canonical replay tools, or noise cleanup: update
+  `app/src/main/assets/omniflow/runlog/README.md`.
+- Agent-facing repair/enhancement behavior: update the relevant skill reference
+  and keep `update_function` as the only saved Function mutation path.
+- Do not document a second owner for the same rule. If a new component must own
+  behavior currently listed here, move the ownership bullet instead of copying
+  it.
+
+Use canonical OOB Function tools in agent-facing docs:
+`oob_function_list`, `oob_function_get`, `oob_function_register`,
+`update_function`, `oob_function_guard_check`, `oob_function_run`,
+`oob_function_delete`, and `oob_function_clear`. Treat `omniflow.*` names as
+legacy/external MCP compatibility unless the code path being documented is
+specifically that adapter.
+
 ## Helper Maintenance Audit
 
 Use these owner rules when removing duplicated helper code:

@@ -114,6 +114,12 @@ Canonical replay tool names such as `call_tool`, `oob_tool_call`,
 `RunLogReplayPolicy` when they are used by Function compilation, schema
 materialization, recall, or replay routing. UDEG edge-kind names and diagnostic
 counter keys remain graph-storage vocabulary owned by `OobUdegNodeStore`.
+Agent-facing docs should name the OOB Function tools first. Legacy
+`omniflow.recall`, `omniflow.call_tool`, `omniflow.call_function`,
+`omniflow.ingest_run_log`, and `omniflow.explore_replay` remain compatibility
+tool names for external MCP clients and old agentkit flows; do not present them
+as the primary in-app path when `oob_function_*`, `oob_run_log_*`, and
+`update_function` are available.
 
 - `executor=omniflow`: deterministic local replay only. Allowed actions are
   the OOB local set plus OmniFlow canonical aliases: `click`, `long_press`,

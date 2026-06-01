@@ -52,15 +52,24 @@ with bounded VLM.
 ## Access Mode Selection
 
 If MCP is available, call `tools/list`. Treat direct MCP tools as primitive
-backends for this skill, not as a separate OmniFlow workflow owner.
+backends for this skill, not as a separate OmniFlow workflow owner. Prefer the
+OOB Function tools when they are present; legacy `omniflow.*` names are only
+for external or older clients that do not expose the `oob_function_*` tools.
 
 Use Direct MCP mode if these tools exist:
 
 ```text
-omniflow.recall
-omniflow.call_tool
-omniflow.ingest_run_log
-omniflow.explore_replay
+oob_run_log_list
+oob_run_log_get
+oob_run_log_convert
+oob_function_list
+oob_function_get
+oob_function_register
+update_function
+oob_function_guard_check
+oob_function_run
+oob_function_delete
+oob_function_clear
 ```
 
 If direct tools are absent, use GUI bridge mode through the OOB app:
@@ -77,29 +86,30 @@ the in-app Agent to use OmniFlow UI/native capabilities.
 
 ### Recall and Run a Reusable Command
 
-1. `omniflow.recall(goal, current_package?, current_node_id?, current_xml?, k?)`.
-   Recall must follow `page match -> UDEG node -> node skill-like decision
-   context -> VLM/tool decision`, then use that node's skill-like decision
-   context and attached reusable commands. Do not treat recall as a flat search
-   over the reusable command store.
-2. Treat `decision=recall` as context, not
-   completion: read `current_node`, `node_skill_context`,
-   `decision_context`, and `capability_candidates`, then decide whether a
-   node-attached reusable command fits the live goal.
-3. If a node-attached capability fits, fill arguments from `inputSchema`, then
-   call `omniflow.call_tool({function_id, arguments})`.
-4. Only use `decision=hit` as direct execution when
-   the host explicitly requested direct recall execution, for example through
-   `auto_execute=true`.
-5. If recall misses or call_tool returns `fallback=true`, return that state to
-   the caller; continue with live planning only after explicit bounded VLM
-   selection.
+1. Use `oob_function_list` to get local reusable Function candidates, or
+   `oob_function_get` when a Function id is already known.
+2. Inspect the Function name, description, parameters, `agent_reuse` metadata,
+   and execution step summaries. Do not treat a name-only match as enough
+   evidence for direct execution.
+3. If a candidate fits the user goal, fill arguments from the Function input
+   schema and call `oob_function_guard_check({functionId, arguments})`.
+4. If the guard returns `allow`, call
+   `oob_function_run({functionId, arguments})`. If replay is resuming from a
+   known good prefix, include `start_step_index` or `resume_from_step`.
+5. If `oob_function_run` returns `fallback=true`, `needs_agent`, or
+   `fallback_context`, return that state to the caller; continue with live
+   planning only after explicit bounded VLM selection.
+6. If only legacy direct MCP names are exposed, use the compatibility path:
+   `omniflow.recall(...)` as context, then `omniflow.call_tool({function_id,
+   arguments})` for the chosen Function.
 
 ### Write Back a RunLog
 
-1. After a successful non-cache run, call
-   `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
+1. After a successful non-cache run, call `oob_run_log_convert({run_id})` to
+   convert and register a reusable Function.
 2. Treat failed, empty, or non-replayable RunLogs as rejected.
+3. If only legacy direct MCP names are exposed, use
+   `omniflow.ingest_run_log(run_id)` or pass an inline `run_log`.
 
 ### Enhance a Saved RunLog Command
 
@@ -147,14 +157,17 @@ bare boolean.
 Use this only when recall misses and the user wants OOB to discover a reusable
 local UI path. Keep the exploration bounded.
 
-1. Call `omniflow.explore_replay(goal, package_name?, max_steps?, stop_text?,
+1. Use live VLM execution first when no reusable Function fits, then save the
+   successful RunLog through `oob_run_log_convert`.
+2. If only legacy direct MCP exploration is exposed, call
+   `omniflow.explore_replay(goal, package_name?, max_steps?, stop_text?,
    replay?, reset_before_replay?)`.
-2. Prefer `max_steps <= 3` and a concrete `stop_text` when possible.
-3. Leave `allow_risky_actions=false` unless the user explicitly confirmed the
+3. Prefer `max_steps <= 3` and a concrete `stop_text` when possible.
+4. Leave `allow_risky_actions=false` unless the user explicitly confirmed the
    risk.
-4. Treat returned `utg.schema_version=oob.omniflow_utg.v1` as a local path
+5. Treat returned `utg.schema_version=oob.omniflow_utg.v1` as a local path
    record, not a full provider-side graph.
-5. If `phase=registered`, report the reusable command id and do not claim replay ran.
+6. If `phase=registered`, report the reusable command id and do not claim replay ran.
    If `phase=replayed`, report both explore and replay results.
 
 ## GUI Bridge Workflows
