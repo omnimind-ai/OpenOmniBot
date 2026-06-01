@@ -101,6 +101,7 @@ import cn.com.omnimind.bot.agent.tool.handlers.OobFunctionToolHandler
 import cn.com.omnimind.bot.agent.tool.handlers.SharedHelper
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.omniflow.OobFunctionRepository
+import cn.com.omnimind.bot.omniflow.OobFunctionSpecVocabulary
 import cn.com.omnimind.bot.runlog.OobActionCodec
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.OobRunLogReplayService
@@ -4027,7 +4028,7 @@ class AssistsCoreManager(private val context: Context) : OnMessagePushListener {
                             "terminal_state" to mapOf(
                                 "status" to "error",
                                 "execution_status" to OOB_REUSABLE_EXECUTION_STATUS_FAILED,
-                                "runner" to "oob_agent_reusable_function"
+                                "runner" to OobFunctionSpecVocabulary.REGISTRY_RUNNER_AGENT_REUSABLE_FUNCTION
                             ),
                             "context" to mapOf(
                                 "source" to "oob_reusable_function",

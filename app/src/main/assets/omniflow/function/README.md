@@ -206,6 +206,8 @@ When adding or migrating a generic agent tool name:
 - capture current page source context when a simple registration needs it
 - normalize inserted steps for `update_function`
 - compute execution capability counts from canonical steps
+- use `OobFunctionSpecVocabulary` for durable spec vocabulary such as schema
+  version, execution kind, execution runner, and registry runner
 
 `OobFunctionUpdateService` owns the `update_function` contract:
 
@@ -545,6 +547,9 @@ Keep these pieces separate:
 
 - `OobFunctionRepository`: persistent Function records and index synchronization
 - `OobFunctionSpecBuilder`: simple public input -> canonical Function spec
+- `OobFunctionSpecVocabulary`: durable Function spec words shared by simple
+  registration, RunLog conversion, repository projections, and terminal-state
+  payloads
 - `OobFunctionUpdateService`: update_function orchestration, permission gates,
   dry-run/save behavior, and tool response shaping
 - `OobFunctionUpdateIntentParser`: raw patch op and instruction intent

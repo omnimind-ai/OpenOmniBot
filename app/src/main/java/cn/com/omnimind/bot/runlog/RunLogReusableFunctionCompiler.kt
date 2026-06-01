@@ -1,6 +1,7 @@
 package cn.com.omnimind.bot.runlog
 
 import cn.com.omnimind.baselib.runlog.InternalRunLogRecord
+import cn.com.omnimind.bot.omniflow.OobFunctionSpecVocabulary
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asBoolean
 import cn.com.omnimind.bot.runlog.RunLogCardAccessors.asMap
 
@@ -45,7 +46,7 @@ object RunLogReusableFunctionCompiler {
         val name = record.operationDescription.ifBlank { goal }.ifBlank { functionId }.take(80)
         val capabilities = executionCapabilities(steps)
         return linkedMapOf<String, Any?>(
-            "schema_version" to "oob.reusable_function.v1",
+            "schema_version" to OobFunctionSpecVocabulary.SCHEMA_VERSION_V1,
             "function_id" to functionId,
             "name" to name,
             "description" to goal.ifBlank { name },
@@ -80,8 +81,8 @@ object RunLogReusableFunctionCompiler {
                 ),
             ),
             "execution" to linkedMapOf(
-                "kind" to "tool_sequence",
-                "runner" to "oob_tool_sequence",
+                "kind" to OobFunctionSpecVocabulary.EXECUTION_KIND_TOOL_SEQUENCE,
+                "runner" to OobFunctionSpecVocabulary.EXECUTION_RUNNER_TOOL_SEQUENCE,
                 "entrypoint" to "execute",
                 "capabilities" to capabilities,
                 "steps" to steps,
@@ -93,7 +94,7 @@ object RunLogReusableFunctionCompiler {
             "_oob_registry" to linkedMapOf(
                 "registered_at" to now,
                 "updated_at" to now,
-                "runner" to "oob_agent_reusable_function",
+                "runner" to OobFunctionSpecVocabulary.REGISTRY_RUNNER_AGENT_REUSABLE_FUNCTION,
                 "storage" to "workspace",
             ),
         )

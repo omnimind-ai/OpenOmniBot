@@ -60,7 +60,7 @@ class OobFunctionSpecBuilder {
         }
         val capabilities = simpleExecutionCapabilities(normalizedSteps)
         return linkedMapOf<String, Any?>(
-            "schema_version" to "oob.reusable_function.v1",
+            "schema_version" to OobFunctionSpecVocabulary.SCHEMA_VERSION_V1,
             "function_id" to functionId,
             "name" to name,
             "description" to description,
@@ -82,8 +82,8 @@ class OobFunctionSpecBuilder {
                 "registered_at" to now,
             ).filterValues { it != null },
             "execution" to linkedMapOf(
-                "kind" to "tool_sequence",
-                "runner" to "oob_tool_sequence",
+                "kind" to OobFunctionSpecVocabulary.EXECUTION_KIND_TOOL_SEQUENCE,
+                "runner" to OobFunctionSpecVocabulary.EXECUTION_RUNNER_TOOL_SEQUENCE,
                 "entrypoint" to "execute",
                 "capabilities" to capabilities,
                 "steps" to normalizedSteps,
@@ -95,7 +95,7 @@ class OobFunctionSpecBuilder {
             "_oob_registry" to linkedMapOf(
                 "registered_at" to now,
                 "updated_at" to now,
-                "runner" to "oob_agent_reusable_function",
+                "runner" to OobFunctionSpecVocabulary.REGISTRY_RUNNER_AGENT_REUSABLE_FUNCTION,
                 "storage" to "workspace",
                 "registration_input_mode" to "simple",
             ),

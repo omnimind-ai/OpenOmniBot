@@ -106,7 +106,7 @@ class OobFunctionRepository(
             "already_exists" to alreadyExists,
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
-            "runner" to "oob_agent_reusable_function",
+            "runner" to OobFunctionSpecVocabulary.REGISTRY_RUNNER_AGENT_REUSABLE_FUNCTION,
             "oob_function_as_tool_enabled" to
                 AgentToolFeatureStore.isOobFunctionAsToolEnabled(context),
             "workspace" to workspaceResult,
@@ -236,7 +236,7 @@ class OobFunctionRepository(
             "step_summaries" to OobFunctionSchemaBuilder.stepSummaries(spec),
             "function_kind" to "oob_reusable_function",
             "asset_state" to "native_local",
-            "runner" to "oob_agent_reusable_function",
+            "runner" to OobFunctionSpecVocabulary.REGISTRY_RUNNER_AGENT_REUSABLE_FUNCTION,
             "registered_at" to registry?.get("registered_at"),
             "updated_at" to registry?.get("updated_at"),
             "source_run_ids" to sourceRunIds(spec),
