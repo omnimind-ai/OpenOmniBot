@@ -3,6 +3,9 @@ package cn.com.omnimind.bot.runlog
 import android.content.Context
 import cn.com.omnimind.baselib.runlog.InternalRunLogStore
 import cn.com.omnimind.omniintelligence.models.ScrollDirection
+import cn.com.omnimind.bot.runlog.OobActionCodec.boolArg
+import cn.com.omnimind.bot.runlog.OobActionCodec.firstNonBlank
+import cn.com.omnimind.bot.runlog.OobActionCodec.intArg
 import kotlinx.coroutines.delay
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -439,7 +442,7 @@ class OobOmniFlowExplorer(
         )
         val maxSteps = intArg(request["max_steps"], request["maxSteps"], defaultValue = 3)
             .coerceIn(1, 8)
-        val settleDelayMs = longArg(
+        val settleDelayMs = OobActionCodec.longArg(
             request["settle_delay_ms"],
             request["settleDelayMs"],
             request["delay_ms"],
@@ -920,16 +923,6 @@ class OobOmniFlowExplorer(
                 .map { it.trim() }
                 .filter { it.length >= 2 }
         }
-
-        private fun firstNonBlank(vararg values: Any?): String = OobActionCodec.firstNonBlank(*values)
-
-        private fun intArg(vararg values: Any?, defaultValue: Int): Int =
-            OobActionCodec.intArg(*values, defaultValue = defaultValue)
-
-        private fun longArg(vararg values: Any?, defaultValue: Long): Long =
-            OobActionCodec.longArg(*values, defaultValue = defaultValue)
-
-        private fun boolArg(value: Any?): Boolean = OobActionCodec.boolArg(value)
 
         private fun shortHash(value: String): String {
             val bytes = MessageDigest.getInstance("SHA-256")

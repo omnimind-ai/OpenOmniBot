@@ -94,11 +94,12 @@ class OobFunctionRunner(
         val existingTiming = OobFunctionJson.mapArg(payload["timing"])
         val runnerSource = existingTiming["source"]?.toString().orEmpty()
         val runnerPhaseMs = OobFunctionJson.mapArg(existingTiming["phase_ms"])
-        val runnerStartedAtMs = longArg(existingTiming["started_at_ms"])
-        val runnerFinishedAtMs = longArg(existingTiming["finished_at_ms"])
-        val runnerDurationMs = longArg(
+        val runnerStartedAtMs = OobFunctionJson.longArg(existingTiming["started_at_ms"], defaultValue = 0L)
+        val runnerFinishedAtMs = OobFunctionJson.longArg(existingTiming["finished_at_ms"], defaultValue = 0L)
+        val runnerDurationMs = OobFunctionJson.longArg(
             existingTiming["runner_duration_ms"],
             existingTiming["duration_ms"],
+            defaultValue = 0L,
         )
         val startupPhaseMs = linkedMapOf<String, Any?>()
         listOf(
@@ -107,12 +108,13 @@ class OobFunctionRunner(
             "materialize_function_ms",
             "create_runner_ms",
         ).forEach { phaseName ->
-            startupPhaseMs[phaseName] = longArg(toolkitPhaseMs[phaseName])
+            startupPhaseMs[phaseName] = OobFunctionJson.longArg(toolkitPhaseMs[phaseName], defaultValue = 0L)
         }
         if (runnerPhaseMs.isNotEmpty()) {
-            startupPhaseMs["runner_pre_step_loop_ms"] = longArg(runnerPhaseMs["pre_step_loop_ms"])
+            startupPhaseMs["runner_pre_step_loop_ms"] =
+                OobFunctionJson.longArg(runnerPhaseMs["pre_step_loop_ms"], defaultValue = 0L)
         }
-        val startupDurationMs = startupPhaseMs.values.sumOf { longArg(it) }
+        val startupDurationMs = startupPhaseMs.values.sumOf { OobFunctionJson.longArg(it, defaultValue = 0L) }
         val mergedTiming = linkedMapOf<String, Any?>().apply {
             putAll(existingTiming)
             if (runnerSource.isNotBlank()) put("runner_source", runnerSource)
@@ -196,10 +198,5 @@ class OobFunctionRunner(
 
         private fun elapsedMs(startedAtNanos: Long): Long =
             ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
-    }
-
-    private companion object {
-        fun longArg(vararg values: Any?): Long =
-            OobFunctionJson.longArg(*values, defaultValue = 0L)
     }
 }

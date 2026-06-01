@@ -260,7 +260,7 @@ class OobOmniFlowToolkitService(
             )
         }
 
-        val settleDelayMs = longArg(
+        val settleDelayMs = OobActionCodec.longArg(
             request["settle_delay_ms"],
             request["settleDelayMs"],
             defaultValue = 800L
@@ -459,13 +459,18 @@ class OobOmniFlowToolkitService(
         )
         val stepResults = listArg(runPayload["step_results"])
         val timing = mapArg(runPayload["timing"])
-        val startedAtMs = longArg(timing["started_at_ms"])
-        val finishedAtMs = longArg(timing["finished_at_ms"])
-        val durationMs = longArg(timing["call_duration_ms"], timing["duration_ms"], timing["runner_duration_ms"])
+        val startedAtMs = OobActionCodec.longArg(timing["started_at_ms"], defaultValue = 0L)
+        val finishedAtMs = OobActionCodec.longArg(timing["finished_at_ms"], defaultValue = 0L)
+        val durationMs = OobActionCodec.longArg(
+            timing["call_duration_ms"],
+            timing["duration_ms"],
+            timing["runner_duration_ms"],
+            defaultValue = 0L,
+        )
             .takeIf { it > 0L }
             ?: (finishedAtMs - startedAtMs).takeIf { startedAtMs > 0L && finishedAtMs >= startedAtMs }
             ?: stepResults.sumOf { raw ->
-                longArg(mapArg(raw)["duration_ms"]).coerceAtLeast(0L)
+                OobActionCodec.longArg(mapArg(raw)["duration_ms"], defaultValue = 0L).coerceAtLeast(0L)
             }
         val successStepCount = intArg(
             runPayload["success_step_count"],
@@ -549,8 +554,14 @@ class OobOmniFlowToolkitService(
                 runLog["operationDescription"],
                 runLog["goal"],
             ),
-            startedAtMs = longArg(runLog["started_at_ms"], defaultValue = System.currentTimeMillis()),
-            finishedAtMs = longArg(runLog["finished_at_ms"], defaultValue = System.currentTimeMillis()),
+            startedAtMs = OobActionCodec.longArg(
+                runLog["started_at_ms"],
+                defaultValue = System.currentTimeMillis(),
+            ),
+            finishedAtMs = OobActionCodec.longArg(
+                runLog["finished_at_ms"],
+                defaultValue = System.currentTimeMillis(),
+            ),
             success = success,
             doneReason = firstNonBlank(resultMap["done_reason"], runLog["done_reason"]),
             errorMessage = firstNonBlank(resultMap["error"], runLog["error_message"]),
@@ -635,8 +646,4 @@ class OobOmniFlowToolkitService(
         decision?.let { put("decision", it) }
         riskLevel?.let { put("risk_level", it) }
     }
-
-    private fun longArg(vararg values: Any?, defaultValue: Long = 0L): Long =
-        OobActionCodec.longArg(*values, defaultValue = defaultValue)
-
 }

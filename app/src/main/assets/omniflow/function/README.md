@@ -450,7 +450,9 @@ private `mapArg`/`listArg`/`firstNonBlank`/`intArg`/`longArg`/`boolArg`/
 `mutableJsonMap` copy. Runtime replay helpers may also use it for
 argument-shape compatibility, but execution policy must remain in the replay
 service that owns the decision. Keep it limited to shape conversion; new rules
-should live in the owning update service or replay component.
+should live in the owning update service or replay component. Prefer direct
+calls or member imports from the owner object over local one-line forwarding
+helpers; thin wrappers make ownership harder to audit.
 
 ## Helper Maintenance Audit
 
@@ -459,10 +461,13 @@ Use these owner rules when removing duplicated helper code:
 - Function payload shape helpers belong in `OobFunctionJson`. This includes
   generic map/list/string/int/long/bool coercion used by register, update,
   recall, run payloads, timing merge payloads, and Function replay argument
-  compatibility. It must stay policy-free.
+  compatibility. It must stay policy-free. Call this owner directly instead of
+  adding local forwarding helpers with the same names.
 - RunLog action/value helpers belong in `OobActionCodec`. This includes action
   aliases, low-level action argument extraction, and generic coercion used while
   converting RunLog cards or building RunLog-derived compatibility payloads.
+  Call this owner directly instead of adding local forwarding helpers with the
+  same names.
 - RunLog card-field extraction belongs in `RunLogCardAccessors`. Do not add
   another local parser for `tool_call`, card headers, results, observations, or
   card payload JSON.
