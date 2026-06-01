@@ -70,6 +70,7 @@ class McpToolDefinitionsTest {
         OobFunctionToolNames.RUN_LOG_GET to "OobFunctionToolNames.RUN_LOG_GET",
         OobFunctionToolNames.RUN_LOG_CONVERT to "OobFunctionToolNames.RUN_LOG_CONVERT",
         RunLogReplayPolicy.TOOL_OOB_TOOL_CALL to "RunLogReplayPolicy.TOOL_OOB_TOOL_CALL",
+        RunLogReplayPolicy.TOOL_CALL_TOOL to "RunLogReplayPolicy.TOOL_CALL_TOOL",
     )
 
     @Test

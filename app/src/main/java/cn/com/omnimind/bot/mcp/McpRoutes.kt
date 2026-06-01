@@ -10,6 +10,7 @@ import cn.com.omnimind.bot.agent.AgentToolNames
 import cn.com.omnimind.bot.manager.AssistsCoreManager
 import cn.com.omnimind.bot.omniflow.OobFunctionToolNames
 import cn.com.omnimind.bot.runlog.OobOmniFlowToolkitService
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import cn.com.omnimind.bot.util.AssistsUtil
 import cn.com.omnimind.bot.util.TaskCompletionNavigator
 import cn.com.omnimind.bot.workbench.WorkbenchProjectStore
@@ -243,9 +244,9 @@ object McpRoutes {
             "task_wait_unlock" -> McpToolExecutors.executeTaskWaitUnlock(context, args, serverScope)
             "file_transfer" -> McpToolExecutors.executeFileTransfer(args)
             "agent_run" -> McpToolExecutors.executeAgentRun(context, args)
-            "oob_tool_call" -> McpToolExecutors.executeOobToolCall(context, args)
+            RunLogReplayPolicy.TOOL_OOB_TOOL_CALL -> McpToolExecutors.executeOobToolCall(context, args)
             "omniflow.call_tool" -> McpToolExecutors.executeOobToolCall(context, args)
-            "call_tool" -> McpToolExecutors.executeOobToolCall(context, args)
+            RunLogReplayPolicy.TOOL_CALL_TOOL -> McpToolExecutors.executeOobToolCall(context, args)
             "omniflow.recall" -> omniflowToolkit.recall(args)
             "omniflow.call_function" -> omniflowToolkit.callFunction(args)
             "omniflow.ingest_run_log" -> omniflowToolkit.ingestRunLog(args)

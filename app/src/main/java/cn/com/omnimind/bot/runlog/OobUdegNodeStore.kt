@@ -395,7 +395,7 @@ class OobUdegNodeStore(
         val fallbackCallEdges = sanitizedNodes.flatMap(::exportCallFunctionEdgesForNode)
         val storedEdgeIds = storedEdges.mapNotNull { firstNonBlank(it["edge_id"]).takeIf { it.isNotBlank() } }.toSet()
         val storedCallKeys = storedEdges
-            .filter { firstNonBlank(it["kind"]) == "call_function" }
+            .filter { firstNonBlank(it["kind"]) == EDGE_KIND_CALL_FUNCTION }
             .map { edge -> "${firstNonBlank(edge["from_node_id"])}:${firstNonBlank(edge["function_id"])}" }
             .toSet()
         val edges = (storedEdges.map(::exportUdegEdgePayload) +
@@ -415,7 +415,7 @@ class OobUdegNodeStore(
             "exported_at_ms" to exportedAt,
             "node_count" to sanitizedNodes.size,
             "edge_count" to edges.size,
-            "call_function_edge_count" to edges.count { firstNonBlank(it["kind"]) == "call_function" },
+            "call_function_edge_count" to edges.count { firstNonBlank(it["kind"]) == EDGE_KIND_CALL_FUNCTION },
             "raw_action_edge_count" to rawActionEdges.size,
             "decision_path" to UDEG_DECISION_PATH,
             "nodes" to sanitizedNodes,
@@ -839,7 +839,7 @@ class OobUdegNodeStore(
             if (functionId.isBlank()) return@mapNotNull null
             linkedMapOf(
                 "schema_version" to EDGE_SCHEMA_VERSION,
-                "kind" to "call_function",
+                "kind" to EDGE_KIND_CALL_FUNCTION,
                 "edge_id" to "edge_${nodeId}_${functionId}",
                 "from_node_id" to nodeId,
                 "function_id" to functionId,
@@ -1526,7 +1526,7 @@ class OobUdegNodeStore(
         val description = firstNonBlank(functionSpec["description"], name)
         return linkedMapOf(
             "schema_version" to EDGE_SCHEMA_VERSION,
-            "kind" to "call_function",
+            "kind" to EDGE_KIND_CALL_FUNCTION,
             "edge_id" to edgeId,
             "source_run_id" to sourceRunId.takeIf { it.isNotBlank() },
             "function_id" to functionId,
@@ -1622,7 +1622,7 @@ class OobUdegNodeStore(
         fromNodeId: String,
         toNodeId: String,
     ): String {
-        val seed = listOf(functionId, sourceRunId, fromNodeId, toNodeId, "call_function").joinToString("|")
+        val seed = listOf(functionId, sourceRunId, fromNodeId, toNodeId, EDGE_KIND_CALL_FUNCTION).joinToString("|")
         return "edge_${safePathSegment(functionId)}_call_${sha256(seed).take(12)}"
     }
 
@@ -1682,7 +1682,7 @@ class OobUdegNodeStore(
             "outgoing_edge_count" to outgoing.size,
             "incoming_edge_count" to incoming.size,
             "outgoing_function_edge_count" to outgoing.count { firstNonBlank(it["kind"]) == "function" },
-            "outgoing_call_function_edge_count" to outgoing.count { firstNonBlank(it["kind"]) == "call_function" },
+            "outgoing_call_function_edge_count" to outgoing.count { firstNonBlank(it["kind"]) == EDGE_KIND_CALL_FUNCTION },
             "outgoing_edge_ids" to outgoing.mapNotNull { firstNonBlank(it["edge_id"]).takeIf { it.isNotBlank() } }.take(MAX_NODE_EDGE_IDS),
             "incoming_edge_ids" to incoming.mapNotNull { firstNonBlank(it["edge_id"]).takeIf { it.isNotBlank() } }.take(MAX_NODE_EDGE_IDS),
         )
@@ -1701,13 +1701,13 @@ class OobUdegNodeStore(
         val rawKind = firstNonBlank(edge["kind"], edge["edge_kind"])
         val kind = when (rawKind) {
             "function", "raw_action_edge" -> "function"
-            "call_function", "run_function", "function_transition" -> "call_function"
+            EDGE_KIND_CALL_FUNCTION, "run_function", "function_transition" -> EDGE_KIND_CALL_FUNCTION
             else -> rawKind.ifBlank { "function" }
         }
         val callable = if (edge.containsKey("callable")) {
-            boolArg(edge["callable"], defaultValue = kind == "call_function")
+            boolArg(edge["callable"], defaultValue = kind == EDGE_KIND_CALL_FUNCTION)
         } else {
-            kind == "call_function"
+            kind == EDGE_KIND_CALL_FUNCTION
         }
         return linkedMapOf<String, Any?>().apply {
             putAll(edge)
@@ -1943,6 +1943,7 @@ class OobUdegNodeStore(
         private const val EXPORT_SCHEMA_VERSION = "oob.udeg.export.v1"
         private const val EDGE_SCHEMA_VERSION = "oob.udeg.edge.v1"
         private const val UDEG_EDGE_INGEST_SCHEMA_VERSION = "oob.udeg.edge_ingest.v1"
+        private const val EDGE_KIND_CALL_FUNCTION = "call_function"
         private const val RAW_GRAPH_SUMMARY_SCHEMA_VERSION = "oob.udeg.raw_graph_summary.v1"
         private const val UDEG_NODE_CONTEXTS_DIR = "udeg-node-contexts"
         private const val ARTIFACT_INDEX_FILE = "index.json"
