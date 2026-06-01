@@ -104,12 +104,11 @@ class OobFunctionCallToolStepExecutor(
             }
         }
         if (allowAgentFallback && !allowToolDelegationWithoutRouter) {
-            return linkedMapOf(
-                "step_id" to stepId,
-                "tool" to targetTool,
-                "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
-                "blocked_executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
-                "prompt" to agentFallbackController.prompt(
+            return runResultBuilder.agentFallbackStep(
+                stepId = stepId,
+                tool = targetTool,
+                blockedExecutor = RunLogReplayPolicy.EXECUTOR_TOOL,
+                prompt = agentFallbackController.prompt(
                     LinkedHashMap<String, Any?>().apply {
                         putAll(step)
                         put("tool", targetTool)
@@ -117,10 +116,7 @@ class OobFunctionCallToolStepExecutor(
                     },
                     stepTitle
                 ),
-                "success" to false,
-                "needs_agent" to true,
-                "fallback_available" to true,
-                "summary" to "call_tool requires agent runner: $stepTitle"
+                summary = "call_tool requires agent runner: $stepTitle",
             )
         }
         return failureStepResult(

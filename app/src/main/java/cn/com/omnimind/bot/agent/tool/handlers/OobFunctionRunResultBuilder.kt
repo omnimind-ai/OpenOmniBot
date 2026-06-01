@@ -31,6 +31,28 @@ class OobFunctionRunResultBuilder {
         putAll(extras)
     }
 
+    fun agentFallbackStep(
+        stepId: String,
+        tool: String,
+        blockedExecutor: String? = null,
+        prompt: String,
+        summary: String,
+        extras: Map<String, Any?> = emptyMap(),
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "step_id" to stepId,
+        "tool" to tool,
+        "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
+        "blocked_executor" to blockedExecutor,
+        "model_free" to true,
+        "success" to false,
+        "needs_agent" to true,
+        "fallback_available" to true,
+        "prompt" to prompt,
+        "summary" to summary,
+    ).apply {
+        putAll(extras)
+    }.filterValues { it != null }
+
     fun failedRun(
         functionId: String,
         spec: Map<String, Any?>,

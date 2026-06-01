@@ -735,6 +735,12 @@ Use these owner rules when removing duplicated helper code:
 - Runtime replay policy belongs in the replay components under
   `OobFunctionToolHandler`. Do not move skip/fallback/delegation/source
   alignment decisions into mechanical helper objects.
+- Function run result payload shape belongs in `OobFunctionRunResultBuilder`.
+  Runtime components may decide that a step failed, needs agent fallback, or
+  was delegated, but they should call this owner for stable fields such as
+  `needs_agent`, `fallback_available`, `blocked_executor`, `step_id`,
+  `executor`, `error_code`, and timing payloads instead of hand-building
+  equivalent maps in each executor.
 - Agent-facing tool JSON projection belongs in `AgentToolJson`. Use it when
   building tool definitions or serializing generic tool payloads, instead of
   adding another local `mapToJsonElement` copy or a forwarding method on

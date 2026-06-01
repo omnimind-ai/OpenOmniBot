@@ -462,22 +462,19 @@ class OobFunctionToolHandler(
                         }
                         fallbackResult ?: if (allowAgentFallback) {
                             modelRequired = true
-                            linkedMapOf<String, Any?>(
-                                "step_id" to stepId,
-                                "tool" to OmniflowStepExecutor.actionNameForStep(step),
-                                "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
-                                "blocked_executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
-                                "model_free" to true,
-                                "success" to false,
-                                "needs_agent" to true,
-                                "fallback_available" to true,
-                                "prompt" to agentFallbackController.prompt(step, stepTitle, recovery),
-                                "omniflow_fail_reason" to failReason,
-                                "error_code" to executionError?.errorCode,
-                                "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
-                                "recovery" to recovery,
-                                "summary" to "Omniflow step requires agent fallback: $stepTitle"
-                            ).filterValues { it != null }
+                            runResultBuilder.agentFallbackStep(
+                                stepId = stepId,
+                                tool = OmniflowStepExecutor.actionNameForStep(step),
+                                blockedExecutor = RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
+                                prompt = agentFallbackController.prompt(step, stepTitle, recovery),
+                                summary = "Omniflow step requires agent fallback: $stepTitle",
+                                extras = mapOf(
+                                    "omniflow_fail_reason" to failReason,
+                                    "error_code" to executionError?.errorCode,
+                                    "diagnostics" to executionError?.diagnostics?.takeIf { it.isNotEmpty() },
+                                    "recovery" to recovery,
+                                ),
+                            )
                         } else {
                             linkedMapOf<String, Any?>(
                                 "step_id" to stepId,
@@ -519,16 +516,12 @@ class OobFunctionToolHandler(
                     !allowToolDelegationWithoutRouter -> {
                     val agentPrompt = agentFallbackController.prompt(step, stepTitle)
                     modelRequired = true
-                    linkedMapOf(
-                        "step_id" to stepId,
-                        "tool" to callableTool,
-                        "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
-                        "blocked_executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
-                        "prompt" to agentPrompt,
-                        "success" to false,
-                        "needs_agent" to true,
-                        "fallback_available" to true,
-                        "summary" to "Tool step requires agent runner: $stepTitle"
+                    runResultBuilder.agentFallbackStep(
+                        stepId = stepId,
+                        tool = callableTool,
+                        blockedExecutor = RunLogReplayPolicy.EXECUTOR_TOOL,
+                        prompt = agentPrompt,
+                        summary = "Tool step requires agent runner: $stepTitle",
                     )
                 }
 
@@ -558,15 +551,11 @@ class OobFunctionToolHandler(
                     } else if (allowAgentFallback) {
                         val agentPrompt = agentFallbackController.prompt(step, stepTitle)
                         modelRequired = true
-                        linkedMapOf(
-                            "step_id" to stepId,
-                            "tool" to agentTool.ifEmpty { "?" },
-                            "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
-                            "prompt" to agentPrompt,
-                            "success" to false,
-                            "needs_agent" to true,
-                            "fallback_available" to true,
-                            "summary" to "Agent fallback required: $stepTitle"
+                        runResultBuilder.agentFallbackStep(
+                            stepId = stepId,
+                            tool = agentTool.ifEmpty { "?" },
+                            prompt = agentPrompt,
+                            summary = "Agent fallback required: $stepTitle",
                         )
                     } else {
                         linkedMapOf(
