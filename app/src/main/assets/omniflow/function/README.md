@@ -320,6 +320,7 @@ When adding or migrating a generic agent tool name:
 
 - guard Function steps before execution
 - classify block, confirmation, agent-needed, and allow decisions
+- own the guard decision/risk vocabulary used in guard and fallback payloads
 - build agent fallback context when deterministic replay fails
 - generate the resume instruction for `oob_function_run`
 

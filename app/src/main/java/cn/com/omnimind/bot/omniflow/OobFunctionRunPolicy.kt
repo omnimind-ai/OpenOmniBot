@@ -23,8 +23,8 @@ class OobFunctionRunPolicy(
                 code = "OOB_FUNCTION_NOT_FOUND",
                 message = "OOB reusable function not found: $functionId",
                 functionId = functionId,
-                decision = "block",
-                riskLevel = "high"
+                decision = DECISION_BLOCK,
+                riskLevel = RISK_HIGH
             )
         val missing = OobReusableFunctionStore.missingRequiredArguments(spec, arguments)
         if (missing.isNotEmpty()) {
@@ -32,8 +32,8 @@ class OobFunctionRunPolicy(
                 code = "OOB_FUNCTION_ARGUMENTS_MISSING",
                 message = "Missing required arguments: ${missing.joinToString(", ")}",
                 functionId = functionId,
-                decision = "block",
-                riskLevel = "high"
+                decision = DECISION_BLOCK,
+                riskLevel = RISK_HIGH
             ) + linkedMapOf("missing_required_arguments" to missing)
         }
 
@@ -42,10 +42,10 @@ class OobFunctionRunPolicy(
         val decision = aggregateDecision(stepDecisions)
         val riskLevel = aggregateRisk(stepDecisions)
         val reason = when (decision) {
-            "allow" -> "All steps are deterministic local replay or registered tool calls."
-            "needs_agent" -> "At least one step needs live Agent planning."
-            "needs_confirmation" -> "At least one step can affect device state outside local UI replay."
-            "block" -> "At least one step is blocked by OOB safety policy."
+            DECISION_ALLOW -> "All steps are deterministic local replay or registered tool calls."
+            DECISION_NEEDS_AGENT -> "At least one step needs live Agent planning."
+            DECISION_NEEDS_CONFIRMATION -> "At least one step can affect device state outside local UI replay."
+            DECISION_BLOCK -> "At least one step is blocked by OOB safety policy."
             else -> "Guard decision unavailable."
         }
         return linkedMapOf<String, Any?>(
@@ -54,7 +54,7 @@ class OobFunctionRunPolicy(
             "decision" to decision,
             "risk_level" to riskLevel,
             "reason" to reason,
-            "requires_confirmation" to (decision == "needs_confirmation"),
+            "requires_confirmation" to (decision == DECISION_NEEDS_CONFIRMATION),
             "requires_root" to stepDecisions.any { it["requires_root"] == true },
             "step_decisions" to stepDecisions,
             "source" to "oob_native_omniflow_run_policy"
@@ -156,50 +156,50 @@ class OobFunctionRunPolicy(
         val requiresRoot: Boolean
         when {
             RunLogReplayPolicy.shouldSkipTool(tool) || RunLogReplayPolicy.shouldSkipTool(action) -> {
-                decision = "allow"
-                risk = "low"
+                decision = DECISION_ALLOW
+                risk = RISK_LOW
                 reason = "$action is an observation-only or legacy non-semantic replay step"
                 requiresRoot = false
             }
             action == OobActionCodec.ACTION_FINISHED -> {
-                decision = "allow"
-                risk = "low"
+                decision = DECISION_ALLOW
+                risk = RISK_LOW
                 reason = "finished is a terminal marker"
                 requiresRoot = false
             }
             isBlockedAction(action, step) -> {
-                decision = "block"
-                risk = "high"
+                decision = DECISION_BLOCK
+                risk = RISK_HIGH
                 reason = "$action is blocked by OOB policy"
                 requiresRoot = true
             }
             isConfirmationAction(action, step) -> {
-                decision = "needs_confirmation"
-                risk = "high"
+                decision = DECISION_NEEDS_CONFIRMATION
+                risk = RISK_HIGH
                 reason = "$action requires user confirmation"
                 requiresRoot = action.contains("root") || action.contains("shizuku")
             }
             OmniflowStepExecutor.isOmniflowStep(step) -> {
-                decision = "allow"
-                risk = "low"
+                decision = DECISION_ALLOW
+                risk = RISK_LOW
                 reason = "$action is a deterministic local replay action"
                 requiresRoot = false
             }
             RunLogReplayPolicy.isOmniflowExecutionTool(action) -> {
-                decision = "allow"
-                risk = if (RunLogReplayPolicy.isOmniflowFunctionTool(action)) "medium" else "low"
+                decision = DECISION_ALLOW
+                risk = if (RunLogReplayPolicy.isOmniflowFunctionTool(action)) RISK_MEDIUM else RISK_LOW
                 reason = "$action is handled by OOB native OmniFlow execution"
                 requiresRoot = false
             }
             executor == RunLogReplayPolicy.EXECUTOR_AGENT || RunLogReplayPolicy.isAgentTool(action) -> {
-                decision = "needs_agent"
-                risk = "medium"
+                decision = DECISION_NEEDS_AGENT
+                risk = RISK_MEDIUM
                 reason = "$action requires live Agent planning"
                 requiresRoot = false
             }
             else -> {
-                decision = "needs_agent"
-                risk = "medium"
+                decision = DECISION_NEEDS_AGENT
+                risk = RISK_MEDIUM
                 reason = "$action is not a fixed local replay action"
                 requiresRoot = false
             }
@@ -217,19 +217,19 @@ class OobFunctionRunPolicy(
     private fun aggregateDecision(stepDecisions: List<Map<String, Any?>>): String {
         val decisions = stepDecisions.map { it["decision"]?.toString().orEmpty() }
         return when {
-            decisions.contains("block") -> "block"
-            decisions.contains("needs_confirmation") -> "needs_confirmation"
-            decisions.contains("needs_agent") -> "needs_agent"
-            else -> "allow"
+            decisions.contains(DECISION_BLOCK) -> DECISION_BLOCK
+            decisions.contains(DECISION_NEEDS_CONFIRMATION) -> DECISION_NEEDS_CONFIRMATION
+            decisions.contains(DECISION_NEEDS_AGENT) -> DECISION_NEEDS_AGENT
+            else -> DECISION_ALLOW
         }
     }
 
     private fun aggregateRisk(stepDecisions: List<Map<String, Any?>>): String {
         val risks = stepDecisions.map { it["risk_level"]?.toString().orEmpty() }
         return when {
-            risks.contains("high") -> "high"
-            risks.contains("medium") -> "medium"
-            else -> "low"
+            risks.contains(RISK_HIGH) -> RISK_HIGH
+            risks.contains(RISK_MEDIUM) -> RISK_MEDIUM
+            else -> RISK_LOW
         }
     }
 
@@ -389,6 +389,13 @@ class OobFunctionRunPolicy(
 
     private companion object {
         private const val MAX_FUNCTION_FALLBACK_ATTEMPTS_PER_STEP = 2
+        private const val DECISION_ALLOW = "allow"
+        private const val DECISION_NEEDS_AGENT = "needs_agent"
+        private const val DECISION_NEEDS_CONFIRMATION = "needs_confirmation"
+        private const val DECISION_BLOCK = "block"
+        private const val RISK_LOW = "low"
+        private const val RISK_MEDIUM = "medium"
+        private const val RISK_HIGH = "high"
         private val CONFIRMATION_ACTION_TOKENS = setOf(
             "shell",
             "terminal",
