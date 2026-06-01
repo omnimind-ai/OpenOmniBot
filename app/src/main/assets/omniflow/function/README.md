@@ -369,6 +369,8 @@ primitive local action execution:
   snapshot
 - refetch the current page after deterministic replay failures
 - run the optional `vlm_task` fallback for remappable UI-action failures
+- derive fallback operation wording from canonical actions in `OobActionCodec`
+  so `click`, `long_press`, and `swipe` keep distinct user-facing semantics
 - keep agent recovery text and VLM tool-call shaping outside the replay loop
 
 `OobFunctionCallRequestResolver` owns replay/tool-call argument compatibility:
