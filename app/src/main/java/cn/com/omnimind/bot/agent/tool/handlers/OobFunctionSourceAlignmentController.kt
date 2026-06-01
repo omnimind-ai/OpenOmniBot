@@ -4,6 +4,7 @@ import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OobPageVectorSet
 import cn.com.omnimind.bot.runlog.OobUdegNodeStore
 import cn.com.omnimind.bot.runlog.PendingActionStack
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
  * Aligns the pending replay stack with the currently visible page before a
@@ -47,7 +48,7 @@ class OobFunctionSourceAlignmentController {
                     "step_id" to top.stepId,
                     "index" to top.originalIndex,
                     "tool" to top.tool,
-                    "executor" to "omniflow",
+                    "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                     "model_free" to true,
                     "success" to false,
                     "needs_agent" to false,
@@ -87,7 +88,7 @@ class OobFunctionSourceAlignmentController {
                 "step_id" to frame.stepId,
                 "index" to frame.originalIndex,
                 "tool" to frame.tool,
-                "executor" to "omniflow",
+                "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                 "model_free" to true,
                 "skipped" to true,
                 "skipped_by_source_alignment" to true,

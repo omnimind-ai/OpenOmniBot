@@ -5,6 +5,7 @@ import cn.com.omnimind.bot.omniflow.OobFunctionJson.firstNonBlank
 import cn.com.omnimind.bot.omniflow.OobFunctionJson.mapArg
 import cn.com.omnimind.bot.runlog.OmniflowActionRuntime
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 
 /**
  * Runtime guard that restores the Function's entry package before replay when
@@ -56,7 +57,7 @@ class OobFunctionEntryPackageGuard {
             "id" to "global_open_app",
             "title" to "open_app: $packageName",
             "kind" to "omniflow_action",
-            "executor" to "omniflow",
+            "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
             "omniflow_action" to "open_app",
             "local_action" to "open_app",
             "model_free" to true,

@@ -63,7 +63,7 @@ class OobFunctionCallToolStepExecutor(
             return failureStepResult(
                 stepId = stepId,
                 tool = callableTool.ifEmpty { "call_tool" },
-                executor = "tool",
+                executor = RunLogReplayPolicy.EXECUTOR_TOOL,
                 summary = "$stepTitle missing tool_name or function_id",
                 errorCode = "OOB_CALL_TOOL_TARGET_MISSING",
             )
@@ -72,7 +72,7 @@ class OobFunctionCallToolStepExecutor(
             return failureStepResult(
                 stepId = stepId,
                 tool = callableTool.ifEmpty { "call_tool" },
-                executor = "tool",
+                executor = RunLogReplayPolicy.EXECUTOR_TOOL,
                 summary = "$stepTitle nested call_tool is not allowed",
                 errorCode = "OOB_CALL_TOOL_RECURSION",
             )
@@ -107,8 +107,8 @@ class OobFunctionCallToolStepExecutor(
             return linkedMapOf(
                 "step_id" to stepId,
                 "tool" to targetTool,
-                "executor" to "agent",
-                "blocked_executor" to "tool",
+                "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
+                "blocked_executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
                 "prompt" to agentFallbackController.prompt(
                     LinkedHashMap<String, Any?>().apply {
                         putAll(step)

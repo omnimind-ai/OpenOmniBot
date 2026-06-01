@@ -161,7 +161,7 @@ class OobFunctionSpecBuilder {
         when {
             action != null -> {
                 step["kind"] = "omniflow_action"
-                step["executor"] = "omniflow"
+                step["executor"] = RunLogReplayPolicy.EXECUTOR_OMNIFLOW
                 step["omniflow_action"] = action
                 step["local_action"] = action
                 step["model_free"] = true
@@ -178,7 +178,7 @@ class OobFunctionSpecBuilder {
             }
             RunLogReplayPolicy.isOmniflowGraphTool(normalizedTool) -> {
                 step["kind"] = "omniflow_graph"
-                step["executor"] = "omniflow"
+                step["executor"] = RunLogReplayPolicy.EXECUTOR_OMNIFLOW
                 step["model_free"] = true
                 step["scriptable"] = true
                 step["tool"] = normalizedTool
@@ -190,7 +190,7 @@ class OobFunctionSpecBuilder {
                 RunLogReplayPolicy.isOmniflowToolCallTool(normalizedTool) ||
                 firstNonBlank(raw["function_id"], raw["functionId"]).isNotBlank() -> {
                 step["kind"] = "omniflow_function"
-                step["executor"] = "omniflow"
+                step["executor"] = RunLogReplayPolicy.EXECUTOR_OMNIFLOW
                 step["model_free"] = true
                 step["scriptable"] = true
                 step["tool"] = "call_tool"
@@ -201,7 +201,7 @@ class OobFunctionSpecBuilder {
             }
             else -> {
                 step["kind"] = "tool_call"
-                step["executor"] = "tool"
+                step["executor"] = RunLogReplayPolicy.EXECUTOR_TOOL
                 step["scriptable"] = true
                 step["tool"] = normalizedTool
                 step["callable_tool"] = normalizedTool
@@ -416,9 +416,9 @@ class OobFunctionSpecBuilder {
         linkedMapOf(
             "scriptable_step_count" to steps.count { it["scriptable"] == true },
             "model_free_step_count" to steps.count { it["model_free"] == true },
-            "omniflow_step_count" to steps.count { it["executor"] == "omniflow" },
-            "agent_step_count" to steps.count { it["executor"] == "agent" },
-            "requires_agent_fallback" to steps.any { it["executor"] == "agent" },
+            "omniflow_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_OMNIFLOW },
+            "agent_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
+            "requires_agent_fallback" to steps.any { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
         )
 
     private fun putIfPresent(

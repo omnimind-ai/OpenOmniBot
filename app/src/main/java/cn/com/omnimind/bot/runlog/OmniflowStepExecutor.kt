@@ -312,7 +312,7 @@ object OmniflowStepExecutor {
         return linkedMapOf<String, Any?>(
             "step_id" to stepId,
             "tool" to action,
-            "executor" to "omniflow",
+            "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
             "model_free" to true,
             "replay_mode" to replayMode(actionTransferApplied, transferRequested, remapResult.meta),
             "success" to true,

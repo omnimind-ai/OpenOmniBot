@@ -348,7 +348,7 @@ class OobFunctionToolHandler(
             val stepTitle = step["title"]?.toString() ?: stepId
             frontendSession?.update("第 $stepIndex/${steps.size} 步 $stepTitle")
             val executor = step["executor"]?.toString()?.trim()?.lowercase().orEmpty()
-                .ifEmpty { "agent" }
+                .ifEmpty { RunLogReplayPolicy.EXECUTOR_AGENT }
             val callableTool = step["callable_tool"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: step["tool"]?.toString()?.trim().orEmpty()
             val omniflowExecutionTool = stepClassifier.omniflowExecutionToolForStep(step, callableTool)
@@ -360,7 +360,7 @@ class OobFunctionToolHandler(
                     "step_id" to stepId,
                     "index" to index,
                     "tool" to callableTool.ifEmpty { omniflowExecutionTool },
-                    "executor" to "omniflow",
+                    "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                     "skipped" to true,
                     "success" to true,
                     "summary" to "Skipped legacy non-semantic step",
@@ -462,8 +462,8 @@ class OobFunctionToolHandler(
                             linkedMapOf<String, Any?>(
                                 "step_id" to stepId,
                                 "tool" to OmniflowStepExecutor.actionNameForStep(step),
-                                "executor" to "agent",
-                                "blocked_executor" to "omniflow",
+                                "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
+                                "blocked_executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                                 "model_free" to true,
                                 "success" to false,
                                 "needs_agent" to true,
@@ -479,7 +479,7 @@ class OobFunctionToolHandler(
                             linkedMapOf<String, Any?>(
                                 "step_id" to stepId,
                                 "tool" to OmniflowStepExecutor.actionNameForStep(step),
-                                "executor" to "omniflow",
+                                "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
                                 "model_free" to true,
                                 "success" to false,
                                 "needs_agent" to false,
@@ -493,7 +493,7 @@ class OobFunctionToolHandler(
                     }
                 }
 
-                executor == "tool" && callableTool.isNotEmpty() && router != null &&
+                executor == RunLogReplayPolicy.EXECUTOR_TOOL && callableTool.isNotEmpty() && router != null &&
                     env != null -> {
                     val routerRef = router
                         ?: error("router became unavailable during tool delegation")
@@ -512,15 +512,15 @@ class OobFunctionToolHandler(
                     )
                 }
 
-                executor == "tool" && callableTool.isNotEmpty() &&
+                executor == RunLogReplayPolicy.EXECUTOR_TOOL && callableTool.isNotEmpty() &&
                     !allowToolDelegationWithoutRouter -> {
                     val agentPrompt = agentFallbackController.prompt(step, stepTitle)
                     modelRequired = true
                     linkedMapOf(
                         "step_id" to stepId,
                         "tool" to callableTool,
-                        "executor" to "agent",
-                        "blocked_executor" to "tool",
+                        "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
+                        "blocked_executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
                         "prompt" to agentPrompt,
                         "success" to false,
                         "needs_agent" to true,
@@ -558,7 +558,7 @@ class OobFunctionToolHandler(
                         linkedMapOf(
                             "step_id" to stepId,
                             "tool" to agentTool.ifEmpty { "?" },
-                            "executor" to "agent",
+                            "executor" to RunLogReplayPolicy.EXECUTOR_AGENT,
                             "prompt" to agentPrompt,
                             "success" to false,
                             "needs_agent" to true,

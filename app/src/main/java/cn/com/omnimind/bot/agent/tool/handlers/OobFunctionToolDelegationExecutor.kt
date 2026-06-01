@@ -8,6 +8,7 @@ import cn.com.omnimind.bot.agent.AgentToolJson.mapToJsonElement
 import cn.com.omnimind.bot.agent.AgentToolRegistry
 import cn.com.omnimind.bot.agent.ToolExecutionResult
 import cn.com.omnimind.bot.runlog.OmniflowStepExecutor
+import cn.com.omnimind.bot.runlog.RunLogReplayPolicy
 import cn.com.omnimind.baselib.llm.AssistantToolCall
 import cn.com.omnimind.baselib.llm.AssistantToolCallFunction
 import kotlinx.serialization.json.JsonObject
@@ -57,7 +58,7 @@ class OobFunctionToolDelegationExecutor {
             linkedMapOf<String, Any?>(
                 "step_id" to stepId,
                 "tool" to callableTool,
-                "executor" to "tool",
+                "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
                 "success" to (subResult !is ToolExecutionResult.Error),
                 "summary" to when (subResult) {
                     is ToolExecutionResult.ContextResult -> subResult.summaryText
@@ -71,7 +72,7 @@ class OobFunctionToolDelegationExecutor {
             linkedMapOf<String, Any?>(
                 "step_id" to stepId,
                 "tool" to callableTool,
-                "executor" to "tool",
+                "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
                 "success" to false,
                 "summary" to (e.message ?: "step failed")
             )

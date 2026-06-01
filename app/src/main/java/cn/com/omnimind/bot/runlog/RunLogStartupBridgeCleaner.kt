@@ -89,7 +89,7 @@ internal object RunLogStartupBridgeCleaner {
         val openAppStep = nullableMap(
             "title" to "open_app: $packageName",
             "kind" to "omniflow_action",
-            "executor" to "omniflow",
+            "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
             "omniflow_action" to "open_app",
             "local_action" to "open_app",
             "model_free" to true,

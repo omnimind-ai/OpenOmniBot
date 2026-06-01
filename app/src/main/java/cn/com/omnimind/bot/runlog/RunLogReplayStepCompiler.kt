@@ -121,7 +121,7 @@ internal object RunLogReplayStepCompiler {
                 nullableMap(
                     "title" to title,
                     "kind" to "tool_call",
-                    "executor" to "tool",
+                    "executor" to RunLogReplayPolicy.EXECUTOR_TOOL,
                     "scriptable" to true,
                     "callable_tool" to toolName,
                     "tool" to toolName,

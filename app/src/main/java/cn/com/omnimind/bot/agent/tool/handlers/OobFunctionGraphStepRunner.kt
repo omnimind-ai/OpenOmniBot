@@ -163,7 +163,7 @@ class OobFunctionGraphStepRunner {
         return linkedMapOf(
             "title" to firstNonBlank(edge["title"], edge["summary"], edge["target_description"], edge["targetDescription"], localAction),
             "kind" to "omniflow_action",
-            "executor" to "omniflow",
+            "executor" to RunLogReplayPolicy.EXECUTOR_OMNIFLOW,
             "omniflow_action" to localAction,
             "local_action" to localAction,
             "model_free" to true,
