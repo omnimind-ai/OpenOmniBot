@@ -207,6 +207,8 @@ When adding or migrating a generic agent tool name:
 - compute execution capability counts from canonical steps
 - report static agent presence as `has_agent_steps`/`agent_step_count`; runtime
   fallback state belongs to run payloads, not durable Function capabilities
+- do not expose `model_free`/`scriptable` capability counts; those are step-level
+  compatibility flags and are derivable from executor policy
 - use `OobFunctionSpecVocabulary` for durable spec vocabulary such as schema
   version, execution kind, execution runner, and registry runner
 

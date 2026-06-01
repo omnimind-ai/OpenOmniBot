@@ -1210,8 +1210,6 @@ class OobOmniFlowLoopAcceptanceTest {
                         "runner" to "oob_tool_sequence",
                         "entrypoint" to "execute",
                         "capabilities" to mapOf(
-                            "scriptable_step_count" to 1,
-                            "model_free_step_count" to 1,
                             "omniflow_step_count" to 1,
                             "agent_step_count" to 0,
                             "has_agent_steps" to false,
@@ -1563,8 +1561,6 @@ class OobOmniFlowLoopAcceptanceTest {
             "runner" to "oob_tool_sequence",
             "entrypoint" to "execute",
             "capabilities" to mapOf(
-                "scriptable_step_count" to steps.size,
-                "model_free_step_count" to steps.size,
                 "omniflow_step_count" to steps.size,
                 "agent_step_count" to 0,
                 "has_agent_steps" to false,

@@ -102,8 +102,6 @@ object RunLogReusableFunctionCompiler {
 
     private fun executionCapabilities(steps: List<Map<String, Any?>>): Map<String, Any?> {
         return linkedMapOf(
-            "scriptable_step_count" to steps.count { it["scriptable"] == true },
-            "model_free_step_count" to steps.count { it["model_free"] == true },
             "omniflow_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_OMNIFLOW },
             "agent_step_count" to steps.count { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
             "has_agent_steps" to steps.any { it["executor"] == RunLogReplayPolicy.EXECUTOR_AGENT },
