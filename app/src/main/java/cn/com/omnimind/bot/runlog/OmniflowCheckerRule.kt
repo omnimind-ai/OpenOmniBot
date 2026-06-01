@@ -14,7 +14,8 @@ package cn.com.omnimind.bot.runlog
  *
  * Execution stops after the first rule whose action produces an effect
  * (i.e. runs a recovery action). Condition-only / continue rules do not stop
- * the chain.
+ * the chain. Repeated side effects are capped by the executor's shared checker
+ * budget; rules may override the default cap with params.max_triggers.
  */
 data class OmniflowCheckerRule(
     val id: String,

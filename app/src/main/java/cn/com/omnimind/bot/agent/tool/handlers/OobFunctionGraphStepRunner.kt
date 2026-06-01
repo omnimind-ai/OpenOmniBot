@@ -22,6 +22,7 @@ class OobFunctionGraphStepRunner(
         stepTitle: String,
         callableTool: String,
         checkerRules: List<OmniflowCheckerRule> = emptyList(),
+        checkerBudget: OmniflowStepExecutor.CheckerTriggerBudget = OmniflowStepExecutor.CheckerTriggerBudget(),
     ): Map<String, Any?> {
         val path = resolveGraphPath(step, callableTool)
         if (path.isEmpty()) {
@@ -40,7 +41,13 @@ class OobFunctionGraphStepRunner(
                 ?: "$stepTitle path ${index + 1}"
             val startedAtMs = System.currentTimeMillis()
             val result = try {
-                OmniflowStepExecutor.execute(primitiveStep, pathStepId, pathTitle, checkerRules)
+                OmniflowStepExecutor.execute(
+                    step = primitiveStep,
+                    stepId = pathStepId,
+                    stepTitle = pathTitle,
+                    checkerRules = checkerRules,
+                    checkerBudget = checkerBudget,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

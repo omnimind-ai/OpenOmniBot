@@ -34,6 +34,31 @@ object OmniflowStepExecutor {
         val args: Map<String, Any?>,
     )
 
+    class CheckerTriggerBudget {
+        private val triggerCounts = linkedMapOf<String, Int>()
+
+        fun canTrigger(rule: OmniflowCheckerRule): Boolean =
+            triggerCounts[rule.budgetKey()].orZero() < checkerTriggerLimit(rule)
+
+        fun recordTrigger(rule: OmniflowCheckerRule): CheckerTriggerRecord {
+            val key = rule.budgetKey()
+            val limit = checkerTriggerLimit(rule)
+            val count = triggerCounts[key].orZero() + 1
+            triggerCounts[key] = count
+            return CheckerTriggerRecord(
+                count = count,
+                limit = limit,
+                remaining = (limit - count).coerceAtLeast(0),
+            )
+        }
+    }
+
+    data class CheckerTriggerRecord(
+        val count: Int,
+        val limit: Int,
+        val remaining: Int,
+    )
+
     class ExecutionException(
         val errorCode: String,
         message: String,
@@ -86,6 +111,7 @@ object OmniflowStepExecutor {
         stepId: String,
         stepTitle: String,
         checkerRules: List<OmniflowCheckerRule> = emptyList(),
+        checkerBudget: CheckerTriggerBudget = CheckerTriggerBudget(),
     ): Map<String, Any?> {
         val timing = ReplayStepTiming()
         val action = actionNameForStep(step)
@@ -121,6 +147,7 @@ object OmniflowStepExecutor {
                     state = replayState("before_step"),
                     replayAction = ReplayAction(step, action, initialArgs),
                     extraRules = checkerRules,
+                    checkerBudget = checkerBudget,
                 )
             }
         }
@@ -163,6 +190,7 @@ object OmniflowStepExecutor {
                     state = replayState("before_action"),
                     replayAction = ReplayAction(step, action, args),
                     extraRules = checkerRules,
+                    checkerBudget = checkerBudget,
                 )
             }
         }
@@ -295,6 +323,7 @@ object OmniflowStepExecutor {
                     state = refreshReplayState("after_action"),
                     replayAction = ReplayAction(step, action, args),
                     extraRules = checkerRules,
+                    checkerBudget = checkerBudget,
                 )
             }
         }
@@ -582,6 +611,7 @@ object OmniflowStepExecutor {
         state: ReplayState,
         replayAction: ReplayAction,
         extraRules: List<OmniflowCheckerRule>,
+        checkerBudget: CheckerTriggerBudget,
     ): List<Map<String, Any?>> {
         val action = replayAction.action
         if (action == OobActionCodec.ACTION_FINISHED) return emptyList()
@@ -596,9 +626,11 @@ object OmniflowStepExecutor {
         }
         val activeRules = globalRules + extraRules.filter { it.phase == phase && it.enabled }
         for (rule in activeRules) {
+            if (!checkerBudget.canTrigger(rule)) continue
             val result = evaluateAndExecuteRule(rule, state, replayAction) ?: continue
+            val trigger = checkerBudget.recordTrigger(rule)
             // Stop after the first rule that produces a recovery action.
-            return listOf(result)
+            return listOf(result.withCheckerTrigger(trigger))
         }
         return emptyList()
     }
@@ -622,6 +654,31 @@ object OmniflowStepExecutor {
             checkerKeyboardObscuring(rule, state, replayAction)
         else -> null
     }
+
+    private fun checkerTriggerLimit(rule: OmniflowCheckerRule): Int =
+        OobActionCodec.intArg(
+            rule.params["max_triggers"],
+            rule.params["maxTriggers"],
+            rule.params["trigger_limit"],
+            rule.params["triggerLimit"],
+            rule.params["max_count"],
+            rule.params["maxCount"],
+            defaultValue = DEFAULT_CHECKER_TRIGGER_LIMIT,
+        ).coerceAtLeast(0)
+
+    private fun OmniflowCheckerRule.budgetKey(): String =
+        listOf(phase, id, condition, action).joinToString("|")
+
+    private fun Map<String, Any?>.withCheckerTrigger(
+        trigger: CheckerTriggerRecord,
+    ): Map<String, Any?> = linkedMapOf<String, Any?>().apply {
+        putAll(this@withCheckerTrigger)
+        put("trigger_count", trigger.count)
+        put("trigger_limit", trigger.limit)
+        put("trigger_remaining", trigger.remaining)
+    }
+
+    private fun Int?.orZero(): Int = this ?: 0
 
     private suspend fun checkerResolverDialog(
         rule: OmniflowCheckerRule,
@@ -2441,6 +2498,8 @@ object OmniflowStepExecutor {
         "com.android.permissioncontroller",
         "com.android.packageinstaller",
     )
+
+    private const val DEFAULT_CHECKER_TRIGGER_LIMIT = 1
 
     private val ALLOW_EXACT_LABELS = setOf(
         "允许", "allow", "始终允许", "always allow",

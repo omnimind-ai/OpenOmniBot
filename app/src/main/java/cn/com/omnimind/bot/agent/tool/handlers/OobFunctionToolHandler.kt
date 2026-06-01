@@ -309,6 +309,7 @@ class OobFunctionToolHandler(
         // Checker rules from the Function spec (metadata.checker_rules).
         // These are layered on top of the global built-in rules inside the executor.
         val functionCheckerRules = OmniflowCheckerRule.fromSpec(spec)
+        val checkerBudget = OmniflowStepExecutor.CheckerTriggerBudget()
 
         val stepResults = mutableListOf<Map<String, Any?>>()
         var delegatedToolUsed = false
@@ -404,12 +405,19 @@ class OobFunctionToolHandler(
                         stepTitle = stepTitle,
                         callableTool = omniflowExecutionTool,
                         checkerRules = functionCheckerRules,
+                        checkerBudget = checkerBudget,
                     )
                 }
 
                 OmniflowStepExecutor.isOmniflowStep(step) -> {
                     try {
-                        OmniflowStepExecutor.execute(step, stepId, stepTitle, functionCheckerRules)
+                        OmniflowStepExecutor.execute(
+                            step = step,
+                            stepId = stepId,
+                            stepTitle = stepTitle,
+                            checkerRules = functionCheckerRules,
+                            checkerBudget = checkerBudget,
+                        )
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {

@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class OmniflowStepExecutorTest {
     @Test
@@ -781,6 +782,43 @@ class OmniflowStepExecutorTest {
             assertEquals(96f, backend.clickPoints.first().second, 0.01f)
             assertEquals(120f, backend.clickPoints.last().first, 0.01f)
             assertEquals(240f, backend.clickPoints.last().second, 0.01f)
+        }
+    }
+
+    @Test
+    fun `shared checker budget suppresses repeated global checker triggers`() = runBlocking {
+        val backend = FakeBackend(beforeXml = SKIP_AD_XML, afterXml = SKIP_AD_XML)
+        val checkerBudget = OmniflowStepExecutor.CheckerTriggerBudget()
+        val step = mapOf(
+            "executor" to "omniflow",
+            "omniflow_action" to "click",
+            "args" to mapOf("x" to 120, "y" to 240),
+        )
+        OmniflowActionRuntime.useBackendForTesting(backend).use {
+            val first = OmniflowStepExecutor.execute(
+                step = step,
+                stepId = "step_skip_ad_once",
+                stepTitle = "click behind splash ad",
+                checkerBudget = checkerBudget,
+            )
+            val second = OmniflowStepExecutor.execute(
+                step = step,
+                stepId = "step_skip_ad_budget_exhausted",
+                stepTitle = "click behind splash ad again",
+                checkerBudget = checkerBudget,
+            )
+
+            val firstEffects = first["control_effects"] as? List<*> ?: error("missing control effects")
+            val firstEffect = firstEffects.single() as Map<*, *>
+            assertEquals("dismiss_ad_blocking", firstEffect["controller"])
+            assertEquals(1, firstEffect["trigger_count"])
+            assertEquals(1, firstEffect["trigger_limit"])
+            assertEquals(0, firstEffect["trigger_remaining"])
+            assertFalse(second.containsKey("control_effects"))
+            assertEquals(3, backend.clickPoints.size)
+            assertEquals(1, backend.clickPoints.count { (x, y) ->
+                abs(x - 950f) < 0.01f && abs(y - 96f) < 0.01f
+            })
         }
     }
 
