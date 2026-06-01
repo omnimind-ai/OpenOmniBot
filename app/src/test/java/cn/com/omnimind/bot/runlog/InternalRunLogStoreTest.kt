@@ -429,6 +429,65 @@ class InternalRunLogStoreTest {
     }
 
     @Test
+    fun `timeline recovers event only cards before final snapshot`() {
+        val context = TempFilesContext()
+        try {
+            val runId = "run-event-only-cards-${System.nanoTime()}"
+            InternalRunLogStore.beginRun(
+                context = context,
+                runId = runId,
+                goal = "Manual recording",
+                source = "human_trajectory",
+                toolName = "human_trajectory"
+            )
+            InternalRunLogStore.appendCards(
+                context = context,
+                runId = runId,
+                cards = listOf(
+                    linkedMapOf(
+                        "card_id" to "card-1",
+                        "tool_name" to "click",
+                        "summary" to "tap search box"
+                    ),
+                    linkedMapOf(
+                        "card_id" to "card-2",
+                        "tool_name" to "input_text",
+                        "summary" to "input final text"
+                    )
+                ),
+                saveSnapshot = false
+            )
+            InternalRunLogStore.updateDiagnostics(
+                context = context,
+                runId = runId,
+                diagnostics = linkedMapOf("recording_backend" to "overlay_touch"),
+                saveSnapshot = false
+            )
+
+            val runningTimeline = InternalRunLogStore.timelinePayload(context, runId)
+            val runningCards = runningTimeline["cards"] as List<*>
+            assertEquals(2, runningCards.size)
+            assertEquals("running", runningTimeline["status"])
+
+            InternalRunLogStore.finishRun(
+                context = context,
+                runId = runId,
+                success = true,
+                doneReason = "user_completed"
+            )
+
+            val finishedTimeline = InternalRunLogStore.timelinePayload(context, runId)
+            val finishedCards = finishedTimeline["cards"] as List<*>
+            val diagnostics = finishedTimeline["diagnostics"] as Map<*, *>
+            assertEquals(2, finishedCards.size)
+            assertEquals("success", finishedTimeline["status"])
+            assertEquals("overlay_touch", diagnostics["recording_backend"])
+        } finally {
+            context.root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `timeline preserves run level diagnostics`() {
         val context = TempFilesContext()
         try {
